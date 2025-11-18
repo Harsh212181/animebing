@@ -1,0 +1,181 @@
+ <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Animabing - Anime List</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" href="/logo.png">
+  <meta property="og:image" content="/logo.png">
+  <meta name="theme-color" content="#8B5CF6">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Poppins', sans-serif;
+      background: linear-gradient(135deg, #0c0c0c 0%, #1a1a2e 50%, #16213e 100%);
+      color: #fff;
+      padding: 40px 20px;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      background: linear-gradient(45deg, #ff6b6b, #4ecdc4, #45b7d1, #96ceb4);
+      background-clip: text;
+      color: transparent;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 40px;
+      text-align: center;
+      animation: glow 2s ease-in-out infinite alternate;
+    }
+
+    @keyframes glow {
+      from { text-shadow: 0 0 10px rgba(255, 107, 107, 0.5); }
+      to { text-shadow: 0 0 20px rgba(78, 205, 196, 0.5); }
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 25px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    /* Extra small devices */
+    @media (max-width: 375px) {
+      .grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0.5rem;
+      }
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      transition: all 0.3s ease;
+      position: relative;
+    }
+
+    .card:hover {
+      transform: translateY(-10px) scale(1.03);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+    }
+
+    .card img {
+      width: 100%;
+      height: 280px;
+      object-fit: cover;
+      transition: transform 0.3s ease;
+    }
+
+    .card:hover img { transform: scale(1.05); }
+
+    .info {
+      padding: 15px;
+    }
+
+    .title {
+      font-weight: 600;
+      font-size: 1.3rem;
+      margin-bottom: 8px;
+      background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+      background-clip: text;
+      color: transparent;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .desc {
+      font-size: 0.9rem;
+      color: rgba(255, 255, 255, 0.8);
+      line-height: 1.4;
+      max-height: 4.2em;
+      overflow: hidden;
+    }
+
+    a {
+      text-decoration: none;
+      color: inherit;
+      display: block;
+    }
+
+    .extra-info {
+      font-size: 0.85rem;
+      color: #ccc;
+      margin-top: 8px;
+      opacity: 0.9;
+    }
+
+    .no-anime {
+      text-align: center;
+      padding: 40px;
+      font-size: 1.1rem;
+      opacity: 0.8;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 15px;
+      margin: 40px auto;
+      max-width: 400px;
+    }
+
+    .no-anime a {
+      color: #4ecdc4;
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .no-anime a:hover {
+      color: #66fcf1;
+      text-shadow: 0 0 10px rgba(102, 252, 241, 0.5);
+    }
+
+  </style>
+</head>
+<body>
+  <h1>🎬 Animabing - Anime List</h1>
+  <div class="grid" id="animeGrid"></div>
+
+  <script>
+    async function loadAnime() {
+      try {
+        const res = await fetch('/api/anime');
+        const data = await res.json();
+        const grid = document.getElementById('animeGrid');
+
+        if (!data.length) {
+          grid.innerHTML = "<p class='no-anime'>No anime yet! Add one using <a href='/admin.html'>Admin Dashboard ✨</a></p>";
+          return;
+        }
+
+        grid.innerHTML = data.map(anime => `
+          <div class="card">
+            <a href="/anime.html?id=${anime._id}">
+              <img src="${anime.thumbnail || 'https://via.placeholder.com/300x400?text=No+Image'}" alt="${anime.title}">
+              <div class="info">
+                <div class="title">${anime.title}</div>
+                <div class="desc">${anime.description || 'No description available.'}</div>
+                <div class="extra-info">
+                  ${anime.languageType} | ${anime.status} | ${anime.releaseYear || 'N/A'}
+                </div>
+              </div>
+            </a>
+          </div>
+        `).join('');
+      } catch (err) {
+        console.error('Error loading anime:', err);
+        document.getElementById('animeGrid').innerHTML = "<p class='no-anime'>⚠️ Error loading anime list.</p>";
+      }
+    }
+
+    loadAnime();
+  </script>
+</body>
+</html>
