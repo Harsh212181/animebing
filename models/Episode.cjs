@@ -1,4 +1,4 @@
- // models/Episode.cjs - UPDATED VERSION WITH CRITICAL FIX MERGED
+ // models/Episode.cjs - CUTYLINK REQUIREMENTS COMPLETELY REMOVED
 const mongoose = require("mongoose");
 
 const episodeSchema = new mongoose.Schema({
@@ -6,7 +6,7 @@ const episodeSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: "Anime",
     required: true,
-    index: true // ✅ ADD INDEX
+    index: true
   },
   title: {
     type: String,
@@ -25,13 +25,8 @@ const episodeSchema = new mongoose.Schema({
   },
   cutyLink: {
     type: String,
-    required: true, // ✅ REQUIRED KARO
-    validate: {
-      validator: function(v) {
-        return /^https?:\/\/.+/.test(v);
-      },
-      message: 'Invalid URL format'
-    }
+    default: "", // ✅ REQUIRED HATA DO, DEFAULT EMPTY STRING
+    // ✅ VALIDATION COMPLETELY REMOVED
   },
   secureFileReference: String
 }, {
