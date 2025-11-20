@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import type { Anime, FilterType, ContentTypeFilter } from '../src/types';
 import AnimeCard from './AnimeCard';
-import SkeletonLoader from './SkeletonLoader';
+import { SkeletonLoader } from './SkeletonLoader';
 import Spinner from './Spinner';
 import { getAllAnime, searchAnime } from '../services/animeService';
 
@@ -114,11 +114,7 @@ const HomePage: React.FC<Props> = ({
         <h1 className="text-3xl font-bold text-white mb-8">
           {searchQuery ? 'Searching...' : 'Latest Anime'}
         </h1>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
-          {Array.from({ length: 12 }).map((_, index) => (
-            <SkeletonLoader key={index} />
-          ))}
-        </div>
+        <SkeletonLoader type="card" count={12} />
       </div>
     );
   }
