@@ -94,46 +94,30 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack }) => {
                 {anime.description}
               </p>
 
-              {/* Info Section - Better Design */}
+              {/* Simplified Info Section - No Boxes */}
               <div className="space-y-4 mb-6">
                 {/* Main Info Row */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-slate-700/50 rounded-lg p-4 border border-slate-600">
-                    <p className="text-slate-400 text-sm font-medium mb-1">Status</p>
-                    <p className="text-white font-semibold">{anime.status}</p>
+                <div className="flex flex-wrap items-center gap-6 text-slate-300">
+                  <div>
+                    <span className="text-slate-400 text-sm font-medium mr-2">Status</span>
+                    <span className="text-white font-semibold">{anime.status}</span>
                   </div>
-                  <div className="bg-slate-700/50 rounded-lg p-4 border border-slate-600">
-                    <p className="text-slate-400 text-sm font-medium mb-1">Release Year</p>
-                    <p className="text-white font-semibold">{anime.releaseYear}</p>
+                  
+                  <div>
+                    <span className="text-slate-400 text-sm font-medium mr-2">Release Year</span>
+                    <span className="text-white font-semibold">{anime.releaseYear}</span>
                   </div>
-                </div>
-
-                {/* Type and Audio Row */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-slate-700/50 rounded-lg p-4 border border-slate-600">
-                    <p className="text-slate-400 text-sm font-medium mb-1">Type</p>
-                    <p className="text-white font-semibold">{anime.contentType}</p>
-                  </div>
-                  <div className={`rounded-lg p-4 border ${
-                    anime.subDubStatus === 'Hindi Dub' 
-                      ? 'bg-green-600/20 border-green-500/30' 
-                      : 'bg-red-600/20 border-red-500/30'
-                  }`}>
-                    <p className="text-slate-400 text-sm font-medium mb-1">Audio</p>
-                    <p className={`font-semibold ${
-                      anime.subDubStatus === 'Hindi Dub' 
-                        ? 'text-green-400' 
-                        : 'text-red-400'
-                    }`}>
-                      {anime.subDubStatus}
-                    </p>
+                  
+                  <div>
+                    <span className="text-slate-400 text-sm font-medium mr-2">Type</span>
+                    <span className="text-white font-semibold">{anime.contentType}</span>
                   </div>
                 </div>
 
-                {/* Genres */}
-                <div className="bg-slate-700/50 rounded-lg p-4 border border-slate-600">
-                  <p className="text-slate-400 text-sm font-medium mb-3">Genres</p>
-                  <div className="flex flex-wrap gap-2">
+                {/* Genres - Simplified */}
+                <div>
+                  <span className="text-slate-400 text-sm font-medium mr-3">Genres</span>
+                  <div className="flex flex-wrap gap-2 mt-2">
                     {anime.genreList?.map((genre, index) => (
                       <span
                         key={index}
@@ -208,12 +192,25 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack }) => {
                               if (episode.cutyLink) {
                                 window.open(episode.cutyLink, '_blank');
                               } else {
-                                alert(`Episode ${episode.episodeNumber} - Watch link will be added soon!`);
+                                alert(`Episode ${episode.episodeNumber} - Download link will be added soon!`);
                               }
                             }}
-                            className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded transition-colors duration-300 font-medium"
+                            className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded transition-colors duration-300 font-medium flex items-center gap-2"
                           >
-                            Watch
+                            {/* Download Icon */}
+                            <svg 
+                              xmlns="http://www.w3.org/2000/svg" 
+                              className="h-4 w-4" 
+                              viewBox="0 0 20 20" 
+                              fill="currentColor"
+                            >
+                              <path 
+                                fillRule="evenodd" 
+                                d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" 
+                                clipRule="evenodd" 
+                              />
+                            </svg>
+                            Download
                           </button>
                           
                           {/* Report Button for episode only */}
