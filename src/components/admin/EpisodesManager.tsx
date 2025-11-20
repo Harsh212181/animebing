@@ -1,4 +1,5 @@
-  // src/components/admin/EpisodesManager.tsx - UPDATED WITHOUT CUTYLINK FIELD
+ // EpisodesManager.tsx - POORA FILE UPDATE KARDO
+
 import React, { useState, useEffect } from 'react';
 import type { Anime, Episode, Chapter } from '../../types';
 import axios from 'axios';
@@ -16,7 +17,8 @@ const EpisodesManager: React.FC = () => {
   const [newItem, setNewItem] = useState({
     number: 1,
     title: '',
-    session: 1
+    session: 1,
+    cutyLink: '' // ✅ DOWNLOAD LINK KA FIELD ADD KARO
   });
   const [loading, setLoading] = useState(true);
   const [animesLoading, setAnimesLoading] = useState(true);
@@ -79,7 +81,8 @@ const EpisodesManager: React.FC = () => {
         setNewItem(prev => ({
           ...prev,
           number: lastChapter.length > 0 ? Math.max(...lastChapter.map((ch: Chapter) => ch.chapterNumber)) + 1 : 1,
-          session: selectedSession
+          session: selectedSession,
+          cutyLink: '' // ✅ RESET DOWNLOAD LINK
         }));
       } else {
         const { data } = await axios.get(`${API_BASE}/episodes/${contentId}`);
@@ -88,7 +91,8 @@ const EpisodesManager: React.FC = () => {
         setNewItem(prev => ({
           ...prev,
           number: lastEpisode.length > 0 ? Math.max(...lastEpisode.map((ep: Episode) => ep.episodeNumber)) + 1 : 1,
-          session: selectedSession
+          session: selectedSession,
+          cutyLink: '' // ✅ RESET DOWNLOAD LINK
         }));
       }
     } catch (err: any) {
@@ -106,7 +110,8 @@ const EpisodesManager: React.FC = () => {
     setNewItem({
       number: isManga ? (item as Chapter).chapterNumber : (item as Episode).episodeNumber,
       title: item.title || '',
-      session: item.session || 1
+      session: item.session || 1,
+      cutyLink: item.cutyLink || '' // ✅ CURRENT DOWNLOAD LINK SHOW KARO
     });
   };
 
@@ -118,7 +123,8 @@ const EpisodesManager: React.FC = () => {
     setNewItem({
       number: nextNumber,
       title: '',
-      session: selectedSession
+      session: selectedSession,
+      cutyLink: '' // ✅ RESET DOWNLOAD LINK
     });
   };
 
@@ -137,13 +143,23 @@ const EpisodesManager: React.FC = () => {
       return;
     }
 
+    // ✅ DOWNLOAD LINK VALIDATION
+    if (!newItem.cutyLink.trim()) {
+      alert('Please enter a download link');
+      return;
+    }
+
+    // ✅ BASIC URL VALIDATION
+    if (!newItem.cutyLink.startsWith('http')) {
+      alert('Please enter a valid URL starting with http:// or https://');
+      return;
+    }
+
     setAddingItem(true);
     try {
       if (isEditing && editingItem) {
-        // Update existing item
         await handleUpdateItem();
       } else {
-        // Add new item
         await handleAddItem();
       }
     } catch (err: any) {
@@ -161,13 +177,15 @@ const EpisodesManager: React.FC = () => {
           mangaId: selectedAnime.id,
           chapterNumber: newItem.number,
           title: newItem.title || `Chapter ${newItem.number}`,
-          session: newItem.session
+          session: newItem.session,
+          cutyLink: newItem.cutyLink.trim() // ✅ DOWNLOAD LINK ADD KARO
         }
       : {
           animeId: selectedAnime.id,
           episodeNumber: newItem.number,
           title: newItem.title || `Episode ${newItem.number}`,
-          session: newItem.session
+          session: newItem.session,
+          cutyLink: newItem.cutyLink.trim() // ✅ DOWNLOAD LINK ADD KARO
         };
 
     await axios.post(`${API_BASE}${endpoint}`, requestBody, {
@@ -190,15 +208,17 @@ const EpisodesManager: React.FC = () => {
     const requestBody = isManga
       ? {
           mangaId: selectedAnime.id,
-          chapterNumber: (editingItem as Chapter).chapterNumber, // Original number for lookup
+          chapterNumber: (editingItem as Chapter).chapterNumber,
           title: newItem.title || `Chapter ${newItem.number}`,
-          session: newItem.session
+          session: newItem.session,
+          cutyLink: newItem.cutyLink.trim() // ✅ DOWNLOAD LINK UPDATE KARO
         }
       : {
           animeId: selectedAnime.id,
-          episodeNumber: (editingItem as Episode).episodeNumber, // Original number for lookup
+          episodeNumber: (editingItem as Episode).episodeNumber,
           title: newItem.title || `Episode ${newItem.number}`,
-          session: newItem.session
+          session: newItem.session,
+          cutyLink: newItem.cutyLink.trim() // ✅ DOWNLOAD LINK UPDATE KARO
         };
 
     await axios.patch(`${API_BASE}${endpoint}`, requestBody, {
@@ -221,7 +241,8 @@ const EpisodesManager: React.FC = () => {
     setNewItem({
       number: nextNumber,
       title: '',
-      session: selectedSession
+      session: selectedSession,
+      cutyLink: '' // ✅ RESET DOWNLOAD LINK
     });
   };
 
@@ -333,7 +354,7 @@ const EpisodesManager: React.FC = () => {
             {isEditing && <span className="text-yellow-400 ml-2">- Editing #{editingItem ? (isManga ? (editingItem as Chapter).chapterNumber : (editingItem as Episode).episodeNumber) : ''}</span>}
           </h3>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
                 {isManga ? 'Chapter' : 'Episode'} Number *
@@ -348,13 +369,8 @@ const EpisodesManager: React.FC = () => {
                 className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
                 min="1"
                 required
-                disabled={isEditing} // Disable number editing to avoid conflicts
+                disabled={isEditing}
               />
-              {isEditing && (
-                <p className="text-xs text-yellow-400 mt-1">
-                  Number cannot be changed when editing
-                </p>
-              )}
             </div>
 
             <div>
@@ -373,19 +389,37 @@ const EpisodesManager: React.FC = () => {
                 required
               />
             </div>
+          </div>
 
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                {isManga ? 'Chapter' : 'Episode'} Title
-              </label>
-              <input
-                type="text"
-                value={newItem.title}
-                onChange={(e) => setNewItem({ ...newItem, title: e.target.value })}
-                placeholder={`Optional - defaults to '${isManga ? 'Chapter' : 'Episode'} X'`}
-                className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
-              />
-            </div>
+          {/* ✅ DOWNLOAD LINK FIELD - YEH NAYA FIELD HAI */}
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              Download Link (Required) *
+            </label>
+            <input
+              type="url"
+              value={newItem.cutyLink}
+              onChange={(e) => setNewItem({ ...newItem, cutyLink: e.target.value })}
+              className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
+              placeholder="https://cuty.io/abc123 or https://drive.google.com/..."
+              required
+            />
+            <p className="text-slate-400 text-xs mt-2">
+              💡 Paste your shortened download link (cuty.io, ouo.io, etc.) or direct download URL
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              {isManga ? 'Chapter' : 'Episode'} Title
+            </label>
+            <input
+              type="text"
+              value={newItem.title}
+              onChange={(e) => setNewItem({ ...newItem, title: e.target.value })}
+              placeholder={`Optional - defaults to '${isManga ? 'Chapter' : 'Episode'} X'`}
+              className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
+            />
           </div>
 
           <div className="flex gap-3">
@@ -413,6 +447,18 @@ const EpisodesManager: React.FC = () => {
                 Cancel Edit
               </button>
             )}
+          </div>
+
+          {/* Link Shortening Tips */}
+          <div className="bg-blue-600/20 p-4 rounded-lg border border-blue-500/30">
+            <h4 className="text-blue-400 font-semibold mb-2">🔗 Link Shortening Services:</h4>
+            <div className="text-blue-300 text-sm space-y-1">
+              <p>• <strong>cuty.io</strong> - Free URL shortener</p>
+              <p>• <strong>ouo.io</strong> - Earn money from links</p>
+              <p>• <strong>shorte.st</strong> - Premium shortening</p>
+              <p>• <strong>Google Drive</strong> - Direct download links</p>
+              <p>• <strong>Mega.nz</strong> - Cloud storage links</p>
+            </div>
           </div>
         </form>
       )}
@@ -444,6 +490,7 @@ const EpisodesManager: React.FC = () => {
                     <th className="p-3 text-left text-slate-300 font-medium">#</th>
                     <th className="p-3 text-left text-slate-300 font-medium">Session</th>
                     <th className="p-3 text-left text-slate-300 font-medium">Title</th>
+                    <th className="p-3 text-left text-slate-300 font-medium">Download Link</th> {/* ✅ NAYA COLUMN */}
                     <th className="p-3 text-left text-slate-300 font-medium">Actions</th>
                   </tr>
                 </thead>
@@ -460,8 +507,22 @@ const EpisodesManager: React.FC = () => {
                       </td>
                       <td className="p-3 text-white">{item.title}</td>
                       <td className="p-3">
+                        {item.cutyLink ? (
+                          <a 
+                            href={item.cutyLink} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-blue-400 hover:text-blue-300 text-sm break-all max-w-xs block truncate"
+                            title={item.cutyLink}
+                          >
+                            🔗 {item.cutyLink}
+                          </a>
+                        ) : (
+                          <span className="text-slate-500 text-sm">No download link</span>
+                        )}
+                      </td>
+                      <td className="p-3">
                         <div className="flex gap-2">
-                          {/* EDIT BUTTON */}
                           <button
                             onClick={() => handleEditItem(item)}
                             className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-sm transition-colors"
@@ -469,8 +530,6 @@ const EpisodesManager: React.FC = () => {
                           >
                             ✏️ Edit
                           </button>
-                          
-                          {/* DELETE BUTTON */}
                           <button
                             onClick={() => handleDeleteItem(item._id, isManga ? item.chapterNumber : item.episodeNumber, item.session || 1)}
                             className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-sm transition-colors"
