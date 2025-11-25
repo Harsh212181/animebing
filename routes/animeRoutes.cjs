@@ -1,15 +1,16 @@
- // routes/animeRoutes.cjs
+  // routes/animeRoutes.cjs
 const express = require('express');
 const router = express.Router();
 const Anime = require('../models/Anime.cjs');
 
 /**
  * ✅ GET all anime
- * Returns all anime from DB sorted by creation date
+ * Returns all anime from DB sorted by LATEST UPDATE
  */
 router.get('/', async (req, res) => {
   try {
-    const all = await Anime.find().populate('episodes').sort({ createdAt: -1 });
+    // ✅ YEH LINE UPDATE KARO: Sort by updatedAt descending (newest first)
+    const all = await Anime.find().populate('episodes').sort({ updatedAt: -1 });
     res.json({ success: true, data: all });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -25,7 +26,7 @@ router.get('/search', async (req, res) => {
     const q = req.query.query || '';
     const found = await Anime.find({
       title: { $regex: q, $options: 'i' }
-    }).populate('episodes').sort({ createdAt: -1 });
+    }).populate('episodes').sort({ updatedAt: -1 }); // ✅ YEH BHI UPDATE KARO
     res.json({ success: true, data: found });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
