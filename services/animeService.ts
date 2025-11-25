@@ -1,4 +1,4 @@
- // services/animeService.ts - CORRECTED VERSION
+  // services/animeService.ts - CORRECTED VERSION
 import type { Anime } from '../src/types';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://animabing.onrender.com/api';
@@ -21,11 +21,19 @@ export const getAllAnime = async (): Promise<Anime[]> => {
     if (result.success && Array.isArray(result.data)) {
       console.log(`🎉 getAllAnime: Found ${result.data.length} anime`);
       
-      const formattedAnime = result.data.map((anime: any) => ({
-        ...anime,
-        id: anime._id || anime.id
-      }));
+      // ✅ YEH LINE UPDATE KARO: Newest content first sorting
+      const formattedAnime = result.data
+        .map((anime: any) => ({
+          ...anime,
+          id: anime._id || anime.id,
+          // Convert to timestamp for sorting
+          lastUpdated: anime.updatedAt ? new Date(anime.updatedAt).getTime() : 
+                       anime.createdAt ? new Date(anime.createdAt).getTime() : Date.now()
+        }))
+        // ✅ SORT BY LATEST UPDATED FIRST
+        .sort((a, b) => b.lastUpdated - a.lastUpdated);
       
+      console.log(`🔄 Sorted ${formattedAnime.length} anime by latest update`);
       return formattedAnime;
     } else {
       console.warn('⚠️ getAllAnime: Unexpected response format');
@@ -57,10 +65,15 @@ export const searchAnime = async (query: string): Promise<Anime[]> => {
     console.log('📦 Search response:', result);
     
     if (result.success && Array.isArray(result.data)) {
-      const formattedAnime = result.data.map((anime: any) => ({
-        ...anime,
-        id: anime._id || anime.id
-      }));
+      // ✅ SEARCH RESULTS KO BHI SORT KARO
+      const formattedAnime = result.data
+        .map((anime: any) => ({
+          ...anime,
+          id: anime._id || anime.id,
+          lastUpdated: anime.updatedAt ? new Date(anime.updatedAt).getTime() : 
+                       anime.createdAt ? new Date(anime.createdAt).getTime() : Date.now()
+        }))
+        .sort((a, b) => b.lastUpdated - a.lastUpdated);
       
       console.log(`🎉 Search found ${formattedAnime.length} results`);
       return formattedAnime;
@@ -73,6 +86,7 @@ export const searchAnime = async (query: string): Promise<Anime[]> => {
   }
 };
 
+// Rest of the code remains same...
 export const getAnimeById = async (id: string): Promise<Anime | null> => {
   try {
     const response = await fetch(`${API_BASE}/anime/${id}`);
