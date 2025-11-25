@@ -1,4 +1,4 @@
- // routes/episodeRoutes.cjs - VALIDATION COMPLETELY REMOVED
+  // routes/episodeRoutes.cjs - VALIDATION COMPLETELY REMOVED
 const express = require('express');
 const router = express.Router();
 const Episode = require('../models/Episode.cjs');
@@ -80,10 +80,15 @@ router.post('/', async (req, res) => {
 
     console.log('💾 Saving episode to database...');
     await newEpisode.save();
+    
+    // ✅ YEH IMPORTANT LINE ADD KARO: Anime ko update karo for homepage sorting
+    await Anime.updateLastContent(animeId);
+    
     console.log('✅ Episode saved with ID:', newEpisode._id);
+    console.log('🔄 Anime lastContentAdded updated for homepage priority');
 
     res.json({
-      message: 'Episode added successfully!',
+      message: 'Episode added successfully! This anime will now appear first on homepage.',
       episode: newEpisode,
       animeTitle: anime.title
     });
@@ -147,8 +152,11 @@ router.patch('/', async (req, res) => {
     
     if (!updated) return res.status(404).json({ error: 'Episode not found' });
     
+    // ✅ YEH BHI ADD KARO: Anime update karo jab episode modify ho
+    await Anime.updateLastContent(animeId);
+    
     res.json({ 
-      message: '✅ Episode updated successfully!', 
+      message: '✅ Episode updated successfully! This anime will now appear first on homepage.', 
       episode: updated
     });
   } catch (error) {
@@ -178,6 +186,9 @@ router.delete('/', async (req, res) => {
       console.log('❌ Episode not found for deletion');
       return res.status(404).json({ error: 'Episode not found' });
     }
+    
+    // ✅ DELETE KE BAAD BHI ANIME UPDATE KARO
+    await Anime.updateLastContent(animeId);
     
     console.log('✅ Episode deleted successfully');
     res.json({ message: 'Episode deleted' });
