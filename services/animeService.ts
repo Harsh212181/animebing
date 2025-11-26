@@ -1,92 +1,97 @@
-  // services/animeService.ts - CORRECTED VERSION
+  // services/animeService.ts - OPTIMIZED VERSION
 import type { Anime } from '../src/types';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://animabing.onrender.com/api';
 
-console.log('🔧 API Base URL:', API_BASE);
+// ✅ CACHE IMPLEMENTATION
+const cache = new Map();
+const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
 
-export const getAllAnime = async (): Promise<Anime[]> => {
+// ✅ OPTIMIZED: Paginated API calls
+export const getAnimePaginated = async (page: number = 1, limit: number = 24): Promise<Anime[]> => {
+  const cacheKey = `anime-page-${page}-${limit}`;
+  
+  // Check cache first
+  const cached = cache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    console.log(`🎯 Cache hit for page ${page}`);
+    return cached.data;
+  }
+
   try {
-    console.log('🚀 Fetching ALL anime from backend...');
+    console.log(`📡 Fetching page ${page} from API...`);
+    const response = await fetch(`${API_BASE}/anime?page=${page}&limit=${limit}`);
     
-    const response = await fetch(`${API_BASE}/anime`);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     
     const result = await response.json();
-    console.log('📦 Raw response from getAllAnime:', result);
+    let animeData = [];
     
     if (result.success && Array.isArray(result.data)) {
-      console.log(`🎉 getAllAnime: Found ${result.data.length} anime`);
-      
-      // ✅ YEH LINE UPDATE KARO: Newest content first sorting
-      const formattedAnime = result.data
-        .map((anime: any) => ({
-          ...anime,
-          id: anime._id || anime.id,
-          // Convert to timestamp for sorting
-          lastUpdated: anime.updatedAt ? new Date(anime.updatedAt).getTime() : 
-                       anime.createdAt ? new Date(anime.createdAt).getTime() : Date.now()
-        }))
-        // ✅ SORT BY LATEST UPDATED FIRST
-        .sort((a, b) => b.lastUpdated - a.lastUpdated);
-      
-      console.log(`🔄 Sorted ${formattedAnime.length} anime by latest update`);
-      return formattedAnime;
-    } else {
-      console.warn('⚠️ getAllAnime: Unexpected response format');
-      return [];
+      animeData = result.data.map((anime: any) => ({
+        ...anime,
+        id: anime._id || anime.id,
+        lastUpdated: anime.updatedAt ? new Date(anime.updatedAt).getTime() : Date.now()
+      }));
     }
+
+    // Store in cache
+    cache.set(cacheKey, {
+      data: animeData,
+      timestamp: Date.now()
+    });
+
+    console.log(`✅ Loaded ${animeData.length} anime for page ${page}`);
+    return animeData;
   } catch (error) {
-    console.error('❌ Error in getAllAnime:', error);
+    console.error('❌ Error in getAnimePaginated:', error);
     return [];
   }
 };
 
+// ✅ KEEP existing functions but optimized
+export const getAllAnime = async (): Promise<Anime[]> => {
+  return getAnimePaginated(1, 50); // First page with more items
+};
+
 export const searchAnime = async (query: string): Promise<Anime[]> => {
+  const cacheKey = `search-${query}`;
+  
+  const cached = cache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    return cached.data;
+  }
+
   try {
-    console.log('🔍 Searching anime with query:', query);
-    
-    if (!query.trim()) {
-      // ✅ YEH LINE IMPORTANT HAI: Empty query = return all anime
-      console.log('🔍 Empty query, returning all anime');
-      return await getAllAnime();
-    }
+    if (!query.trim()) return await getAllAnime();
     
     const response = await fetch(`${API_BASE}/anime/search?query=${encodeURIComponent(query)}`);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     
     const result = await response.json();
-    console.log('📦 Search response:', result);
+    let searchData = [];
     
     if (result.success && Array.isArray(result.data)) {
-      // ✅ SEARCH RESULTS KO BHI SORT KARO
-      const formattedAnime = result.data
-        .map((anime: any) => ({
-          ...anime,
-          id: anime._id || anime.id,
-          lastUpdated: anime.updatedAt ? new Date(anime.updatedAt).getTime() : 
-                       anime.createdAt ? new Date(anime.createdAt).getTime() : Date.now()
-        }))
-        .sort((a, b) => b.lastUpdated - a.lastUpdated);
-      
-      console.log(`🎉 Search found ${formattedAnime.length} results`);
-      return formattedAnime;
+      searchData = result.data.map((anime: any) => ({
+        ...anime,
+        id: anime._id || anime.id,
+        lastUpdated: anime.updatedAt ? new Date(anime.updatedAt).getTime() : Date.now()
+      }));
     }
-    
-    return [];
+
+    cache.set(cacheKey, {
+      data: searchData,
+      timestamp: Date.now()
+    });
+
+    return searchData;
   } catch (error) {
     console.error('❌ Error in searchAnime:', error);
     return [];
   }
 };
 
-// Rest of the code remains same...
+// ✅ Keep other functions same (they're already optimized)
 export const getAnimeById = async (id: string): Promise<Anime | null> => {
   try {
     const response = await fetch(`${API_BASE}/anime/${id}`);
@@ -112,8 +117,6 @@ export const getAnimeById = async (id: string): Promise<Anime | null> => {
 
 export const getEpisodesByAnimeId = async (animeId: string): Promise<any[]> => {
   try {
-    console.log('📺 Fetching episodes for anime:', animeId);
-    
     const response = await fetch(`${API_BASE}/episodes/${animeId}`);
     
     if (!response.ok) {
@@ -121,7 +124,6 @@ export const getEpisodesByAnimeId = async (animeId: string): Promise<any[]> => {
     }
     
     const episodes = await response.json();
-    console.log(`✅ Found ${episodes.length} episodes for anime ${animeId}`);
     return episodes;
   } catch (error) {
     console.error('❌ Error fetching episodes:', error);
@@ -131,8 +133,6 @@ export const getEpisodesByAnimeId = async (animeId: string): Promise<any[]> => {
 
 export const getChaptersByMangaId = async (mangaId: string): Promise<any[]> => {
   try {
-    console.log('📖 Fetching chapters for manga:', mangaId);
-    
     const response = await fetch(`${API_BASE}/chapters/${mangaId}`);
     
     if (!response.ok) {
@@ -140,10 +140,15 @@ export const getChaptersByMangaId = async (mangaId: string): Promise<any[]> => {
     }
     
     const chapters = await response.json();
-    console.log(`✅ Found ${chapters.length} chapters for manga ${mangaId}`);
     return chapters;
   } catch (error) {
     console.error('❌ Error fetching chapters:', error);
     return [];
   }
+};
+
+// Clear cache function
+export const clearAnimeCache = () => {
+  cache.clear();
+  console.log('🗑️ Anime cache cleared');
 };
