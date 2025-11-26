@@ -1,67 +1,46 @@
- // routes/reportRoutes.cjs - EMERGENCY DEBUG VERSION MERGED
+  // routes/reportRoutes.cjs - UPDATED VERSION
 const express = require('express');
 const router = express.Router();
 const Report = require('../models/Report.cjs');
 
-// POST /api/reports - Create new report - EMERGENCY DEBUG VERSION
+// POST /api/reports - Create new episode report
 router.post('/', async (req, res) => {
   try {
-    console.log('🚨 REPORT SUBMISSION RECEIVED - DEBUG MODE');
-    console.log('📦 Full Request Body:', JSON.stringify(req.body, null, 2));
-    console.log('👤 Headers:', req.headers);
-    console.log('🌐 IP:', req.ip);
+    console.log('📝 EPISODE REPORT SUBMISSION RECEIVED');
+    console.log('📦 Request Body:', JSON.stringify(req.body, null, 2));
     
     const { animeId, episodeId, episodeNumber, issueType, description, email, username } = req.body;
 
-    // ✅ TEMPORARY: Remove all validations for testing
-    console.log('✅ Bypassing all validations for testing...');
-
-    // ✅ TEMPORARY: Create report without validation
+    // Create new episode report
     const newReport = new Report({
-      animeId: animeId || '657a1b2e3f4c5d6e7f8a9b0c', // Fallback ID
-      episodeId: episodeId || null,
-      episodeNumber: episodeNumber || 1,
-      issueType: issueType || 'Link Not Working',
-      description: description || 'Test description',
-      email: email || 'test@example.com',
-      username: username || 'TestUser',
-      userIP: req.ip || '127.0.0.1',
-      userAgent: req.headers['user-agent'] || 'Debug'
+      animeId,
+      episodeId,
+      episodeNumber,
+      issueType,
+      description,
+      email: email || 'Not provided',
+      username: username || 'Anonymous',
+      userIP: req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress,
+      userAgent: req.headers['user-agent'] || 'Unknown',
+      type: 'episode'
     });
 
-    console.log('📝 Report object created:', newReport);
-
-    // Save to database
     await newReport.save();
     
-    console.log('💾 Report saved successfully with ID:', newReport._id);
+    console.log('✅ Episode report saved with ID:', newReport._id);
 
-    // ✅ SUCCESS RESPONSE
     res.json({
       success: true,
-      message: '✅ DEBUG: Report submitted successfully!',
-      reportId: newReport._id,
-      debug: {
-        animeIdReceived: animeId,
-        episodeNumberReceived: episodeNumber,
-        descriptionLength: description ? description.length : 0
-      }
+      message: 'Report submitted successfully! We will fix the issue soon.',
+      reportId: newReport._id
     });
 
   } catch (error) {
-    console.error('❌ REPORT ERROR DETAILS:');
-    console.error('Error name:', error.name);
-    console.error('Error message:', error.message);
-    console.error('Stack trace:', error.stack);
+    console.error('❌ EPISODE REPORT ERROR:', error);
     
-    // ✅ MORE DETAILED ERROR RESPONSE
     res.status(500).json({
       success: false,
-      error: 'Server error: ' + error.message,
-      debug: {
-        errorName: error.name,
-        errorMessage: error.message
-      }
+      error: 'Server error: ' + error.message
     });
   }
 });
@@ -82,7 +61,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// ✅ NEW: Get reports by user email
+// Get reports by user email
 router.get('/user/:email', async (req, res) => {
   try {
     const { email } = req.params;
