@@ -5,6 +5,7 @@ import { DownloadIcon } from './icons/DownloadIcon';
 import ReportButton from './ReportButton';
 import Spinner from './Spinner';
 import { AnimeDetailSkeleton } from './SkeletonLoader';
+import { getAnimeById } from '../services/animeService';
 
 interface Props {
   anime: Anime | null;
@@ -25,8 +26,47 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  // ✅ STATE FOR FULL ANIME DETAILS
+  const [fullAnime, setFullAnime] = useState<Anime | null>(null);
+  const [animeLoading, setAnimeLoading] = useState(false);
+
   // Check if content is Manga
   const isManga = anime?.contentType === 'Manga';
+
+  // ✅ FETCH FULL ANIME DETAILS IF NEEDED
+  useEffect(() => {
+    const fetchFullAnimeDetails = async () => {
+      if (!anime) return;
+
+      // If we already have description and genreList, use the existing data
+      if (anime.description && anime.genreList && anime.genreList.length > 0) {
+        setFullAnime(anime);
+        return;
+      }
+
+      // Otherwise, fetch full details
+      setAnimeLoading(true);
+      try {
+        const fields = 'title,thumbnail,releaseYear,status,contentType,subDubStatus,description,genreList';
+        const fullAnimeData = await getAnimeById(anime.id, fields);
+        if (fullAnimeData) {
+          setFullAnime(fullAnimeData);
+        } else {
+          setFullAnime(anime); // Fallback to original data
+        }
+      } catch (err) {
+        console.error('Failed to fetch full anime details:', err);
+        setFullAnime(anime); // Fallback to original data
+      } finally {
+        setAnimeLoading(false);
+      }
+    };
+
+    fetchFullAnimeDetails();
+  }, [anime]);
+
+  // Use fullAnime if available, else fallback to anime
+  const displayAnime = fullAnime || anime;
 
   // Group episodes/chapters by session
   const itemsBySession = (isManga ? chapters : episodes)?.reduce((acc, item) => {
@@ -119,8 +159,8 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
     setTimeout(() => setShowDownloadModal(false), 3000);
   };
 
-  // ✅ LOADING STATE
-  if (isLoading || !anime) {
+  // ✅ LOADING STATE - Check for both initial loading and anime loading
+  if (isLoading || !anime || animeLoading) {
     return <AnimeDetailSkeleton />;
   }
 
@@ -141,7 +181,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
         {/* MOBILE VIEW - Only show on small screens */}
         <div className="lg:hidden">
           {/* Mobile Anime Card - No bottom margin to remove gap */}
-          <div className="bg-slate-800/40 backdrop-blur-sm rounded-xl p-4 border border-slate-700 shadow-xl">
+          <div className="bg-slate-800/40 backdrop-blur-sm rounded-xl p-4 border border-slate-700 shadow-xl mb-0">
             <div className="flex flex-col">
               {/* Anime Poster and Basic Info Row */}
               <div className="flex gap-3 mb-3">
@@ -149,8 +189,8 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
                 <div className="flex-shrink-0">
                   <div className="relative group">
                     <img
-                      src={anime.thumbnail}
-                      alt={anime.title}
+                      src={displayAnime?.thumbnail}
+                      alt={displayAnime?.title}
                       className="w-20 h-28 object-cover rounded-lg shadow-md group-hover:scale-105 transition-transform duration-300"
                       onError={(e) => {
                         e.currentTarget.src = 'https://via.placeholder.com/300x400/1e293b/64748b?text=No+Image';
@@ -161,31 +201,31 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
                 {/* Anime Basic Info */}
                 <div className="flex-1 min-w-0">
                   {/* Full Anime Title - No truncation */}
-                  <h1 className="text-lg font-bold text-white mb-2 break-words">{anime.title}</h1>
+                  <h1 className="text-lg font-bold text-white mb-2 break-words">{displayAnime?.title}</h1>
                   {/* Highlighted Info Badges */}
                   <div className="flex flex-wrap gap-1">
                     {/* Year Badge - Same as genres */}
                     <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-2 py-1 rounded text-xs font-bold whitespace-nowrap">
-                      {anime.releaseYear}
+                      {displayAnime?.releaseYear}
                     </span>
                     {/* Status Badge - Special colors */}
                     <span
                       className={`px-2 py-1 rounded text-xs font-bold whitespace-nowrap ${
-                        anime.status === 'Ongoing'
+                        displayAnime?.status === 'Ongoing'
                           ? 'bg-gradient-to-r from-yellow-500 to-orange-600 text-white'
                           : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white'
                       }`}
                     >
-                      {anime.status}
+                      {displayAnime?.status}
                     </span>
                     {/* Type Badge - Same as genres */}
                     <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-2 py-1 rounded text-xs font-bold whitespace-nowrap">
-                      {anime.contentType}
+                      {displayAnime?.contentType}
                     </span>
                     {/* Hindi Sub / Dub Badges - SAFE & CLEAN CHECK */}
-                    {!isManga && anime.subDubStatus && (
+                    {!isManga && displayAnime?.subDubStatus && (
                       <div className="flex flex-wrap gap-1">
-                        {anime.subDubStatus
+                        {displayAnime.subDubStatus
                           .split(',')
                           .map(s => s.trim().toLowerCase())
                           .includes('hindi dub'.toLowerCase()) && (
@@ -194,7 +234,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
                           </span>
                         )}
 
-                        {anime.subDubStatus
+                        {displayAnime.subDubStatus
                           .split(',')
                           .map(s => s.trim().toLowerCase())
                           .includes('hindi sub'.toLowerCase()) && (
@@ -207,24 +247,42 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
                   </div>
                 </div>
               </div>
-              {/* Genres - Below the card row */}
-              <div className="mb-3">
-                <div className="flex flex-wrap gap-1">
-                  {anime.genreList?.map((genre, index) => (
-                    <span
-                      key={index}
-                      className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-2 py-1 rounded text-xs font-medium transition-all duration-300 whitespace-nowrap"
-                    >
-                      {genre}
-                    </span>
-                  ))}
+              
+              {/* Anime Details Below the Card Row - Year, Status, Type, Genres */}
+              <div className="space-y-2 mt-2">
+                {/* Year, Status, Type in a row */}
+                <div className="flex flex-wrap gap-2">
+                  <div className="text-xs text-slate-300">
+                    <span className="font-semibold">Year:</span> {displayAnime?.releaseYear || 'N/A'}
+                  </div>
+                  <div className="text-xs text-slate-300">
+                    <span className="font-semibold">Status:</span> {displayAnime?.status || 'N/A'}
+                  </div>
+                  <div className="text-xs text-slate-300">
+                    <span className="font-semibold">Type:</span> {displayAnime?.contentType || 'N/A'}
+                  </div>
+                </div>
+                
+                {/* Genres */}
+                <div>
+                  <div className="flex flex-wrap gap-1">
+                    {displayAnime?.genreList?.map((genre, index) => (
+                      <span
+                        key={index}
+                        className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-2 py-1 rounded text-xs font-medium transition-all duration-300 whitespace-nowrap"
+                      >
+                        {genre}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
+
               {/* Description */}
-              <div className="mb-0">
+              <div className="mt-3">
                 <h3 className="text-sm font-semibold text-slate-300 mb-1">Description</h3>
                 <p className="text-slate-400 text-xs leading-relaxed">
-                  {anime.description || 'No description available for this content.'}
+                  {displayAnime?.description || 'No description available for this content.'}
                 </p>
               </div>
             </div>
@@ -232,7 +290,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
 
           {/* Mobile Session Selector - No top margin to remove gap */}
           {availableSessions.length > 1 && (
-            <div className="bg-slate-800/40 backdrop-blur-sm rounded-xl p-3 mt-3 border border-slate-700 shadow-xl">
+            <div className="bg-slate-800/40 backdrop-blur-sm rounded-xl p-3 mt-0 border border-slate-700 shadow-xl">
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {availableSessions.map(session => (
                   <button
@@ -252,7 +310,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
           )}
 
           {/* Mobile Episodes/Chapters Section - No top margin to remove gap */}
-          <div className="bg-slate-800/40 backdrop-blur-sm rounded-xl p-3 mt-3 border border-slate-700 shadow-xl">
+          <div className="bg-slate-800/40 backdrop-blur-sm rounded-xl p-3 mt-0 border border-slate-700 shadow-xl">
             <div className="flex justify-between items-center mb-3">
               <h2 className="text-base font-bold text-white">
                 {isManga ? 'Chapters' : 'Episodes'}{' '}
@@ -275,12 +333,10 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
             ) : currentSessionItems.length === 0 ? (
               <div className="text-center py-6">
                 <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
-                  <div className="text-3xl mb-2">{isManga ? '📚' : '📺'}</div>
                   <h3 className="text-sm font-semibold text-slate-300 mb-1">
                     No {isManga ? 'Chapters' : 'Episodes'} Available
                   </h3>
                   <p className="text-slate-400 text-xs">
-                    {' '}
                     {isManga ? 'Chapters' : 'Episodes'} will be added soon!
                   </p>
                 </div>
@@ -357,8 +413,8 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
               <div className="flex-shrink-0 mx-auto lg:mx-0">
                 <div className="relative group">
                   <img
-                    src={anime.thumbnail}
-                    alt={anime.title}
+                    src={displayAnime?.thumbnail}
+                    alt={displayAnime?.title}
                     className="w-full max-w-xs lg:w-80 h-auto lg:h-[28rem] object-cover rounded-xl shadow-2xl group-hover:scale-105 transition-transform duration-500"
                     onError={(e) => {
                       e.currentTarget.src = 'https://via.placeholder.com/300x400/1e293b/64748b?text=No+Image';
@@ -371,10 +427,10 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
               <div className="flex-1 space-y-6">
                 <div>
                   <h1 className="text-3xl lg:text-4xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mb-4">
-                    {anime.title}
+                    {displayAnime?.title}
                   </h1>
                   <p className="text-slate-300 leading-relaxed text-lg">
-                    {anime.description || 'No description available for this content.'}
+                    {displayAnime?.description || 'No description available for this content.'}
                   </p>
                 </div>
                 {/* Enhanced Info Section */}
@@ -383,26 +439,26 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
                   <div className="flex flex-wrap items-center gap-4">
                     {/* Year Badge - Same as genres */}
                     <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg font-bold">
-                      {anime.releaseYear}
+                      {displayAnime?.releaseYear}
                     </div>
                     {/* Status Badge - Special colors */}
                     <div
                       className={`px-4 py-2 rounded-lg font-bold ${
-                        anime.status === 'Ongoing'
+                        displayAnime?.status === 'Ongoing'
                           ? 'bg-gradient-to-r from-yellow-500 to-orange-600 text-white'
                           : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white'
                       }`}
                     >
-                      {anime.status}
+                      {displayAnime?.status}
                     </div>
                     {/* Type Badge - Same as genres */}
                     <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg font-bold">
-                      {anime.contentType}
+                      {displayAnime?.contentType}
                     </div>
                     {/* Hindi Sub / Dub Badges - SAFE & CLEAN CHECK */}
-                    {!isManga && anime.subDubStatus && (
+                    {!isManga && displayAnime?.subDubStatus && (
                       <div className="flex flex-wrap gap-2">
-                        {anime.subDubStatus
+                        {displayAnime.subDubStatus
                           .split(',')
                           .map(s => s.trim().toLowerCase())
                           .includes('hindi dub'.toLowerCase()) && (
@@ -411,7 +467,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
                           </span>
                         )}
 
-                        {anime.subDubStatus
+                        {displayAnime.subDubStatus
                           .split(',')
                           .map(s => s.trim().toLowerCase())
                           .includes('hindi sub'.toLowerCase()) && (
@@ -426,7 +482,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
                   <div>
                     <span className="text-slate-400 text-sm font-medium mr-3">Genres</span>
                     <div className="flex flex-wrap gap-2 mt-3">
-                      {anime.genreList?.map((genre, index) => (
+                      {displayAnime?.genreList?.map((genre, index) => (
                         <span
                           key={index}
                           className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 hover:scale-105 cursor-pointer"
@@ -483,12 +539,10 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
             ) : currentSessionItems.length === 0 ? (
               <div className="text-center py-16">
                 <div className="bg-slate-800/50 rounded-2xl p-12 max-w-md mx-auto border border-slate-700">
-                  <div className="text-6xl mb-6">{isManga ? '📚' : '📺'}</div>
                   <h3 className="text-xl font-semibold text-slate-300 mb-3">
                     No {isManga ? 'Chapters' : 'Episodes'} Available
                   </h3>
                   <p className="text-slate-400">
-                    {' '}
                     {isManga ? 'Chapters' : 'Episodes'} will be added soon!
                   </p>
                 </div>
