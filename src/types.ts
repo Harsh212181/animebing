@@ -27,21 +27,32 @@ export type ContentType = 'Anime' | 'Movie' | 'Manga';
 export type ContentTypeFilter = 'All' | ContentType;
 
 export interface Anime {
-  id: string;
-  _id?: string;
+  _id: string;
+  id?: string;
   title: string;
-  thumbnail: string;
-  releaseYear: number;
+  thumbnail?: string;
+  posterImage?: string;
+  coverImage?: string;
+  releaseYear?: number;
   subDubStatus: SubDubStatus; // ✅ NOW INCLUDES ENGLISH SUB
   contentType: ContentType;
-  genreList: string[];
-  description: string;
-  status: string;
-  episodes: Episode[];
+  genreList?: string[];
+  genres?: string[];
+  description?: string;
+  status?: string;
+  episodes?: Episode[];
   chapters?: Chapter[];
   reportCount?: number;
   lastReported?: string;
   totalSessions?: number;
+  isFeatured?: boolean;
+  featuredOrder?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface FeaturedAnime extends Anime {
+  featuredOrder: number;
 }
 
 export interface SocialMedia {
