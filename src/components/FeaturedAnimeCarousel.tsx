@@ -1,4 +1,4 @@
- // src/components/FeaturedAnimeCarousel.tsx - FIXED RED LINE ERROR
+  // src/components/FeaturedAnimeCarousel.tsx - FIXED RED LINE ERROR
 import React, { useRef } from 'react';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Autoplay, Pagination } from 'swiper/modules';
