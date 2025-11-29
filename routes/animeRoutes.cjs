@@ -1,4 +1,4 @@
- // routes/animeRoutes.cjs - OPTIMIZED VERSION
+  // routes/animeRoutes.cjs - OPTIMIZED VERSION
 const express = require('express');
 const router = express.Router();
 const Anime = require('../models/Anime.cjs');
