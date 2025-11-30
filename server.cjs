@@ -1,4 +1,4 @@
- // server.cjs - COMPLETE FIXED VERSION WITH WORKING TEST ROUTE
+ // server.cjs - FIXED VERSION WITH PATH-TO-REGEXP ERROR RESOLVED
 const express = require('express');
 const cors = require('cors');
 const connectDB = require('./db.cjs');
@@ -38,8 +38,8 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-// ✅ PRE-FLIGHT REQUESTS HANDLING
-app.options('*', cors(corsOptions));
+// ✅ FIXED: PRE-FLIGHT REQUESTS HANDLING - Use regex pattern instead of '*'
+app.options(/.*/, cors(corsOptions));
 
 app.use(express.json());
 app.use(express.static('public'));
