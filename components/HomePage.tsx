@@ -1,10 +1,10 @@
-   // components/HomePage.tsx - UPDATED WITH IMPROVED FEATURED ANIME API HANDLING
+ // components/HomePage.tsx - FIXED VERSION
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import type { Anime, FilterType, ContentTypeFilter } from '../src/types';
 import AnimeCard from './AnimeCard';
 import { SkeletonLoader } from './SkeletonLoader';
-import { getAnimePaginated, searchAnime } from '../services/animeService';
-import FeaturedAnimeCarousel from '../src/components/FeaturedAnimeCarousel';
+import { getAnimePaginated, searchAnime, getFeaturedAnime } from '../services/animeServices'; // ✅ FIXED: Import name and added getFeaturedAnime
+import FeaturedAnimeCarousel from './FeaturedAnimeCarousel'; // ✅ FIXED: Correct import path
 
 interface Props {
   onAnimeSelect: (anime: Anime) => void;
@@ -32,84 +32,32 @@ const HomePage: React.FC<Props> = ({
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
-  // ✅ IMPROVED: FETCH FEATURED ANIMES with better error handling and JSON validation
+  // ✅ FIXED: SIMPLIFIED FETCH FEATURED ANIMES using our service function
   const fetchFeaturedAnimes = useCallback(async () => {
     try {
       console.log('🔄 Fetching featured animes...');
-     
-      // Try multiple endpoints
-      const endpoints = [
-        '/api/anime/featured',
-        '/api/featured',
-        'https://animabing.onrender.com/api/anime/featured'
-      ];
+      const data = await getFeaturedAnime();
       
-      let apiData: Anime[] = [];
-      let apiSuccess = false;
-
-      for (const endpoint of endpoints) {
-        try {
-          console.log(`🔍 Trying featured endpoint: ${endpoint}`);
-          const response = await fetch(endpoint);
-          
-          if (!response.ok) {
-            console.log(`❌ Featured endpoint ${endpoint} returned status: ${response.status}`);
-            continue;
-          }
-          
-          // Check if response is JSON before parsing
-          const contentType = response.headers.get('content-type');
-          if (!contentType || !contentType.includes('application/json')) {
-            console.log(`⚠️ Featured endpoint ${endpoint} returned non-JSON response`);
-            continue;
-          }
-          
-          const data = await response.json();
-          console.log(`✅ Featured API success from: ${endpoint}`, data);
-           
-          // Handle different response structures
-          if (Array.isArray(data)) {
-            apiData = data;
-          } else if (data.data && Array.isArray(data.data)) {
-            apiData = data.data;
-          } else if (data.featured && Array.isArray(data.featured)) {
-            apiData = data.featured;
-          } else if (data.success && Array.isArray(data.data)) {
-            apiData = data.data;
-          }
-           
-          if (apiData.length > 0) {
-            apiSuccess = true;
-            console.log(`✅ Found ${apiData.length} featured animes from ${endpoint}`);
-            break;
-          }
-        } catch (error) {
-          console.log(`❌ Featured API failed for: ${endpoint}`, error);
-          continue;
-        }
-      }
-
-      if (apiSuccess && apiData.length > 0) {
-        // Limit to 24 animes for carousel
-        const limitedData = apiData.slice(0, 24);
+      if (data && data.length > 0) {
+        // Limit to 10 animes for carousel (better performance)
+        const limitedData = data.slice(0, 10);
         setFeaturedAnimes(limitedData);
         // Also update localStorage as backup
         localStorage.setItem('featuredAnimes', JSON.stringify(limitedData));
         console.log(`✅ Successfully loaded ${limitedData.length} featured animes`);
       } else {
         // Fallback to localStorage
-        throw new Error('All featured APIs failed or returned no data');
+        throw new Error('No featured anime data received');
       }
     } catch (error) {
-      console.log('⚠️ Using localStorage fallback for featured animes');
+      console.log('⚠️ Using localStorage fallback for featured animes:', error);
       // Fallback to localStorage
       try {
         const stored = localStorage.getItem('featuredAnimes');
         if (stored) {
           const parsed = JSON.parse(stored);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            // Limit to 24 from stored as well
-            const limitedData = parsed.slice(0, 24);
+            const limitedData = parsed.slice(0, 10);
             console.log('✅ Loaded featured animes from localStorage:', limitedData.length);
             setFeaturedAnimes(limitedData);
           } else {
@@ -146,7 +94,7 @@ const HomePage: React.FC<Props> = ({
   }, [filter, contentType]);
 
   // ✅ OPTIMIZED: Load initial data with pagination
-  const loadInitialAnime = async () => {
+  const loadInitialAnime = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
@@ -168,10 +116,10 @@ const HomePage: React.FC<Props> = ({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   // ✅ OPTIMIZED: Load more data
-  const loadMoreAnime = async () => {
+  const loadMoreAnime = useCallback(async () => {
     if (isLoadingMore || !hasMore) return;
  
     try {
@@ -191,9 +139,9 @@ const HomePage: React.FC<Props> = ({
     } finally {
       setIsLoadingMore(false);
     }
-  };
+  }, [currentPage, hasMore, isLoadingMore]);
 
-  // ✅ IMPROVED INITIAL LOAD - Better error handling
+  // ✅ FIXED: INITIAL LOAD with proper dependency array
   useEffect(() => {
     const initializeData = async () => {
       await loadInitialAnime();
@@ -201,14 +149,12 @@ const HomePage: React.FC<Props> = ({
     };
    
     initializeData();
-  }, [fetchFeaturedAnimes]);
+  }, [loadInitialAnime, fetchFeaturedAnimes]);
 
-  // ✅ REMOVED AUTO-REFRESH since APIs are failing frequently
-  // This reduces unnecessary network requests and console errors
-
-  // ✅ OPTIMIZED SEARCH
+  // ✅ FIXED: SEARCH with proper dependencies
   useEffect(() => {
     let isMounted = true;
+    
     const performSearch = async () => {
       if (searchQuery.trim() === '') {
         if (isMounted) {
@@ -217,6 +163,7 @@ const HomePage: React.FC<Props> = ({
         }
         return;
       }
+      
       try {
         setIsLoading(true);
         const data = await searchAnime(searchQuery, ANIME_FIELDS);
@@ -236,13 +183,14 @@ const HomePage: React.FC<Props> = ({
         }
       }
     };
+    
     const timeoutId = setTimeout(performSearch, 300);
  
     return () => {
       isMounted = false;
       clearTimeout(timeoutId);
     };
-  }, [searchQuery, fetchFeaturedAnimes]);
+  }, [searchQuery, loadInitialAnime, fetchFeaturedAnimes]);
 
   // ✅ FILTER LOGIC
   const filteredAnime = useMemo(() => {
@@ -279,7 +227,7 @@ const HomePage: React.FC<Props> = ({
     window.location.href = url.toString();
   };
 
-  // ✅ INFINITE SCROLL
+  // ✅ FIXED: INFINITE SCROLL with stable dependencies
   useEffect(() => {
     const handleScroll = () => {
       if (window.innerHeight + document.documentElement.scrollTop
@@ -289,11 +237,12 @@ const HomePage: React.FC<Props> = ({
         loadMoreAnime();
       }
     };
+    
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, [isLoadingMore, hasMore, searchQuery, loadMoreAnime]);
 
-  // ✅ LOADING STATE - Simplified without section heading
+  // ✅ LOADING STATE
   if (isLoading && animeList.length === 0) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
@@ -303,7 +252,7 @@ const HomePage: React.FC<Props> = ({
           </h1>
           <div className="space-y-8">
             {/* Featured Carousel Skeleton */}
-            <div className="h-96 bg-gray-800 rounded-lg animate-pulse"></div>
+            <div className="h-64 bg-gray-800 rounded-lg animate-pulse"></div>
            
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 lg:gap-3">
               {Array.from({ length: 12 }).map((_, index) => (
@@ -339,15 +288,15 @@ const HomePage: React.FC<Props> = ({
     );
   }
 
-  // ✅ MAIN RENDER - Simplified carousel with only heading, cards, and names (no extra texts)
+  // ✅ MAIN RENDER
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       <div className="container mx-auto px-4 py-4 lg:py-8">
      
-        {/* SIMPLIFIED LATEST CONTENT CAROUSEL - Only show when not searching; PC: 4 cards/slide, Mobile: 1 card/slide; Name at bottom */}
+        {/* FEATURED ANIME CAROUSEL */}
         {!searchQuery && featuredAnimes.length > 0 && (
-          <div className="mb-6">
-            <h2 className="text-xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mb-4">
+          <div className="mb-6 lg:mb-8">
+            <h2 className="text-xl lg:text-2xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mb-4">
               Latest Content
             </h2>
             <FeaturedAnimeCarousel
@@ -365,9 +314,9 @@ const HomePage: React.FC<Props> = ({
                 key={filterBtn.key}
                 onClick={() => handleFilterChange(filterBtn.key)}
                 className={`
-                  px-2 py-1 rounded-md text-[10px] font-medium transition-all duration-200
+                  px-3 py-2 rounded-md text-xs font-medium transition-all duration-200
                   border shadow-sm hover:shadow whitespace-nowrap flex-shrink-0
-                  transform hover:scale-102 active:scale-98 min-w-[60px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-900
+                  transform hover:scale-105 active:scale-95 min-w-[70px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-900
                   ${filter === filterBtn.key
                     ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white border-transparent shadow-blue-500/20'
                     : 'bg-slate-800/80 text-slate-300 border-slate-600 hover:border-slate-500 hover:bg-slate-700/80'
@@ -380,7 +329,7 @@ const HomePage: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* ALL CONTENT SECTION - NOW WITH DYNAMIC HEADING */}
+        {/* ALL CONTENT SECTION */}
         {filteredAnime.length === 0 ? (
           <div className="text-center py-8 lg:py-16">
             <div className="bg-slate-800/50 rounded-xl p-6 lg:p-8 max-w-md mx-auto border border-slate-700">
@@ -416,13 +365,14 @@ const HomePage: React.FC<Props> = ({
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 lg:gap-3">
                 {filteredAnime.map((anime, index) => (
                   <AnimeCard
-                    key={anime.id}
+                    key={anime.id || anime._id} // ✅ FIXED: Handle both id and _id
                     anime={anime}
                     onClick={onAnimeSelect}
                     index={index}
                   />
                 ))}
               </div>
+              
               {/* LOAD MORE SECTION */}
               {hasMore && !searchQuery && (
                 <div className="flex justify-center mt-8">
@@ -435,6 +385,7 @@ const HomePage: React.FC<Props> = ({
                   </button>
                 </div>
               )}
+              
               {isLoadingMore && (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 lg:gap-3 mt-4">
                   {Array.from({ length: 6 }).map((_, index) => (
