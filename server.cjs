@@ -1,4 +1,4 @@
- // server.cjs - FIXED VERSION WITH PATH-TO-REGEXP ERROR RESOLVED
+   // server.cjs - COMPLETE FIXED VERSION
 const express = require('express');
 const cors = require('cors');
 const connectDB = require('./db.cjs');
@@ -17,30 +17,11 @@ const socialRoutes = require('./routes/socialRoutes.cjs');
 const appDownloadRoutes = require('./routes/appDownloadRoutes.cjs');
 const adRoutes = require('./routes/adRoutes.cjs');
 const adminRoutes = require('./routes/adminRoutes.cjs');
-const contactRoutes = require('./routes/contactRoutes.cjs');
+const contactRoutes = require('./routes/contactRoutes.cjs'); // ✅ ADDED
 
 const app = express();
 
-// ✅ FIXED CORS CONFIGURATION - YAHI MAIN PROBLEM THI
-const corsOptions = {
-  origin: [
-    'http://localhost:5173',
-    'http://localhost:3000', 
-    'https://rainbow-sfogliatella-b724c0.netlify.app',
-    'https://animabing.onrender.com',
-    'https://*.netlify.app',
-    'https://*.render.com'
-  ],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
-};
-
-app.use(cors(corsOptions));
-
-// ✅ FIXED: PRE-FLIGHT REQUESTS HANDLING - Use regex pattern instead of '*'
-app.options(/.*/, cors(corsOptions));
-
+app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
@@ -415,7 +396,7 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/social', socialRoutes);
 app.use('/api/app-downloads', appDownloadRoutes);
 app.use('/api/ads', adRoutes);
-app.use('/api', contactRoutes);
+app.use('/api', contactRoutes); // ✅ CONTACT ROUTES ADDED
 
 // ✅ DEBUG ROUTES (KEEP FOR TROUBLESHOOTING)
 app.get('/api/debug/episodes', async (req, res) => {
@@ -496,60 +477,6 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// ✅ FEATURED ANIME TEST ROUTE - PROPERLY DEFINED
-app.get('/api/test/featured', async (req, res) => {
-  try {
-    console.log('🎯 Test featured route hit');
-    const Anime = require('./models/Anime.cjs');
-    
-    // Get some featured anime for testing
-    const featured = await Anime.find({ featured: true })
-      .select('title thumbnail releaseYear subDubStatus')
-      .limit(6)
-      .lean();
-    
-    console.log(`✅ Found ${featured.length} featured anime for testing`);
-    
-    res.json({
-      success: true,
-      data: featured,
-      message: `Found ${featured.length} featured anime for testing`,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('❌ Test featured error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message,
-      stack: error.stack 
-    });
-  }
-});
-
-// ✅ SIMPLE FEATURED TEST ROUTE (BACKUP)
-app.get('/api/featured-test', (req, res) => {
-  res.json({
-    success: true,
-    message: 'Featured test route is working!',
-    data: [
-      {
-        id: 'test-1',
-        title: 'Test Anime 1',
-        thumbnail: 'https://via.placeholder.com/300x400/374151/FFFFFF?text=Test+1',
-        releaseYear: 2023,
-        subDubStatus: 'Hindi Dub'
-      },
-      {
-        id: 'test-2', 
-        title: 'Test Anime 2',
-        thumbnail: 'https://via.placeholder.com/300x400/374151/FFFFFF?text=Test+2',
-        releaseYear: 2023,
-        subDubStatus: 'Hindi Sub'
-      }
-    ]
-  });
-});
-
 // ✅ ROOT
 app.get('/', (req, res) => {
   res.send(`
@@ -582,20 +509,9 @@ app.get('/', (req, res) => {
           color: #8B5CF6;
           text-decoration: none;
           font-weight: bold;
-          margin: 0 10px;
         }
         a:hover {
           text-decoration: underline;
-        }
-        .cors-info {
-          background: #1a1c2c;
-          padding: 1rem;
-          border-radius: 8px;
-          margin: 1rem 0;
-          text-align: left;
-        }
-        .test-links {
-          margin: 1rem 0;
         }
       </style>
     </head>
@@ -603,27 +519,9 @@ app.get('/', (req, res) => {
       <div class="container">
         <h1>Animabing Server</h1>
         <p>✅ Backend API is running correctly</p>
-        <p>📺 Frontend: <a href="https://rainbow-sfogliatella-b724c0.netlify.app" target="_blank">Netlify</a></p>
+        <p>📺 Frontend is available at: <a href="https://rainbow-sfogliatella-b724c0.netlify.app" target="_blank">https://rainbow-sfogliatella-b724c0.netlify.app</a></p>
         <p>⚙️ Admin Access: Press Ctrl+Shift+Alt on the frontend</p>
-        
-        <div class="test-links">
-          <h3>🔧 Test Routes:</h3>
-          <p>
-            <a href="/api/health">Health Check</a> | 
-            <a href="/api/test/featured">Test Featured</a> | 
-            <a href="/api/featured-test">Simple Test</a>
-          </p>
-        </div>
-        
-        <div class="cors-info">
-          <h3>🔒 CORS Configuration:</h3>
-          <ul>
-            <li>✅ Localhost:5173 - Allowed</li>
-            <li>✅ Localhost:3000 - Allowed</li>
-            <li>✅ Netlify Frontend - Allowed</li>
-            <li>✅ Render Backend - Allowed</li>
-          </ul>
-        </div>
+        <p>🔧 API Base: https://animabing.onrender.com/api</p>
       </div>
     </body>
     </html>
@@ -637,9 +535,4 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🔧 Admin: ${process.env.ADMIN_USER} / ${process.env.ADMIN_PASS}`);
   console.log(`🌐 Frontend: https://rainbow-sfogliatella-b724c0.netlify.app`);
   console.log(`🔗 API: https://animabing.onrender.com/api`);
-  console.log(`🔒 CORS: Enabled for all required domains`);
-  console.log(`🧪 Test Routes:`);
-  console.log(`   - https://animabing.onrender.com/api/health`);
-  console.log(`   - https://animabing.onrender.com/api/test/featured`);
-  console.log(`   - https://animabing.onrender.com/api/featured-test`);
 });
