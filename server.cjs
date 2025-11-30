@@ -1,4 +1,4 @@
-   // server.cjs - COMPLETE FIXED VERSION
+ // server.cjs - COMPLETE FIXED VERSION WITH FEATURED ANIME EMERGENCY ROUTE
 const express = require('express');
 const cors = require('cors');
 const connectDB = require('./db.cjs');
@@ -477,6 +477,45 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// ✅ EMERGENCY: SET ALL ANIME AS FEATURED ROUTE (ADDED)
+app.get('/api/emergency/set-all-featured', async (req, res) => {
+  try {
+    const Anime = require('./models/Anime.cjs');
+    
+    console.log('🆕 EMERGENCY: Setting ALL anime as featured...');
+    
+    // Saare anime ko featured banado
+    const result = await Anime.updateMany(
+      {}, 
+      { 
+        $set: { 
+          featured: true,
+          featuredOrder: 1 
+        } 
+      }
+    );
+    
+    console.log(`✅ Set ${result.modifiedCount} anime as featured`);
+    
+    // Featured anime get karo confirm karne ke liye
+    const featuredAnime = await Anime.find({ featured: true })
+      .select('title featured featuredOrder')
+      .limit(10)
+      .lean();
+    
+    res.json({ 
+      success: true, 
+      message: `Set ${result.modifiedCount} anime as featured`,
+      modifiedCount: result.modifiedCount,
+      sampleFeatured: featuredAnime
+    });
+    
+  } catch (error) {
+    console.error('❌ Emergency featured error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ✅ ROOT
 app.get('/', (req, res) => {
   res.send(`
@@ -509,9 +548,17 @@ app.get('/', (req, res) => {
           color: #8B5CF6;
           text-decoration: none;
           font-weight: bold;
+          margin: 0 10px;
         }
         a:hover {
           text-decoration: underline;
+        }
+        .emergency-info {
+          background: #1a1c2c;
+          padding: 1rem;
+          border-radius: 8px;
+          margin: 1rem 0;
+          text-align: left;
         }
       </style>
     </head>
@@ -519,9 +566,16 @@ app.get('/', (req, res) => {
       <div class="container">
         <h1>Animabing Server</h1>
         <p>✅ Backend API is running correctly</p>
-        <p>📺 Frontend is available at: <a href="https://rainbow-sfogliatella-b724c0.netlify.app" target="_blank">https://rainbow-sfogliatella-b724c0.netlify.app</a></p>
+        <p>📺 Frontend: <a href="https://rainbow-sfogliatella-b724c0.netlify.app" target="_blank">Netlify</a></p>
         <p>⚙️ Admin Access: Press Ctrl+Shift+Alt on the frontend</p>
-        <p>🔧 API Base: https://animabing.onrender.com/api</p>
+        
+        <div class="emergency-info">
+          <h3>🔧 Emergency Featured Fix:</h3>
+          <p>Click below to set all anime as featured:</p>
+          <p><a href="/api/emergency/set-all-featured" target="_blank">Set All Anime as Featured</a></p>
+        </div>
+        
+        <p><a href="/api/health">Health Check</a> | <a href="/api/anime/featured">Check Featured</a></p>
       </div>
     </body>
     </html>
@@ -535,4 +589,5 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🔧 Admin: ${process.env.ADMIN_USER} / ${process.env.ADMIN_PASS}`);
   console.log(`🌐 Frontend: https://rainbow-sfogliatella-b724c0.netlify.app`);
   console.log(`🔗 API: https://animabing.onrender.com/api`);
+  console.log(`🆕 Emergency Route: https://animabing.onrender.com/api/emergency/set-all-featured`);
 });
