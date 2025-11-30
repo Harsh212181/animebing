@@ -1,4 +1,4 @@
-  // routes/reportRoutes.cjs - UPDATED VERSION
+ // routes/reportRoutes.cjs - FINAL VERSION
 const express = require('express');
 const router = express.Router();
 const Report = require('../models/Report.cjs');
@@ -11,23 +11,45 @@ router.post('/', async (req, res) => {
     
     const { animeId, episodeId, episodeNumber, issueType, description, email, username } = req.body;
 
-    // Create new episode report
-    const newReport = new Report({
-      animeId,
-      episodeId,
-      episodeNumber,
+    // Validation
+    if (!issueType) {
+      return res.status(400).json({
+        success: false,
+        error: 'Issue type is required'
+      });
+    }
+
+    if (!description || description.trim().length < 10) {
+      return res.status(400).json({
+        success: false,
+        error: 'Description must be at least 10 characters'
+      });
+    }
+
+    // Create report data with BOTH fields for compatibility
+    const reportData = {
+      // Episode specific fields
+      animeId: animeId || null,
+      episodeId: episodeId || null, 
+      episodeNumber: episodeNumber || null,
       issueType,
-      description,
+      description: description.trim(),
+      message: description.trim(), // ✅ ADD THIS LINE - Same as description
+      
+      // Common fields
       email: email || 'Not provided',
       username: username || 'Anonymous',
+      type: 'episode',
       userIP: req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress,
-      userAgent: req.headers['user-agent'] || 'Unknown',
-      type: 'episode'
-    });
+      userAgent: req.headers['user-agent'] || 'Unknown'
+    };
 
+    console.log('📋 Final Report Data:', reportData);
+
+    const newReport = new Report(reportData);
     await newReport.save();
     
-    console.log('✅ Episode report saved with ID:', newReport._id);
+    console.log('✅ Episode report saved successfully! ID:', newReport._id);
 
     res.json({
       success: true,
@@ -37,6 +59,17 @@ router.post('/', async (req, res) => {
 
   } catch (error) {
     console.error('❌ EPISODE REPORT ERROR:', error);
+    console.error('📛 Error Name:', error.name);
+    console.error('📛 Error Message:', error.message);
+    
+    // Better error handling
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        error: 'Validation failed: ' + errors.join(', ')
+      });
+    }
     
     res.status(500).json({
       success: false,
