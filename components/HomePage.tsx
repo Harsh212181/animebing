@@ -1,12 +1,12 @@
- // components/HomePage.tsx - UPDATED VERSION WITH FIXED AD SIZES
+   // components/HomePage.tsx - COMPLETE VERSION WITH ADS
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import type { Anime, FilterType, ContentTypeFilter } from '../src/types';
 import AnimeCard from './AnimeCard';
 import { SkeletonLoader } from './SkeletonLoader';
 import { getAnimePaginated, searchAnime, getFeaturedAnime } from '../services/animeService';
 import FeaturedAnimeCarousel from '../src/components/FeaturedAnimeCarousel';
-import AdSlot from './AdSlot';
-import axios from 'axios';
+import AdSlot from './AdSlot'; // ✅ ADDED: Import AdSlot component
+import axios from 'axios'; // ✅ ADDED: For fetching ad slots
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000/api';
 
@@ -17,6 +17,7 @@ interface Props {
   contentType: ContentTypeFilter;
 }
 
+// Constant for fields to be requested
 const ANIME_FIELDS = 'title,thumbnail,releaseYear,status,contentType,subDubStatus,description,genreList';
 
 interface AdSlotData {
@@ -41,9 +42,11 @@ const HomePage: React.FC<Props> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
+  // ✅ AD SLOTS STATE
   const [adSlots, setAdSlots] = useState<AdSlotData[]>([]);
   const [adLoading, setAdLoading] = useState(true);
   
+  // ✅ PAGINATION STATES
   const [currentPage, setCurrentPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -65,6 +68,7 @@ const HomePage: React.FC<Props> = ({
       }
     } catch (err) {
       console.error('❌ Error fetching ad slots:', err);
+      // Don't break the page if ads fail
       setAdSlots([]);
     } finally {
       setAdLoading(false);
@@ -76,7 +80,7 @@ const HomePage: React.FC<Props> = ({
     return adSlots.find(slot => slot.position === position) || null;
   }, [adSlots]);
 
-  // ✅ FETCH FEATURED ANIMES
+  // ✅ FIXED: SIMPLIFIED FETCH FEATURED ANIMES
   const fetchFeaturedAnimes = useCallback(async () => {
     try {
       console.log('🔄 Fetching featured animes...');
@@ -133,7 +137,7 @@ const HomePage: React.FC<Props> = ({
     }
   }, [filter, contentType]);
 
-  // ✅ LOAD INITIAL DATA
+  // ✅ OPTIMIZED: Load initial data with pagination
   const loadInitialAnime = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -158,7 +162,7 @@ const HomePage: React.FC<Props> = ({
     }
   }, []);
 
-  // ✅ LOAD MORE DATA
+  // ✅ OPTIMIZED: Load more data
   const loadMoreAnime = useCallback(async () => {
     if (isLoadingMore || !hasMore) return;
  
@@ -181,18 +185,18 @@ const HomePage: React.FC<Props> = ({
     }
   }, [currentPage, hasMore, isLoadingMore]);
 
-  // ✅ INITIAL LOAD
+  // ✅ FIXED: INITIAL LOAD
   useEffect(() => {
     const initializeData = async () => {
       await loadInitialAnime();
       await fetchFeaturedAnimes();
-      await fetchAdSlots();
+      await fetchAdSlots(); // ✅ ADDED: Fetch ad slots
     };
    
     initializeData();
   }, [loadInitialAnime, fetchFeaturedAnimes, fetchAdSlots]);
 
-  // ✅ SEARCH
+  // ✅ FIXED: SEARCH
   useEffect(() => {
     let isMounted = true;
     
@@ -211,7 +215,7 @@ const HomePage: React.FC<Props> = ({
         const data = await searchAnime(searchQuery, ANIME_FIELDS);
         if (isMounted) {
           setAnimeList(data);
-          setFeaturedAnimes([]);
+          setFeaturedAnimes([]); // Clear featured during search
           setError(null);
           setHasMore(false);
         }
@@ -269,7 +273,7 @@ const HomePage: React.FC<Props> = ({
     window.location.href = url.toString();
   };
 
-  // ✅ INFINITE SCROLL
+  // ✅ FIXED: INFINITE SCROLL
   useEffect(() => {
     const handleScroll = () => {
       if (window.innerHeight + document.documentElement.scrollTop
@@ -293,6 +297,7 @@ const HomePage: React.FC<Props> = ({
             {searchQuery ? 'Searching...' : 'Loading...'}
           </h1>
           <div className="space-y-8">
+            {/* Featured Carousel Skeleton */}
             <div className="h-64 bg-gray-800 rounded-lg animate-pulse"></div>
            
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 lg:gap-3">
@@ -340,20 +345,17 @@ const HomePage: React.FC<Props> = ({
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       <div className="container mx-auto px-4 py-4 lg:py-8">
      
-        {/* ✅ FIXED: TOP HEADER AD - With proper sizing */}
+        {/* TOP HEADER AD - Only show when not searching */}
         {!searchQuery && headerAd && (
-          <div className="mb-6 flex justify-center">
-            <div className="w-full max-w-[728px] mx-auto">
-              <div className="text-center text-xs text-slate-400 mb-1">Advertisement</div>
-              <AdSlot
-                position="header"
-                className="w-full min-h-[90px] flex items-center justify-center bg-transparent rounded-lg overflow-hidden border border-slate-700/50"
-                adCode={headerAd.adCode}
-                isActive={headerAd.isActive}
-                onAdLoaded={() => console.log('✅ Header ad loaded')}
-                onAdError={(err) => console.error('❌ Header ad error:', err)}
-              />
-            </div>
+          <div className="mb-6">
+            <AdSlot
+              position="header"
+              className="w-full"
+              adCode={headerAd.adCode}
+              isActive={headerAd.isActive}
+              onAdLoaded={() => console.log('✅ Header ad loaded')}
+              onAdError={(err) => console.error('❌ Header ad error:', err)}
+            />
           </div>
         )}
      
@@ -442,20 +444,17 @@ const HomePage: React.FC<Props> = ({
                     ))}
                   </div>
                   
-                  {/* ✅ FIXED: IN-CONTENT AD - With proper sizing */}
+                  {/* IN-CONTENT AD - After first 6 cards */}
                   {!searchQuery && inContentAd && (
-                    <div className="my-6 flex justify-center">
-                      <div className="w-full max-w-[728px] mx-auto">
-                        <div className="text-center text-xs text-slate-400 mb-1">Advertisement</div>
-                        <AdSlot
-                          position="in_content"
-                          className="w-full min-h-[90px] flex items-center justify-center bg-transparent rounded-lg overflow-hidden border border-slate-700/50"
-                          adCode={inContentAd.adCode}
-                          isActive={inContentAd.isActive}
-                          onAdLoaded={() => console.log('✅ In-content ad loaded')}
-                          onAdError={(err) => console.error('❌ In-content ad error:', err)}
-                        />
-                      </div>
+                    <div className="my-6">
+                      <AdSlot
+                        position="in_content"
+                        className="w-full"
+                        adCode={inContentAd.adCode}
+                        isActive={inContentAd.isActive}
+                        onAdLoaded={() => console.log('✅ In-content ad loaded')}
+                        onAdError={(err) => console.error('❌ In-content ad error:', err)}
+                      />
                     </div>
                   )}
                   
@@ -484,20 +483,17 @@ const HomePage: React.FC<Props> = ({
                     </div>
                   )}
                   
-                  {/* ✅ FIXED: STICKY FOOTER AD - With proper sizing */}
+                  {/* STICKY FOOTER AD - Before load more */}
                   {!searchQuery && stickyFooterAd && (
-                    <div className="my-8 flex justify-center">
-                      <div className="w-full max-w-[728px] mx-auto">
-                        <div className="text-center text-xs text-slate-400 mb-1">Advertisement</div>
-                        <AdSlot
-                          position="sticky_footer"
-                          className="w-full min-h-[90px] flex items-center justify-center bg-transparent rounded-lg overflow-hidden border border-slate-700/50"
-                          adCode={stickyFooterAd.adCode}
-                          isActive={stickyFooterAd.isActive}
-                          onAdLoaded={() => console.log('✅ Footer ad loaded')}
-                          onAdError={(err) => console.error('❌ Footer ad error:', err)}
-                        />
-                      </div>
+                    <div className="my-8">
+                      <AdSlot
+                        position="sticky_footer"
+                        className="w-full"
+                        adCode={stickyFooterAd.adCode}
+                        isActive={stickyFooterAd.isActive}
+                        onAdLoaded={() => console.log('✅ Footer ad loaded')}
+                        onAdError={(err) => console.error('❌ Footer ad error:', err)}
+                      />
                     </div>
                   )}
                   
@@ -513,31 +509,29 @@ const HomePage: React.FC<Props> = ({
                 {/* SIDEBAR - 3 columns on large screens */}
                 <div className="hidden lg:block lg:col-span-3">
                   <div className="sticky top-6 space-y-6">
-                    {/* ✅ FIXED: SIDEBAR AD - With proper sizing for sidebar */}
+                    {/* SIDEBAR AD */}
                     {!searchQuery && sidebarAd && (
                       <div>
-                        <div className="text-sm text-slate-400 mb-2 text-center">Advertisement</div>
-                        <div className="bg-slate-800/30 p-2 rounded-lg border border-slate-700/50">
-                          <AdSlot
-                            position="sidebar"
-                            className="w-full min-h-[250px] flex items-center justify-center bg-transparent rounded overflow-hidden"
-                            adCode={sidebarAd.adCode}
-                            isActive={sidebarAd.isActive}
-                            onAdLoaded={() => console.log('✅ Sidebar ad loaded')}
-                            onAdError={(err) => console.error('❌ Sidebar ad error:', err)}
-                          />
-                        </div>
+                        <div className="text-sm text-slate-400 mb-2">Advertisement</div>
+                        <AdSlot
+                          position="sidebar"
+                          className="w-full"
+                          adCode={sidebarAd.adCode}
+                          isActive={sidebarAd.isActive}
+                          onAdLoaded={() => console.log('✅ Sidebar ad loaded')}
+                          onAdError={(err) => console.error('❌ Sidebar ad error:', err)}
+                        />
                       </div>
                     )}
                     
-                    {/* POPULAR/SIDEBAR CONTENT */}
+                    {/* POPULAR/SIDEBAR CONTENT (Optional) */}
                     <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
                       <h3 className="text-lg font-semibold text-white mb-3">🔥 Trending Now</h3>
                       <div className="space-y-3">
                         {filteredAnime.slice(0, 5).map((anime, index) => (
                           <div 
                             key={`trending-${anime.id}`}
-                            className="flex items-center space-x-3 p-2 hover:bg-slate-700/50 rounded cursor-pointer transition-colors"
+                            className="flex items-center space-x-3 p-2 hover:bg-slate-700/50 rounded cursor-pointer"
                             onClick={() => onAnimeSelect(anime)}
                           >
                             <span className="text-xs text-slate-400 w-5">#{index + 1}</span>
@@ -566,20 +560,18 @@ const HomePage: React.FC<Props> = ({
         )}
       </div>
       
-      {/* ✅ FIXED: MOBILE SIDEBAR ADS - With proper sizing */}
+      {/* MOBILE SIDEBAR ADS - Show at bottom on mobile */}
       {!searchQuery && sidebarAd && (
         <div className="lg:hidden mt-8 px-4">
-          <div className="text-center text-xs text-slate-400 mb-1">Advertisement</div>
-          <div className="bg-slate-800/30 p-3 rounded-lg border border-slate-700/50">
-            <AdSlot
-              position="sidebar_mobile"
-              className="w-full min-h-[250px] flex items-center justify-center bg-transparent rounded overflow-hidden"
-              adCode={sidebarAd.adCode}
-              isActive={sidebarAd.isActive}
-              onAdLoaded={() => console.log('✅ Mobile sidebar ad loaded')}
-              onAdError={(err) => console.error('❌ Mobile sidebar ad error:', err)}
-            />
-          </div>
+          <div className="text-sm text-slate-400 mb-2 text-center">Advertisement</div>
+          <AdSlot
+            position="sidebar_mobile"
+            className="w-full"
+            adCode={sidebarAd.adCode}
+            isActive={sidebarAd.isActive}
+            onAdLoaded={() => console.log('✅ Mobile sidebar ad loaded')}
+            onAdError={(err) => console.error('❌ Mobile sidebar ad error:', err)}
+          />
         </div>
       )}
     </div>
