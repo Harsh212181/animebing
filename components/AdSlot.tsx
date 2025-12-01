@@ -1,4 +1,4 @@
- // components/AdSlot.tsx - UNIVERSAL VERSION FOR ALL AD NETWORKS
+ // components/AdSlot.tsx - FIXED VERSION FOR ADSTERRA
 import React, { useEffect, useRef, useState } from 'react';
 
 interface AdSlotProps {
@@ -19,66 +19,133 @@ const AdSlot: React.FC<AdSlotProps> = ({
   onAdError
 }) => {
   const adRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [adId] = useState(`ad-${position}-${Math.random().toString(36).substr(2, 9)}`);
 
   useEffect(() => {
-    let isMounted = true;
-    const scriptElements: HTMLScriptElement[] = [];
+    if (!adRef.current) return;
 
-    const loadAd = () => {
-      if (!isMounted || !adRef.current) return;
+    // Clear previous content
+    adRef.current.innerHTML = '';
+    setError(null);
 
-      // Clear previous content
-      adRef.current.innerHTML = '';
-      setError(null);
-      
-      // Clear previously loaded scripts
-      scriptElements.forEach(script => {
-        if (script && script.parentNode) {
-          script.parentNode.removeChild(script);
-        }
-      });
-      scriptElements.length = 0;
-
-      // If no ad code or inactive, show placeholder
-      if (!adCode || !isActive) {
-        adRef.current.innerHTML = `
-          <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 text-center">
-            <div class="text-slate-400 text-sm mb-1">📢 Advertisement</div>
-            <div class="text-slate-500 text-xs">
-              ${position} Slot - ${!adCode ? 'No Ad Configured' : 'Inactive'}
-            </div>
+    // If no ad code or inactive
+    if (!adCode || !isActive) {
+      adRef.current.innerHTML = `
+        <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 text-center">
+          <div class="text-slate-400 text-sm mb-1">📢 Advertisement</div>
+          <div class="text-slate-500 text-xs">
+            ${position} Slot - ${!adCode ? 'No Ad Configured' : 'Inactive'}
           </div>
-        `;
-        setLoading(false);
-        if (onAdLoaded) onAdLoaded();
-        return;
-      }
+        </div>
+      `;
+      setLoading(false);
+      if (onAdLoaded) onAdLoaded();
+      return;
+    }
 
-      setLoading(true);
-
+    setLoading(true);
+    
+    // Check if it's Adsterra code
+    const isAdsterra = adCode.includes('highperformanceformat.com');
+    
+    if (isAdsterra) {
+      // Special handling for Adsterra ads
+      handleAdsterraAd();
+    } else {
+      // Handle other ads normally
+      handleRegularAd();
+    }
+    
+    function handleAdsterraAd() {
       try {
-        // Create a unique container for this ad
-        const container = document.createElement('div');
-        container.id = adId;
-        container.className = 'ad-container';
+        console.log(`🎯 Loading Adsterra ad for ${position}`);
         
-        // Insert the raw ad code
+        // Extract the script src
+        const srcMatch = adCode.match(/src="([^"]+)"/);
+        const src = srcMatch ? srcMatch[1] : null;
+        
+        if (!src) {
+          throw new Error('Could not extract Adsterra script source');
+        }
+        
+        // Create iframe for Adsterra ads (to avoid document.write issues)
+        const iframe = document.createElement('iframe');
+        iframe.style.width = '728px';
+        iframe.style.height = '90px';
+        iframe.style.border = 'none';
+        iframe.style.overflow = 'hidden';
+        iframe.sandbox = 'allow-scripts allow-same-origin allow-popups allow-forms';
+        
+        // Generate unique ID for the ad
+        const adId = `adsterra-${position}-${Date.now()}`;
+        iframe.name = adId;
+        iframe.title = `Advertisement - ${position}`;
+        
+        // Create iframe content with the ad code
+        const iframeDoc = iframe.contentWindow?.document;
+        if (iframeDoc) {
+          iframeDoc.open();
+          iframeDoc.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <base target="_top">
+              <style>
+                body { margin: 0; padding: 0; }
+                .adsterra-container { 
+                  display: flex; 
+                  justify-content: center; 
+                  align-items: center;
+                  width: 100%;
+                  height: 100%;
+                }
+              </style>
+            </head>
+            <body>
+              <div class="adsterra-container" id="${adId}">
+                <!-- Ad will be loaded here -->
+              </div>
+              ${adCode}
+            </body>
+            </html>
+          `);
+          iframeDoc.close();
+        }
+        
+        adRef.current.appendChild(iframe);
+        
+        // Set timeout to check if ad loaded
+        setTimeout(() => {
+          setLoading(false);
+          if (onAdLoaded) onAdLoaded();
+          console.log(`✅ Adsterra iframe loaded for ${position}`);
+        }, 2000);
+        
+      } catch (err: any) {
+        console.error(`❌ Adsterra ad error for ${position}:`, err);
+        setError(err.message || 'Failed to load Adsterra ad');
+        setLoading(false);
+        if (onAdError) onAdError(err.message || 'Failed to load Adsterra ad');
+        showFallbackAd();
+      }
+    }
+    
+    function handleRegularAd() {
+      try {
+        console.log(`📢 Loading regular ad for ${position}`);
+        
+        // Create container for ad
+        const container = document.createElement('div');
+        container.id = `ad-container-${position}`;
         container.innerHTML = adCode;
         
-        // Append container to our ref element
         adRef.current.appendChild(container);
         
-        // Extract and execute all script tags
+        // Execute scripts
         const scripts = container.getElementsByTagName('script');
-        const scriptArray = Array.from(scripts);
-        
-        // Store original script positions
-        const scriptPromises: Promise<void>[] = [];
-        
-        scriptArray.forEach((oldScript, index) => {
+        Array.from(scripts).forEach(oldScript => {
           const newScript = document.createElement('script');
           
           // Copy all attributes
@@ -88,146 +155,73 @@ const AdSlot: React.FC<AdSlotProps> = ({
             });
           }
           
-          // Handle different script types
+          // Copy content
           if (oldScript.src) {
-            // External script with src
             newScript.src = oldScript.src;
             newScript.async = true;
-            newScript.defer = true;
-            
-            // Create a promise for this script
-            const promise = new Promise<void>((resolve, reject) => {
-              newScript.onload = () => {
-                console.log(`✅ Script loaded: ${oldScript.src.substring(0, 50)}...`);
-                resolve();
-              };
-              newScript.onerror = () => {
-                console.warn(`⚠️ Failed to load script: ${oldScript.src}`);
-                resolve(); // Don't reject, just resolve
-              };
-            });
-            scriptPromises.push(promise);
-            
           } else if (oldScript.textContent) {
-            // Inline script
-            try {
-              // Create a new script with the same content
-              const inlineScript = document.createElement('script');
-              if (oldScript.type) inlineScript.type = oldScript.type;
-              inlineScript.textContent = oldScript.textContent;
-              
-              // Execute inline script
-              document.head.appendChild(inlineScript);
-              scriptElements.push(inlineScript);
-              
-              // Remove the original script element from container
-              oldScript.parentNode?.removeChild(oldScript);
-              
-              console.log(`✅ Inline script executed for ${position}`);
-            } catch (err) {
-              console.warn(`⚠️ Error executing inline script:`, err);
-            }
+            newScript.textContent = oldScript.textContent;
           }
           
-          // Store reference for cleanup
-          if (newScript.src) {
-            document.head.appendChild(newScript);
-            scriptElements.push(newScript);
-          }
+          document.head.appendChild(newScript);
         });
         
-        // Wait for all external scripts to load (or timeout)
-        const timeoutPromise = new Promise<void>((resolve) => {
-          setTimeout(resolve, 5000); // 5 second timeout
-        });
-        
-        Promise.race([
-          Promise.allSettled(scriptPromises),
-          timeoutPromise
-        ]).then(() => {
-          if (isMounted) {
-            console.log(`✅ Ad fully processed for ${position}`);
-            setLoading(false);
-            if (onAdLoaded) onAdLoaded();
-          }
-        }).catch((err) => {
-          if (isMounted) {
-            console.warn(`⚠️ Ad processing warning for ${position}:`, err);
-            setLoading(false);
-            if (onAdLoaded) onAdLoaded();
-          }
-        });
+        console.log(`✅ Regular ad loaded for ${position}`);
+        setLoading(false);
+        if (onAdLoaded) onAdLoaded();
         
       } catch (err: any) {
-        if (isMounted) {
-          console.error(`❌ Error loading ad for ${position}:`, err);
-          const errorMsg = err.message || 'Failed to load ad';
-          setError(errorMsg);
-          setLoading(false);
-          
-          if (onAdError) onAdError(errorMsg);
-          
-          // Show fallback placeholder
-          if (adRef.current) {
-            adRef.current.innerHTML = `
-              <div class="bg-slate-800 border border-slate-700 rounded-lg p-6 text-center">
-                <div class="text-slate-400 text-sm mb-2">📢 Advertisement Failed</div>
-                <div class="text-slate-500 text-xs mb-3">${position} Slot</div>
-                <div class="text-red-400 text-xs">Error: ${errorMsg}</div>
-              </div>
-            `;
-          }
-        }
+        console.error(`❌ Regular ad error for ${position}:`, err);
+        setError(err.message || 'Failed to load ad');
+        setLoading(false);
+        if (onAdError) onAdError(err.message || 'Failed to load ad');
+        showFallbackAd();
       }
-    };
-
-    // Use Intersection Observer to load ad only when visible
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          loadAd();
-          observer.disconnect();
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    if (adRef.current) {
-      observer.observe(adRef.current);
     }
-
-    // Fallback: Load after 1 second if still not visible
-    const timeoutId = setTimeout(() => {
-      if (isMounted && loading) {
-        loadAd();
-      }
-    }, 1000);
-
-    // Cleanup function
-    return () => {
-      isMounted = false;
-      observer.disconnect();
-      clearTimeout(timeoutId);
-      
-      // Remove script elements we added
-      scriptElements.forEach(script => {
-        if (script && script.parentNode) {
-          script.parentNode.removeChild(script);
-        }
-      });
-      
-      // Clear container
+    
+    function showFallbackAd() {
       if (adRef.current) {
-        adRef.current.innerHTML = '';
+        adRef.current.innerHTML = `
+          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                      color: white; 
+                      padding: 20px; 
+                      text-align: center; 
+                      border-radius: 10px;
+                      max-width: 728px;
+                      margin: 0 auto;
+                      min-height: 90px;
+                      display: flex;
+                      flex-direction: column;
+                      justify-content: center;
+                      align-items: center;">
+            <h3 style="margin: 0 0 10px 0; font-size: 18px;">🎬 AnimeBing Advertisement</h3>
+            <p style="margin: 0 0 15px 0; font-size: 14px;">728x90 Test Banner (${position})</p>
+            <button onclick="alert('Test ad clicked!')" 
+                    style="background: white; 
+                           color: #667eea; 
+                           border: none; 
+                           padding: 8px 20px; 
+                           border-radius: 5px; 
+                           cursor: pointer; 
+                           font-weight: bold;
+                           font-size: 14px;">
+              Click Here (Test)
+            </button>
+            <div style="margin-top: 10px; font-size: 12px; color: rgba(255,255,255,0.7);">
+              Position: ${position} | Type: Banner | Status: Fallback
+            </div>
+          </div>
+        `;
       }
-    };
-  }, [adCode, isActive, position, adId, onAdLoaded, onAdError]);
+    }
+    
+  }, [adCode, isActive, position, onAdLoaded, onAdError]);
 
   // Loading state
   if (loading) {
     return (
       <div className={`ad-slot ${className}`}>
-        <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 text-center animate-pulse">
+        <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 text-center">
           <div className="flex flex-col items-center justify-center">
             <div className="text-slate-400 text-sm mb-1">📢 Loading Advertisement</div>
             <div className="text-slate-500 text-xs mb-2">{position} Slot</div>
@@ -245,24 +239,12 @@ const AdSlot: React.FC<AdSlotProps> = ({
         <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 text-center">
           <div className="text-slate-400 text-sm mb-1">⚠️ Ad Error</div>
           <div className="text-slate-500 text-xs mb-2">{position} Slot</div>
-          <div className="text-red-400 text-xs">{error}</div>
+          <div className="text-red-400 text-xs mb-3">{error}</div>
           <button 
             onClick={() => {
               setLoading(true);
               setError(null);
-              setTimeout(() => {
-                setLoading(false);
-                if (adRef.current) {
-                  adRef.current.innerHTML = `
-                    <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 text-center">
-                      <div class="text-slate-400 text-sm mb-1">📢 Advertisement</div>
-                      <div class="text-slate-500 text-xs">
-                        ${position} Slot - Failed to load
-                      </div>
-                    </div>
-                  `;
-                }
-              }, 100);
+              setTimeout(() => setLoading(false), 100);
             }}
             className="mt-2 px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white text-xs rounded"
           >
@@ -276,15 +258,15 @@ const AdSlot: React.FC<AdSlotProps> = ({
   return (
     <div 
       ref={adRef}
-      id={adId}
       className={`ad-slot ${className}`}
       data-position={position}
-      data-ad-loaded="true"
       style={{
         minHeight: '90px',
         display: 'flex',
         justifyContent: 'center',
-        alignItems: 'center'
+        alignItems: 'center',
+        width: '100%',
+        overflow: 'hidden'
       }}
     />
   );
