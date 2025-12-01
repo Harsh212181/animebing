@@ -1,4 +1,4 @@
- // components/AdSlot.tsx - UPDATED WORKING VERSION WITH ACTUAL AD CODE
+ // components/AdSlot.tsx - COMPLETE FIXED VERSION
 import React, { useEffect, useRef, useState } from 'react';
 
 interface AdSlotProps {
@@ -18,92 +18,91 @@ const AdSlot: React.FC<AdSlotProps> = ({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (adRef.current) {
+    const loadAd = async () => {
+      if (!adRef.current) return;
+
       // Clear previous content
       adRef.current.innerHTML = '';
-      
-      if (adCode && isActive) {
-        // Add loading indicator
-        const loader = document.createElement('div');
-        loader.innerHTML = `
+
+      // If no ad code or inactive, show placeholder
+      if (!adCode || !isActive) {
+        adRef.current.innerHTML = `
           <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 text-center">
-            <div class="text-slate-400 text-sm mb-1">📢 Loading Advertisement</div>
-            <div class="text-slate-500 text-xs">${position} Slot</div>
+            <div class="text-slate-400 text-sm mb-1">📢 Advertisement</div>
+            <div class="text-slate-500 text-xs">
+              ${position} Slot - ${!adCode ? 'No Ad Configured' : 'Inactive'}
+            </div>
           </div>
         `;
-        adRef.current.appendChild(loader);
+        setLoading(false);
+        return;
+      }
 
-        // Create a temporary div to parse the ad code
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = adCode;
+      setLoading(true);
 
-        // Extract and execute scripts
-        const scripts = tempDiv.getElementsByTagName('script');
+      try {
+        // Create container for ad
+        const container = document.createElement('div');
+        container.id = `ad-container-${position}`;
+        container.className = 'ad-container';
         
-        // Add all HTML content first
-        Array.from(tempDiv.children).forEach(child => {
-          if (child.tagName !== 'SCRIPT') {
-            adRef.current?.appendChild(child.cloneNode(true));
+        // Parse and execute ad code
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(adCode, 'text/html');
+        
+        // Append all elements except scripts
+        Array.from(doc.body.children).forEach(element => {
+          if (element.tagName !== 'SCRIPT') {
+            container.appendChild(element.cloneNode(true));
           }
         });
 
-        // Execute scripts sequentially
-        const executeScripts = async () => {
-          for (let i = 0; i < scripts.length; i++) {
-            const script = scripts[i];
-            const newScript = document.createElement('script');
-            
-            // Copy all attributes
-            Array.from(script.attributes).forEach(attr => {
-              newScript.setAttribute(attr.name, attr.value);
-            });
-            
-            // Copy inner content if exists
-            if (script.src) {
-              newScript.src = script.src;
-            } else {
-              newScript.textContent = script.textContent;
-            }
-            
-            // Append to document head to execute
-            document.head.appendChild(newScript);
+        adRef.current.appendChild(container);
+
+        // Execute scripts
+        const scripts = doc.getElementsByTagName('script');
+        Array.from(scripts).forEach(oldScript => {
+          const newScript = document.createElement('script');
+          
+          // Copy attributes
+          Array.from(oldScript.attributes).forEach(attr => {
+            newScript.setAttribute(attr.name, attr.value);
+          });
+          
+          // Copy content
+          if (oldScript.src) {
+            newScript.src = oldScript.src;
+            newScript.async = true;
+          } else {
+            newScript.textContent = oldScript.textContent;
           }
           
-          setLoading(false);
-          console.log(`✅ Ad loaded for position: ${position}`);
-        };
-
-        executeScripts().catch(err => {
-          console.error(`❌ Error loading ad for ${position}:`, err);
-          setLoading(false);
+          document.head.appendChild(newScript);
         });
 
-      } else {
+        console.log(`✅ Ad loaded for ${position}`);
+      } catch (error) {
+        console.error(`❌ Error loading ad for ${position}:`, error);
+        adRef.current.innerHTML = `
+          <div class="bg-red-900/20 border border-red-700 rounded-lg p-4 text-center">
+            <div class="text-red-400 text-sm mb-1">⚠️ Ad Error</div>
+            <div class="text-red-300 text-xs">Failed to load ad</div>
+          </div>
+        `;
+      } finally {
         setLoading(false);
       }
-    }
+    };
+
+    // Small delay to ensure DOM is ready
+    setTimeout(loadAd, 100);
   }, [adCode, isActive, position]);
 
-  // If no ad code or inactive, show placeholder
-  if (!adCode || !isActive) {
-    return (
-      <div className={`ad-slot ${className}`}>
-        <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 text-center">
-          <div className="text-slate-400 text-sm mb-1">📢 Advertisement</div>
-          <div className="text-slate-500 text-xs">
-            {position} Slot - {!adCode ? 'No Ad Configured' : 'Inactive'}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Show loading state
   if (loading) {
     return (
       <div className={`ad-slot ${className}`}>
         <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 text-center animate-pulse">
-          <div className="text-slate-400 text-sm mb-1">📢 Loading Ad...</div>
+          <div className="text-slate-400 text-sm mb-1">📢 Loading Advertisement</div>
           <div className="text-slate-500 text-xs">{position} Slot</div>
         </div>
       </div>
