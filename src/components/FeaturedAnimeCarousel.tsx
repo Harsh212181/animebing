@@ -1,5 +1,5 @@
-  // src/components/FeaturedAnimeCarousel.tsx - FIXED RED LINE ERROR
-import React, { useRef } from 'react';
+ // src/components/FeaturedAnimeCarousel.tsx - FIXED MOBILE CLICK ISSUE
+import React, { useRef, useState, useEffect } from 'react';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Autoplay, Pagination } from 'swiper/modules';
 import type { Anime } from '../types';
@@ -15,16 +15,30 @@ interface Props {
 }
 
 const FeaturedAnimeCarousel: React.FC<Props> = ({ featuredAnimes, onAnimeSelect }) => {
-  const swiperRef = useRef<SwiperType | null>(null); // ✅ FIXED: Added null type
-  const isDragging = useRef(false);
+  const swiperRef = useRef<SwiperType | null>(null);
+  const [touchStartX, setTouchStartX] = useState(0);
+  const [touchEndX, setTouchEndX] = useState(0);
+  const touchThreshold = 5; // Minimum pixels to consider as swipe
 
   if (!featuredAnimes || featuredAnimes.length === 0) {
     return null;
   }
 
-  // Simple click handler
-  const handleCardClick = (anime: Anime) => {
-    if (!isDragging.current) {
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.touches[0].clientX);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    setTouchEndX(e.changedTouches[0].clientX);
+  };
+
+  const handleCardClick = (anime: Anime, e: React.MouseEvent | React.TouchEvent) => {
+    // Check if it's a tap (not a swipe)
+    const isSwipe = Math.abs(touchEndX - touchStartX) > touchThreshold;
+    
+    if (!isSwipe) {
+      e.preventDefault();
+      e.stopPropagation();
       onAnimeSelect(anime);
     }
   };
@@ -55,26 +69,35 @@ const FeaturedAnimeCarousel: React.FC<Props> = ({ featuredAnimes, onAnimeSelect 
         }}
         loop={featuredAnimes.length >= 4}
         onSwiper={(swiper) => {
-          swiperRef.current = swiper; // ✅ Now properly typed
-        }}
-        onSlideChange={() => {
-          isDragging.current = false;
-        }}
-        onTouchStart={() => {
-          isDragging.current = true;
-        }}
-        onTouchEnd={() => {
-          setTimeout(() => {
-            isDragging.current = false;
-          }, 100);
+          swiperRef.current = swiper;
         }}
         className="featured-swiper rounded-lg"
+        // Enable touch events but allow clicks
+        allowTouchMove={true}
+        touchRatio={0.6}
+        touchAngle={45}
+        shortSwipes={true}
+        longSwipes={true}
+        followFinger={true}
       >
         {featuredAnimes.map((anime) => (
           <SwiperSlide key={anime.id}>
             <div 
               className="relative group cursor-pointer transform transition-all duration-300 hover:scale-105 hover:shadow-2xl"
-              onClick={() => handleCardClick(anime)}
+              onClick={(e) => handleCardClick(anime, e)}
+              onTouchStart={handleTouchStart}
+              onTouchEnd={(e) => {
+                handleTouchEnd(e);
+                handleCardClick(anime, e);
+              }}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onAnimeSelect(anime);
+                }
+              }}
             >
               {/* Anime Card */}
               <div className="relative overflow-hidden rounded-lg aspect-[3/4] bg-gradient-to-br from-slate-800 to-slate-900">
@@ -101,7 +124,7 @@ const FeaturedAnimeCarousel: React.FC<Props> = ({ featuredAnimes, onAnimeSelect 
                     {anime.title}
                   </h3>
                   
-                  {/* Anime Details - Smaller and lighter status on mobile */}
+                  {/* Anime Details */}
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-gray-300 text-xs">
                       {anime.releaseYear || 'N/A'}
