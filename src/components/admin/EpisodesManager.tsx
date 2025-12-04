@@ -1,4 +1,4 @@
- // EpisodesManager.tsx - POORA FILE UPDATE KARDO
+  // EpisodesManager.tsx - REFRESH BUTTON FIXED
 
 import React, { useState, useEffect } from 'react';
 import type { Anime, Episode, Chapter } from '../../types';
@@ -43,6 +43,49 @@ const EpisodesManager: React.FC = () => {
   useEffect(() => {
     fetchAnimes();
   }, []);
+
+  // ✅ REFRESH KA FUNCTION - YEH FIX HAI
+  const handleRefresh = async () => {
+    setAnimesLoading(true);
+    try {
+      // 1. PEHLE ANIME LIST REFRESH KARO
+      const { data } = await axios.get(`${API_BASE}/admin/protected/anime-list`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      const updatedAnimes = data.map((a: any) => ({
+        ...a,
+        id: a._id || a.id
+      }));
+      
+      setAnimes(updatedAnimes);
+      
+      // 2. AGAR SELECTED ANIME HAI TOH EPISODES/CHAPTERS BHI REFRESH KARO
+      if (selectedAnime) {
+        // SELECTED ANIME KO UPDATE KARO AGAR NEW LIST ME HAI
+        const updatedSelectedAnime = updatedAnimes.find((a: Anime) => a.id === selectedAnime.id);
+        
+        if (updatedSelectedAnime) {
+          setSelectedAnime(updatedSelectedAnime);
+          // CONTENT BHI REFRESH KARO
+          await fetchContent(updatedSelectedAnime.id);
+        } else {
+          // AGAR SELECTED ANIME DELETE HO GAYA TOH
+          setSelectedAnime(null);
+          setEpisodes([]);
+          setChapters([]);
+          alert('Previously selected content was removed from the list.');
+        }
+      }
+      
+      alert('Content refreshed successfully!');
+    } catch (err: any) {
+      console.error('❌ Refresh error:', err.response?.data || err.message);
+      alert('Failed to refresh content');
+    } finally {
+      setAnimesLoading(false);
+    }
+  };
 
   const fetchAnimes = async () => {
     setAnimesLoading(true);
@@ -275,10 +318,18 @@ const EpisodesManager: React.FC = () => {
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-white">Manage {isManga ? 'Chapters' : 'Episodes'}</h2>
         <button
-          onClick={fetchAnimes}
-          className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-sm transition"
+          onClick={handleRefresh} // ✅ NAYA REFRESH FUNCTION USE KARO
+          disabled={animesLoading}
+          className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm transition flex items-center gap-2"
         >
-          Refresh Content
+          {animesLoading ? (
+            <>
+              <Spinner size="sm" />
+              Refreshing...
+            </>
+          ) : (
+            '🔄 Refresh Content'
+          )}
         </button>
       </div>
 
