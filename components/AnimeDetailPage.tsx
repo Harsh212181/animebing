@@ -1,5 +1,6 @@
-   // components/AnimeDetailPage.tsx - UPDATED SESSION EPISODE COUNT
+  // components/AnimeDetailPage.tsx - UPDATED WITH DOWNLOAD REDIRECT
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom'; // ✅ ADDED
 import type { Anime, Episode, Chapter } from '../src/types';
 import { DownloadIcon } from './icons/DownloadIcon';
 import ReportButton from './ReportButton';
@@ -138,25 +139,145 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
     fetchContent();
   }, [anime, isManga]);
 
+  // ✅ UPDATED: Extract fileId from Google Drive URL
+  const extractFileIdFromUrl = (url: string): string => {
+    if (!url) return '';
+    
+    try {
+      // Check if it's a Google Drive URL
+      const urlObj = new URL(url);
+      
+      // Method 1: Get 'id' parameter from query string
+      if (urlObj.searchParams.has('id')) {
+        return urlObj.searchParams.get('id') || '';
+      }
+      
+      // Method 2: Check for /file/d/ pattern
+      const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+      if (match && match[1]) {
+        return match[1];
+      }
+      
+      // Method 3: Check for /open?id= pattern
+      const match2 = url.match(/\/open\?id=([a-zA-Z0-9_-]+)/);
+      if (match2 && match2[1]) {
+        return match2[1];
+      }
+      
+      return '';
+    } catch (error) {
+      console.error('Error extracting fileId:', error);
+      return '';
+    }
+  };
+
+  // ✅ UPDATED: Handle download click with redirect
   const handleDownloadClick = (item: Episode | Chapter) => {
     if (isManga) {
       setSelectedChapter(item as Chapter);
     } else {
       setSelectedEpisode(item as Episode);
     }
+    
+    // Show modal
     setShowDownloadModal(true);
-    setTimeout(() => {
-      if (item.cutyLink) {
+    
+    // If no download link, show message
+    if (!item.cutyLink) {
+      alert(
+        `${isManga ? 'Chapter' : 'Episode'} ${
+          isManga ? (item as Chapter).chapterNumber : (item as Episode).episodeNumber
+        } - Download link will be added soon!`
+      );
+      setTimeout(() => setShowDownloadModal(false), 3000);
+      return;
+    }
+    
+    // Extract fileId from URL
+    const fileId = extractFileIdFromUrl(item.cutyLink);
+    
+    if (fileId) {
+      // Create download page URL with parameters
+      const fileName = item.title || 
+        `${isManga ? 'Chapter' : 'Episode'} ${
+          isManga ? (item as Chapter).chapterNumber : (item as Episode).episodeNumber
+        }`;
+      
+      // Redirect to download page after a short delay (for modal effect)
+      setTimeout(() => {
+        window.location.href = `/download?id=${fileId}&fileName=${encodeURIComponent(fileName)}`;
+      }, 1500);
+    } else {
+      // If can't extract fileId, open original link
+      setTimeout(() => {
         window.open(item.cutyLink, '_blank');
-      } else {
-        alert(
-          `${isManga ? 'Chapter' : 'Episode'} ${
-            isManga ? (item as Chapter).chapterNumber : (item as Episode).episodeNumber
-          } - Download link will be added soon!`
-        );
-      }
-    }, 1500);
+        setShowDownloadModal(false);
+      }, 1500);
+    }
+    
+    // Auto-hide modal after 3 seconds
     setTimeout(() => setShowDownloadModal(false), 3000);
+  };
+
+  // ✅ UPDATED: Create Link component for direct download (without modal)
+  const DownloadLink: React.FC<{ 
+    item: Episode | Chapter; 
+    className?: string;
+    showText?: boolean;
+  }> = ({ item, className = '', showText = true }) => {
+    if (!item.cutyLink) {
+      return (
+        <button
+          onClick={() => {
+            alert(
+              `${isManga ? 'Chapter' : 'Episode'} ${
+                isManga ? (item as Chapter).chapterNumber : (item as Episode).episodeNumber
+              } - Download link will be added soon!`
+            );
+          }}
+          className={className}
+          title="Download link not available yet"
+        >
+          {showText ? 'Download' : <DownloadIcon className="h-3 w-3" />}
+        </button>
+      );
+    }
+    
+    const fileId = extractFileIdFromUrl(item.cutyLink);
+    const fileName = item.title || 
+      `${isManga ? 'Chapter' : 'Episode'} ${
+        isManga ? (item as Chapter).chapterNumber : (item as Episode).episodeNumber
+      }`;
+    
+    if (fileId) {
+      // Use Link for client-side navigation (better UX)
+      return (
+        <Link
+          to={`/download?id=${fileId}&fileName=${encodeURIComponent(fileName)}`}
+          className={className}
+          title={`Download ${fileName}`}
+          onClick={(e) => {
+            // Optional: Track download click
+            console.log('Download clicked:', fileName);
+          }}
+        >
+          {showText ? 'Download' : <DownloadIcon className="h-3 w-3" />}
+        </Link>
+      );
+    } else {
+      // Fallback to direct link
+      return (
+        <a
+          href={item.cutyLink}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={className}
+          title={`Download ${fileName}`}
+        >
+          {showText ? 'Download' : <DownloadIcon className="h-3 w-3" />}
+        </a>
+      );
+    }
   };
 
   // ✅ LOADING STATE - Check for both initial loading and anime loading
@@ -376,14 +497,12 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
                         </div>
                         {/* Action Buttons */}
                         <div className="flex gap-1 flex-shrink-0">
-                          {/* Download Button - Icon Only */}
-                          <button
-                            onClick={() => handleDownloadClick(item)}
+                          {/* ✅ UPDATED: Download Button with redirect */}
+                          <DownloadLink
+                            item={item}
                             className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white p-1.5 rounded transition-all duration-300 font-medium flex items-center justify-center hover:scale-105 active:scale-95"
-                            title="Download"
-                          >
-                            <DownloadIcon className="h-3 w-3" />
-                          </button>
+                            showText={false}
+                          />
                           {/* Report Button - Icon Only */}
                           <div className="scale-90">
                             <ReportButton
@@ -587,14 +706,12 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
                         </div>
                         {/* Action Buttons */}
                         <div className="flex gap-2 flex-shrink-0">
-                          {/* Download Button - Small with Icon */}
-                          <button
-                            onClick={() => handleDownloadClick(item)}
+                          {/* ✅ UPDATED: Download Button with redirect */}
+                          <DownloadLink
+                            item={item}
                             className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white px-4 py-2 rounded-lg transition-all duration-300 font-medium flex items-center gap-2 hover:scale-105 active:scale-95"
-                          >
-                            <DownloadIcon className="h-4 w-4" />
-                            <span className="hidden sm:inline">Download</span>
-                          </button>
+                            showText={true}
+                          />
                           {/* Report Button */}
                           <div className="scale-90">
                             <ReportButton
@@ -615,7 +732,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
           </div>
         </div>
 
-        {/* Download Modal */}
+        {/* Download Modal (optional, for backward compatibility) */}
         {showDownloadModal && (selectedEpisode || selectedChapter) && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 animate-fade-in backdrop-blur-sm">
             <div className="bg-slate-900 border border-slate-700 p-6 rounded-lg shadow-2xl text-center max-w-xs mx-4 transform animate-scale-in">
