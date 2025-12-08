@@ -114,8 +114,8 @@ const FeaturedAnimeCarousel: React.FC<Props> = ({ featuredAnimes, onAnimeSelect 
                 />
 
                 {/* Status Badge - Top Left (Anime/Movie/Manga) */}
-                <div className="absolute top-2 left-2 z-10">
-                  <span className="bg-purple-600 text-white text-[10px] font-medium px-1.5 py-0.5 rounded-md shadow-md whitespace-nowrap">
+                <div className="absolute top-0 left-2 z-10">
+                  <span className="bg-purple-600 text-white text-[11px] font-medium px-2 py-0.5 rounded-md shadow-md whitespace-nowrap">
                     {anime.contentType || 'Anime'}
                   </span>
                 </div>
