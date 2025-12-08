@@ -1,10 +1,18 @@
-  // src/types.ts - UPDATED WITH ENGLISH SUB
+  // src/types.ts - UPDATED WITH MULTIPLE DOWNLOAD LINKS
+export interface DownloadLink {
+  name: string;
+  url: string;
+  quality?: string;
+  type?: string;
+}
+
 export interface Episode {
   episodeId?: string;
   _id?: string;
   episodeNumber: number;
   title: string;
-  cutyLink: string;
+  // ✅ Changed from cutyLink to downloadLinks
+  downloadLinks: DownloadLink[];
   secureFileReference?: string;
   session?: number;
 }
@@ -14,7 +22,8 @@ export interface Chapter {
   _id?: string;
   chapterNumber: number;
   title: string;
-  cutyLink: string;
+  // ✅ Changed from cutyLink to downloadLinks
+  downloadLinks: DownloadLink[];
   secureFileReference?: string;
   session?: number;
 }
@@ -73,4 +82,19 @@ export interface Report {
   status: 'Pending' | 'Fixed' | 'Invalid';
   createdAt?: string;
   anime?: Anime;
+}
+
+// ✅ NEW: Admin types for edit forms
+export interface EditEpisodeData {
+  title?: string;
+  downloadLinks?: DownloadLink[];
+  secureFileReference?: string;
+  session?: number;
+}
+
+export interface EditChapterData {
+  title?: string;
+  downloadLinks?: DownloadLink[];
+  secureFileReference?: string;
+  session?: number;
 }
