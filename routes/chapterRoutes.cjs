@@ -1,4 +1,4 @@
-  // routes/chapterRoutes.cjs - VALIDATION COMPLETELY REMOVED
+  // routes/chapterRoutes.cjs - FIXED VERSION
 const express = require('express');
 const router = express.Router();
 const Chapter = require('../models/Chapter.cjs');
@@ -31,21 +31,40 @@ router.get('/', async (req, res) => {
   }
 });
 
-// POST /api/chapters -> ADD NEW CHAPTER (NO VALIDATION)
+// POST /api/chapters -> ADD NEW CHAPTER (WITH MULTIPLE DOWNLOAD LINKS)
 router.post('/', async (req, res) => {
   try {
-    const { mangaId, title, chapterNumber, secureFileReference, cutyLink, session } = req.body;
+    const { mangaId, title, chapterNumber, secureFileReference, downloadLinks, session } = req.body;
 
     console.log('📥 ADD CHAPTER REQUEST:', {
       mangaId,
       title,
       chapterNumber,
       session,
-      cutyLink
+      downloadLinksCount: downloadLinks ? downloadLinks.length : 0
     });
 
     if (!mangaId || typeof chapterNumber === 'undefined') {
       return res.status(400).json({ error: 'mangaId and chapterNumber required' });
+    }
+
+    // ✅ Validate downloadLinks array
+    if (!downloadLinks || !Array.isArray(downloadLinks) || downloadLinks.length === 0) {
+      return res.status(400).json({ error: 'At least one download link is required' });
+    }
+
+    if (downloadLinks.length > 5) {
+      return res.status(400).json({ error: 'Maximum 5 download links allowed' });
+    }
+
+    // Validate each download link
+    for (let i = 0; i < downloadLinks.length; i++) {
+      const link = downloadLinks[i];
+      if (!link.name || !link.url) {
+        return res.status(400).json({ 
+          error: `Download link ${i + 1} must have both name and url` 
+        });
+      }
     }
 
     // Check if manga exists
@@ -74,7 +93,12 @@ router.post('/', async (req, res) => {
       title: title || `Chapter ${chapterNumber}`,
       chapterNumber: Number(chapterNumber),
       secureFileReference: secureFileReference || null,
-      cutyLink: cutyLink || '', // ✅ CUTYLINK KO EMPTY ALLOW KARO
+      downloadLinks: downloadLinks.map((link, index) => ({
+        name: link.name || `Download Link ${index + 1}`,
+        url: link.url,
+        quality: link.quality || '',
+        type: link.type || 'direct'
+      })),
       session: session || 1
     });
 
@@ -94,6 +118,10 @@ router.post('/', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error adding chapter:', error);
+    // Handle Mongoose validation errors
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -121,10 +149,10 @@ router.get('/:mangaId', async (req, res) => {
   }
 });
 
-// PATCH /api/chapters -> UPDATE CHAPTER (NO VALIDATION)
+// PATCH /api/chapters -> UPDATE CHAPTER (WITH MULTIPLE DOWNLOAD LINKS)
 router.patch('/', async (req, res) => {
   try {
-    const { mangaId, chapterNumber, title, secureFileReference, cutyLink, session } = req.body;
+    const { mangaId, chapterNumber, title, secureFileReference, downloadLinks, session } = req.body;
     
     if (!mangaId || typeof chapterNumber === 'undefined') {
       return res.status(400).json({ error: 'mangaId and chapterNumber are required' });
@@ -145,8 +173,35 @@ router.patch('/', async (req, res) => {
     const update = {};
     if (typeof title !== 'undefined') update.title = title;
     if (typeof secureFileReference !== 'undefined') update.secureFileReference = secureFileReference;
-    if (typeof cutyLink !== 'undefined') update.cutyLink = cutyLink; // ✅ NO VALIDATION
     if (typeof session !== 'undefined') update.session = session;
+    
+    // ✅ Handle downloadLinks update if provided
+    if (downloadLinks) {
+      if (!Array.isArray(downloadLinks) || downloadLinks.length === 0) {
+        return res.status(400).json({ error: 'At least one download link is required' });
+      }
+      
+      if (downloadLinks.length > 5) {
+        return res.status(400).json({ error: 'Maximum 5 download links allowed' });
+      }
+      
+      // Validate each download link
+      for (let i = 0; i < downloadLinks.length; i++) {
+        const link = downloadLinks[i];
+        if (!link.name || !link.url) {
+          return res.status(400).json({ 
+            error: `Download link ${i + 1} must have both name and url` 
+          });
+        }
+      }
+      
+      update.downloadLinks = downloadLinks.map((link, index) => ({
+        name: link.name || `Download Link ${index + 1}`,
+        url: link.url,
+        quality: link.quality || '',
+        type: link.type || 'direct'
+      }));
+    }
 
     const updated = await Chapter.findOneAndUpdate(query, { $set: update }, { new: true });
     
@@ -161,6 +216,9 @@ router.patch('/', async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating chapter:', error);
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -194,6 +252,35 @@ router.delete('/', async (req, res) => {
     res.json({ message: 'Chapter deleted' });
   } catch (error) {
     console.error('❌ Error deleting chapter:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ✅ FIXED ROUTE: Get download links for a specific chapter
+router.get('/download/:mangaId/:chapterNumber', async (req, res) => {
+  try {
+    const { mangaId, chapterNumber } = req.params;
+    const { session = 1 } = req.query; // ✅ Session को query parameter से लो
+    
+    const chapter = await Chapter.findOne({
+      mangaId,
+      chapterNumber: Number(chapterNumber),
+      session: Number(session) || 1
+    });
+    
+    if (!chapter) {
+      return res.status(404).json({ error: 'Chapter not found' });
+    }
+    
+    res.json({
+      mangaId: chapter.mangaId,
+      title: chapter.title,
+      chapterNumber: chapter.chapterNumber,
+      session: chapter.session,
+      downloadLinks: chapter.downloadLinks
+    });
+  } catch (error) {
+    console.error('❌ Error fetching download links:', error);
     res.status(500).json({ error: error.message });
   }
 });
