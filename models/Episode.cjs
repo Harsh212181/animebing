@@ -1,5 +1,29 @@
- // models/Episode.cjs - CUTYLINK REQUIREMENTS COMPLETELY REMOVED
+  // models/Episode.cjs
 const mongoose = require("mongoose");
+
+const downloadLinkSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+    trim: true,
+    default: "Download Link"
+  },
+  url: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  quality: {
+    type: String,
+    trim: true,
+    default: ""
+  },
+  type: {
+    type: String,
+    trim: true,
+    default: "direct"
+  }
+});
 
 const episodeSchema = new mongoose.Schema({
   animeId: {
@@ -23,10 +47,17 @@ const episodeSchema = new mongoose.Schema({
     default: 1,
     min: 1
   },
-  cutyLink: {
-    type: String,
-    default: "", // ✅ REQUIRED HATA DO, DEFAULT EMPTY STRING
-    // ✅ VALIDATION COMPLETELY REMOVED
+  // ✅ Changed from cutyLink to downloadLinks array
+  downloadLinks: {
+    type: [downloadLinkSchema],
+    required: true,
+    validate: {
+      validator: function(v) {
+        // Minimum 1, maximum 5 download links
+        return v.length >= 1 && v.length <= 5;
+      },
+      message: "An episode must have between 1 and 5 download links"
+    }
   },
   secureFileReference: String
 }, {
