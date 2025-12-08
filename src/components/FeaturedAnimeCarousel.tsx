@@ -1,4 +1,4 @@
-  // src/components/FeaturedAnimeCarousel.tsx - FIXED MOBILE CLICK ISSUE
+  // src/components/FeaturedAnimeCarousel.tsx - WITH STATUS BADGE
 import React, { useRef, useState, useEffect } from 'react';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Autoplay, Pagination } from 'swiper/modules';
@@ -112,6 +112,13 @@ const FeaturedAnimeCarousel: React.FC<Props> = ({ featuredAnimes, onAnimeSelect 
                     (e.target as HTMLImageElement).src = 'https://via.placeholder.com/300x400/374151/FFFFFF?text=No+Image';
                   }}
                 />
+
+                {/* Status Badge - Top Left (Anime/Movie/Manga) */}
+                <div className="absolute top-2 left-2 z-10">
+                  <span className="bg-purple-600 text-white text-[10px] font-medium px-1.5 py-0.5 rounded-md shadow-md whitespace-nowrap">
+                    {anime.contentType || 'Anime'}
+                  </span>
+                </div>
 
                 {/* Gradient Overlay */}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent opacity-80 group-hover:opacity-60 transition-opacity duration-300" />
