@@ -74,7 +74,7 @@ const Header: React.FC<HeaderProps> = ({
               placeholder="Search anime/manga..."
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
-              className="search-input pl-10"
+              className="w-full px-4 py-2 pl-10 bg-slate-800/50 border border-purple-500/30 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
             />
             <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
               <SearchIcon className="w-5 h-5 text-slate-400" />
@@ -105,7 +105,7 @@ const Header: React.FC<HeaderProps> = ({
                 placeholder="Search anime/manga..."
                 value={searchQuery}
                 onChange={(e) => onSearchChange(e.target.value)}
-                className="search-input pl-10"
+                className="w-full px-4 py-2 pl-10 bg-slate-800/50 border border-purple-500/30 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                 autoFocus
               />
               <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
