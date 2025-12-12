@@ -1,21 +1,14 @@
-  // server.cjs — Clean, Fixed, Production-friendly server file
-/* eslint-disable no-console */
+   // server.cjs - COMPLETE FIXED VERSION WITH ACTIVE AD SLOTS ROUTE
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
+const connectDB = require('./db.cjs');
 require('dotenv').config();
 
-// DB connect
-const connectDB = require('./db.cjs');
-
-// Models (required lazily where used)
 const Analytics = require('./models/Analytics.cjs');
-
-// Middleware & Rate-limiters
 const { generalLimiter, authLimiter, adminLimiter, apiLimiter } = require('./middleware/rateLimit.cjs');
-const adminAuth = require('./middleware/adminAuth.cjs');
 
-// Routes (ensure these files exist in ./routes)
+// ✅ IMPORT MIDDLEWARE AND ROUTES - MOVE TO TOP
+const adminAuth = require('./middleware/adminAuth.cjs');
 const animeRoutes = require('./routes/animeRoutes.cjs');
 const episodeRoutes = require('./routes/episodeRoutes.cjs');
 const chapterRoutes = require('./routes/chapterRoutes.cjs');
@@ -28,355 +21,402 @@ const contactRoutes = require('./routes/contactRoutes.cjs');
 
 const app = express();
 
-/* ---------------------------
-   Basic Middleware
-   --------------------------- */
 app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.static('public'));
 
-// Serve static public files (frontend build or static assets)
-app.use(express.static(path.join(process.cwd(), 'public')));
+// Database Connection
+connectDB();
 
-/* ---------------------------
-   Connect Database
-   --------------------------- */
-connectDB()
-  .then(() => {
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('✅ MongoDB connected');
-    }
-  })
-  .catch(err => {
-    console.error('❌ MongoDB connection error:', err);
-    // do not exit here — keep server running for debug routes if desired
-  });
-
-/* ---------------------------
-   Rate limiting (apply early)
-   --------------------------- */
-// Basic API limiter for public endpoints
+// ✅ RATE LIMITING MIDDLEWARE
 app.use('/api/', apiLimiter);
-// Authentication specific limiter (login)
 app.use('/api/admin/login', authLimiter);
-// Admin protected area limiter
 app.use('/api/admin/protected', adminLimiter);
 
-/* ---------------------------
-   Analytics middleware (lightweight)
-   - record visits for important endpoints
-   --------------------------- */
+// ✅ ANALYTICS TRACKING MIDDLEWARE
 app.use((req, res, next) => {
-  try {
-    const trackPaths = [
-      '/',
-      '/api/anime',
-      '/api/anime/featured',
-      '/search'
-    ];
-
-    // track if request path matches any of the tracked prefixes
-    const shouldTrack = trackPaths.some(p => req.path === p || req.path.startsWith(p.replace(/\/$/, '')));
-    if (shouldTrack) {
-      // call recordVisit asynchronously; do not block response
-      try {
-        Analytics.recordVisit(req, 0).catch(() => {/* swallow analytics errors */});
-      } catch (e) { /* ignore */ }
-    }
-  } catch (e) {
-    // keep alive even if analytics fails
-  } finally {
-    next();
+  if (req.path === '/' || 
+      req.path.includes('/anime') || 
+      req.path.includes('/api/anime') ||
+      req.path.includes('/search')) {
+    Analytics.recordVisit(req, 0);
   }
+  next();
 });
 
-/* ---------------------------
-   HELPER: Create or update default admin
-   --------------------------- */
+// ✅ FIXED ADMIN CREATION FUNCTION
 const createAdmin = async () => {
   try {
     const Admin = require('./models/Admin.cjs');
     const bcrypt = require('bcryptjs');
-
+    
     const username = process.env.ADMIN_USER || 'Hellobrother';
     const password = process.env.ADMIN_PASS || 'Anime2121818144';
-    const email = process.env.ADMIN_EMAIL || 'admin@animabing.com';
-
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('🔄 Checking/creating admin user...');
-    }
-
+    
+    console.log('🔄 Checking admin user...');
+    
     let admin = await Admin.findOne({ username });
-    const hashedPassword = await bcrypt.hash(password, 12);
-
+    
     if (!admin) {
+      console.log('🆕 Creating new admin user...');
+      const hashedPassword = await bcrypt.hash(password, 12);
+      
       admin = await Admin.create({
-        username,
+        username: username,
         password: hashedPassword,
-        email,
+        email: 'admin@animabing.com',
         role: 'admin'
       });
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('✅ Admin created:', username);
-      }
+      
+      console.log('✅ Admin user created successfully!');
     } else {
-      // Ensure password matches expected default (helpful on dev deployments)
+      console.log('✅ Admin user already exists');
+      
+      // Update password to ensure it's correct
+      const hashedPassword = await bcrypt.hash(password, 12);
       admin.password = hashedPassword;
       await admin.save();
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('🔁 Admin exists — password updated for consistency');
-      }
+      console.log('🔁 Admin password updated');
     }
-
-    // Only reveal credentials in non-production for safety
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('=================================');
-      console.log('🔑 ADMIN LOGIN CREDENTIALS (DEV ONLY):');
-      console.log('   Username:', username);
-      console.log('   Password:', password);
-      console.log('   Admin Panel (frontend): Press Ctrl+Shift+Alt to reveal admin button');
-      console.log('=================================');
-    }
+    
+    console.log('=================================');
+    console.log('🔑 ADMIN LOGIN CREDENTIALS:');
+    console.log('   Username:', username);
+    console.log('   Password:', password);
+    console.log('   Login URL: http://localhost:5173');
+    console.log('   Press Ctrl+Shift+Alt for admin button');
+    console.log('=================================');
+    
   } catch (err) {
-    console.error('❌ createAdmin error:', err);
+    console.error('❌ ADMIN CREATION ERROR:', err);
+    console.log('💡 TROUBLESHOOTING:');
+    console.log('1. Check MongoDB connection');
+    console.log('2. Check bcrypt installation: npm install bcryptjs');
+    console.log('3. Check environment variables in .env file');
   }
 };
+createAdmin();
 
-// Run admin creation in background (non-blocking)
-createAdmin().catch(() => { /* ignore errors */ });
-
-/* ---------------------------
-   Public & Debug Routes
-   --------------------------- */
-
-// Root (simple HTML status page)
-app.get('/', (req, res) => {
-  res.type('html').send(`
-    <!doctype html>
-    <html>
-      <head>
-        <meta charset="utf-8"/>
-        <title>Animabing API</title>
-        <meta name="viewport" content="width=device-width,initial-scale=1" />
-        <style>
-          body { background:#0a0c1c; color:#fff; font-family: system-ui, sans-serif; }
-          a { color:#8B5CF6 }
-          .card { background:#111223; padding:16px; border-radius:8px; margin:12px 0; }
-        </style>
-      </head>
-      <body>
-        <div style="max-width:880px;margin:48px auto;">
-          <h1 style="color:#8B5CF6">Animabing Server</h1>
-          <p>Backend API is running.</p>
-          <div class="card">
-            <h3>Links</h3>
-            <ul>
-              <li><a href="/api/health">/api/health</a></li>
-              <li><a href="/api/anime/featured">/api/anime/featured</a></li>
-              <li><a href="/api/ad-slots/active">/api/ad-slots/active</a></li>
-            </ul>
-          </div>
-        </div>
-      </body>
-    </html>
-  `);
-});
-
-// Healthcheck
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'OK',
-    uptime: process.uptime(),
-    env: process.env.NODE_ENV || 'development',
-    timestamp: new Date().toISOString()
-  });
-});
-
-/* ---------------------------
-   Admin utility & emergency routes
-   (use carefully; consider protecting in production)
-   --------------------------- */
-
-// Emergency: recreate/clear and create default admin
+// ✅ EMERGENCY ADMIN RESET ROUTE
 app.get('/api/admin/emergency-reset', async (req, res) => {
   try {
     const Admin = require('./models/Admin.cjs');
     const bcrypt = require('bcryptjs');
-
+    
+    console.log('🆕 EMERGENCY ADMIN RESET INITIATED...');
+    
+    // Delete any existing admin
     await Admin.deleteMany({});
-    const hashedPassword = await bcrypt.hash(process.env.ADMIN_PASS || 'Anime2121818144', 12);
-
+    console.log('✅ Cleared existing admin users');
+    
+    // Create new admin with hashed password
+    const hashedPassword = await bcrypt.hash('Anime2121818144', 12);
     const admin = new Admin({
-      username: process.env.ADMIN_USER || 'Hellobrother',
+      username: 'Hellobrother',
       password: hashedPassword,
-      email: process.env.ADMIN_EMAIL || 'admin@animabing.com',
+      email: 'admin@animabing.com',
       role: 'superadmin'
     });
+    
     await admin.save();
-
-    res.json({
-      success: true,
-      message: 'Emergency admin created (check logs or developer for credentials in dev environment).'
+    console.log('✅ EMERGENCY ADMIN CREATED SUCCESSFULLY!');
+    
+    res.json({ 
+      success: true, 
+      message: '✅ EMERGENCY: Admin account created successfully!',
+      credentials: {
+        username: 'Hellobrother',
+        password: 'Anime2121818144'
+      },
+      instructions: 'Use these credentials to login at /admin route'
     });
-  } catch (err) {
-    console.error('emergency-reset error:', err);
-    res.status(500).json({ success: false, error: err.message });
+    
+  } catch (error) {
+    console.error('❌ EMERGENCY ADMIN RESET ERROR:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message,
+      details: 'Check MongoDB connection and bcrypt installation'
+    });
   }
 });
 
-// Admin debug info (safe for dev — restrict in prod)
+// ✅ ADMIN DEBUG ROUTE
 app.get('/api/admin/debug', async (req, res) => {
   try {
     const Admin = require('./models/Admin.cjs');
+    
     const adminCount = await Admin.countDocuments();
-    const admins = await Admin.find().select('username email createdAt role');
-
+    const allAdmins = await Admin.find().select('username email createdAt');
+    
+    console.log('🔍 ADMIN DEBUG INFO:');
+    console.log('Total Admins:', adminCount);
+    console.log('Admin List:', allAdmins);
+    
     res.json({
       success: true,
       totalAdmins: adminCount,
-      admins,
+      admins: allAdmins,
       serverTime: new Date().toISOString(),
       nodeVersion: process.version,
-      env: process.env.NODE_ENV || 'development'
+      environment: process.env.NODE_ENV || 'development'
     });
-  } catch (err) {
-    console.error('admin debug error:', err);
-    res.status(500).json({ success: false, error: err.message });
+    
+  } catch (error) {
+    console.error('Admin debug error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
   }
 });
 
-// Admin create-default-admin (safe utility)
+// ✅ EMERGENCY ADMIN CREATION ROUTE
 app.get('/api/admin/create-default-admin', async (req, res) => {
   try {
     const Admin = require('./models/Admin.cjs');
     const bcrypt = require('bcryptjs');
-
-    await Admin.deleteMany({ username: process.env.ADMIN_USER || 'Hellobrother' });
-
-    const hashedPassword = await bcrypt.hash(process.env.ADMIN_PASS || 'Anime2121818144', 12);
+    
+    console.log('🆕 EMERGENCY: Creating default admin user...');
+    
+    // Delete existing admin if any
+    await Admin.deleteMany({ username: 'Hellobrother' });
+    
+    // Create new admin
+    const hashedPassword = await bcrypt.hash('Anime2121818144', 12);
     const admin = new Admin({
-      username: process.env.ADMIN_USER || 'Hellobrother',
+      username: 'Hellobrother',
       password: hashedPassword,
-      email: process.env.ADMIN_EMAIL || 'admin@animabing.com',
+      email: 'admin@animabing.com',
       role: 'admin'
     });
+    
     await admin.save();
-
-    res.json({
-      success: true,
-      message: 'Default admin created.'
+    
+    console.log('✅ EMERGENCY ADMIN CREATED:', admin.username);
+    
+    res.json({ 
+      success: true, 
+      message: '✅ EMERGENCY: Admin created successfully!',
+      credentials: {
+        username: 'Hellobrother',
+        password: 'Anime2121818144'
+      },
+      instructions: 'Use these credentials to login at your frontend admin panel'
     });
-  } catch (err) {
-    console.error('create-default-admin error:', err);
-    res.status(500).json({ success: false, error: err.message });
+  } catch (error) {
+    console.error('❌ EMERGENCY Admin creation error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message,
+      stack: error.stack 
+    });
   }
 });
 
-/* ---------------------------
-   Admin login (public) — returns JWT
-   --------------------------- */
+// ✅ FIXED ADMIN LOGIN ROUTE
 app.post('/api/admin/login', async (req, res) => {
   try {
     const { username, password } = req.body;
-
+    
+    console.log('\n🔐 LOGIN ATTEMPT:', { 
+      username, 
+      hasPassword: !!password,
+      timestamp: new Date().toISOString()
+    });
+    
+    // Input validation
     if (!username || !password) {
-      return res.status(400).json({ success: false, error: 'Username and password required' });
+      return res.status(400).json({ 
+        success: false,
+        error: 'Username and password required' 
+      });
     }
 
     const Admin = require('./models/Admin.cjs');
     const bcrypt = require('bcryptjs');
-
+    
+    // Find admin
     const admin = await Admin.findOne({ username });
     if (!admin) {
-      return res.status(401).json({ success: false, error: 'Invalid username or password' });
+      console.log('❌ Admin not found:', username);
+      return res.status(401).json({ 
+        success: false,
+        error: 'Invalid username or password' 
+      });
     }
 
-    const match = await bcrypt.compare(password, admin.password);
-    if (!match) {
-      return res.status(401).json({ success: false, error: 'Invalid username or password' });
+    console.log('🔑 Admin found, comparing passwords...');
+    
+    // Compare passwords
+    const isMatch = await bcrypt.compare(password, admin.password);
+    console.log('✅ Password match:', isMatch);
+    
+    if (!isMatch) {
+      return res.status(401).json({ 
+        success: false,
+        error: 'Invalid username or password' 
+      });
     }
 
+    // Generate JWT token
     const jwt = require('jsonwebtoken');
-    const token = jwt.sign({
-      id: admin._id,
-      username: admin.username,
-      role: admin.role
-    }, process.env.JWT_SECRET || 'supersecretkey', { expiresIn: '24h' });
+    const token = jwt.sign(
+      { 
+        id: admin._id, 
+        username: admin.username,
+        role: admin.role 
+      }, 
+      process.env.JWT_SECRET || 'supersecretkey', 
+      { expiresIn: '24h' }
+    );
 
-    res.json({
-      success: true,
-      message: 'Login successful',
-      token,
+    console.log('🎉 LOGIN SUCCESSFUL for:', username);
+    
+    res.json({ 
+      success: true, 
+      message: 'Login successful', 
+      token, 
       username: admin.username,
       role: admin.role
     });
+    
   } catch (err) {
-    console.error('admin login error:', err);
-    res.status(500).json({ success: false, error: 'Server error during login' });
+    console.error('❌ Login error:', err);
+    res.status(500).json({ 
+      success: false,
+      error: 'Server error during login' 
+    });
   }
 });
 
-/* ---------------------------
-   Protected admin-only endpoints
-   (prefix /api/admin/protected - adminAuth middleware applied below)
-   --------------------------- */
-
-// Example: track ad click (protected)
+// ✅ AD CLICK TRACKING ROUTE
 app.post('/api/admin/protected/track-ad-click', adminAuth, async (req, res) => {
   try {
     const { slotId, earnings } = req.body;
+    
     const AdSlot = require('./models/AdSlot.cjs');
-    const AnalyticsModel = require('./models/Analytics.cjs');
-
-    const updated = await AdSlot.findByIdAndUpdate(
+    const Analytics = require('./models/Analytics.cjs');
+    
+    const updatedSlot = await AdSlot.findByIdAndUpdate(
       slotId,
-      { $inc: { clicks: 1, earnings: earnings || 0.5 } },
+      {
+        $inc: {
+          clicks: 1,
+          earnings: earnings || 0.5
+        }
+      },
       { new: true }
     );
 
-    // record earnings in analytics (best-effort)
-    try { await AnalyticsModel.recordVisit(req, earnings || 0.5); } catch (e) { /* ignore */ }
+    await Analytics.recordVisit(req, earnings || 0.5);
 
-    res.json({ success: true, message: 'Ad click tracked', adSlot: updated });
-  } catch (err) {
-    console.error('track-ad-click error:', err);
-    res.status(500).json({ success: false, error: err.message });
+    res.json({
+      success: true,
+      message: 'Ad click tracked',
+      adSlot: updatedSlot
+    });
+  } catch (error) {
+    console.error('Ad tracking error:', error);
+    res.status(500).json({ error: 'Failed to track ad click' });
   }
 });
 
-/* ---------------------------
-   Episodes route (public)
-   --------------------------- */
+// ✅ Social media API
+app.get('/api/social', async (req, res) => {
+  try {
+    const SocialMedia = require('./models/SocialMedia.cjs');
+    const socialLinks = await SocialMedia.find({ isActive: true });
+    res.json(socialLinks);
+  } catch (error) {
+    console.error('Social media API error:', error);
+    res.json([
+      {
+        platform: 'facebook',
+        url: 'https://facebook.com/animabing',
+        isActive: true,
+        icon: 'facebook',
+        displayName: 'Facebook'
+      },
+      {
+        platform: 'instagram', 
+        url: 'https://instagram.com/animabing',
+        isActive: true,
+        icon: 'instagram',
+        displayName: 'Instagram'
+      },
+      {
+        platform: 'telegram',
+        url: 'https://t.me/animabing', 
+        isActive: true,
+        icon: 'telegram',
+        displayName: 'Telegram'
+      }
+    ]);
+  }
+});
+
+// ✅ App downloads API
+app.get('/api/app-downloads', async (req, res) => {
+  try {
+    const AppDownload = require('./models/AppDownload.cjs');
+    const appDownloads = await AppDownload.find({ isActive: true });
+    res.json(appDownloads);
+  } catch (error) {
+    console.error('App downloads API error:', error);
+    res.json([]);
+  }
+});
+
+// ✅ EPISODES BY ANIME ID ROUTE - ADDED
 app.get('/api/episodes/:animeId', async (req, res) => {
   try {
     const { animeId } = req.params;
+    console.log('📺 Fetching episodes for anime:', animeId);
+    
     const Episode = require('./models/Episode.cjs');
-
-    const episodes = await Episode.find({ animeId }).sort({ session: 1, episodeNumber: 1 }).lean();
+    const episodes = await Episode.find({ animeId }).sort({ session: 1, episodeNumber: 1 });
+    
+    console.log(`✅ Found ${episodes.length} episodes for anime ${animeId}`);
     res.json(episodes);
-  } catch (err) {
-    console.error('episodes fetch error:', err);
-    res.status(500).json({ success: false, error: err.message });
+  } catch (error) {
+    console.error('Episodes fetch error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
-/* ---------------------------
-   Public active ad slots API
-   --------------------------- */
+// ============================================
+// ✅ ADDED: PUBLIC ACTIVE AD SLOTS API ROUTE
+// ============================================
 app.get('/api/ad-slots/active', async (req, res) => {
   try {
+    console.log('📢 Fetching active ad slots...');
+    
     const AdSlot = require('./models/AdSlot.cjs');
-    const activeAdSlots = await AdSlot.find({ isActive: true }).sort({ position: 1 }).lean();
-    res.json(activeAdSlots || []);
-  } catch (err) {
-    console.error('active ad slots error:', err);
-    res.status(500).json({ success: false, error: err.message });
+    const activeAdSlots = await AdSlot.find({ isActive: true }).sort({ position: 1 });
+    
+    console.log(`✅ Found ${activeAdSlots.length} active ad slots`);
+    
+    // If no active slots, return empty array (not error)
+    res.json(activeAdSlots);
+    
+  } catch (error) {
+    console.error('❌ Error fetching active ad slots:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
   }
 });
 
-/* ---------------------------
-   Public APIs (mounted)
-   --------------------------- */
+// ============================================
+// ✅ PROTECTED ADMIN ROUTES
+// ============================================
+app.use('/api/admin/protected', adminAuth, adminRoutes);
+
+// ============================================
+// ✅ PUBLIC ROUTES
+// ============================================
 app.use('/api/anime', animeRoutes);
 app.use('/api/episodes', episodeRoutes);
 app.use('/api/chapters', chapterRoutes);
@@ -384,20 +424,30 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/social', socialRoutes);
 app.use('/api/app-downloads', appDownloadRoutes);
 app.use('/api/ads', adRoutes);
-app.use('/api/admin', adminRoutes); // admin routes (some may be protected further)
 app.use('/api', contactRoutes);
 
-/* ---------------------------
-   Debug routes (safe for development)
-   --------------------------- */
+// ============================================
+// ✅ DEBUG ROUTES (KEEP FOR TROUBLESHOOTING)
+// ============================================
 app.get('/api/debug/episodes', async (req, res) => {
   try {
     const Episode = require('./models/Episode.cjs');
-    const allEpisodes = await Episode.find().populate('animeId', 'title').lean();
-    res.json({ totalEpisodes: allEpisodes.length, episodes: allEpisodes });
-  } catch (err) {
-    console.error('debug episodes error:', err);
-    res.status(500).json({ success: false, error: err.message });
+    const Anime = require('./models/Anime.cjs');
+    
+    const allEpisodes = await Episode.find().populate('animeId', 'title');
+    
+    console.log('📋 ALL EPISODES IN DATABASE:');
+    allEpisodes.forEach(ep => {
+      console.log(`- ${ep.animeId?.title || 'NO ANIME'} | EP ${ep.episodeNumber} | Session ${ep.session} | AnimeID: ${ep.animeId?._id}`);
+    });
+    
+    res.json({
+      totalEpisodes: allEpisodes.length,
+      episodes: allEpisodes
+    });
+  } catch (error) {
+    console.error('Debug error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -405,69 +455,212 @@ app.get('/api/debug/anime/:animeId', async (req, res) => {
   try {
     const Anime = require('./models/Anime.cjs');
     const Episode = require('./models/Episode.cjs');
+    
     const animeId = req.params.animeId;
-    const anime = await Anime.findById(animeId).lean();
-    const episodes = await Episode.find({ animeId }).lean();
-    res.json({ anime, episodes, episodesCount: episodes.length });
-  } catch (err) {
-    console.error('debug anime error:', err);
-    res.status(500).json({ success: false, error: err.message });
+    const anime = await Anime.findById(animeId);
+    const episodes = await Episode.find({ animeId });
+    
+    console.log('🔍 DEBUG ANIME:');
+    console.log('Anime Title:', anime?.title);
+    console.log('Anime ID:', anime?._id);
+    console.log('Requested ID:', animeId);
+    console.log('Episodes found:', episodes.length);
+    
+    res.json({
+      anime: anime,
+      episodes: episodes,
+      animeId: animeId,
+      episodesCount: episodes.length
+    });
+  } catch (error) {
+    console.error('Debug error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
 app.get('/api/debug/animes', async (req, res) => {
   try {
     const Anime = require('./models/Anime.cjs');
-    const animes = await Anime.find().select('title _id contentType').lean();
-    res.json({ totalAnimes: animes.length, animes });
-  } catch (err) {
-    console.error('debug animes error:', err);
-    res.status(500).json({ success: false, error: err.message });
+    const animes = await Anime.find().select('title _id contentType');
+    
+    console.log('📺 ALL ANIMES IN DATABASE:');
+    animes.forEach(anime => {
+      console.log(`- ${anime.title} | ID: ${anime._id} | Type: ${anime.contentType}`);
+    });
+    
+    res.json({
+      totalAnimes: animes.length,
+      animes: animes
+    });
+  } catch (error) {
+    console.error('Debug error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
+// ✅ DEBUG AD SLOTS ROUTE
 app.get('/api/debug/ad-slots', async (req, res) => {
   try {
     const AdSlot = require('./models/AdSlot.cjs');
-    const adSlots = await AdSlot.find().lean();
-    res.json({ success: true, totalSlots: adSlots.length, adSlots });
-  } catch (err) {
-    console.error('debug ad slots error:', err);
-    res.status(500).json({ success: false, error: err.message });
+    
+    const adSlots = await AdSlot.find();
+    
+    console.log('📢 DEBUG AD SLOTS:');
+    console.log(`Total ad slots: ${adSlots.length}`);
+    
+    adSlots.forEach(slot => {
+      console.log(`- ${slot.name} (${slot.position}): Active=${slot.isActive}, Impressions=${slot.impressions}, Clicks=${slot.clicks}, Earnings=₹${slot.earnings}`);
+    });
+    
+    res.json({
+      success: true,
+      totalSlots: adSlots.length,
+      adSlots: adSlots
+    });
+  } catch (error) {
+    console.error('❌ Debug ad slots error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
   }
 });
 
-/* ---------------------------
-   Emergency: set all anime as featured
-   --------------------------- */
+// ✅ HEALTH CHECK
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    message: 'Animabing Server Running',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// ✅ EMERGENCY: SET ALL ANIME AS FEATURED ROUTE
 app.get('/api/emergency/set-all-featured', async (req, res) => {
   try {
     const Anime = require('./models/Anime.cjs');
-
-    const result = await Anime.updateMany({}, { $set: { featured: true, featuredOrder: 1 } });
-    const sample = await Anime.find({ featured: true }).select('title featuredOrder').limit(10).lean();
-
-    res.json({
-      success: true,
-      modifiedCount: result.modifiedCount || result.nModified || 0,
-      sampleFeatured: sample
+    
+    console.log('🆕 EMERGENCY: Setting ALL anime as featured...');
+    
+    const result = await Anime.updateMany(
+      {}, 
+      { 
+        $set: { 
+          featured: true,
+          featuredOrder: 1 
+        } 
+      }
+    );
+    
+    console.log(`✅ Set ${result.modifiedCount} anime as featured`);
+    
+    const featuredAnime = await Anime.find({ featured: true })
+      .select('title featured featuredOrder')
+      .limit(10)
+      .lean();
+    
+    res.json({ 
+      success: true, 
+      message: `Set ${result.modifiedCount} anime as featured`,
+      modifiedCount: result.modifiedCount,
+      sampleFeatured: featuredAnime
     });
-  } catch (err) {
-    console.error('emergency set-all-featured error:', err);
-    res.status(500).json({ success: false, error: err.message });
+    
+  } catch (error) {
+    console.error('❌ Emergency featured error:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-/* ---------------------------
-   Start server
-   --------------------------- */
+// ============================================
+// ✅ ROOT ROUTE
+// ============================================
+app.get('/', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>Animabing - Anime & Movies</title>
+      <style>
+        body {
+          background: #0a0c1c;
+          color: white;
+          font-family: Arial, sans-serif;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          height: 100vh;
+          margin: 0;
+        }
+        .container {
+          text-align: center;
+          padding: 2rem;
+        }
+        h1 {
+          color: #8B5CF6;
+          margin-bottom: 1rem;
+        }
+        a {
+          color: #8B5CF6;
+          text-decoration: none;
+          font-weight: bold;
+          margin: 0 10px;
+        }
+        a:hover {
+          text-decoration: underline;
+        }
+        .emergency-info {
+          background: #1a1c2c;
+          padding: 1rem;
+          border-radius: 8px;
+          margin: 1rem 0;
+          text-align: left;
+        }
+        .ad-info {
+          background: #2a1c4c;
+          padding: 1rem;
+          border-radius: 8px;
+          margin: 1rem 0;
+          text-align: left;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>Animabing Server</h1>
+        <p>✅ Backend API is running correctly</p>
+        <p>📺 Frontend: <a href="https://rainbow-sfogliatella-b724c0.netlify.app" target="_blank">Netlify</a></p>
+        <p>⚙️ Admin Access: Press Ctrl+Shift+Alt on the frontend</p>
+        
+        <div class="ad-info">
+          <h3>📢 Ad Management:</h3>
+          <p>Active Ad Slots: <a href="/api/ad-slots/active" target="_blank">Check Active Ads</a></p>
+          <p>All Ad Slots: <a href="/api/debug/ad-slots" target="_blank">Debug Ad Slots</a></p>
+          <p>Admin Panel: <a href="/admin" target="_blank">Go to Admin</a></p>
+        </div>
+        
+        <div class="emergency-info">
+          <h3>🔧 Emergency Featured Fix:</h3>
+          <p>Click below to set all anime as featured:</p>
+          <p><a href="/api/emergency/set-all-featured" target="_blank">Set All Anime as Featured</a></p>
+        </div>
+        
+        <p><a href="/api/health">Health Check</a> | <a href="/api/anime/featured">Check Featured</a></p>
+      </div>
+    </body>
+    </html>
+  `);
+});
+
+// ✅ START SERVER
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server running on port ${PORT} (env: ${process.env.NODE_ENV || 'development'})`);
-  if (process.env.NODE_ENV !== 'production') {
-    console.log(`🔗 Local frontend: http://localhost:5173`);
-  }
-  console.log(`📢 Public API base (if deployed): ${process.env.PUBLIC_API_BASE || 'https://animabing.onrender.com/api'}`);
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🔧 Admin: ${process.env.ADMIN_USER} / ${process.env.ADMIN_PASS}`);
+  console.log(`🌐 Frontend:  https://animabing.pages.dev`);
+  console.log(`🔗 API: https://animabing.onrender.com/api`);
+  console.log(`📢 Active Ad Slots: https://animabing.onrender.com/api/ad-slots/active`);
+  console.log(`🆕 Emergency Route: https://animabing.onrender.com/api/emergency/set-all-featured`);
 });
-
-module.exports = app;
