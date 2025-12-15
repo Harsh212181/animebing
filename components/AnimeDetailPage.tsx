@@ -1,4 +1,4 @@
-  // components/AnimeDetailPage.tsx - FIXED (Status removed)
+  // components/AnimeDetailPage.tsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Anime, Episode, Chapter } from '../src/types';
@@ -76,7 +76,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
 
       setAnimeLoading(true);
       try {
-        const fields = 'title,thumbnail,releaseYear,status,contentType,subDubStatus,description,genreList';
+        const fields = 'title,thumbnail,releaseYear,contentType,subDubStatus,description,genreList';
         const fullAnimeData = await getAnimeById(anime.id, fields);
         if (fullAnimeData) {
           setFullAnime(fullAnimeData);
@@ -284,15 +284,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
                     <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-2 py-1 rounded text-xs font-bold whitespace-nowrap">
                       {displayAnime?.releaseYear}
                     </span>
-                    <span
-                      className={`px-2 py-1 rounded text-xs font-bold whitespace-nowrap ${
-                        displayAnime?.status === 'Ongoing'
-                          ? 'bg-gradient-to-r from-yellow-500 to-orange-600 text-white'
-                          : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white'
-                      }`}
-                    >
-                      {displayAnime?.status}
-                    </span>
                     <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-2 py-1 rounded text-xs font-bold whitespace-nowrap">
                       {displayAnime?.contentType}
                     </span>
@@ -325,9 +316,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
                 <div className="flex flex-wrap gap-2">
                   <div className="text-xs text-slate-300">
                     <span className="font-semibold">Year:</span> {displayAnime?.releaseYear || 'N/A'}
-                  </div>
-                  <div className="text-xs text-slate-300">
-                    <span className="font-semibold">Status:</span> {displayAnime?.status || 'N/A'}
                   </div>
                   <div className="text-xs text-slate-300">
                     <span className="font-semibold">Type:</span> {displayAnime?.contentType || 'N/A'}
@@ -458,7 +446,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
                             />
                           </div>
                         </div>
-                        {/* ✅ REMOVED: Download links status badge */}
                       </div>
                     );
                   })}
@@ -497,15 +484,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
                   <div className="flex flex-wrap items-center gap-4">
                     <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg font-bold">
                       {displayAnime?.releaseYear}
-                    </div>
-                    <div
-                      className={`px-4 py-2 rounded-lg font-bold ${
-                        displayAnime?.status === 'Ongoing'
-                          ? 'bg-gradient-to-r from-yellow-500 to-orange-600 text-white'
-                          : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white'
-                      }`}
-                    >
-                      {displayAnime?.status}
                     </div>
                     <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg font-bold">
                       {displayAnime?.contentType}
@@ -655,7 +633,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
                             </div>
                           </div>
                         </div>
-                        {/* ✅ REMOVED: Download links status badge */}
                       </div>
                     );
                   })}
