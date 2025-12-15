@@ -1,5 +1,5 @@
-  // components/Header.tsx - UPDATED WITH FOOTER-LIKE FUNCTIONALITY
-import React, { useState } from 'react';
+  // components/Header.tsx - UPDATED: "Content List" → "Anime List"
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { FilterType, ContentType } from '../src/types';
 import { SearchIcon } from './icons/SearchIcon';
 import { MenuIcon } from './icons/MenuIcon';
@@ -13,45 +13,99 @@ interface HeaderProps {
   onContentTypeNavigate: (contentType: ContentType) => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ onSearchChange, searchQuery, onNavigate, onFilterAndNavigateHome, onContentTypeNavigate }) => {
+const Header: React.FC<HeaderProps> = ({ 
+  onSearchChange, 
+  searchQuery, 
+  onNavigate, 
+  onFilterAndNavigateHome, 
+  onContentTypeNavigate 
+}) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
+  const [localSearchQuery, setLocalSearchQuery] = useState('');
+  
+  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Initialize local state from prop
+  useEffect(() => {
+    setLocalSearchQuery(searchQuery || '');
+  }, [searchQuery]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Debounced search function
+  const handleSearchInputChange = useCallback((value: string) => {
+    setLocalSearchQuery(value);
+    
+    // Clear previous timeout
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+    }
+    
+    // Set new timeout for debouncing
+    debounceTimeoutRef.current = setTimeout(() => {
+      onSearchChange(value);
+    }, 300); // 300ms debounce for smooth typing
+  }, [onSearchChange]);
+
+  const handleClearSearch = () => {
+    setLocalSearchQuery('');
+    onSearchChange('');
+    
+    // Focus back to input after clearing
+    if (searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      if (isMobileSearchOpen) {
+        setIsMobileSearchOpen(false);
+      }
+      if (searchInputRef.current) {
+        searchInputRef.current.blur();
+      }
+    }
+  };
 
   const handleNavClick = (destination: 'home' | 'list') => {
     if (isNavigating) return;
     
     setIsNavigating(true);
     if (destination === 'list') {
-      // Anime List के लिए navigate का उपयोग करें
       onNavigate('list');
     } else {
-      // Home के लिए पूरा पेज रीलोड
-      window.location.href = window.location.origin + '/';
+      onNavigate('home');
     }
     setIsMenuOpen(false);
     setTimeout(() => setIsNavigating(false), 800);
   };
 
-  // ✅ FIXED: फूटर की तरह पूरा पेज रीलोड करें
   const handleFilterClick = (filter: 'Hindi Dub' | 'Hindi Sub' | 'English Sub') => {
     if (isNavigating) return;
     
     setIsNavigating(true);
-    // पूरा पेज रीलोड करें - फूटर की तरह
     window.location.href = `${window.location.origin}/?filter=${encodeURIComponent(filter)}`;
     setIsMenuOpen(false);
     
-    // Loading overlay दिखाने के लिए थोड़ी देर रुकें
     setTimeout(() => setIsNavigating(false), 1500);
   };
 
-  // ✅ FIXED: Content Type के लिए भी पूरा पेज रीलोड
   const handleContentTypeClick = (contentType: ContentType) => {
     if (isNavigating) return;
     
     setIsNavigating(true);
-    // पूरा पेज रीलोड करें
     window.location.href = `${window.location.origin}/?contentType=${encodeURIComponent(contentType)}`;
     setIsMenuOpen(false);
     
@@ -59,11 +113,20 @@ const Header: React.FC<HeaderProps> = ({ onSearchChange, searchQuery, onNavigate
   };
 
   const toggleMobileSearch = () => {
-    setIsMobileSearchOpen(!isMobileSearchOpen);
+    const newState = !isMobileSearchOpen;
+    setIsMobileSearchOpen(newState);
     setIsMenuOpen(false);
+    
+    // Focus the input when opening mobile search
+    if (newState) {
+      setTimeout(() => {
+        if (searchInputRef.current) {
+          searchInputRef.current.focus();
+        }
+      }, 100);
+    }
   };
 
-  // Navigation Loader Component
   const NavigationLoader = () => (
     isNavigating ? (
       <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-sm z-50 flex items-center justify-center">
@@ -78,22 +141,21 @@ const Header: React.FC<HeaderProps> = ({ onSearchChange, searchQuery, onNavigate
 
   return (
     <>
-      {/* ✅ Navigation Loading Overlay */}
       <NavigationLoader />
       
       <header className="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 backdrop-blur-lg sticky top-0 z-40 relative border-b border-purple-500/20">
-        <div className="container mx-auto px-4">
-          <div className="flex justify-between items-center h-20">
+        <div className="container mx-auto px-2 md:px-3">
+          <div className="flex justify-between items-center h-12 md:h-16">
             <button 
               onClick={() => handleNavClick('home')} 
-              className="text-2xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent"
+              className="text-base md:text-xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent"
               disabled={isNavigating}
             >
               Anime<span className="text-purple-400">bing</span>
             </button>
 
             {/* Desktop Nav */}
-            <nav className="hidden md:flex items-center space-x-8">
+            <nav className="hidden md:flex items-center space-x-4">
               <button 
                 onClick={() => handleNavClick('home')} 
                 className="text-slate-300 hover:text-purple-400 transition-colors font-medium disabled:opacity-50"
@@ -136,74 +198,118 @@ const Header: React.FC<HeaderProps> = ({ onSearchChange, searchQuery, onNavigate
               >
                 Manga
               </button>
+              {/* ✅ CHANGED: Content List → Anime List */}
               <button 
                 onClick={() => handleNavClick('list')} 
                 className="text-slate-300 hover:text-purple-400 transition-colors font-medium disabled:opacity-50"
                 disabled={isNavigating}
               >
-                Content List
+                Anime List
               </button>
             </nav>
 
-            {/* ✅ DESKTOP SEARCH BAR - Only visible on md and above */}
+            {/* ✅ REAL-TIME DESKTOP SEARCH BAR */}
             <div className="hidden md:flex items-center relative">
-              <input
-                type="text"
-                placeholder="Search anime/manga..."
-                value={searchQuery}
-                onChange={(e) => onSearchChange(e.target.value)}
-                className="bg-slate-800/50 border border-slate-700 text-white placeholder-slate-400 text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block w-full pl-10 p-2.5 transition backdrop-blur-sm"
-                disabled={isNavigating}
-              />
-              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                <SearchIcon className="w-5 h-5 text-slate-400" />
+              <div className="relative">
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  placeholder="Search anime/manga..."
+                  value={localSearchQuery}
+                  onChange={(e) => handleSearchInputChange(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  className="bg-slate-800/50 border border-slate-700 text-white placeholder-slate-400 text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block w-64 pl-10 pr-10 p-2.5 transition backdrop-blur-sm"
+                  disabled={isNavigating}
+                />
+                <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                  <SearchIcon className="w-5 h-5 text-slate-400" />
+                </div>
+                
+                {/* Clear button - shows when there's text */}
+                {localSearchQuery && (
+                  <button
+                    onClick={handleClearSearch}
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-white transition-colors"
+                    type="button"
+                    disabled={isNavigating}
+                    aria-label="Clear search"
+                  >
+                    <CloseIcon className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             </div>
 
             {/* ✅ MOBILE: Search Icon and Menu Button */}
-            <div className="flex items-center space-x-4 md:hidden">
+            <div className="flex items-center md:hidden">
               {/* Mobile Search Icon */}
               <button 
                 onClick={toggleMobileSearch}
-                className="text-slate-300 hover:text-purple-400 disabled:opacity-50"
+                className="text-slate-300 hover:text-purple-400 disabled:opacity-50 p-1"
                 disabled={isNavigating}
               >
-                <SearchIcon className="w-5 h-5" />
+                <SearchIcon className="w-4 h-4" />
               </button>
               
               {/* Mobile Menu Button */}
               <button 
                 onClick={() => setIsMenuOpen(!isMenuOpen)} 
-                className="text-slate-300 hover:text-purple-400 disabled:opacity-50"
+                className="text-slate-300 hover:text-purple-400 disabled:opacity-50 p-1"
                 disabled={isNavigating}
               >
-                {isMenuOpen ? <CloseIcon className="w-6 h-6" /> : <MenuIcon className="w-6 h-6" />}
+                {isMenuOpen ? <CloseIcon className="w-4 h-4" /> : <MenuIcon className="w-4 h-4" />}
               </button>
             </div>
           </div>
 
-          {/* ✅ MOBILE SEARCH BAR - Shows when search icon is clicked */}
+          {/* ✅ REAL-TIME MOBILE SEARCH BAR */}
           {isMobileSearchOpen && (
             <div className="md:hidden mt-2 pb-4">
               <div className="relative">
                 <input
+                  ref={searchInputRef}
                   type="text"
                   placeholder="Search anime/manga..."
-                  value={searchQuery}
-                  onChange={(e) => onSearchChange(e.target.value)}
-                  className="bg-slate-800 border border-slate-700 text-white placeholder-slate-400 text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block w-full pl-10 p-2.5 transition backdrop-blur-sm"
+                  value={localSearchQuery}
+                  onChange={(e) => handleSearchInputChange(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  className="bg-slate-800 border border-slate-700 text-white placeholder-slate-400 text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block w-full pl-10 pr-10 p-2.5 transition backdrop-blur-sm"
                   autoFocus
                   disabled={isNavigating}
                 />
                 <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
                   <SearchIcon className="w-5 h-5 text-slate-400" />
                 </div>
+                
+                {/* Clear button - shows when there's text */}
+                {localSearchQuery && (
+                  <button
+                    onClick={handleClearSearch}
+                    className="absolute inset-y-0 right-10 flex items-center pr-3 text-slate-400 hover:text-white transition-colors"
+                    type="button"
+                    disabled={isNavigating}
+                    aria-label="Clear search"
+                  >
+                    <CloseIcon className="w-4 h-4" />
+                  </button>
+                )}
+                
+                {/* Close mobile search button */}
                 <button
                   onClick={() => setIsMobileSearchOpen(false)}
                   className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-200"
+                  type="button"
+                  disabled={isNavigating}
+                  aria-label="Close search"
                 >
                   ✕
                 </button>
+              </div>
+              
+              {/* Real-time search indicator */}
+              <div className="mt-2 text-xs text-slate-400 px-1 flex items-center">
+                <div className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></div>
+                Real-time search enabled
               </div>
             </div>
           )}
@@ -256,12 +362,13 @@ const Header: React.FC<HeaderProps> = ({ onSearchChange, searchQuery, onNavigate
                 >
                   Manga
                 </button>
+                {/* ✅ CHANGED: Content List → Anime List (in mobile menu too) */}
                 <button 
                   onClick={() => handleNavClick('list')} 
                   className="text-left w-full px-3 py-3 rounded-md text-slate-200 hover:bg-purple-700 hover:text-white transition-colors font-medium disabled:opacity-50"
                   disabled={isNavigating}
                 >
-                  Content List
+                  Anime List
                 </button>
               </nav>
             </div>
