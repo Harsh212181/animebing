@@ -1,4 +1,4 @@
-    // server.cjs - COMPLETE FIXED VERSION WITH ACTIVE AD SLOTS ROUTE
+  // server.cjs - AD-FREE VERSION
 const express = require('express');
 const cors = require('cors');
 const connectDB = require('./db.cjs');
@@ -15,7 +15,6 @@ const chapterRoutes = require('./routes/chapterRoutes.cjs');
 const reportRoutes = require('./routes/reportRoutes.cjs');
 const socialRoutes = require('./routes/socialRoutes.cjs');
 const appDownloadRoutes = require('./routes/appDownloadRoutes.cjs');
-const adRoutes = require('./routes/adRoutes.cjs');
 const adminRoutes = require('./routes/adminRoutes.cjs');
 const contactRoutes = require('./routes/contactRoutes.cjs');
 
@@ -290,38 +289,6 @@ app.post('/api/admin/login', async (req, res) => {
   }
 });
 
-// ✅ AD CLICK TRACKING ROUTE
-app.post('/api/admin/protected/track-ad-click', adminAuth, async (req, res) => {
-  try {
-    const { slotId, earnings } = req.body;
-    
-    const AdSlot = require('./models/AdSlot.cjs');
-    const Analytics = require('./models/Analytics.cjs');
-    
-    const updatedSlot = await AdSlot.findByIdAndUpdate(
-      slotId,
-      {
-        $inc: {
-          clicks: 1,
-          earnings: earnings || 0.5
-        }
-      },
-      { new: true }
-    );
-
-    await Analytics.recordVisit(req, earnings || 0.5);
-
-    res.json({
-      success: true,
-      message: 'Ad click tracked',
-      adSlot: updatedSlot
-    });
-  } catch (error) {
-    console.error('Ad tracking error:', error);
-    res.status(500).json({ error: 'Failed to track ad click' });
-  }
-});
-
 // ✅ Social media API
 app.get('/api/social', async (req, res) => {
   try {
@@ -386,30 +353,6 @@ app.get('/api/episodes/:animeId', async (req, res) => {
 });
 
 // ============================================
-// ✅ ADDED: PUBLIC ACTIVE AD SLOTS API ROUTE
-// ============================================
-app.get('/api/ad-slots/active', async (req, res) => {
-  try {
-    console.log('📢 Fetching active ad slots...');
-    
-    const AdSlot = require('./models/AdSlot.cjs');
-    const activeAdSlots = await AdSlot.find({ isActive: true }).sort({ position: 1 });
-    
-    console.log(`✅ Found ${activeAdSlots.length} active ad slots`);
-    
-    // If no active slots, return empty array (not error)
-    res.json(activeAdSlots);
-    
-  } catch (error) {
-    console.error('❌ Error fetching active ad slots:', error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message 
-    });
-  }
-});
-
-// ============================================
 // ✅ PROTECTED ADMIN ROUTES
 // ============================================
 app.use('/api/admin/protected', adminAuth, adminRoutes);
@@ -423,7 +366,6 @@ app.use('/api/chapters', chapterRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/social', socialRoutes);
 app.use('/api/app-downloads', appDownloadRoutes);
-app.use('/api/ads', adRoutes);
 app.use('/api', contactRoutes);
 
 // ============================================
@@ -498,39 +440,11 @@ app.get('/api/debug/animes', async (req, res) => {
   }
 });
 
-// ✅ DEBUG AD SLOTS ROUTE
-app.get('/api/debug/ad-slots', async (req, res) => {
-  try {
-    const AdSlot = require('./models/AdSlot.cjs');
-    
-    const adSlots = await AdSlot.find();
-    
-    console.log('📢 DEBUG AD SLOTS:');
-    console.log(`Total ad slots: ${adSlots.length}`);
-    
-    adSlots.forEach(slot => {
-      console.log(`- ${slot.name} (${slot.position}): Active=${slot.isActive}, Impressions=${slot.impressions}, Clicks=${slot.clicks}, Earnings=₹${slot.earnings}`);
-    });
-    
-    res.json({
-      success: true,
-      totalSlots: adSlots.length,
-      adSlots: adSlots
-    });
-  } catch (error) {
-    console.error('❌ Debug ad slots error:', error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message 
-    });
-  }
-});
-
 // ✅ HEALTH CHECK
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'OK', 
-    message: 'Animabing Server Running',
+    message: 'Animabing Server Running - AD FREE VERSION',
     timestamp: new Date().toISOString()
   });
 });
@@ -573,7 +487,7 @@ app.get('/api/emergency/set-all-featured', async (req, res) => {
 });
 
 // ============================================
-// ✅ ROOT ROUTE
+// ✅ ROOT ROUTE - AD-FREE VERSION
 // ============================================
 app.get('/', (req, res) => {
   res.send(`
@@ -618,28 +532,22 @@ app.get('/', (req, res) => {
           margin: 1rem 0;
           text-align: left;
         }
-        .ad-info {
-          background: #2a1c4c;
-          padding: 1rem;
-          border-radius: 8px;
-          margin: 1rem 0;
-          text-align: left;
+        .ad-free-badge {
+          background: #4CAF50;
+          color: white;
+          padding: 5px 10px;
+          border-radius: 20px;
+          font-size: 12px;
+          margin-left: 10px;
         }
       </style>
     </head>
     <body>
       <div class="container">
-        <h1>Animabing Server</h1>
-        <p>✅ Backend API is running correctly</p>
+        <h1>Animabing Server <span class="ad-free-badge">AD-FREE</span></h1>
+        <p>✅ Backend API is running correctly - No Ads Version</p>
         <p>📺 Frontend: <a href="https://rainbow-sfogliatella-b724c0.netlify.app" target="_blank">Netlify</a></p>
         <p>⚙️ Admin Access: Press Ctrl+Shift+Alt on the frontend</p>
-        
-        <div class="ad-info">
-          <h3>📢 Ad Management:</h3>
-          <p>Active Ad Slots: <a href="/api/ad-slots/active" target="_blank">Check Active Ads</a></p>
-          <p>All Ad Slots: <a href="/api/debug/ad-slots" target="_blank">Debug Ad Slots</a></p>
-          <p>Admin Panel: <a href="/admin" target="_blank">Go to Admin</a></p>
-        </div>
         
         <div class="emergency-info">
           <h3>🔧 Emergency Featured Fix:</h3>
@@ -657,11 +565,9 @@ app.get('/', (req, res) => {
 // ✅ START SERVER
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT} - AD FREE VERSION`);
   console.log(`🔧 Admin: ${process.env.ADMIN_USER} / ${process.env.ADMIN_PASS}`);
-  console.log(`🌐 Frontend:  https://animabing.pages.dev`);
+  console.log(`🌐 Frontend: https://animabing.pages.dev`);
   console.log(`🔗 API: https://animabing.onrender.com/api`);
-  console.log(`📢 Active Ad Slots: https://animabing.onrender.com/api/ad-slots/active`);
   console.log(`🆕 Emergency Route: https://animabing.onrender.com/api/emergency/set-all-featured`);
 });
-
