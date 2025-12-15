@@ -1,4 +1,4 @@
-  // components/Header.tsx - UPDATED: "Content List" → "Anime List"
+  // components/Header.tsx
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { FilterType, ContentType } from '../src/types';
 import { SearchIcon } from './icons/SearchIcon';
@@ -198,7 +198,6 @@ const Header: React.FC<HeaderProps> = ({
               >
                 Manga
               </button>
-              {/* ✅ CHANGED: Content List → Anime List */}
               <button 
                 onClick={() => handleNavClick('list')} 
                 className="text-slate-300 hover:text-purple-400 transition-colors font-medium disabled:opacity-50"
@@ -208,7 +207,7 @@ const Header: React.FC<HeaderProps> = ({
               </button>
             </nav>
 
-            {/* ✅ REAL-TIME DESKTOP SEARCH BAR */}
+            {/* Desktop Search Bar */}
             <div className="hidden md:flex items-center relative">
               <div className="relative">
                 <input
@@ -240,7 +239,7 @@ const Header: React.FC<HeaderProps> = ({
               </div>
             </div>
 
-            {/* ✅ MOBILE: Search Icon and Menu Button */}
+            {/* Mobile: Search Icon and Menu Button */}
             <div className="flex items-center md:hidden">
               {/* Mobile Search Icon */}
               <button 
@@ -262,7 +261,7 @@ const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* ✅ REAL-TIME MOBILE SEARCH BAR */}
+          {/* Mobile Search Bar */}
           {isMobileSearchOpen && (
             <div className="md:hidden mt-2 pb-4">
               <div className="relative">
@@ -304,12 +303,6 @@ const Header: React.FC<HeaderProps> = ({
                 >
                   ✕
                 </button>
-              </div>
-              
-              {/* Real-time search indicator */}
-              <div className="mt-2 text-xs text-slate-400 px-1 flex items-center">
-                <div className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></div>
-                Real-time search enabled
               </div>
             </div>
           )}
@@ -362,7 +355,6 @@ const Header: React.FC<HeaderProps> = ({
                 >
                   Manga
                 </button>
-                {/* ✅ CHANGED: Content List → Anime List (in mobile menu too) */}
                 <button 
                   onClick={() => handleNavClick('list')} 
                   className="text-left w-full px-3 py-3 rounded-md text-slate-200 hover:bg-purple-700 hover:text-white transition-colors font-medium disabled:opacity-50"
