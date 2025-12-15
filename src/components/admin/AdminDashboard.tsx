@@ -6,7 +6,6 @@ import EpisodesManager from './EpisodesManager';
 import FeaturedAnimeManager from './FeaturedAnimeManager';
 import ReportsManager from './ReportsManager';
 import SocialMediaManager from './SocialMediaManager';
-import AdManager from './AdManager';
 import Spinner from '../Spinner';
 import axios from 'axios';
 
@@ -88,7 +87,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     { id: 'featured', label: 'Featured Anime', icon: '⭐', component: <FeaturedAnimeManager /> },
     { id: 'reports', label: 'User Reports', icon: '📊', component: <ReportsManager /> },
     { id: 'social', label: 'Social Media', icon: '📱', component: <SocialMediaManager /> },
-    { id: 'ads', label: 'Ad Management', icon: '📢', component: <AdManager /> }
   ];
 
   const ActiveComponent = tabs.find(tab => tab.id === activeTab)?.component || <AnimeListTable />;
