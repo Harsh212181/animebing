@@ -1,4 +1,4 @@
-  // components/AnimeDetailPage.tsx
+   // components/AnimeDetailPage.tsx - OPTIMIZED VERSION WITH IMAGE DELIVERY FIXES
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Anime, Episode, Chapter } from '../src/types';
@@ -23,6 +23,44 @@ interface Props {
 }
 
 const API_BASE = 'https://animabing.onrender.com/api';
+
+// Helper functions for image optimization
+const optimizeImageUrl = (url: string, width: number, height: number): string => {
+  if (!url || !url.includes('cloudinary.com')) return url;
+  
+  try {
+    // Check if already optimized with our dimensions
+    if (url.includes(`w_${width},h_${height},c_fill`)) return url;
+    
+    // Remove existing transformations and add optimized ones
+    const baseUrl = url.split('/upload/')[0];
+    const rest = url.split('/upload/')[1];
+    const imagePath = rest.split('/').slice(1).join('/');
+    
+    return `${baseUrl}/upload/f_webp,q_auto:good,w_${width},h_${height},c_fill/${imagePath}`;
+  } catch (error) {
+    console.error('Error optimizing image URL:', error);
+    return url;
+  }
+};
+
+const generateSrcSet = (url: string, baseWidth: number, baseHeight: number): string => {
+  if (!url || !url.includes('cloudinary.com')) return '';
+  
+  try {
+    const baseUrl = url.split('/upload/')[0];
+    const rest = url.split('/upload/')[1];
+    const imagePath = rest.split('/').slice(1).join('/');
+    
+    return `
+      ${baseUrl}/upload/f_webp,q_auto:good,w_${baseWidth},h_${baseHeight},c_fill/${imagePath} ${baseWidth}w,
+      ${baseUrl}/upload/f_webp,q_auto:good,w_${baseWidth * 2},h_${baseHeight * 2},c_fill/${imagePath} ${baseWidth * 2}w
+    `;
+  } catch (error) {
+    console.error('Error generating srcset:', error);
+    return '';
+  }
+};
 
 const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) => {
   const navigate = useNavigate();
@@ -76,7 +114,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
 
       setAnimeLoading(true);
       try {
-        const fields = 'title,thumbnail,releaseYear,contentType,subDubStatus,description,genreList';
+        const fields = 'title,thumbnail,releaseYear,status,contentType,subDubStatus,description,genreList';
         const fullAnimeData = await getAnimeById(anime.id, fields);
         if (fullAnimeData) {
           setFullAnime(fullAnimeData);
@@ -96,6 +134,23 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
 
   // Use fullAnime if available, else fallback to anime
   const displayAnime = fullAnime || anime;
+  
+  // Optimize thumbnail URLs for different displays
+  const mobileThumbnail = displayAnime?.thumbnail 
+    ? optimizeImageUrl(displayAnime.thumbnail, 80, 112)
+    : 'https://via.placeholder.com/80x112/1e293b/64748b?text=No+Image';
+  
+  const mobileThumbnailSrcSet = displayAnime?.thumbnail 
+    ? generateSrcSet(displayAnime.thumbnail, 80, 112)
+    : '';
+  
+  const desktopThumbnail = displayAnime?.thumbnail 
+    ? optimizeImageUrl(displayAnime.thumbnail, 320, 448)
+    : 'https://via.placeholder.com/320x448/1e293b/64748b?text=No+Image';
+  
+  const desktopThumbnailSrcSet = displayAnime?.thumbnail 
+    ? generateSrcSet(displayAnime.thumbnail, 320, 448)
+    : '';
 
   // Group episodes/chapters by session
   const itemsBySession = (isManga ? chapters : episodes)?.reduce((acc, item) => {
@@ -255,6 +310,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
         <button
           onClick={onBack}
           className="group bg-slate-800/60 hover:bg-slate-700/80 text-white px-4 py-2 rounded-lg mb-4 flex items-center gap-2 transition-all duration-300 font-medium backdrop-blur-sm border border-slate-700 hover:border-purple-500/30 text-sm"
+          aria-label="Go back to home page"
         >
           <span className="group-hover:-translate-x-0.5 transition-transform">←</span>
           Back to Home
@@ -269,11 +325,16 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
                 <div className="flex-shrink-0">
                   <div className="relative group">
                     <img
-                      src={displayAnime?.thumbnail}
+                      src={mobileThumbnail}
+                      srcSet={mobileThumbnailSrcSet}
                       alt={displayAnime?.title}
                       className="w-20 h-28 object-cover rounded-lg shadow-md group-hover:scale-105 transition-transform duration-300"
+                      loading="lazy"
+                      width="80"
+                      height="112"
+                      sizes="80px"
                       onError={(e) => {
-                        e.currentTarget.src = 'https://via.placeholder.com/300x400/1e293b/64748b?text=No+Image';
+                        e.currentTarget.src = 'https://via.placeholder.com/80x112/1e293b/64748b?text=No+Image';
                       }}
                     />
                   </div>
@@ -283,6 +344,15 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
                   <div className="flex flex-wrap gap-1">
                     <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-2 py-1 rounded text-xs font-bold whitespace-nowrap">
                       {displayAnime?.releaseYear}
+                    </span>
+                    <span
+                      className={`px-2 py-1 rounded text-xs font-bold whitespace-nowrap ${
+                        displayAnime?.status === 'Ongoing'
+                          ? 'bg-gradient-to-r from-yellow-500 to-orange-600 text-white'
+                          : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white'
+                      }`}
+                    >
+                      {displayAnime?.status}
                     </span>
                     <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-2 py-1 rounded text-xs font-bold whitespace-nowrap">
                       {displayAnime?.contentType}
@@ -316,6 +386,9 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
                 <div className="flex flex-wrap gap-2">
                   <div className="text-xs text-slate-300">
                     <span className="font-semibold">Year:</span> {displayAnime?.releaseYear || 'N/A'}
+                  </div>
+                  <div className="text-xs text-slate-300">
+                    <span className="font-semibold">Status:</span> {displayAnime?.status || 'N/A'}
                   </div>
                   <div className="text-xs text-slate-300">
                     <span className="font-semibold">Type:</span> {displayAnime?.contentType || 'N/A'}
@@ -357,6 +430,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
                         ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md shadow-purple-500/25'
                         : 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50 border border-slate-600'
                     }`}
+                    aria-label={`Select session ${session}`}
                   >
                     Session {session}
                   </button>
@@ -461,11 +535,16 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
               <div className="flex-shrink-0 mx-auto lg:mx-0">
                 <div className="relative group">
                   <img
-                    src={displayAnime?.thumbnail}
+                    src={desktopThumbnail}
+                    srcSet={desktopThumbnailSrcSet}
                     alt={displayAnime?.title}
                     className="w-full max-w-xs lg:w-80 h-auto lg:h-[28rem] object-cover rounded-xl shadow-2xl group-hover:scale-105 transition-transform duration-500"
+                    loading="lazy"
+                    width="320"
+                    height="448"
+                    sizes="(max-width: 1024px) 80px, 320px"
                     onError={(e) => {
-                      e.currentTarget.src = 'https://via.placeholder.com/300x400/1e293b/64748b?text=No+Image';
+                      e.currentTarget.src = 'https://via.placeholder.com/320x448/1e293b/64748b?text=No+Image';
                     }}
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-slate-900/50 to-transparent rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
@@ -484,6 +563,15 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
                   <div className="flex flex-wrap items-center gap-4">
                     <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg font-bold">
                       {displayAnime?.releaseYear}
+                    </div>
+                    <div
+                      className={`px-4 py-2 rounded-lg font-bold ${
+                        displayAnime?.status === 'Ongoing'
+                          ? 'bg-gradient-to-r from-yellow-500 to-orange-600 text-white'
+                          : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white'
+                      }`}
+                    >
+                      {displayAnime?.status}
                     </div>
                     <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg font-bold">
                       {displayAnime?.contentType}
@@ -545,6 +633,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
                           ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-500/25'
                           : 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50 border border-slate-600'
                       }`}
+                      aria-label={`Select session ${session}`}
                     >
                       Session {session}
                     </button>
