@@ -1,6 +1,6 @@
-  // components/AnimeCard.tsx - FINAL FIXED VERSION
+   // components/AnimeCard.tsx - OPTIMIZED VERSION WITH IMAGE DELIVERY FIXES
 import React from 'react';
-import type { Anime } from '../src/types';       // ← Correct path for your folder structure
+import type { Anime } from '../src/types';
 import { PlayIcon } from './icons/PlayIcon';
 
 interface AnimeCardProps {
@@ -10,21 +10,83 @@ interface AnimeCardProps {
   showStatus?: boolean;
 }
 
+// Helper function to optimize Cloudinary image URLs
+const optimizeImageUrl = (url: string, width: number, height: number): string => {
+  if (!url || !url.includes('cloudinary.com')) return url;
+  
+  try {
+    // Remove existing transformations and add optimized ones
+    const baseUrl = url.split('/upload/')[0];
+    const rest = url.split('/upload/')[1];
+    const imagePath = rest.split('/').slice(1).join('/');
+    
+    return `${baseUrl}/upload/f_webp,q_auto:good,w_${width},h_${height},c_fill/${imagePath}`;
+  } catch (error) {
+    console.error('Error optimizing image URL:', error);
+    return url;
+  }
+};
+
+// Generate srcset for responsive images
+const generateSrcSet = (url: string, baseWidth: number, baseHeight: number): string => {
+  if (!url || !url.includes('cloudinary.com')) return '';
+  
+  try {
+    const baseUrl = url.split('/upload/')[0];
+    const rest = url.split('/upload/')[1];
+    const imagePath = rest.split('/').slice(1).join('/');
+    
+    return `
+      ${baseUrl}/upload/f_webp,q_auto:good,w_${baseWidth},h_${baseHeight},c_fill/${imagePath} ${baseWidth}w,
+      ${baseUrl}/upload/f_webp,q_auto:good,w_${baseWidth * 2},h_${baseHeight * 2},c_fill/${imagePath} ${baseWidth * 2}w
+    `;
+  } catch (error) {
+    console.error('Error generating srcset:', error);
+    return '';
+  }
+};
+
 const AnimeCard: React.FC<AnimeCardProps> = ({ anime, onClick, index, showStatus = false }) => {
+  // Define display dimensions
+  const displayWidth = 193;
+  const displayHeight = 289;
+  
+  // Optimize the thumbnail URL
+  const optimizedThumbnail = optimizeImageUrl(anime.thumbnail, displayWidth, displayHeight);
+  const thumbnailSrcSet = generateSrcSet(anime.thumbnail, displayWidth, displayHeight);
+
   return (
     <div
       className="anime-card group relative overflow-hidden rounded-lg shadow-lg cursor-pointer transition-all duration-300 card-load-animate opacity-0 hover:-translate-y-1 hover:shadow-2xl hover:shadow-purple-800/40 aspect-[2/3] w-full"
       style={{ animationDelay: `${index * 50}ms` }}
       onClick={() => onClick(anime)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick(anime);
+        }
+      }}
+      aria-label={`View details for ${anime.title}`}
     >
       
       {/* Image Container */}
       <div className="w-full h-full relative">
         <img
-          src={anime.thumbnail}
+          src={optimizedThumbnail}
+          srcSet={thumbnailSrcSet}
           alt={anime.title}
           className="w-full h-full object-cover transition-transform duration-300 ease-in-out group-hover:scale-105"
           loading="lazy"
+          width={displayWidth}
+          height={displayHeight}
+          sizes="(max-width: 640px) 48vw, (max-width: 768px) 32vw, (max-width: 1024px) 24vw, (max-width: 1280px) 20vw, 193px"
+          onError={(e) => {
+            // Fallback to original if optimization fails
+            e.currentTarget.src = anime.thumbnail;
+            console.warn('Failed to load optimized image, using original');
+          }}
         />
 
         {/* Status Badge */}
