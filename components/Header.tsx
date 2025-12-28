@@ -151,9 +151,9 @@ const Header: React.FC<HeaderProps> = ({
               className="text-base md:text-xl font-bold text-white flex items-center"
               disabled={isNavigating}
             >
-              {/* Skull emoji with better quality */}
+              {/* Skull emoji with decreased size */}
               <span 
-                className="text-xl md:text-2xl mr-1"
+                className="text-lg md:text-xl mr-1" // Changed from text-xl md:text-2xl to text-lg md:text-xl
                 style={{
                   fontFamily: '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "EmojiOne Color", "Android Emoji", sans-serif',
                   textShadow: '0 0 1px rgba(255,255,255,0.5)',
@@ -254,22 +254,22 @@ const Header: React.FC<HeaderProps> = ({
 
             {/* Mobile: Search Icon and Menu Button */}
             <div className="flex items-center md:hidden">
-              {/* Mobile Search Icon */}
+              {/* Mobile Search Icon - increased size */}
               <button 
                 onClick={toggleMobileSearch}
                 className="text-slate-300 hover:text-purple-400 disabled:opacity-50 p-1"
                 disabled={isNavigating}
               >
-                <SearchIcon className="w-4 h-4" />
+                <SearchIcon className="w-5 h-5" /> {/* Changed from w-4 h-4 to w-5 h-5 */}
               </button>
               
-              {/* Mobile Menu Button */}
+              {/* Mobile Menu Button - increased size */}
               <button 
                 onClick={() => setIsMenuOpen(!isMenuOpen)} 
-                className="text-slate-300 hover:text-purple-400 disabled:opacity-50 p-1"
+                className="text-slate-300 hover:text-purple-400 disabled:opacity-50 p-1 ml-1"
                 disabled={isNavigating}
               >
-                {isMenuOpen ? <CloseIcon className="w-4 h-4" /> : <MenuIcon className="w-4 h-4" />}
+                {isMenuOpen ? <CloseIcon className="w-5 h-5" /> : <MenuIcon className="w-5 h-5" />} {/* Changed from w-4 h-4 to w-5 h-5 */}
               </button>
             </div>
           </div>
