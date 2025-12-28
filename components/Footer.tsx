@@ -154,7 +154,8 @@ const Footer: React.FC = () => {
     <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-sm z-50 flex items-center justify-center">
       <div className="text-center">
         <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-purple-500 mx-auto mb-4"></div>
-        <h3 className="text-white text-xl font-semibold mb-2">Loading AnimeBing</h3>
+        {/* ✅ UPDATED: Changed text from "AnimeBing" to "animebing.in" */}
+        <h3 className="text-white text-xl font-semibold mb-2">Loading animebing.in</h3>
         <p className="text-slate-400">Preparing your content...</p>
       </div>
     </div>
@@ -224,8 +225,21 @@ const Footer: React.FC = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
             {/* Brand Section */}
             <div className="text-center lg:text-left">
-              <h3 className="text-2xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mb-4">
-                Anime<span className="text-purple-400">bing</span>
+              {/* ✅ UPDATED: Brand name with skull emoji and .in domain */}
+              <h3 className="text-2xl font-bold text-white flex items-center justify-center lg:justify-start mb-4">
+                <span 
+                  className="text-xl md:text-2xl mr-1"
+                  style={{
+                    fontFamily: '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "EmojiOne Color", "Android Emoji", sans-serif',
+                    textShadow: '0 0 1px rgba(255,255,255,0.5)',
+                    filter: 'drop-shadow(0 0 1px rgba(255,255,255,0.3))'
+                  }}
+                >
+                  ☠️
+                </span>
+                <span className="bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent">
+                  anime<span className="text-purple-400">bing.in</span>
+                </span>
               </h3>
               <p className="text-slate-400 text-sm mb-4">
                 Your ultimate destination for anime and movies. Watch, download, and enjoy your favorite content in high quality.
@@ -377,8 +391,9 @@ const Footer: React.FC = () => {
               </div>
               {/* Copyright */}
               <div className="text-center md:text-right">
+                {/* ✅ UPDATED: Copyright text from "Animebing" to "animebing.in" */}
                 <p className="text-slate-400 text-sm font-medium">
-                  &copy; {new Date().getFullYear()} Animebing. All Rights Reserved.
+                  &copy; {new Date().getFullYear()} animebing.in. All Rights Reserved.
                 </p>
                 <p className="text-slate-500 text-xs mt-1">
                   Stream your favorite anime anytime, anywhere
