@@ -529,12 +529,12 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
             {!isManga && (
               <div className="mt-4 p-3 bg-gradient-to-r from-blue-900/30 to-indigo-900/30 border border-blue-700/50 rounded-lg">
                 <h4 className="text-xs font-bold text-blue-300 mb-2 flex items-center gap-1">
-                  <span className="text-blue-400">💡</span> Important Tips for Download:
+                  <span className="text-blue-400">💡</span> Important Tips for Download and watching:
                 </h4>
                 <ul className="space-y-2 text-xs text-blue-300">
                   <li className="flex items-start gap-2">
                     <span className="text-blue-400 mt-0.5">•</span>
-                    <span>If the audio of any episode or movie is incorrect, you can fix it by changing the audio language to Hindi in MX Player.</span>
+                    <span>If the audio of any episode or movie is incorrect, you can fix it by changing the audio language to Hindi,Tamil,Telugu,English,Japanese in MX Player.</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-blue-400 mt-0.5">•</span>
@@ -748,12 +748,12 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
                 {!isManga && (
                   <div className="mt-6 p-4 bg-gradient-to-r from-blue-900/30 to-indigo-900/30 border border-blue-700/50 rounded-xl">
                     <h4 className="text-sm font-bold text-blue-300 mb-3 flex items-center gap-2">
-                      <span className="text-blue-400">💡</span> Important Tips for Download:
+                      <span className="text-blue-400">💡</span> Important Tips for Download and watching:
                     </h4>
                     <ul className="space-y-2 text-sm text-blue-300">
                       <li className="flex items-start gap-2">
                         <span className="text-blue-400 mt-0.5">•</span>
-                        <span>If the audio of any episode or movie is incorrect, you can fix it by changing the audio language to Hindi in MX Player.</span>
+                        <span>If the audio of any episode or movie is incorrect, you can fix it by changing the audio language to Hindi,Tamil,Telugu,English,Japanese in MX Player.</span>
                       </li>
                       <li className="flex items-start gap-2">
                         <span className="text-blue-400 mt-0.5">•</span>
