@@ -146,13 +146,13 @@ const AnimeListPage: React.FC<AnimeListPageProps> = ({ onAnimeSelect }) => {
                 <li key={anime.id}>
                   <button 
                     onClick={() => onAnimeSelect(anime)}
-                    className="w-full text-left p-4 flex justify-between items-center hover:bg-slate-700/50 transition-colors duration-200 group"
+                    className="w-full text-left p-4 flex items-center hover:bg-slate-700/50 transition-colors duration-200 group"
                   >
-                    {/* Full title on desktop, truncated on mobile */}
-                    <span className="text-slate-200 group-hover:text-purple-300 transition-colors pr-2 truncate md:overflow-visible md:whitespace-normal">
+                    {/* Updated: Smaller font size and better word break for mobile */}
+                    <span className="text-slate-200 group-hover:text-purple-300 transition-colors pr-2 text-sm md:text-base break-words flex-1 min-w-0">
                       {anime.title}
                     </span>
-                    <span className="text-xs text-slate-400 bg-slate-700 px-2 py-1 rounded-full flex-shrink-0">
+                    <span className="text-xs text-slate-400 bg-slate-700 px-2 py-1 rounded-full flex-shrink-0 ml-2">
                       {anime.subDubStatus}
                     </span>
                   </button>
