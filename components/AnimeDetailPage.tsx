@@ -525,6 +525,12 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
                   })}
               </div>
             )}
+            {/* ✅ ADDED: Tips section for mobile view - only for non-manga content */}
+            {!isManga && (
+              <div className="mt-4 p-3 bg-gradient-to-r from-blue-900/30 to-indigo-900/30 border border-blue-700/50 rounded-lg text-xs text-blue-300">
+                <span className="font-bold">💡 Tips:</span> If the audio of any episode or movie is incorrect, you can fix it by changing the audio language Hindi,Tamil,Telugu,English,Japanese in MX Player.
+              </div>
+            )}
           </div>
         </div>
 
@@ -666,65 +672,73 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, isLoading = false }) 
                 </div>
               </div>
             ) : (
-              <div className="space-y-3">
-                {currentSessionItems
-                  .sort((a, b) => {
-                    if (isManga) {
-                      return (a as any).chapterNumber - (b as any).chapterNumber;
-                    } else {
-                      return (a as any).episodeNumber - (b as any).episodeNumber;
-                    }
-                  })
-                  .map((item, index) => {
-                    const itemData = item as any;
-                    const downloadLinks: DownloadLink[] = itemData.downloadLinks || [];
-                    
-                    return (
-                      <div
-                        key={itemData._id || index}
-                        className="group bg-slate-700/30 hover:bg-slate-600/40 rounded-xl p-4 transition-all duration-300 border border-slate-600 hover:border-purple-500/50 hover:shadow-lg hover:shadow-purple-500/10 backdrop-blur-sm"
-                      >
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                          <div className="flex items-start sm:items-center gap-4 flex-1">
-                            <div className="flex items-center gap-3">
-                              {/* ✅ UPDATED: Only show EP/MOVIE/CHAPTER without numbers */}
-                              <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg text-sm font-bold min-w-16 text-center">
-                                {isMovie ? 'MOVIE' : (isManga ? 'CHAPTER' : 'EP')}
-                              </span>
+              <>
+                <div className="space-y-3">
+                  {currentSessionItems
+                    .sort((a, b) => {
+                      if (isManga) {
+                        return (a as any).chapterNumber - (b as any).chapterNumber;
+                      } else {
+                        return (a as any).episodeNumber - (b as any).episodeNumber;
+                      }
+                    })
+                    .map((item, index) => {
+                      const itemData = item as any;
+                      const downloadLinks: DownloadLink[] = itemData.downloadLinks || [];
+                      
+                      return (
+                        <div
+                          key={itemData._id || index}
+                          className="group bg-slate-700/30 hover:bg-slate-600/40 rounded-xl p-4 transition-all duration-300 border border-slate-600 hover:border-purple-500/50 hover:shadow-lg hover:shadow-purple-500/10 backdrop-blur-sm"
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div className="flex items-start sm:items-center gap-4 flex-1">
+                              <div className="flex items-center gap-3">
+                                {/* ✅ UPDATED: Only show EP/MOVIE/CHAPTER without numbers */}
+                                <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg text-sm font-bold min-w-16 text-center">
+                                  {isMovie ? 'MOVIE' : (isManga ? 'CHAPTER' : 'EP')}
+                                </span>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <h3 className="text-white font-semibold text-lg truncate">
+                                  {itemData.title ||
+                                    `${getContentLabelSingular()}`}
+                                </h3>
+                                {itemData.session > 1 && (
+                                  <p className="text-slate-400 text-sm mt-1">Session {itemData.session}</p>
+                                )}
+                              </div>
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <h3 className="text-white font-semibold text-lg truncate">
-                                {itemData.title ||
-                                  `${getContentLabelSingular()}`}
-                              </h3>
-                              {itemData.session > 1 && (
-                                <p className="text-slate-400 text-sm mt-1">Session {itemData.session}</p>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex gap-2 flex-shrink-0">
-                            <DownloadButton
-                              item={item as Episode | Chapter}
-                              itemId={itemData._id}
-                              className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white px-4 py-2 rounded-lg transition-all duration-300 font-medium flex items-center gap-2 hover:scale-105 active:scale-95"
-                              showText={true}
-                            />
-                            <div className="scale-90">
-                              <ReportButton
-                                animeId={anime.id}
-                                episodeId={itemData._id}
-                                episodeNumber={
-                                  isManga ? itemData.chapterNumber : itemData.episodeNumber
-                                }
-                                animeTitle={anime.title}
+                            <div className="flex gap-2 flex-shrink-0">
+                              <DownloadButton
+                                item={item as Episode | Chapter}
+                                itemId={itemData._id}
+                                className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white px-4 py-2 rounded-lg transition-all duration-300 font-medium flex items-center gap-2 hover:scale-105 active:scale-95"
+                                showText={true}
                               />
+                              <div className="scale-90">
+                                <ReportButton
+                                  animeId={anime.id}
+                                  episodeId={itemData._id}
+                                  episodeNumber={
+                                    isManga ? itemData.chapterNumber : itemData.episodeNumber
+                                  }
+                                  animeTitle={anime.title}
+                                />
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
-              </div>
+                      );
+                    })}
+                </div>
+                {/* ✅ ADDED: Tips section for PC view - only for non-manga content */}
+                {!isManga && (
+                  <div className="mt-6 p-4 bg-gradient-to-r from-blue-900/30 to-indigo-900/30 border border-blue-700/50 rounded-xl text-sm text-blue-300">
+                    <span className="font-bold">💡 Tips:</span> If the audio of any episode or movie is incorrect, you can fix it by changing the audio language to Hindi,Tamil,Telugu,English,Japanese in MX Player.
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
