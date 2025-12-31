@@ -17,26 +17,26 @@ const ANIME_FIELDS =
 
 // Enhanced border colors with stronger gradients
 const BORDER_COLORS = [
-  'from-purple-600 via-blue-500 to-purple-600',
-  'from-red-500 via-pink-500 to-red-500',
-  'from-green-500 via-teal-500 to-green-500',
-  'from-yellow-500 via-orange-500 to-yellow-500',
-  'from-indigo-500 via-purple-500 to-indigo-500',
-  'from-pink-500 via-rose-500 to-pink-500',
-  'from-cyan-500 via-blue-500 to-cyan-500',
-  'from-emerald-500 via-green-500 to-emerald-500',
+  'from-purple-500 via-blue-400 to-purple-500',
+  'from-red-400 via-pink-400 to-red-400',
+  'from-green-400 via-teal-400 to-green-400',
+  'from-yellow-400 via-orange-400 to-yellow-400',
+  'from-indigo-400 via-purple-400 to-indigo-400',
+  'from-pink-400 via-rose-400 to-pink-400',
+  'from-cyan-400 via-blue-400 to-cyan-400',
+  'from-emerald-400 via-green-400 to-emerald-400',
 ];
 
-// Stronger glow colors for hover effects
+// Softer glow colors for hover effects
 const GLOW_COLORS = [
-  ['#8B5CF6', '#3B82F6', '#8B5CF6'], // purple-blue-purple
-  ['#EF4444', '#EC4899', '#EF4444'], // red-pink-red
-  ['#10B981', '#0D9488', '#10B981'], // green-teal-green
-  ['#F59E0B', '#F97316', '#F59E0B'], // yellow-orange-yellow
-  ['#6366F1', '#8B5CF6', '#6366F1'], // indigo-purple-indigo
-  ['#EC4899', '#F472B6', '#EC4899'], // pink-rose-pink
-  ['#06B6D4', '#3B82F6', '#06B6D4'], // cyan-blue-cyan
-  ['#10B981', '#059669', '#10B981'], // emerald-green-emerald
+  ['#7C3AED', '#3B82F6', '#7C3AED'], // purple-blue-purple
+  ['#DC2626', '#DB2777', '#DC2626'], // red-pink-red
+  ['#059669', '#0D9488', '#059669'], // green-teal-green
+  ['#D97706', '#EA580C', '#D97706'], // yellow-orange-yellow
+  ['#4F46E5', '#7C3AED', '#4F46E5'], // indigo-purple-indigo
+  ['#DB2777', '#F472B6', '#DB2777'], // pink-rose-pink
+  ['#0891B2', '#3B82F6', '#0891B2'], // cyan-blue-cyan
+  ['#059669', '#047857', '#059669'], // emerald-green-emerald
 ];
 
 const HomePage: React.FC<Props> = ({
@@ -62,13 +62,13 @@ const HomePage: React.FC<Props> = ({
   const isMounted = useRef(true);
   const lastSearchQuery = useRef(searchQuery);
 
-  // Border color ka interval - har 18 seconds (30s se 18s kiya)
+  // Border color ka interval - ab 20 seconds
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentBorderColorIndex((prevIndex) => 
         (prevIndex + 1) % BORDER_COLORS.length
       );
-    }, 18000); // 30 seconds se 18 seconds kiya
+    }, 20000); // 20 seconds
 
     return () => clearInterval(interval);
   }, []);
@@ -316,14 +316,14 @@ const HomePage: React.FC<Props> = ({
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       <style>{`
-        @keyframes enhanced-glow {
+        @keyframes subtle-glow {
           0%, 100% {
-            opacity: 0.8;
-            filter: drop-shadow(0 0 15px currentColor);
+            opacity: 0.4;
+            filter: drop-shadow(0 0 10px currentColor);
           }
           50% {
-            opacity: 1;
-            filter: drop-shadow(0 0 35px currentColor);
+            opacity: 0.6;
+            filter: drop-shadow(0 0 25px currentColor);
           }
         }
         
@@ -341,18 +341,18 @@ const HomePage: React.FC<Props> = ({
             transform: translateY(0px);
           }
           50% {
-            transform: translateY(-4px);
+            transform: translateY(-3px);
           }
         }
         
-        @keyframes pulse-strong {
+        @keyframes pulse-subtle {
           0%, 100% {
-            opacity: 0.7;
+            opacity: 0.5;
             transform: scale(1);
           }
           50% {
-            opacity: 0.9;
-            transform: scale(1.02);
+            opacity: 0.7;
+            transform: scale(1.01);
           }
         }
         
@@ -366,12 +366,12 @@ const HomePage: React.FC<Props> = ({
         }
         
         .enhanced-glow {
-          animation: pulse-strong 2.5s ease-in-out infinite, color-shift 10s linear infinite;
+          animation: pulse-subtle 3s ease-in-out infinite;
         }
         
         .card-hover-effect:hover {
-          transform: translateY(-6px) scale(1.02);
-          transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+          transform: translateY(-4px) scale(1.01);
+          transition: transform 0.3s ease-out;
         }
         
         .shimmer-effect {
@@ -383,25 +383,30 @@ const HomePage: React.FC<Props> = ({
           background: linear-gradient(
             90deg,
             transparent,
-            rgba(255, 255, 255, 0.15),
+            rgba(255, 255, 255, 0.08),
             transparent
           );
-          animation: shimmer 2.5s infinite;
+          animation: shimmer 3s infinite;
         }
         
         @keyframes sparkle {
           0%, 100% {
-            opacity: 0.3;
+            opacity: 0.2;
             transform: scale(0.8);
           }
           50% {
-            opacity: 1;
-            transform: scale(1.2);
+            opacity: 0.5;
+            transform: scale(1.1);
           }
         }
         
         .sparkle-effect {
-          animation: sparkle 1.5s ease-in-out infinite;
+          animation: sparkle 2s ease-in-out infinite;
+        }
+        
+        /* Smooth transition for border color change */
+        .border-transition {
+          transition: background 0.8s ease-in-out;
         }
       `}</style>
       
@@ -469,66 +474,58 @@ const HomePage: React.FC<Props> = ({
               {getAllContentHeading()}
             </h2>
 
-            {/* Cards - Glow effect aur increase kiya */}
+            {/* Cards - Balanced glow effect */}
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
               {filteredAnime.map((anime, i) => (
                 <div 
                   key={`${anime.id || anime._id}-${i}`}
                   className="group relative"
                 >
-                  {/* Main Enhanced Glow Effect - More intense */}
+                  {/* Main Balanced Glow Effect */}
                   <div 
-                    className={`absolute -inset-[1px] rounded-xl bg-gradient-to-br ${BORDER_COLORS[currentBorderColorIndex]} enhanced-glow transition-all duration-500`}
+                    className={`absolute -inset-[1px] rounded-xl bg-gradient-to-br ${BORDER_COLORS[currentBorderColorIndex]} enhanced-glow border-transition`}
                     style={{
                       backgroundImage: `linear-gradient(135deg, ${GLOW_COLORS[currentBorderColorIndex][0]}, ${GLOW_COLORS[currentBorderColorIndex][1]}, ${GLOW_COLORS[currentBorderColorIndex][2]})`,
                     }}
                   ></div>
                   
-                  {/* Secondary Glow Layer - More intense */}
+                  {/* Secondary Glow Layer - Reduced intensity */}
                   <div 
-                    className="absolute -inset-0 rounded-xl opacity-50 blur-lg transition-all duration-700 group-hover:opacity-80 group-hover:blur-xl"
+                    className="absolute -inset-0 rounded-xl opacity-30 blur-md transition-all duration-500 group-hover:opacity-50"
                     style={{
-                      backgroundImage: `linear-gradient(135deg, ${GLOW_COLORS[currentBorderColorIndex][0]}80, ${GLOW_COLORS[currentBorderColorIndex][1]}80, ${GLOW_COLORS[currentBorderColorIndex][2]}80)`,
-                    }}
-                  ></div>
-                  
-                  {/* Third Glow Layer for extra effect */}
-                  <div 
-                    className="absolute -inset-1 rounded-xl opacity-20 blur-2xl transition-all duration-1000 group-hover:opacity-40"
-                    style={{
-                      backgroundImage: `radial-gradient(circle at center, ${GLOW_COLORS[currentBorderColorIndex][1]}60, transparent 70%)`,
+                      backgroundImage: `linear-gradient(135deg, ${GLOW_COLORS[currentBorderColorIndex][0]}40, ${GLOW_COLORS[currentBorderColorIndex][1]}40, ${GLOW_COLORS[currentBorderColorIndex][2]}40)`,
                     }}
                   ></div>
                   
                   {/* Main Card Container */}
-                  <div className="card-hover-effect relative rounded-xl border border-slate-700/40 bg-gradient-to-b from-slate-900/95 to-slate-800/90 p-1.5 transition-all duration-500 overflow-hidden group-hover:border-transparent group-hover:shadow-2xl">
+                  <div className="card-hover-effect relative rounded-xl border border-slate-700/30 bg-gradient-to-b from-slate-900/95 to-slate-800/90 p-1.5 transition-all duration-300 overflow-hidden group-hover:border-transparent">
                     
-                    {/* Shimmer Effect */}
+                    {/* Subtle Shimmer Effect */}
                     <div className="shimmer-effect"></div>
                     
-                    {/* Enhanced Inner Glow Effect - More intense */}
+                    {/* Subtle Inner Glow Effect */}
                     <div 
-                      className="absolute inset-0 opacity-0 group-hover:opacity-50 transition-opacity duration-700"
+                      className="absolute inset-0 opacity-0 group-hover:opacity-30 transition-opacity duration-500"
                       style={{
-                        background: `radial-gradient(circle at center, ${GLOW_COLORS[currentBorderColorIndex][1]}40 0%, transparent 70%)`,
+                        background: `radial-gradient(circle at center, ${GLOW_COLORS[currentBorderColorIndex][1]}20 0%, transparent 70%)`,
                       }}
                     ></div>
                     
                     {/* Gradient Overlay */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900/70 via-transparent to-transparent opacity-50 group-hover:opacity-40 transition-opacity duration-500"></div>
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-transparent to-transparent opacity-40 group-hover:opacity-30 transition-opacity duration-300"></div>
                     
-                    {/* Sparkle particles */}
-                    <div className="absolute top-2 right-2 w-1 h-1 rounded-full sparkle-effect opacity-0 group-hover:opacity-100"
+                    {/* Subtle sparkle particles */}
+                    <div className="absolute top-2 right-2 w-1 h-1 rounded-full sparkle-effect opacity-0 group-hover:opacity-30"
                       style={{
                         background: GLOW_COLORS[currentBorderColorIndex][0],
-                        boxShadow: `0 0 8px ${GLOW_COLORS[currentBorderColorIndex][0]}`,
+                        boxShadow: `0 0 5px ${GLOW_COLORS[currentBorderColorIndex][0]}`,
                         animationDelay: '0.2s'
                       }}
                     ></div>
-                    <div className="absolute bottom-2 left-2 w-1 h-1 rounded-full sparkle-effect opacity-0 group-hover:opacity-100"
+                    <div className="absolute bottom-2 left-2 w-1 h-1 rounded-full sparkle-effect opacity-0 group-hover:opacity-30"
                       style={{
                         background: GLOW_COLORS[currentBorderColorIndex][1],
-                        boxShadow: `0 0 8px ${GLOW_COLORS[currentBorderColorIndex][1]}`,
+                        boxShadow: `0 0 5px ${GLOW_COLORS[currentBorderColorIndex][1]}`,
                         animationDelay: '0.5s'
                       }}
                     ></div>
@@ -540,69 +537,62 @@ const HomePage: React.FC<Props> = ({
                       showStatus={true}
                     />
                     
-                    {/* Enhanced Corner Accents with Glow - More intense */}
+                    {/* Subtle Corner Accents */}
                     <div 
-                      className="absolute top-0 left-0 w-2 h-2 border-t border-l rounded-tl-xl opacity-0 group-hover:opacity-100 transition-all duration-300 sparkle-effect"
+                      className="absolute top-0 left-0 w-1.5 h-1.5 border-t border-l rounded-tl-xl opacity-0 group-hover:opacity-70 transition-all duration-300"
                       style={{
                         borderColor: GLOW_COLORS[currentBorderColorIndex][0],
-                        boxShadow: `0 0 8px ${GLOW_COLORS[currentBorderColorIndex][0]}, inset 0 0 4px ${GLOW_COLORS[currentBorderColorIndex][0]}`,
                       }}
                     ></div>
                     <div 
-                      className="absolute top-0 right-0 w-2 h-2 border-t border-r rounded-tr-xl opacity-0 group-hover:opacity-100 transition-all duration-300 sparkle-effect"
+                      className="absolute top-0 right-0 w-1.5 h-1.5 border-t border-r rounded-tr-xl opacity-0 group-hover:opacity-70 transition-all duration-300"
                       style={{
                         borderColor: GLOW_COLORS[currentBorderColorIndex][1],
-                        boxShadow: `0 0 8px ${GLOW_COLORS[currentBorderColorIndex][1]}, inset 0 0 4px ${GLOW_COLORS[currentBorderColorIndex][1]}`,
                         animationDelay: '0.3s'
                       }}
                     ></div>
                     <div 
-                      className="absolute bottom-0 left-0 w-2 h-2 border-b border-l rounded-bl-xl opacity-0 group-hover:opacity-100 transition-all duration-300 sparkle-effect"
+                      className="absolute bottom-0 left-0 w-1.5 h-1.5 border-b border-l rounded-bl-xl opacity-0 group-hover:opacity-70 transition-all duration-300"
                       style={{
                         borderColor: GLOW_COLORS[currentBorderColorIndex][2],
-                        boxShadow: `0 0 8px ${GLOW_COLORS[currentBorderColorIndex][2]}, inset 0 0 4px ${GLOW_COLORS[currentBorderColorIndex][2]}`,
                         animationDelay: '0.6s'
                       }}
                     ></div>
                     <div 
-                      className="absolute bottom-0 right-0 w-2 h-2 border-b border-r rounded-br-xl opacity-0 group-hover:opacity-100 transition-all duration-300 sparkle-effect"
+                      className="absolute bottom-0 right-0 w-1.5 h-1.5 border-b border-r rounded-br-xl opacity-0 group-hover:opacity-70 transition-all duration-300"
                       style={{
                         borderColor: GLOW_COLORS[currentBorderColorIndex][0],
-                        boxShadow: `0 0 8px ${GLOW_COLORS[currentBorderColorIndex][0]}, inset 0 0 4px ${GLOW_COLORS[currentBorderColorIndex][0]}`,
                         animationDelay: '0.9s'
                       }}
                     ></div>
                     
-                    {/* Floating Dots/Sparkles - More intense */}
-                    <div className="absolute -top-0.5 -left-0.5 w-1.5 h-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500 sparkle-effect"
+                    {/* Subtle Floating Dots */}
+                    <div className="absolute -top-0.5 -left-0.5 w-1 h-1 rounded-full opacity-0 group-hover:opacity-30 transition-opacity duration-500"
                       style={{
                         background: GLOW_COLORS[currentBorderColorIndex][0],
-                        boxShadow: `0 0 10px ${GLOW_COLORS[currentBorderColorIndex][0]}`,
-                        animation: 'float 1.8s ease-in-out infinite',
+                        boxShadow: `0 0 6px ${GLOW_COLORS[currentBorderColorIndex][0]}`,
+                        animation: 'float 2s ease-in-out infinite',
                       }}
                     ></div>
-                    <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-100 sparkle-effect"
+                    <div className="absolute -top-0.5 -right-0.5 w-1 h-1 rounded-full opacity-0 group-hover:opacity-30 transition-opacity duration-500 delay-75"
                       style={{
                         background: GLOW_COLORS[currentBorderColorIndex][1],
-                        boxShadow: `0 0 10px ${GLOW_COLORS[currentBorderColorIndex][1]}`,
-                        animation: 'float 1.8s ease-in-out infinite 0.6s',
-                        animationDelay: '0.2s'
+                        boxShadow: `0 0 6px ${GLOW_COLORS[currentBorderColorIndex][1]}`,
+                        animation: 'float 2s ease-in-out infinite 0.5s',
                       }}
                     ></div>
-                    <div className="absolute -bottom-0.5 -left-0.5 w-1.5 h-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-200 sparkle-effect"
+                    <div className="absolute -bottom-0.5 -left-0.5 w-1 h-1 rounded-full opacity-0 group-hover:opacity-30 transition-opacity duration-500 delay-150"
                       style={{
                         background: GLOW_COLORS[currentBorderColorIndex][2],
-                        boxShadow: `0 0 10px ${GLOW_COLORS[currentBorderColorIndex][2]}`,
-                        animation: 'float 1.8s ease-in-out infinite 1.2s',
-                        animationDelay: '0.4s'
+                        boxShadow: `0 0 6px ${GLOW_COLORS[currentBorderColorIndex][2]}`,
+                        animation: 'float 2s ease-in-out infinite 1s',
                       }}
                     ></div>
-                    <div className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-300 sparkle-effect"
+                    <div className="absolute -bottom-0.5 -right-0.5 w-1 h-1 rounded-full opacity-0 group-hover:opacity-30 transition-opacity duration-500 delay-225"
                       style={{
                         background: GLOW_COLORS[currentBorderColorIndex][0],
-                        boxShadow: `0 0 10px ${GLOW_COLORS[currentBorderColorIndex][0]}`,
-                        animation: 'float 1.8s ease-in-out infinite 1.8s',
-                        animationDelay: '0.6s'
+                        boxShadow: `0 0 6px ${GLOW_COLORS[currentBorderColorIndex][0]}`,
+                        animation: 'float 2s ease-in-out infinite 1.5s',
                       }}
                     ></div>
                   </div>
@@ -616,13 +606,13 @@ const HomePage: React.FC<Props> = ({
                 <button
                   onClick={loadMoreAnime}
                   disabled={isLoadingMore}
-                  className="relative overflow-hidden bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-10 py-4 rounded-xl font-bold text-lg shadow-xl hover:shadow-2xl hover:shadow-purple-500/50 disabled:opacity-60 transition-all duration-300 group"
+                  className="relative overflow-hidden bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-10 py-4 rounded-xl font-bold text-lg shadow-lg hover:shadow-xl hover:shadow-purple-500/30 disabled:opacity-60 transition-all duration-300 group"
                   style={{
-                    animation: 'pulse-strong 3s ease-in-out infinite'
+                    animation: 'pulse-subtle 4s ease-in-out infinite'
                   }}
                 >
                   {/* Button Glow Effect */}
-                  <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-purple-400/40 to-pink-400/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></span>
+                  <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-purple-400/20 to-pink-400/20 opacity-0 group-hover:opacity-70 transition-opacity duration-300"></span>
                   <span className="relative z-10">
                     {isLoadingMore ? (
                       <>
@@ -645,7 +635,7 @@ const HomePage: React.FC<Props> = ({
                     className="relative rounded-xl border border-slate-700/40 p-1.5 bg-gradient-to-b from-slate-900/80 to-slate-800/70 overflow-hidden"
                   >
                     {/* Skeleton shimmer effect */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-slate-700/20 to-transparent animate-shimmer"></div>
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-slate-700/10 to-transparent animate-shimmer"></div>
                     <SkeletonLoader />
                   </div>
                 ))}
