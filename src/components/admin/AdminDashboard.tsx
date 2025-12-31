@@ -1,4 +1,4 @@
-   // src/components/admin/AdminDashboard.tsx - UPDATED WITH ENHANCED UI
+  // src/components/admin/AdminDashboard.tsx - UPDATED WITH ENHANCED UI
 import React, { useState, useEffect } from 'react';
 import AnimeListTable from './AnimeListTable';
 import AddAnimeForm from './AddAnimeForm';
@@ -253,10 +253,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             {ActiveComponent}
           </div>
 
-          {/* Footer */}
-          <footer className="mt-6 p-5 bg-gradient-to-r from-slate-800/40 via-slate-800/20 to-slate-700/40 rounded-xl text-center text-sm text-slate-400 border border-slate-700/40 backdrop-blur-sm shadow-lg">
-            <p className="text-slate-500">Status: <span className="text-green-400 font-semibold">● Online</span> • Last Updated: {new Date().toLocaleTimeString()}</p>
-          </footer>
+          {/* Footer - REMOVED AS REQUESTED */}
+          {/* Status indicator has been removed from the footer */}
         </div>
       </div>
     </div>
@@ -264,4 +262,3 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 };
 
 export default AdminDashboard;
-
