@@ -1,4 +1,4 @@
-  // components/Footer.tsx - EXACT REAL INSTAGRAM LOGO
+  // components/Footer.tsx - FIXED VERSION WITH CORRECT API URL
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
@@ -17,14 +17,46 @@ interface AppDownload {
 }
 
 const Footer: React.FC = () => {
-  const [socialLinks, setSocialLinks] = useState<SocialMedia[]>([]);
+  const [socialLinks, setSocialLinks] = useState<SocialMedia[]>([
+    // ✅ TEMPORARY: Hardcoded links until API works
+    {
+      platform: 'facebook',
+      url: 'https://www.facebook.com/animebing',
+      isActive: true,
+      icon: 'facebook',
+      displayName: 'Facebook'
+    },
+    {
+      platform: 'instagram',
+      url: 'https://www.instagram.com/animebing',
+      isActive: true,
+      icon: 'instagram',
+      displayName: 'Instagram'
+    },
+    {
+      platform: 'telegram',
+      url: 'https://t.me/animebing',
+      isActive: true,
+      icon: 'telegram',
+      displayName: 'Telegram'
+    }
+  ]);
+  
   const [appDownloads, setAppDownloads] = useState<AppDownload[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
+  const [apiStatus, setApiStatus] = useState<string>('Using hardcoded links');
+  
   const navigate = useNavigate();
   const location = useLocation();
 
+  // ✅ CORRECT API BASE URL
+  const API_BASE = 'https://animabing.onrender.com';
+  // For local testing, you can use: 'http://localhost:3000'
+  // For production, use: 'https://animabing.onrender.com'
+
   useEffect(() => {
+    // Try to fetch from API
     fetchSocialLinks();
     fetchAppDownloads();
   }, []);
@@ -32,15 +64,34 @@ const Footer: React.FC = () => {
   const fetchSocialLinks = async () => {
     try {
       setLoading(true);
-      const response = await axios.get('/api/social');
-      if (response.data && Array.isArray(response.data)) {
-        setSocialLinks(response.data.filter((link: SocialMedia) => link.isActive));
+      console.log('Fetching from API:', `${API_BASE}/api/social`);
+      
+      const response = await axios.get(`${API_BASE}/api/social`, {
+        timeout: 5000,
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log('✅ API Response:', response.data);
+      
+      if (response.data && Array.isArray(response.data) && response.data.length > 0) {
+        const activeLinks = response.data.filter((link: SocialMedia) => link.isActive);
+        if (activeLinks.length > 0) {
+          setSocialLinks(activeLinks);
+          setApiStatus(`✅ Loaded ${activeLinks.length} links from API`);
+          console.log('Active links from API:', activeLinks);
+        } else {
+          setApiStatus('⚠️ API returned no active links');
+        }
       } else {
-        setDefaultLinks();
+        setApiStatus('⚠️ API returned empty array');
       }
-    } catch (error) {
-      console.error('Failed to fetch social links, using defaults');
-      setDefaultLinks();
+    } catch (error: any) {
+      console.error('❌ API Error:', error.message);
+      setApiStatus(`❌ API Failed: ${error.message}`);
+      // Keep using hardcoded links
     } finally {
       setLoading(false);
     }
@@ -48,7 +99,7 @@ const Footer: React.FC = () => {
 
   const fetchAppDownloads = async () => {
     try {
-      const response = await axios.get('/api/app-downloads');
+      const response = await axios.get(`${API_BASE}/api/app-downloads`);
       if (Array.isArray(response.data)) {
         setAppDownloads(response.data);
       } else {
@@ -60,32 +111,6 @@ const Footer: React.FC = () => {
     }
   };
 
-  const setDefaultLinks = () => {
-    setSocialLinks([
-      {
-        platform: 'facebook',
-        url: 'https://facebook.com/animebing',
-        isActive: true,
-        icon: 'facebook',
-        displayName: 'Facebook'
-      },
-      {
-        platform: 'instagram',
-        url: 'https://instagram.com/animebing',
-        isActive: true,
-        icon: 'instagram',
-        displayName: 'Instagram'
-      },
-      {
-        platform: 'telegram',
-        url: 'https://t.me/animebing',
-        isActive: true,
-        icon: 'telegram',
-        displayName: 'Telegram'
-      }
-    ]);
-  };
-
   const getAppDownload = (platform: string) => {
     if (!Array.isArray(appDownloads)) return undefined;
     return appDownloads.find(app => app.platform === platform);
@@ -93,6 +118,19 @@ const Footer: React.FC = () => {
 
   const androidApp = getAppDownload('android');
   const iosApp = getAppDownload('ios');
+
+  // Test API connection
+  const testApiConnection = async () => {
+    try {
+      const response = await axios.get(`${API_BASE}/api/social`);
+      alert(`✅ API Connected!\n\nStatus: ${response.status}\n\nLinks Found: ${response.data.length}\n\nData: ${JSON.stringify(response.data, null, 2)}`);
+      
+      // Reload with API data
+      fetchSocialLinks();
+    } catch (error: any) {
+      alert(`❌ API Connection Failed!\n\nError: ${error.message}\n\nPlease check:\n1. Is backend running at ${API_BASE}?\n2. Check server logs\n3. Visit ${API_BASE}/api/debug/social`);
+    }
+  };
 
   // ✅ FINAL FIX: DIRECT URL CHANGE FOR HOME PAGE LINKS
   const handleQuickLinkClick = async (type: string) => {
@@ -122,21 +160,17 @@ const Footer: React.FC = () => {
         newUrl = window.location.origin + '/?contentType=Manga';
         break;
       case 'anime-list':
-        // Different page - use React Router
         navigate('/anime');
         setTimeout(() => setIsNavigating(false), 800);
         return;
       default:
         newUrl = window.location.origin + '/';
     }
-    // ✅ DIRECT URL CHANGE - NO BLINKING
+    
     window.location.href = newUrl;
-   
-    // Reset navigation state after a delay
     setTimeout(() => setIsNavigating(false), 1500);
   };
 
-  // ✅ Enhanced page navigation for legal links
   const handlePageNavigation = async (path: string) => {
     if (isNavigating) return;
    
@@ -149,12 +183,10 @@ const Footer: React.FC = () => {
     setTimeout(() => setIsNavigating(false), 800);
   };
 
-  // Loading overlay component
   const NavigationLoader = () => (
     <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-sm z-50 flex items-center justify-center">
       <div className="text-center">
         <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-purple-500 mx-auto mb-4"></div>
-        {/* ✅ UPDATED: Changed text from "AnimeBing" to "animebing.in" */}
         <h3 className="text-white text-xl font-semibold mb-2">Loading animebing.in</h3>
         <p className="text-slate-400">Preparing your content...</p>
       </div>
@@ -172,7 +204,6 @@ const Footer: React.FC = () => {
       case 'instagram':
         return (
           <svg className={className} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            {/* ✅ FIXED: EXACT REAL INSTAGRAM LOGO WITH EVEN GRADIENT COVERAGE */}
             <defs>
               <linearGradient id="instagram-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
                 <stop offset="0%" stopColor="#fdf497"/>
@@ -199,33 +230,41 @@ const Footer: React.FC = () => {
     }
   };
 
-  if (loading) {
-    return (
-      <footer className="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 border-t border-purple-500/20">
-        <div className="container mx-auto py-12 px-4 text-center">
-          <div className="animate-pulse flex justify-center space-x-8 mb-8">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="w-12 h-12 bg-purple-500/20 rounded-xl"></div>
-            ))}
-          </div>
-          <p className="text-slate-400 text-sm">Loading...</p>
-        </div>
-      </footer>
-    );
-  }
-
   return (
     <>
-      {/* ✅ Navigation Loading Overlay */}
       {isNavigating && <NavigationLoader />}
      
       <footer className="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 border-t border-purple-500/20">
         <div className="container mx-auto py-12 px-4">
+          {/* Debug panel - visible only in development */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-3 mb-4">
+              <div className="flex justify-between items-center">
+                <div>
+                  <span className="text-xs text-gray-400">API Status:</span>
+                  <span className={`ml-2 text-xs ${apiStatus.includes('✅') ? 'text-green-400' : apiStatus.includes('❌') ? 'text-red-400' : 'text-yellow-400'}`}>
+                    {apiStatus}
+                  </span>
+                </div>
+                <button 
+                  onClick={testApiConnection}
+                  className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded"
+                >
+                  Test API
+                </button>
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
+                Backend: {API_BASE}
+                <br />
+                Frontend: {window.location.origin}
+              </div>
+            </div>
+          )}
+          
           {/* Main Footer Content */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
             {/* Brand Section */}
             <div className="text-center lg:text-left">
-              {/* ✅ UPDATED: Brand name with skull emoji and .in domain */}
               <h3 className="text-2xl font-bold text-white flex items-center justify-center lg:justify-start mb-4">
                 <span 
                   className="text-xl md:text-2xl mr-1"
@@ -244,23 +283,38 @@ const Footer: React.FC = () => {
               <p className="text-slate-400 text-sm mb-4">
                 Your ultimate destination for anime and movies. Watch, download, and enjoy your favorite content in high quality.
               </p>
-              {/* Social Media Links */}
+              
+              {/* Social Media Links - ALWAYS SHOW ICONS */}
               <div className="flex justify-center lg:justify-start space-x-4">
                 {socialLinks.map(link => (
                   <a
                     key={link.platform}
                     href={link.url}
                     target="_blank"
-                    rel="noopener noreferrer"
+                    rel="noopener noreferrer nofollow"
                     className="group bg-slate-800/50 hover:bg-purple-600 text-slate-400 hover:text-white p-3 rounded-xl transition-all duration-300 transform hover:scale-110 hover:shadow-lg hover:shadow-purple-500/25 backdrop-blur-sm"
                     title={`Follow us on ${link.displayName}`}
+                    onClick={(e) => {
+                      console.log('Opening social link:', link.platform, link.url);
+                      // Open in new tab by default
+                      e.preventDefault();
+                      window.open(link.url, '_blank', 'noopener,noreferrer');
+                    }}
                   >
                     <SocialIcon platform={link.platform} className="w-5 h-5" />
                   </a>
                 ))}
               </div>
+              
+              {/* Debug info in development */}
+              {process.env.NODE_ENV === 'development' && (
+                <div className="mt-2 text-xs text-gray-500">
+                  Showing {socialLinks.length} social links
+                </div>
+              )}
             </div>
-            {/* ✅ FIXED: Quick Links with DIRECT URL CHANGES */}
+            
+            {/* Quick Links */}
             <div className="text-center">
               <h4 className="text-white font-semibold mb-4 text-lg">Quick Links</h4>
               <div className="grid grid-cols-2 gap-2 text-sm">
@@ -315,6 +369,7 @@ const Footer: React.FC = () => {
                 </button>
               </div>
             </div>
+            
             {/* App Download Section */}
             <div className="text-center lg:text-right">
               <h4 className="text-white font-semibold mb-4 text-lg">Download App</h4>
@@ -355,6 +410,7 @@ const Footer: React.FC = () => {
               </div>
             </div>
           </div>
+          
           {/* Bottom Section */}
           <div className="border-t border-slate-700/50 pt-8">
             <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
@@ -389,9 +445,9 @@ const Footer: React.FC = () => {
                   Contact
                 </button>
               </div>
+              
               {/* Copyright */}
               <div className="text-center md:text-right">
-                {/* ✅ UPDATED: Copyright text from "Animebing" to "animebing.in" */}
                 <p className="text-slate-400 text-sm font-medium">
                   &copy; {new Date().getFullYear()} animebing.in. All Rights Reserved.
                 </p>
