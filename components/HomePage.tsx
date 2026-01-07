@@ -1,4 +1,4 @@
-  import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import type { Anime, FilterType, ContentTypeFilter } from '../src/types';
 import AnimeCard from './AnimeCard';
 import { SkeletonLoader } from './SkeletonLoader';
@@ -112,6 +112,14 @@ const HomePage: React.FC<Props> = ({
     }
   }, [localFilter, contentType, isSearching, searchQuery]);
 
+  // Helper function to get unique anime ID
+  const getAnimeId = (anime: Anime): string => {
+    if (anime.id) return anime.id;
+    if (anime._id) return anime._id;
+    // Fallback: generate a unique key from title and releaseYear
+    return `${anime.title}-${anime.releaseYear || 'unknown'}`;
+  };
+
   // Initial load
   const loadInitialAnime = useCallback(async (isSearch: boolean = false) => {
     if (!isMounted.current) return;
@@ -155,7 +163,7 @@ const HomePage: React.FC<Props> = ({
     }
   }, [searchQuery]);
 
-  // Load More
+  // Load More - SIMPLIFIED: No duplicate filtering during load
   const loadMoreAnime = useCallback(async () => {
     if (isLoadingMore || !hasMore || isSearching) return;
     
@@ -167,19 +175,11 @@ const HomePage: React.FC<Props> = ({
       const data = await getAnimePaginated(nextPage, 24, ANIME_FIELDS);
 
       if (data?.length && isMounted.current) {
-        // Filter out duplicates by checking IDs
-        const existingIds = new Set(animeList.map(anime => anime.id || anime._id));
-        const newAnimes = data.filter(anime => 
-          !existingIds.has(anime.id || anime._id)
-        );
-        
-        if (newAnimes.length > 0) {
-          setAnimeList(prev => [...prev, ...newAnimes]);
-          setCurrentPage(nextPage);
-          setHasMore(newAnimes.length === 24);
-        } else {
-          setHasMore(false);
-        }
+        // SIMPLIFIED: Just append all new data
+        // Duplicates will be handled in filteredAnime memo
+        setAnimeList(prev => [...prev, ...data]);
+        setCurrentPage(nextPage);
+        setHasMore(data.length === 24);
       } else {
         setHasMore(false);
       }
@@ -190,7 +190,7 @@ const HomePage: React.FC<Props> = ({
         setIsLoadingMore(false);
       }
     }
-  }, [currentPage, hasMore, isLoadingMore, animeList, isSearching]);
+  }, [currentPage, hasMore, isLoadingMore, isSearching]);
 
   // On mount and when filter/contentType changes
   useEffect(() => {
@@ -225,7 +225,7 @@ const HomePage: React.FC<Props> = ({
     return () => clearTimeout(timer);
   }, [searchQuery, loadInitialAnime, fetchFeaturedAnimes]);
 
-  // Filtering
+  // Filtering - IMPROVED: Better duplicate handling
   const filteredAnime = useMemo(() => {
     if (!animeList.length) return [];
     
@@ -238,19 +238,19 @@ const HomePage: React.FC<Props> = ({
       list = list.filter(a => a.subDubStatus === localFilter);
     }
 
-    // Remove duplicates by ID
-    const uniqueAnimes: Anime[] = [];
-    const seenIds = new Set();
+    // Remove duplicates using a more robust method
+    const uniqueAnimesMap = new Map<string, Anime>();
     
     for (const anime of list) {
-      const id = anime.id || anime._id;
-      if (id && !seenIds.has(id)) {
-        seenIds.add(id);
-        uniqueAnimes.push(anime);
+      const id = getAnimeId(anime);
+      
+      // Only add if not already in map
+      if (!uniqueAnimesMap.has(id)) {
+        uniqueAnimesMap.set(id, anime);
       }
     }
     
-    return uniqueAnimes;
+    return Array.from(uniqueAnimesMap.values());
   }, [animeList, localFilter, contentType]);
 
   const filterButtons = [
@@ -282,6 +282,13 @@ const HomePage: React.FC<Props> = ({
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, [isLoadingMore, hasMore, isSearching, loadMoreAnime]);
+
+  // Reset when filter changes
+  useEffect(() => {
+    if (isMounted.current) {
+      setLocalFilter(filter);
+    }
+  }, [filter]);
 
   // Full Loader
   if (isLoading && animeList.length === 0) {
@@ -356,15 +363,6 @@ const HomePage: React.FC<Props> = ({
           }
         }
         
-        @keyframes color-shift {
-          0% {
-            filter: hue-rotate(0deg);
-          }
-          100% {
-            filter: hue-rotate(360deg);
-          }
-        }
-        
         .enhanced-glow {
           animation: pulse-subtle 3s ease-in-out infinite;
         }
@@ -408,9 +406,18 @@ const HomePage: React.FC<Props> = ({
         .border-transition {
           transition: background 0.8s ease-in-out;
         }
+        
+        /* Custom scrollbar for filter buttons */
+        .scrollbar-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+        .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+        }
       `}</style>
       
-      <div className="container mx-auto px-4 py-4 lg:py-8">
+      <div className="container mx-auto px-3 sm:px-4 py-4 lg:py-8">
 
         {/* Featured */}
         {!searchQuery && !isSearching && featuredAnimes.length > 0 && (
@@ -425,17 +432,17 @@ const HomePage: React.FC<Props> = ({
           </div>
         )}
 
-        {/* Mobile Filter */}
+        {/* Mobile Filter Buttons - Only visible on mobile */}
         {!isSearching && (
           <div className="mb-3 lg:hidden">
-            <div className="flex flex-nowrap gap-1 overflow-x-auto pb-1.5 scrollbar-hide">
+            <div className="flex flex-nowrap gap-1 overflow-x-auto pb-1.5 scrollbar-hide px-1">
               {filterButtons.map(btn => (
                 <button
                   key={btn.key}
                   onClick={() => handleFilterChange(btn.key)}
                   className={`
-                    px-2.5 py-1.5 rounded text-[11px] font-medium transition-all duration-200
-                    border whitespace-nowrap flex-shrink-0 min-w-[62px]
+                    px-2.5 py-1.5 rounded text-[10px] sm:text-[11px] font-medium transition-all duration-200
+                    border whitespace-nowrap flex-shrink-0 min-w-[62px] sm:min-w-[68px]
                     ${
                       localFilter === btn.key
                         ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white border-transparent shadow-lg shadow-blue-500/40'
@@ -470,15 +477,16 @@ const HomePage: React.FC<Props> = ({
           </div>
         ) : (
           <>
+            {/* Header - Clean design without count */}
             <h2 className="text-2xl lg:text-3xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mb-6">
               {getAllContentHeading()}
             </h2>
 
-            {/* Cards - Balanced glow effect */}
+            {/* Cards Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
               {filteredAnime.map((anime, i) => (
                 <div 
-                  key={`${anime.id || anime._id}-${i}`}
+                  key={`${getAnimeId(anime)}-${i}`}
                   className="group relative"
                 >
                   {/* Main Balanced Glow Effect */}
