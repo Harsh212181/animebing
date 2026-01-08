@@ -1,4 +1,4 @@
-  // components/Footer.tsx - FIXED VERSION WITH CORRECT API URL
+ // components/Footer.tsx - CLEAN VERSION WITHOUT DEBUG PANEL
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
@@ -18,7 +18,7 @@ interface AppDownload {
 
 const Footer: React.FC = () => {
   const [socialLinks, setSocialLinks] = useState<SocialMedia[]>([
-    // ✅ TEMPORARY: Hardcoded links until API works
+    // ✅ Default hardcoded links
     {
       platform: 'facebook',
       url: 'https://www.facebook.com/animebing',
@@ -45,18 +45,15 @@ const Footer: React.FC = () => {
   const [appDownloads, setAppDownloads] = useState<AppDownload[]>([]);
   const [loading, setLoading] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
-  const [apiStatus, setApiStatus] = useState<string>('Using hardcoded links');
   
   const navigate = useNavigate();
   const location = useLocation();
 
   // ✅ CORRECT API BASE URL
   const API_BASE = 'https://animabing.onrender.com';
-  // For local testing, you can use: 'http://localhost:3000'
-  // For production, use: 'https://animabing.onrender.com'
 
   useEffect(() => {
-    // Try to fetch from API
+    // Try to fetch from API silently
     fetchSocialLinks();
     fetchAppDownloads();
   }, []);
@@ -64,7 +61,6 @@ const Footer: React.FC = () => {
   const fetchSocialLinks = async () => {
     try {
       setLoading(true);
-      console.log('Fetching from API:', `${API_BASE}/api/social`);
       
       const response = await axios.get(`${API_BASE}/api/social`, {
         timeout: 5000,
@@ -74,24 +70,15 @@ const Footer: React.FC = () => {
         }
       });
       
-      console.log('✅ API Response:', response.data);
-      
       if (response.data && Array.isArray(response.data) && response.data.length > 0) {
         const activeLinks = response.data.filter((link: SocialMedia) => link.isActive);
         if (activeLinks.length > 0) {
           setSocialLinks(activeLinks);
-          setApiStatus(`✅ Loaded ${activeLinks.length} links from API`);
-          console.log('Active links from API:', activeLinks);
-        } else {
-          setApiStatus('⚠️ API returned no active links');
         }
-      } else {
-        setApiStatus('⚠️ API returned empty array');
       }
     } catch (error: any) {
-      console.error('❌ API Error:', error.message);
-      setApiStatus(`❌ API Failed: ${error.message}`);
-      // Keep using hardcoded links
+      // Silently fall back to hardcoded links
+      console.log('Using default social links');
     } finally {
       setLoading(false);
     }
@@ -118,19 +105,6 @@ const Footer: React.FC = () => {
 
   const androidApp = getAppDownload('android');
   const iosApp = getAppDownload('ios');
-
-  // Test API connection
-  const testApiConnection = async () => {
-    try {
-      const response = await axios.get(`${API_BASE}/api/social`);
-      alert(`✅ API Connected!\n\nStatus: ${response.status}\n\nLinks Found: ${response.data.length}\n\nData: ${JSON.stringify(response.data, null, 2)}`);
-      
-      // Reload with API data
-      fetchSocialLinks();
-    } catch (error: any) {
-      alert(`❌ API Connection Failed!\n\nError: ${error.message}\n\nPlease check:\n1. Is backend running at ${API_BASE}?\n2. Check server logs\n3. Visit ${API_BASE}/api/debug/social`);
-    }
-  };
 
   // ✅ FINAL FIX: DIRECT URL CHANGE FOR HOME PAGE LINKS
   const handleQuickLinkClick = async (type: string) => {
@@ -236,31 +210,6 @@ const Footer: React.FC = () => {
      
       <footer className="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 border-t border-purple-500/20">
         <div className="container mx-auto py-12 px-4">
-          {/* Debug panel - visible only in development */}
-          {process.env.NODE_ENV === 'development' && (
-            <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-3 mb-4">
-              <div className="flex justify-between items-center">
-                <div>
-                  <span className="text-xs text-gray-400">API Status:</span>
-                  <span className={`ml-2 text-xs ${apiStatus.includes('✅') ? 'text-green-400' : apiStatus.includes('❌') ? 'text-red-400' : 'text-yellow-400'}`}>
-                    {apiStatus}
-                  </span>
-                </div>
-                <button 
-                  onClick={testApiConnection}
-                  className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded"
-                >
-                  Test API
-                </button>
-              </div>
-              <div className="text-xs text-gray-500 mt-1">
-                Backend: {API_BASE}
-                <br />
-                Frontend: {window.location.origin}
-              </div>
-            </div>
-          )}
-          
           {/* Main Footer Content */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
             {/* Brand Section */}
@@ -295,7 +244,6 @@ const Footer: React.FC = () => {
                     className="group bg-slate-800/50 hover:bg-purple-600 text-slate-400 hover:text-white p-3 rounded-xl transition-all duration-300 transform hover:scale-110 hover:shadow-lg hover:shadow-purple-500/25 backdrop-blur-sm"
                     title={`Follow us on ${link.displayName}`}
                     onClick={(e) => {
-                      console.log('Opening social link:', link.platform, link.url);
                       // Open in new tab by default
                       e.preventDefault();
                       window.open(link.url, '_blank', 'noopener,noreferrer');
@@ -305,13 +253,6 @@ const Footer: React.FC = () => {
                   </a>
                 ))}
               </div>
-              
-              {/* Debug info in development */}
-              {process.env.NODE_ENV === 'development' && (
-                <div className="mt-2 text-xs text-gray-500">
-                  Showing {socialLinks.length} social links
-                </div>
-              )}
             </div>
             
             {/* Quick Links */}
