@@ -4,28 +4,38 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Animebing - Watch Anime Online</title>
-    
+
     <!-- Google AdSense -->
-    <script 
-      async 
+    <script
+      async
       src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4562165881550636"
       crossorigin="anonymous"
     ></script>
-    
-    <!-- Google Analytics -->
+
+    <!-- Google Analytics (GA4 - SPA SAFE CONFIG) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-SCZXQXKFQD"></script>
     <script>
       window.dataLayer = window.dataLayer || [];
       function gtag(){dataLayer.push(arguments);}
       gtag('js', new Date());
-      gtag('config', 'G-SCZXQXKFQD');
+
+      // IMPORTANT: SPA website ke liye auto page_view OFF
+      gtag('config', 'G-SCZXQXKFQD', {
+        send_page_view: false
+      });
     </script>
-    
+
     <!-- Meta tags for SEO -->
-    <meta name="description" content="Watch latest anime series and movies in Hindi Dub, Hindi Sub and English Sub for free. Stream and download your favorite anime on Animebing." />
-    <meta name="keywords" content="anime, hindi dub anime, hindi sub anime, english sub anime, watch anime online, free anime streaming" />
+    <meta
+      name="description"
+      content="Watch latest anime series and movies in Hindi Dub, Hindi Sub and English Sub for free. Stream and download your favorite anime on Animebing."
+    />
+    <meta
+      name="keywords"
+      content="anime, hindi dub anime, hindi sub anime, english sub anime, watch anime online, free anime streaming"
+    />
     <meta name="author" content="Animebing" />
-    
+
     <style>
       body {
         background-color: #0a0c1c;
@@ -34,8 +44,7 @@
         padding: 0;
         font-family: system-ui, -apple-system, sans-serif;
       }
-      
-      /* Custom scrollbar */
+
       ::-webkit-scrollbar {
         width: 8px;
       }
@@ -43,17 +52,17 @@
         background: #0a0c1c;
       }
       ::-webkit-scrollbar-thumb {
-        background: #4c1d95;
-        border-radius: 4px;
+        background: linear-gradient(180deg, #8b5cf6, #6d28d9);
+        border-radius: 10px;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #5b21b6;
+        background: linear-gradient(180deg, #7c3aed, #5b21b6);
       }
-      
+
       html {
         scroll-behavior: smooth;
       }
-      
+
       @keyframes fade-in {
         from { opacity: 0; }
         to { opacity: 1; }
@@ -61,7 +70,7 @@
       .animate-fade-in {
         animation: fade-in 0.3s ease-in-out;
       }
-      
+
       @keyframes fade-in-down {
         from { opacity: 0; transform: translateY(-10px); }
         to { opacity: 1; transform: translateY(0); }
@@ -69,71 +78,37 @@
       .animate-fade-in-down {
         animation: fade-in-down 0.3s ease-in-out;
       }
-      
+
       @keyframes card-load {
-        from {
-            opacity: 0;
-            transform: translateY(20px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
       }
       .card-load-animate {
-          animation: card-load 0.5s ease-out forwards;
+        animation: card-load 0.5s ease-out forwards;
       }
-      
+
       @keyframes scale-in {
-        from {
-          opacity: 0;
-          transform: scale(0.9);
-        }
-        to {
-          opacity: 1;
-          transform: scale(1);
-        }
+        from { opacity: 0; transform: scale(0.9); }
+        to { opacity: 1; transform: scale(1); }
       }
       .animate-scale-in {
         animation: scale-in 0.3s ease-out;
       }
-      
+
       @keyframes bounce-soft {
-        0%, 100% {
-          transform: translateY(0);
-        }
-        50% {
-          transform: translateY(-5px);
-        }
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-5px); }
       }
-      
-      @keyframes pulse-soft {
-        0%, 100% {
-          opacity: 1;
-        }
-        50% {
-          opacity: 0.7;
-        }
-      }
-      
       .animate-bounce-soft {
         animation: bounce-soft 2s infinite;
       }
-      
+
+      @keyframes pulse-soft {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
+      }
       .animate-pulse-soft {
         animation: pulse-soft 2s infinite;
-      }
-      
-      button, a, .card {
-        transition: all 0.3s ease;
-      }
-      
-      ::-webkit-scrollbar-thumb {
-        background: linear-gradient(180deg, #8B5CF6, #6D28D9);
-        border-radius: 10px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: linear-gradient(180deg, #7C3AED, #5B21B6);
       }
 
       .scrollbar-hide {
@@ -143,72 +118,33 @@
       .scrollbar-hide::-webkit-scrollbar {
         display: none;
       }
-      
+
       .line-clamp-2 {
         display: -webkit-box;
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
         overflow: hidden;
-        line-clamp: 2;
-        box-orient: vertical;
       }
-      
+
       .line-clamp-3 {
         display: -webkit-box;
         -webkit-line-clamp: 3;
         -webkit-box-orient: vertical;
         overflow: hidden;
-        line-clamp: 3;
-        box-orient: vertical;
-      }
-
-      @keyframes slide-in-right {
-        from {
-          transform: translateX(100%);
-          opacity: 0;
-        }
-        to {
-          transform: translateX(0);
-          opacity: 1;
-        }
-      }
-      
-      @keyframes slide-in-left {
-        from {
-          transform: translateX(-100%);
-          opacity: 0;
-        }
-        to {
-          transform: translateX(0);
-          opacity: 1;
-        }
-      }
-      
-      .animate-slide-in-right {
-        animation: slide-in-right 0.5s ease-out;
-      }
-      
-      .animate-slide-in-left {
-        animation: slide-in-left 0.5s ease-out;
       }
 
       @keyframes shimmer {
-        0% {
-          background-position: -468px 0;
-        }
-        100% {
-          background-position: 468px 0;
-        }
+        0% { background-position: -468px 0; }
+        100% { background-position: 468px 0; }
       }
-      
       .animate-shimmer {
         animation: shimmer 2s infinite linear;
         background: linear-gradient(to right, #1e293b 8%, #334155 18%, #1e293b 33%);
         background-size: 800px 104px;
       }
     </style>
-    
-    <!-- React CDN imports (keeping these as they're fine) -->
+
+    <!-- React CDN imports -->
     <script type="importmap">
       {
         "imports": {
@@ -219,11 +155,9 @@
       }
     </script>
   </head>
+
   <body class="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
-    
-    <!-- REMOVED: The problematic tailwind.config script -->
-    <!-- All animations are now defined in tailwind.config.js -->
   </body>
 </html>
