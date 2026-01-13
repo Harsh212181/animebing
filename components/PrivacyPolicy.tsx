@@ -21,7 +21,7 @@ const PrivacyPolicy: React.FC = () => {
           <div className="space-y-4 sm:space-y-6">
             <section className="bg-slate-700/30 rounded-lg p-4 sm:p-6">
               <p className="text-slate-300 text-base sm:text-lg leading-relaxed">
-                At <strong>Animebing</strong>, accessible from <strong className="break-words">https://animabing.pages.dev</strong>, 
+                At <strong>Animebing</strong>, accessible from <strong className="break-words">https://animebing.in</strong>, 
                 one of our main priorities is the privacy of our visitors.
               </p>
               <p className="text-slate-300 mt-3 sm:mt-4 text-base sm:text-lg leading-relaxed">

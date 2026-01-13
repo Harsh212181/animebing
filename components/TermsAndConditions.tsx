@@ -22,7 +22,7 @@ const TermsAndConditions: React.FC = () => {
             {/* Welcome Section */}
             <section className="bg-slate-700/30 rounded-lg p-4 sm:p-6">
               <p className="text-slate-300 text-base sm:text-lg leading-relaxed">
-                Welcome to <strong>Animebing</strong>, accessible at <strong className="break-words">https://animabing.pages.dev</strong>.
+                Welcome to <strong>Animebing</strong>, accessible at <strong className="break-words">https://animabing.in</strong>.
               </p>
               <p className="text-slate-300 mt-3 sm:mt-4 text-base sm:text-lg leading-relaxed">
                 By accessing or using our website, you agree to be bound by these Terms & Conditions.
