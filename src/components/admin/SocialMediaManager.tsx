@@ -1,4 +1,4 @@
-  // src/components/admin/SocialMediaManager.tsx - ULTIMATE FIX VERSION
+ // src/components/admin/SocialMediaManager.tsx - FIXED ICONS WITHOUT REACT-ICONS
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Spinner from '../Spinner';
@@ -201,32 +201,95 @@ const SocialMediaManager: React.FC = () => {
     window.open(url, '_blank');
   };
 
+  // Simple SVG Icons - FIXED VERSION
   const SocialIcon = ({ platform, className = "w-6 h-6" }: { platform: string; className?: string }) => {
+    const svgClass = `${className} ${platform === 'instagram' ? 'text-white' : 
+                     platform === 'facebook' ? 'text-white' : 'text-white'}`;
+    
+    // Instagram Icon
+    if (platform === 'instagram') {
+      return (
+        <svg className={svgClass} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="24" height="24" rx="8" fill="url(#instagram-gradient)" />
+          <defs>
+            <linearGradient id="instagram-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#fdf497" />
+              <stop offset="25%" stopColor="#fd5949" />
+              <stop offset="50%" stopColor="#d6249f" />
+              <stop offset="100%" stopColor="#285AEB" />
+            </linearGradient>
+          </defs>
+          <circle cx="12" cy="12" r="5" fill="none" stroke="white" strokeWidth="2" />
+          <circle cx="17" cy="7" r="1.5" fill="white" />
+        </svg>
+      );
+    }
+    
+    // Facebook Icon
+    if (platform === 'facebook') {
+      return (
+        <svg className={svgClass} viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+          <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+        </svg>
+      );
+    }
+    
+    // Telegram Icon
+    if (platform === 'telegram') {
+      return (
+        <svg className={svgClass} viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.139l-1.671 7.894c-.236 1.001-.837 1.248-1.697.775l-4.688-3.454-2.26 2.178c-.249.249-.459.459-.935.459l.336-4.773 8.665-5.515c.387-.247.741-.112.45.141l-7.07 6.389-3.073-.967c-1.071-.336-1.092-1.071.223-1.585l12.18-4.692c.892-.336 1.674.223 1.383 1.383z" />
+        </svg>
+      );
+    }
+    
+    // Default icon
+    return (
+      <svg className={svgClass} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+      </svg>
+    );
+  };
+
+  // Platform Background Colors
+  const getPlatformBgColor = (platform: string) => {
     switch (platform) {
-      case 'facebook':
-        return (
-          <svg className={className} fill="#1877F2" viewBox="0 0 24 24">
-            <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-          </svg>
-        );
       case 'instagram':
+        return 'bg-gradient-to-r from-purple-600 via-pink-600 to-yellow-500';
+      case 'facebook':
+        return 'bg-blue-600';
+      case 'telegram':
+        return 'bg-blue-500';
+      default:
+        return 'bg-gray-600';
+    }
+  };
+
+  // Simple Icon Component for UI
+  const SimpleIcon = ({ icon, className = "w-5 h-5" }: { icon: string; className?: string }) => {
+    switch (icon) {
+      case 'refresh':
         return (
-          <svg className={className} viewBox="0 0 24 24">
-            <defs>
-              <linearGradient id="instagram-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="#fdf497"/>
-                <stop offset="30%" stopColor="#fd5949"/>
-                <stop offset="60%" stopColor="#d6249f"/>
-                <stop offset="100%" stopColor="#285AEB"/>
-              </linearGradient>
-            </defs>
-            <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" fill="url(#instagram-gradient)"/>
+          <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
         );
-      case 'telegram':
+      case 'check':
         return (
-          <svg className={className} fill="#0088CC" viewBox="0 0 24 24">
-            <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.139l-1.671 7.894c-.236 1.001-.837 1.248-1.697.775l-4.688-3.454-2.26 2.178c-.249.249-.459.459-.935.459l.336-4.773 8.665-5.515c.387-.247.741-.112.45.141l-7.07 6.389-3.073-.967c-1.071-.336-1.092-1.071.223-1.585l12.18-4.692c.892-.336 1.674.223 1.383 1.383z"/>
+          <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+        );
+      case 'warning':
+        return (
+          <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.998-.833-2.732 0L4.346 16.5c-.77.833.192 2.5 1.732 2.5z" />
+          </svg>
+        );
+      case 'external-link':
+        return (
+          <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
           </svg>
         );
       default:
@@ -243,33 +306,40 @@ const SocialMediaManager: React.FC = () => {
         <div className="flex gap-2">
           <button 
             onClick={fetchSocialLinks}
-            className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-sm transition"
+            className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-sm transition flex items-center gap-2"
           >
+            <SimpleIcon icon="refresh" className="w-4 h-4" />
             Refresh
           </button>
           <button 
             onClick={applyDirectLinks}
-            className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg text-sm transition"
+            className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg text-sm transition flex items-center gap-2"
           >
+            <SimpleIcon icon="check" className="w-4 h-4" />
             Apply Direct Fix
           </button>
         </div>
       </div>
 
       {successMessage && (
-        <div className="bg-green-900/30 border border-green-500 text-green-300 p-4 rounded-lg">
+        <div className="bg-green-900/30 border border-green-500 text-green-300 p-4 rounded-lg flex items-center gap-2">
+          <SimpleIcon icon="check" className="w-5 h-5" />
           {successMessage}
         </div>
       )}
 
       {error && (
-        <div className="bg-red-900/30 border border-red-500 text-red-300 p-4 rounded-lg">
+        <div className="bg-red-900/30 border border-red-500 text-red-300 p-4 rounded-lg flex items-center gap-2">
+          <SimpleIcon icon="warning" className="w-5 h-5" />
           {error}
         </div>
       )}
 
       <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4 mb-6">
-        <h4 className="text-lg font-medium text-blue-300 mb-2">🔧 FIX INSTRUCTIONS:</h4>
+        <h4 className="text-lg font-medium text-blue-300 mb-2 flex items-center gap-2">
+          <SimpleIcon icon="warning" className="w-5 h-5" />
+          FIX INSTRUCTIONS:
+        </h4>
         <ul className="text-blue-200 text-sm space-y-2">
           <li>1. Click <strong>"Apply Direct Fix"</strong> button to automatically fix all links</li>
           <li>2. Or manually edit each link with correct format:</li>
@@ -284,12 +354,8 @@ const SocialMediaManager: React.FC = () => {
           <div key={link.platform} className="bg-slate-800/50 rounded-lg p-6 border border-slate-600/50">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="flex items-center gap-4">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                  link.platform === 'instagram' ? 'bg-gradient-to-r from-purple-600 via-pink-600 to-yellow-500' :
-                  link.platform === 'facebook' ? 'bg-blue-600' :
-                  'bg-blue-500'
-                }`}>
-                  <SocialIcon platform={link.platform} className="w-6 h-6 text-white" />
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${getPlatformBgColor(link.platform)}`}>
+                  <SocialIcon platform={link.platform} className="w-6 h-6" />
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
@@ -308,19 +374,19 @@ const SocialMediaManager: React.FC = () => {
                       onClick={() => testLink(link.url, link.platform)}
                       className="text-blue-400 hover:text-blue-300 text-sm font-medium flex items-center gap-1"
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                      </svg>
+                      <SimpleIcon icon="external-link" className="w-4 h-4" />
                       Test Link
                     </button>
                     {link.platform === 'instagram' && link.url.includes('?igsh=') && (
-                      <span className="text-red-400 text-xs bg-red-900/30 px-2 py-1 rounded">
-                        ❌ Wrong format (remove ?igsh=...)
+                      <span className="text-red-400 text-xs bg-red-900/30 px-2 py-1 rounded flex items-center gap-1">
+                        <SimpleIcon icon="warning" className="w-3 h-3" />
+                        Wrong format (remove ?igsh=...)
                       </span>
                     )}
                     {link.platform === 'telegram' && link.url.includes('animebingofficile') && (
-                      <span className="text-red-400 text-xs bg-red-900/30 px-2 py-1 rounded">
-                        ❌ Typo (should be animebingofficial)
+                      <span className="text-red-400 text-xs bg-red-900/30 px-2 py-1 rounded flex items-center gap-1">
+                        <SimpleIcon icon="warning" className="w-3 h-3" />
+                        Typo (should be animebingofficial)
                       </span>
                     )}
                   </div>
@@ -330,7 +396,7 @@ const SocialMediaManager: React.FC = () => {
               <div className="flex gap-2">
                 <button
                   onClick={() => handleEdit(link)}
-                  className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded transition-colors text-sm"
+                  className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded transition-colors text-sm flex items-center gap-2"
                 >
                   Edit
                 </button>
@@ -345,9 +411,14 @@ const SocialMediaManager: React.FC = () => {
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
           <div className="bg-slate-900 border border-slate-700 p-6 rounded-lg shadow-2xl max-w-md w-full">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold text-white">
-                Edit {editingLink.displayName}
-              </h3>
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${getPlatformBgColor(editingLink.platform)}`}>
+                  <SocialIcon platform={editingLink.platform} className="w-5 h-5" />
+                </div>
+                <h3 className="text-xl font-bold text-white">
+                  Edit {editingLink.displayName}
+                </h3>
+              </div>
               <button
                 onClick={() => setEditingLink(null)}
                 className="text-slate-400 hover:text-white text-2xl"
@@ -399,8 +470,9 @@ const SocialMediaManager: React.FC = () => {
               <div className="flex gap-3 pt-4">
                 <button
                   type="submit"
-                  className="bg-green-600 hover:bg-green-500 text-white font-semibold py-2 px-6 rounded-lg transition-colors flex-1"
+                  className="bg-green-600 hover:bg-green-500 text-white font-semibold py-2 px-6 rounded-lg transition-colors flex-1 flex items-center justify-center gap-2"
                 >
+                  <SimpleIcon icon="check" className="w-4 h-4" />
                   Save Changes
                 </button>
                 <button
@@ -415,11 +487,7 @@ const SocialMediaManager: React.FC = () => {
 
             <div className="mt-4 p-3 bg-slate-800/50 rounded-lg">
               <div className="flex items-center gap-3 mb-2">
-                <div className={`w-8 h-8 rounded-full ${
-                  editingLink.platform === 'instagram' ? 'bg-gradient-to-r from-purple-600 via-pink-600 to-yellow-500' :
-                  editingLink.platform === 'facebook' ? 'bg-blue-600' :
-                  'bg-blue-500'
-                } flex items-center justify-center`}>
+                <div className={`w-8 h-8 rounded-full ${getPlatformBgColor(editingLink.platform)} flex items-center justify-center`}>
                   <SocialIcon platform={editingLink.platform} className="w-5 h-5 text-white" />
                 </div>
                 <div>
@@ -432,10 +500,9 @@ const SocialMediaManager: React.FC = () => {
               <button
                 onClick={() => testLink(editForm.url || '#', editingLink.platform)}
                 className="text-blue-400 hover:text-blue-300 text-xs flex items-center gap-1"
+                disabled={!editForm.url}
               >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                </svg>
+                <SimpleIcon icon="external-link" className="w-3 h-3" />
                 Test this link
               </button>
             </div>
@@ -444,7 +511,10 @@ const SocialMediaManager: React.FC = () => {
       )}
 
       <div className="bg-slate-800/30 rounded-lg p-6">
-        <h4 className="text-lg font-semibold text-white mb-3">✅ VERIFICATION STEPS:</h4>
+        <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+          <SimpleIcon icon="check" className="w-5 h-5 text-green-400" />
+          VERIFICATION STEPS:
+        </h4>
         <ol className="text-slate-400 text-sm space-y-2">
           <li>1. Click "Apply Direct Fix" button</li>
           <li>2. Open website in another device</li>
