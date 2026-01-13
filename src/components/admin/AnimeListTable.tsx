@@ -1,4 +1,4 @@
-// src/components/admin/AnimeListTable.tsx - UPDATED WITH SEO EDITING
+ // src/components/admin/AnimeListTable.tsx - UPDATED (Genre & Slug hidden from table)
 import React, { useState, useEffect } from 'react';
 import type { Anime } from '../../types';
 import axios from 'axios';
@@ -535,6 +535,7 @@ const AnimeListTable: React.FC = () => {
                   <React.Fragment key={anime.id}>
                     <tr className={`hover:bg-slate-700/30 transition-colors ${editingAnimeId === anime.id ? 'bg-slate-700/50' : ''}`}>
                       <td className="p-4 font-medium text-white">
+                        {/* ✅ TITLE COLUMN - Only show Title and Thumbnail */}
                         <div className="flex items-center gap-3">
                           <img 
                             src={anime.thumbnail} 
@@ -546,19 +547,14 @@ const AnimeListTable: React.FC = () => {
                             }}
                           />
                           <div>
-                            <div>{anime.title}</div>
-                            <div className="text-xs text-slate-400">
-                              {anime.genreList.slice(0, 2).join(', ')}
-                              {anime.genreList.length > 2 && '...'}
-                              {anime.slug && (
-                                <div className="mt-1">
-                                  <span className="text-blue-400 font-mono text-xs">/{anime.slug}</span>
-                                </div>
-                              )}
-                            </div>
+                            {/* ✅ Only Title (No genre or slug text) */}
+                            <div className="font-semibold">{anime.title}</div>
+                            {/* ✅ Genre and slug text REMOVED from display */}
                           </div>
                         </div>
                       </td>
+                      
+                      {/* ✅ TYPE COLUMN */}
                       <td className="p-4">
                         <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
                           anime.contentType === 'Movie' 
@@ -570,7 +566,13 @@ const AnimeListTable: React.FC = () => {
                           {anime.contentType}
                         </span>
                       </td>
-                      <td className="p-4 text-slate-300">{anime.releaseYear || 'N/A'}</td>
+                      
+                      {/* ✅ YEAR COLUMN */}
+                      <td className="p-4 text-slate-300 text-center">
+                        {anime.releaseYear || 'N/A'}
+                      </td>
+                      
+                      {/* ✅ STATUS COLUMN */}
                       <td className="p-4">
                         <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
                           anime.status === 'Complete' 
@@ -580,6 +582,8 @@ const AnimeListTable: React.FC = () => {
                           {anime.status || 'Ongoing'}
                         </span>
                       </td>
+                      
+                      {/* ✅ SUB/DUB COLUMN */}
                       <td className="p-4">
                         <span 
                           className={`px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
@@ -596,16 +600,22 @@ const AnimeListTable: React.FC = () => {
                           {anime.subDubStatus}
                         </span>
                       </td>
-                      <td className="p-4 text-slate-300">
+                      
+                      {/* ✅ EPISODES COLUMN */}
+                      <td className="p-4 text-slate-300 text-center">
                         <span className="bg-blue-600/20 text-blue-400 px-2 py-1 rounded text-xs whitespace-nowrap">
                           {anime.episodes?.length || 0} episodes
                         </span>
                       </td>
-                      <td className="p-4 text-slate-300">
+                      
+                      {/* ✅ SEO STATUS COLUMN */}
+                      <td className="p-4">
                         <span className={`${seoStatus.bgColor} ${seoStatus.color} px-2 py-1 rounded text-xs whitespace-nowrap`}>
                           {seoStatus.text}
                         </span>
                       </td>
+                      
+                      {/* ✅ ACTIONS COLUMN */}
                       <td className="p-4">
                         <div className="flex gap-2">
                           <button
@@ -632,7 +642,7 @@ const AnimeListTable: React.FC = () => {
                       </td>
                     </tr>
                     
-                    {/* Edit Form Row - Appears below the anime card */}
+                    {/* ✅ EDIT FORM ROW - Appears only when Edit button clicked */}
                     {editingAnimeId === anime.id && (
                       <tr className="bg-slate-800/70">
                         <td colSpan={8} className="p-4">
@@ -758,7 +768,7 @@ const AnimeListTable: React.FC = () => {
                                 />
                               </div>
 
-                              {/* ✅ SEO SECTION */}
+                              {/* ✅ SEO SECTION - This is where genre and slug will be edited */}
                               <div className="mt-6 pt-4 border-t border-slate-600">
                                 <h4 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
                                   <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
