@@ -1,4 +1,4 @@
- // src/components/admin/AddAnimeForm.tsx - COLLAPSIBLE GENRE SECTION
+ // src/components/admin/AddAnimeForm.tsx - FULL SCREEN VERSION
 import React, { useState } from 'react';
 import axios from 'axios';
 import type { SubDubStatus } from '../../types';
@@ -334,259 +334,258 @@ const AddAnimeForm: React.FC = () => {
   };
 
   return (
-    <div className="max-w-3xl">
-      <h2 className="text-2xl font-bold text-white mb-6">Add New Anime</h2>
-      
-      {/* Auto-generate SEO toggle */}
-      <div className="mb-6 bg-slate-800/50 p-4 rounded-lg border border-slate-700">
-        <div className="flex items-center justify-between">
+    <div className="w-full h-full bg-gray-900 p-4 md:p-6 lg:p-8 overflow-auto">
+      <div className="max-w-7xl mx-auto">
+        <div className="flex justify-between items-center mb-8">
           <div>
-            <h3 className="text-lg font-semibold text-white mb-1">SEO Settings</h3>
-            <p className="text-slate-400 text-sm">
-              Automatically generate SEO titles, descriptions, and keywords for better Google search results
-            </p>
+            <h1 className="text-3xl md:text-4xl font-bold text-white mb-2">Add New Anime</h1>
+            <p className="text-slate-400">Fill in all required fields to publish anime to your website</p>
           </div>
-          <label className="inline-flex items-center cursor-pointer">
-            <input
-              type="checkbox"
-              checked={autoGenerateSEO}
-              onChange={() => setAutoGenerateSEO(!autoGenerateSEO)}
-              className="sr-only peer"
-            />
-            <div className="relative w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
-            <span className="ml-3 text-sm font-medium text-slate-300">
-              {autoGenerateSEO ? 'Auto SEO: ON' : 'Auto SEO: OFF'}
-            </span>
-          </label>
-        </div>
-      </div>
-      
-      <form onSubmit={handleSubmit} className="space-y-4 bg-slate-700/50 p-6 rounded-lg border border-slate-600">
-        {/* Basic Information Section */}
-        <div className="mb-6 pb-4 border-b border-slate-600">
-          <h3 className="text-lg font-semibold text-white mb-4">Basic Information</h3>
-          
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Title *</label>
-              <input
-                type="text"
-                value={form.title}
-                onChange={handleTitleChange}
-                className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
-                placeholder="e.g., Naruto Shippuden"
-                required
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Description</label>
-              <textarea
-                value={form.description}
-                onChange={(e) => setForm({ ...form, description: e.target.value })}
-                className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition h-24"
-                placeholder="Brief description of the anime..."
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Thumbnail URL *</label>
-              <input
-                type="url"
-                value={form.thumbnail}
-                onChange={(e) => setForm({ ...form, thumbnail: e.target.value })}
-                className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
-                placeholder="https://res.cloudinary.com/.../thumbnail.jpg"
-                required
-              />
-              <p className="text-slate-400 text-xs mt-1">
-                Recommended: Cloudinary URL with optimized image (WebP format, 193x289px)
-              </p>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">Release Year</label>
+          <div className="hidden md:flex items-center space-x-4">
+            <div className="text-right">
+              <p className="text-slate-300 text-sm">Auto SEO</p>
+              <label className="inline-flex items-center cursor-pointer">
                 <input
-                  type="number"
-                  value={form.releaseYear}
-                  onChange={(e) => setForm({ ...form, releaseYear: Number(e.target.value) })}
-                  className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
-                  min="1900"
-                  max="2030"
-                  required
+                  type="checkbox"
+                  checked={autoGenerateSEO}
+                  onChange={() => setAutoGenerateSEO(!autoGenerateSEO)}
+                  className="sr-only peer"
                 />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">Content Type</label>
-                <select
-                  value={form.contentType}
-                  onChange={handleContentTypeChange}
-                  className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
-                >
-                  <option value="Anime">Anime Series</option>
-                  <option value="Movie">Movie</option>
-                  <option value="Manga">Manga</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">Sub/Dub Status</label>
-                <select
-                  value={form.subDubStatus}
-                  onChange={handleSubDubStatusChange}
-                  className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
-                >
-                  <option value="Hindi Dub">Hindi Dub</option>
-                  <option value="Hindi Sub">Hindi Sub</option>
-                  <option value="English Sub">English Sub</option>
-                  <option value="Both">Both (Hindi Dub & Sub)</option>
-                  <option value="Sub & Dub">Sub & Dub Available</option>
-                  <option value="Dual Audio">Dual Audio</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">Status</label>
-                <select
-                  value={form.status}
-                  onChange={(e) => setForm({ ...form, status: e.target.value })}
-                  className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
-                >
-                  <option value="Ongoing">Ongoing</option>
-                  <option value="Complete">Complete</option>
-                </select>
-              </div>
+                <div className="relative w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+              </label>
             </div>
-            
-            {/* Genre Selector - COLLAPSIBLE SECTION */}
-            <div className="bg-slate-800/30 rounded-lg border border-slate-700 overflow-hidden">
-              {/* Genre Header - Clickable */}
-              <div 
-                className="p-4 cursor-pointer hover:bg-slate-800/50 transition flex justify-between items-center"
-                onClick={() => setShowGenreSelector(!showGenreSelector)}
-              >
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-sm font-medium text-slate-300">
-                      Genres <span className="text-red-400">*</span>
-                    </h4>
-                    <span className="text-xs px-2 py-1 bg-purple-600/30 text-purple-300 rounded-full">
-                      {form.genreList.length} selected
-                    </span>
-                    {form.genreList.length === 0 && (
-                      <span className="text-xs text-red-400">(Required)</span>
-                    )}
+          </div>
+        </div>
+        
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Left Column - Basic Information */}
+            <div className="lg:col-span-2">
+              <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-6 mb-6">
+                <h2 className="text-xl font-bold text-white mb-6 pb-3 border-b border-slate-700 flex items-center">
+                  <span className="bg-gradient-to-r from-purple-500 to-pink-500 w-1.5 h-6 mr-3 rounded-full"></span>
+                  Basic Information
+                </h2>
+                
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">
+                        Title <span className="text-red-400">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={form.title}
+                        onChange={handleTitleChange}
+                        className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+                        placeholder="e.g., Naruto Shippuden"
+                        required
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">
+                        Content Type
+                      </label>
+                      <select
+                        value={form.contentType}
+                        onChange={handleContentTypeChange}
+                        className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+                      >
+                        <option value="Anime">Anime Series</option>
+                        <option value="Movie">Movie</option>
+                        <option value="Manga">Manga</option>
+                      </select>
+                    </div>
                   </div>
-                  <p className="text-slate-400 text-xs mt-1">
-                    {showGenreSelector 
-                      ? 'Click to hide genre selection' 
-                      : 'Click to select genres from list or add custom'}
-                  </p>
-                </div>
-                <div className="text-xl text-slate-400 transform transition-transform duration-300">
-                  {showGenreSelector ? '▲' : '▼'}
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">
+                      Description
+                    </label>
+                    <textarea
+                      value={form.description}
+                      onChange={(e) => setForm({ ...form, description: e.target.value })}
+                      className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition h-32"
+                      placeholder="Brief description of the anime..."
+                      rows={5}
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">
+                      Thumbnail URL <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      type="url"
+                      value={form.thumbnail}
+                      onChange={(e) => setForm({ ...form, thumbnail: e.target.value })}
+                      className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+                      placeholder="https://res.cloudinary.com/.../thumbnail.jpg"
+                      required
+                    />
+                    <p className="text-slate-400 text-xs mt-2 flex items-center">
+                      <span className="text-yellow-400 mr-1">💡</span>
+                      Recommended: Cloudinary URL with optimized image (WebP format, 193x289px)
+                    </p>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">
+                        Release Year
+                      </label>
+                      <input
+                        type="number"
+                        value={form.releaseYear}
+                        onChange={(e) => setForm({ ...form, releaseYear: Number(e.target.value) })}
+                        className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+                        min="1900"
+                        max="2030"
+                        required
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">
+                        Sub/Dub Status
+                      </label>
+                      <select
+                        value={form.subDubStatus}
+                        onChange={handleSubDubStatusChange}
+                        className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+                      >
+                        <option value="Hindi Dub">Hindi Dub</option>
+                        <option value="Hindi Sub">Hindi Sub</option>
+                        <option value="English Sub">English Sub</option>
+                        <option value="Both">Both (Hindi Dub & Sub)</option>
+                        <option value="Sub & Dub">Sub & Dub Available</option>
+                        <option value="Dual Audio">Dual Audio</option>
+                      </select>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">
+                        Status
+                      </label>
+                      <select
+                        value={form.status}
+                        onChange={(e) => setForm({ ...form, status: e.target.value })}
+                        className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+                      >
+                        <option value="Ongoing">Ongoing</option>
+                        <option value="Complete">Complete</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
               </div>
               
-              {/* Selected Genres Preview (Always Visible) */}
-              {form.genreList.length > 0 && (
-                <div className="px-4 pb-3 border-t border-slate-700/50">
-                  <div className="flex items-center justify-between mt-3 mb-2">
-                    <p className="text-slate-300 text-sm">Selected Genres:</p>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        clearAllGenres();
-                      }}
-                      className="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded bg-red-900/30 hover:bg-red-900/50 transition"
-                    >
-                      Clear All
-                    </button>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {form.genreList.map(genre => (
-                      <span
-                        key={genre}
-                        className={`inline-flex items-center gap-1 text-white px-3 py-1.5 rounded-lg text-sm shadow-md ${
-                          GENRE_OPTIONS.includes(genre as any)
-                            ? 'bg-gradient-to-r from-purple-600 to-pink-600'
-                            : 'bg-gradient-to-r from-pink-600 to-rose-600'
-                        }`}
-                      >
-                        {genre}
+              {/* Genre Selector - FULL WIDTH */}
+              <div className="bg-slate-800/50 rounded-xl border border-slate-700 overflow-hidden mb-6">
+                <div className="p-6">
+                  <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-xl font-bold text-white flex items-center">
+                      <span className="bg-gradient-to-r from-purple-500 to-pink-500 w-1.5 h-6 mr-3 rounded-full"></span>
+                      Genres <span className="text-red-400 ml-2">*</span>
+                    </h2>
+                    <div className="flex items-center gap-4">
+                      <span className="text-purple-300 font-medium">
+                        {form.genreList.length} selected
+                      </span>
+                      {form.genreList.length > 0 && (
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleGenre(genre);
-                          }}
-                          className="hover:text-red-200 ml-1.5 text-lg font-bold"
-                          title="Remove genre"
+                          onClick={clearAllGenres}
+                          className="text-sm text-red-400 hover:text-red-300 px-3 py-1 rounded bg-red-900/30 hover:bg-red-900/50 transition"
                         >
-                          ×
+                          Clear All
                         </button>
-                      </span>
-                    ))}
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
-              
-              {/* Collapsible Content */}
-              <div 
-                className={`transition-all duration-300 overflow-hidden ${
-                  showGenreSelector ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'
-                }`}
-              >
-                <div className="p-4 border-t border-slate-700/50">
+                  
+                  {/* Selected Genres Preview */}
+                  {form.genreList.length > 0 && (
+                    <div className="mb-6 p-4 bg-slate-900/30 rounded-lg">
+                      <p className="text-slate-300 text-sm font-medium mb-3">Selected Genres:</p>
+                      <div className="flex flex-wrap gap-3">
+                        {form.genreList.map(genre => (
+                          <span
+                            key={genre}
+                            className={`inline-flex items-center gap-2 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-lg ${
+                              GENRE_OPTIONS.includes(genre as any)
+                                ? 'bg-gradient-to-r from-purple-600 to-pink-600'
+                                : 'bg-gradient-to-r from-pink-600 to-rose-600'
+                            }`}
+                          >
+                            {genre}
+                            <button
+                              type="button"
+                              onClick={() => toggleGenre(genre)}
+                              className="hover:text-red-200 ml-1 text-lg font-bold transition-transform hover:scale-125"
+                              title="Remove genre"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
                   {/* Custom Genre Input */}
-                  <div className="mb-4">
-                    <div className="flex gap-2 mb-2">
+                  <div className="mb-8">
+                    <label className="block text-sm font-medium text-slate-300 mb-3">
+                      Add Custom Genre
+                    </label>
+                    <div className="flex gap-3">
                       <input
                         type="text"
                         value={customGenre}
                         onChange={(e) => setCustomGenre(e.target.value)}
                         onKeyPress={handleCustomGenreKeyPress}
-                        className="flex-1 bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition text-sm"
+                        className="flex-1 bg-slate-900 border border-slate-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
                         placeholder="Type custom genre (e.g., Martial Arts, Shounen)"
                       />
                       <button
                         type="button"
                         onClick={addCustomGenre}
                         disabled={!customGenre.trim()}
-                        className="bg-gradient-to-r from-purple-700 to-pink-700 hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg transition shadow-md hover:shadow-purple-500/20"
+                        className="bg-gradient-to-r from-purple-700 to-pink-700 hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg transition shadow-lg hover:shadow-purple-500/30 font-medium"
                       >
-                        + Add
+                        Add Genre
                       </button>
                     </div>
-                    <p className="text-slate-400 text-xs">
-                      Type a custom genre and press "Add" or Enter key. Custom genres show in pink color.
+                    <p className="text-slate-400 text-xs mt-2">
+                      Custom genres will appear in <span className="text-pink-300">pink color</span>
                     </p>
                   </div>
                   
-                  {/* Genre Checkbox Grid */}
-                  <div className="mb-3">
-                    <p className="text-slate-300 text-sm font-medium mb-2">Popular Genres:</p>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 p-3 bg-slate-900/30 rounded-lg">
+                  {/* Genre Checkbox Grid - 5 COLUMNS FOR FULL WIDTH */}
+                  <div>
+                    <p className="text-slate-300 text-sm font-medium mb-4">Popular Genres:</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 p-4 bg-slate-900/30 rounded-xl">
                       {GENRE_OPTIONS.map(genre => {
                         const isSelected = form.genreList.includes(genre);
                         
                         return (
                           <div
                             key={genre}
-                            className={`flex items-center p-3 rounded-lg cursor-pointer transition-all duration-200 border ${
+                            className={`flex items-center p-4 rounded-lg cursor-pointer transition-all duration-200 border-2 ${
                               isSelected 
-                                ? 'bg-gradient-to-r from-purple-900/40 to-purple-900/20 border-purple-500 shadow-md shadow-purple-900/30' 
+                                ? 'bg-gradient-to-r from-purple-900/40 to-purple-900/20 border-purple-500 shadow-xl shadow-purple-900/30 scale-[1.02]' 
                                 : 'bg-slate-800/50 border-slate-700 hover:bg-slate-700/50 hover:border-slate-600'
                             }`}
                             onClick={() => toggleGenre(genre)}
                           >
-                            <div className={`flex items-center justify-center w-5 h-5 mr-3 rounded border ${
+                            <div className={`flex items-center justify-center w-6 h-6 mr-3 rounded border-2 ${
                               isSelected 
                                 ? 'bg-purple-500 border-purple-400' 
                                 : 'bg-slate-700 border-slate-600'
                             }`}>
                               {isSelected && (
-                                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                                 </svg>
                               )}
@@ -603,9 +602,9 @@ const AddAnimeForm: React.FC = () => {
                   </div>
                   
                   {/* Quick Select Buttons */}
-                  <div className="mt-3">
-                    <p className="text-slate-300 text-sm font-medium mb-2">Quick Select:</p>
-                    <div className="flex flex-wrap gap-2">
+                  <div className="mt-8 pt-6 border-t border-slate-700">
+                    <p className="text-slate-300 text-sm font-medium mb-4">Quick Select Genre Groups:</p>
+                    <div className="flex flex-wrap gap-3">
                       <button
                         type="button"
                         onClick={() => {
@@ -615,7 +614,7 @@ const AddAnimeForm: React.FC = () => {
                             genreList: [...new Set([...prev.genreList, ...newGenres])]
                           }));
                         }}
-                        className="bg-slate-700 hover:bg-slate-600 text-white text-xs px-3 py-1.5 rounded-lg transition border border-slate-600 hover:border-slate-500"
+                        className="bg-gradient-to-r from-blue-900/40 to-blue-800/40 hover:from-blue-800/60 hover:to-blue-700/60 text-blue-300 hover:text-white text-sm px-4 py-2.5 rounded-lg transition border border-blue-800 hover:border-blue-600"
                       >
                         + Shounen (Action, Adventure, Fantasy)
                       </button>
@@ -628,7 +627,7 @@ const AddAnimeForm: React.FC = () => {
                             genreList: [...new Set([...prev.genreList, ...newGenres])]
                           }));
                         }}
-                        className="bg-slate-700 hover:bg-slate-600 text-white text-xs px-3 py-1.5 rounded-lg transition border border-slate-600 hover:border-slate-500"
+                        className="bg-gradient-to-r from-pink-900/40 to-rose-800/40 hover:from-pink-800/60 hover:to-rose-700/60 text-pink-300 hover:text-white text-sm px-4 py-2.5 rounded-lg transition border border-pink-800 hover:border-pink-600"
                       >
                         + Romance (Romance, Comedy, Slice of Life)
                       </button>
@@ -641,7 +640,7 @@ const AddAnimeForm: React.FC = () => {
                             genreList: [...new Set([...prev.genreList, ...newGenres])]
                           }));
                         }}
-                        className="bg-slate-700 hover:bg-slate-600 text-white text-xs px-3 py-1.5 rounded-lg transition border border-slate-600 hover:border-slate-500"
+                        className="bg-gradient-to-r from-red-900/40 to-orange-800/40 hover:from-red-800/60 hover:to-orange-700/60 text-red-300 hover:text-white text-sm px-4 py-2.5 rounded-lg transition border border-red-800 hover:border-red-600"
                       >
                         + Horror/Thriller
                       </button>
@@ -654,262 +653,271 @@ const AddAnimeForm: React.FC = () => {
                             genreList: [...new Set([...prev.genreList, ...newGenres])]
                           }));
                         }}
-                        className="bg-slate-700 hover:bg-slate-600 text-white text-xs px-3 py-1.5 rounded-lg transition border border-slate-600 hover:border-slate-500"
+                        className="bg-gradient-to-r from-purple-900/40 to-indigo-800/40 hover:from-purple-800/60 hover:to-indigo-700/60 text-purple-300 hover:text-white text-sm px-4 py-2.5 rounded-lg transition border border-purple-800 hover:border-purple-600"
                       >
                         + Isekai
                       </button>
                     </div>
                   </div>
-                  
-                  <p className="text-slate-400 text-xs mt-3 text-center">
-                    Select genres by clicking on them. Custom genres can be added above.
-                  </p>
                 </div>
+              </div>
+            </div>
+            
+            {/* Right Column - SEO Settings */}
+            <div className="lg:col-span-1">
+              <div className="sticky top-6">
+                <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-6 mb-6">
+                  <h2 className="text-xl font-bold text-white mb-6 pb-3 border-b border-slate-700 flex items-center">
+                    <span className="bg-gradient-to-r from-yellow-500 to-orange-500 w-1.5 h-6 mr-3 rounded-full"></span>
+                    SEO Settings
+                    <span className="ml-2 text-xs bg-gradient-to-r from-yellow-600 to-orange-600 text-white px-2 py-1 rounded-full">
+                      GOOGLE
+                    </span>
+                  </h2>
+                  
+                  <div className="space-y-6">
+                    {/* Auto SEO Toggle */}
+                    <div className="bg-gradient-to-r from-slate-900 to-slate-800 p-4 rounded-lg border border-slate-700">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-white font-medium">Auto-Generate SEO</span>
+                        <label className="inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={autoGenerateSEO}
+                            onChange={() => setAutoGenerateSEO(!autoGenerateSEO)}
+                            className="sr-only peer"
+                          />
+                          <div className="relative w-12 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                        </label>
+                      </div>
+                      <p className="text-slate-400 text-xs">
+                        Automatically generate SEO titles, descriptions, and keywords for better Google search results
+                      </p>
+                    </div>
+                    
+                    {/* SEO Title */}
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">
+                        <span className="flex items-center gap-2">
+                          <span className="text-yellow-400">🍻</span>
+                          SEO Title
+                        </span>
+                      </label>
+                      <textarea
+                        value={form.seoTitle}
+                        onChange={(e) => setForm({ ...form, seoTitle: e.target.value })}
+                        className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-yellow-500 focus:border-transparent transition h-24"
+                        placeholder="e.g., Watch Naruto Shippuden Online in Hindi Dub | AnimeBing"
+                        maxLength={60}
+                        rows={3}
+                      />
+                      <div className="flex justify-between mt-2">
+                        <p className="text-slate-400 text-xs">
+                          {form.seoTitle.length}/60
+                        </p>
+                        <p className={`text-xs font-medium ${form.seoTitle.length <= 60 ? 'text-green-400' : 'text-red-400'}`}>
+                          {form.seoTitle.length <= 60 ? '✅ Good' : '❌ Too long'}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    {/* SEO Description */}
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">
+                        <span className="flex items-center gap-2">
+                          <span className="text-yellow-400">🎗️</span>
+                          SEO Description
+                        </span>
+                      </label>
+                      <textarea
+                        value={form.seoDescription}
+                        onChange={(e) => setForm({ ...form, seoDescription: e.target.value })}
+                        className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-yellow-500 focus:border-transparent transition h-32"
+                        placeholder="e.g., Watch Naruto Shippuden online in Hindi Dub. HD quality streaming and downloads. All episodes available."
+                        maxLength={160}
+                        rows={4}
+                      />
+                      <div className="flex justify-between mt-2">
+                        <p className="text-slate-400 text-xs">
+                          {form.seoDescription.length}/160
+                        </p>
+                        <p className={`text-xs font-medium ${form.seoDescription.length <= 160 ? 'text-green-400' : 'text-red-400'}`}>
+                          {form.seoDescription.length <= 160 ? '✅ Good' : '❌ Too long'}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    {/* SEO Keywords */}
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">
+                        <span className="flex items-center gap-2">
+                          <span className="text-yellow-400">🦋</span>
+                          SEO Keywords
+                        </span>
+                      </label>
+                      <textarea
+                        value={form.seoKeywords}
+                        onChange={(e) => setForm({ ...form, seoKeywords: e.target.value })}
+                        className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-yellow-500 focus:border-transparent transition h-32"
+                        placeholder="e.g., naruto shippuden hindi dub, watch naruto shippuden online, naruto anime in hindi, shounen anime, action anime"
+                        rows={4}
+                      />
+                    </div>
+                    
+                    {/* URL Slug */}
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">
+                        <span className="flex items-center gap-2">
+                          <span className="text-yellow-400">🔗</span>
+                          URL Slug <span className="text-red-400">*</span>
+                        </span>
+                      </label>
+                      <div className="flex gap-2 mb-3">
+                        <input
+                          type="text"
+                          value={form.slug}
+                          onChange={(e) => setForm({ ...form, slug: e.target.value })}
+                          className="flex-1 bg-slate-900 border border-slate-700 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+                          placeholder="naruto-shippuden-hindi-dub"
+                          required
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (form.title.trim()) {
+                              const newSlug = generateSlug(form.title);
+                              setForm(prev => ({ ...prev, slug: newSlug }));
+                            }
+                          }}
+                          className="bg-gradient-to-r from-purple-700 to-pink-700 hover:from-purple-600 hover:to-pink-600 text-white px-4 py-3 rounded-lg transition shadow-md hover:shadow-purple-500/20"
+                        >
+                          Generate
+                        </button>
+                      </div>
+                      <div className="p-3 bg-slate-900/70 rounded-lg border border-slate-700">
+                        <p className="text-slate-400 text-xs font-medium mb-1">Preview URL:</p>
+                        <p className="text-purple-300 text-sm font-mono break-all">
+                          https://animebing.in/detail/{form.slug || 'your-anime-slug'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Status Card */}
+                <div className="bg-gradient-to-br from-slate-900/40 via-slate-800/40 to-slate-900/40 rounded-xl border border-slate-700 p-6">
+                  <div className="text-center mb-6">
+                    <div className="text-4xl mb-4">🪁</div>
+                    <h3 className="text-white font-bold text-xl mb-2">Form Status</h3>
+                    <p className="text-slate-300 text-sm">Check if all required fields are filled</p>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center p-3 bg-slate-900/30 rounded-lg">
+                      <span className="text-slate-300">SEO Status</span>
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${autoGenerateSEO ? 'bg-green-900/50 text-green-300' : 'bg-yellow-900/50 text-yellow-300'}`}>
+                        {autoGenerateSEO ? 'Auto SEO ✅' : 'Manual SEO ⚠️'}
+                      </span>
+                    </div>
+                    
+                    <div className="flex justify-between items-center p-3 bg-slate-900/30 rounded-lg">
+                      <span className="text-slate-300">Google Indexing</span>
+                      <span className="px-3 py-1 bg-blue-900/50 text-blue-300 rounded-full text-xs font-medium">
+                        24-48 hours
+                      </span>
+                    </div>
+                    
+                    <div className="flex justify-between items-center p-3 bg-slate-900/30 rounded-lg">
+                      <span className="text-slate-300">Required Fields</span>
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                        form.title.trim() && form.slug.trim() && form.genreList.length > 0
+                          ? 'bg-green-900/50 text-green-300'
+                          : 'bg-red-900/50 text-red-300'
+                      }`}>
+                        {form.title.trim() && form.slug.trim() && form.genreList.length > 0 ? 'Complete ✅' : 'Incomplete ❌'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Add Anime Button at the bottom */}
+          <div className="mt-8 pt-8 border-t border-slate-700">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-6 p-6 bg-gradient-to-r from-purple-900/30 via-pink-900/30 to-slate-900/30 rounded-xl border border-purple-800/50">
+              <div className="text-center md:text-left">
+                <h3 className="text-white font-bold text-xl mb-2">Ready to Add Anime</h3>
+                <p className="text-slate-300 text-sm">Click the button below to add this anime to your database</p>
               </div>
               
-              {/* Footer with genre count */}
-              <div className="px-4 py-3 bg-slate-900/30 border-t border-slate-700/50">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <p className="text-slate-300 text-sm">
-                      Total: <span className="text-purple-300 font-medium">{form.genreList.length}</span> genre(s)
-                    </p>
-                    <p className="text-slate-400 text-xs">
-                      {form.genreList.length === 0 
-                        ? '⚠️ At least one genre is required' 
-                        : '✅ Genres selected'}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowGenreSelector(!showGenreSelector)}
-                    className="text-sm text-slate-400 hover:text-white px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 transition"
-                  >
-                    {showGenreSelector ? 'Hide' : 'Show'} Selection
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        {/* SEO Section - Improved Style */}
-        <div className="mb-6 pb-4 border-b border-slate-600">
-          <div className="flex items-center gap-2 mb-4">
-            <h3 className="text-lg font-semibold text-white">
-              SEO Settings
-            </h3>
-            <span className="px-2 py-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xs font-bold rounded-full">
-              Important for Google Search
-            </span>
-          </div>
-          
-          <div className="space-y-4">
-            <div className="bg-slate-800/30 p-4 rounded-lg border border-slate-700">
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                <span className="flex items-center gap-2">
-                  <span className="text-yellow-400">🔍</span>
-                  SEO Title
-                  <span className="text-slate-400 text-xs">(Appears in Google search results)</span>
-                </span>
-              </label>
-              <input
-                type="text"
-                value={form.seoTitle}
-                onChange={(e) => setForm({ ...form, seoTitle: e.target.value })}
-                className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
-                placeholder="e.g., Watch Naruto Shippuden Online in Hindi Dub | AnimeBing"
-                maxLength={60}
-              />
-              <div className="flex justify-between mt-2">
-                <p className="text-slate-400 text-xs">
-                  Character count: <span className={form.seoTitle.length > 60 ? 'text-red-400 font-bold' : 'text-green-400 font-bold'}>
-                    {form.seoTitle.length}/60
-                  </span>
-                </p>
-                <p className={`text-xs font-medium ${form.seoTitle.length <= 60 ? 'text-green-400' : 'text-red-400'}`}>
-                  {form.seoTitle.length <= 60 ? '✅ Good for SEO' : '❌ Too long for Google'}
-                </p>
-              </div>
+              <button
+                type="submit"
+                disabled={loading || !form.title.trim() || !form.slug.trim() || form.genreList.length === 0}
+                className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 px-12 rounded-xl transition-all duration-300 flex items-center justify-center shadow-xl hover:shadow-2xl hover:shadow-purple-500/30 text-lg group min-w-[200px]"
+              >
+                {loading ? (
+                  <>
+                    <Spinner className="inline h-6 w-6 mr-3" />
+                    <span className="animate-pulse">Adding...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="mr-3 transform group-hover:scale-110 transition-transform">➕</span>
+                    ADD ANIME
+                  </>
+                )}
+              </button>
             </div>
             
-            <div className="bg-slate-800/30 p-4 rounded-lg border border-slate-700">
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                <span className="flex items-center gap-2">
-                  <span className="text-yellow-400">📝</span>
-                  SEO Description
-                  <span className="text-slate-400 text-xs">(Appears below title in Google search)</span>
-                </span>
-              </label>
-              <textarea
-                value={form.seoDescription}
-                onChange={(e) => setForm({ ...form, seoDescription: e.target.value })}
-                className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition h-24"
-                placeholder="e.g., Watch Naruto Shippuden online in Hindi Dub. HD quality streaming and downloads. All episodes available."
-                maxLength={160}
-              />
-              <div className="flex justify-between mt-2">
-                <p className="text-slate-400 text-xs">
-                  Character count: <span className={form.seoDescription.length > 160 ? 'text-red-400 font-bold' : 'text-green-400 font-bold'}>
-                    {form.seoDescription.length}/160
-                  </span>
-                </p>
-                <p className={`text-xs font-medium ${form.seoDescription.length <= 160 ? 'text-green-400' : 'text-red-400'}`}>
-                  {form.seoDescription.length <= 160 ? '✅ Good for SEO' : '❌ Too long for Google'}
-                </p>
-              </div>
-            </div>
-            
-            <div className="bg-slate-800/30 p-4 rounded-lg border border-slate-700">
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                <span className="flex items-center gap-2">
-                  <span className="text-yellow-400">🏷️</span>
-                  SEO Keywords
-                  <span className="text-slate-400 text-xs">(Important for search rankings)</span>
-                </span>
-              </label>
-              <textarea
-                value={form.seoKeywords}
-                onChange={(e) => setForm({ ...form, seoKeywords: e.target.value })}
-                className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition h-24"
-                placeholder="e.g., naruto shippuden hindi dub, watch naruto shippuden online, naruto anime in hindi, shounen anime, action anime"
-              />
-              <p className="text-slate-400 text-xs mt-2">
-                Separate keywords with commas. Important for Google search rankings. Auto-generated based on title and genres.
-              </p>
-            </div>
-            
-            <div className="bg-slate-800/30 p-4 rounded-lg border border-slate-700">
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                <span className="flex items-center gap-2">
-                  <span className="text-yellow-400">🔗</span>
-                  URL Slug <span className="text-red-400">*</span>
-                  <span className="text-slate-400 text-xs">(SEO-friendly URL - Auto-generated)</span>
-                </span>
-              </label>
-              <div className="flex gap-2 mb-3">
-                <input
-                  type="text"
-                  value={form.slug}
-                  onChange={(e) => setForm({ ...form, slug: e.target.value })}
-                  className="flex-1 bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
-                  placeholder="naruto-shippuden-hindi-dub"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (form.title.trim()) {
-                      const newSlug = generateSlug(form.title);
-                      setForm(prev => ({ ...prev, slug: newSlug }));
-                    }
-                  }}
-                  className="bg-gradient-to-r from-purple-700 to-pink-700 hover:from-purple-600 hover:to-pink-600 text-white px-4 py-2.5 rounded-lg transition shadow-md hover:shadow-purple-500/20 whitespace-nowrap"
-                >
-                  Generate
-                </button>
-              </div>
-              <div className="p-3 bg-slate-900/50 rounded-lg border border-slate-700">
-                <p className="text-slate-400 text-xs font-medium mb-1">🌐 Preview URL:</p>
-                <p className="text-purple-300 text-sm font-mono break-all bg-slate-900 p-2 rounded">
-                  https://animebing.in/detail/{form.slug || 'your-anime-slug'}
-                </p>
-                <p className="text-green-400 text-xs mt-2 flex items-center gap-1">
-                  <span>✅</span> This URL will appear in Google Search. Make sure it's unique and descriptive.
-                </p>
-              </div>
-            </div>
+            <p className="text-center text-slate-400 text-xs mt-4">
+              This anime will be added to your website and submitted to Google Search for indexing
+            </p>
           </div>
-        </div>
+        </form>
         
-        {/* Submit Button */}
-        <div className="bg-gradient-to-r from-purple-900/40 to-pink-900/40 p-5 rounded-lg border border-purple-800/30">
-          <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 gap-4">
-            <div>
-              <h4 className="text-white font-bold text-lg">Ready to Publish?</h4>
-              <p className="text-slate-400 text-sm">This anime will appear in Google Search results within 24-48 hours</p>
-            </div>
-            <div className="text-center md:text-right">
-              <p className="text-green-400 text-sm font-medium bg-green-900/30 px-3 py-1.5 rounded-lg inline-block">
-                SEO Optimized: {autoGenerateSEO ? 'Yes ✅' : 'No ⚠️'}
-              </p>
-              <p className="text-slate-400 text-xs mt-1">Google Indexing: 24-48 hours</p>
-            </div>
-          </div>
-          
-          <button
-            type="submit"
-            disabled={loading || !form.title.trim() || !form.slug.trim() || form.genreList.length === 0}
-            className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:opacity-50 text-white font-bold py-3.5 rounded-lg transition-all duration-300 flex items-center justify-center shadow-lg hover:shadow-purple-500/30 text-lg disabled:cursor-not-allowed"
-          >
-            {loading ? (
-              <>
-                <Spinner className="inline h-6 w-6 mr-3" />
-                <span className="animate-pulse">Publishing Anime...</span>
-              </>
-            ) : (
-              <>
-                <span className="mr-2">🚀</span>
-                Publish Anime & Submit to Google
-              </>
-            )}
-          </button>
-          
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-            <div className="text-center p-2 bg-slate-800/50 rounded">
-              <p className="text-slate-300">Anime Title</p>
-              <p className="text-white font-medium truncate">{form.title || 'Not set'}</p>
-            </div>
-            <div className="text-center p-2 bg-slate-800/50 rounded">
-              <p className="text-slate-300">Genres</p>
-              <p className="text-white font-medium">{form.genreList.length} selected</p>
-            </div>
-            <div className="text-center p-2 bg-slate-800/50 rounded">
-              <p className="text-slate-300">URL Slug</p>
-              <p className="text-purple-300 font-medium truncate">{form.slug || 'Not set'}</p>
-            </div>
-          </div>
-        </div>
-        
+        {/* Success/Error Messages */}
         {success && (
-          <div className="p-5 bg-gradient-to-r from-green-900/40 to-emerald-900/40 border border-green-700 rounded-lg animate-pulse">
-            <div className="flex items-start gap-4">
-              <div className="text-3xl">🎉</div>
-              <div>
-                <p className="text-green-400 text-lg font-bold mb-2">Successfully Published!</p>
-                <p className="text-green-300 text-sm mb-3">{success}</p>
-                <div className="p-3 bg-green-900/30 rounded-lg border border-green-800">
-                  <p className="text-green-300 text-xs font-medium mb-1">SEO URL Created:</p>
-                  <p className="text-green-200 text-sm font-mono break-all">https://animebing.in/detail/{form.slug}</p>
+          <div className="fixed bottom-6 right-6 max-w-md animate-slide-up">
+            <div className="bg-gradient-to-r from-green-900/90 to-emerald-900/90 border border-green-700 rounded-xl p-6 shadow-2xl">
+              <div className="flex items-start gap-4">
+                <div className="text-4xl">🎉</div>
+                <div>
+                  <p className="text-green-400 text-lg font-bold mb-2">Successfully Added!</p>
+                  <p className="text-green-300 text-sm mb-3">{success}</p>
+                  <div className="p-3 bg-green-900/40 rounded-lg border border-green-800">
+                    <p className="text-green-300 text-xs font-medium mb-1">SEO URL Created:</p>
+                    <p className="text-green-200 text-sm font-mono break-all">https://animebing.in/detail/{form.slug}</p>
+                  </div>
                 </div>
-                <p className="text-green-400 text-xs mt-3 flex items-center gap-2">
-                  <span>✅</span> This anime is now live and will appear in Google Search within 24-48 hours.
-                </p>
               </div>
             </div>
           </div>
         )}
         
         {error && (
-          <div className="p-5 bg-gradient-to-r from-red-900/40 to-orange-900/40 border border-red-700 rounded-lg">
-            <div className="flex items-start gap-4">
-              <div className="text-3xl">❌</div>
-              <div>
-                <p className="text-red-400 text-lg font-bold mb-2">Error Publishing Anime</p>
-                <p className="text-red-300 text-sm">{error}</p>
-                <div className="mt-3 p-3 bg-red-900/30 rounded-lg">
-                  <p className="text-red-300 text-xs font-medium">Troubleshooting:</p>
-                  <ul className="text-red-300 text-xs list-disc list-inside mt-1">
-                    <li>Check if the anime title already exists</li>
-                    <li>Verify the thumbnail URL is valid</li>
-                    <li>Ensure you're logged in as admin</li>
-                  </ul>
+          <div className="fixed bottom-6 right-6 max-w-md animate-slide-up">
+            <div className="bg-gradient-to-r from-red-900/90 to-orange-900/90 border border-red-700 rounded-xl p-6 shadow-2xl">
+              <div className="flex items-start gap-4">
+                <div className="text-4xl">❌</div>
+                <div>
+                  <p className="text-red-400 text-lg font-bold mb-2">Error Adding Anime</p>
+                  <p className="text-red-300 text-sm">{error}</p>
+                  <div className="mt-3 p-3 bg-red-900/40 rounded-lg">
+                    <p className="text-red-300 text-xs font-medium">Troubleshooting:</p>
+                    <ul className="text-red-300 text-xs list-disc list-inside mt-1 space-y-1">
+                      <li>Check if anime title already exists</li>
+                      <li>Verify thumbnail URL is valid</li>
+                      <li>Ensure you're logged in as admin</li>
+                      <li>Check network connection</li>
+                    </ul>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         )}
-      </form>
+      </div>
     </div>
   );
 };

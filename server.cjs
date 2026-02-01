@@ -1,5 +1,4 @@
-// server.cjs - SEO OPTIMIZED (Search Query URLs REMOVED)
-const express = require('express');
+ const express = require('express');
 const cors = require('cors');
 const connectDB = require('./db.cjs');
 require('dotenv').config();
@@ -17,6 +16,9 @@ const socialRoutes = require('./routes/socialRoutes.cjs');
 const appDownloadRoutes = require('./routes/appDownloadRoutes.cjs');
 const adminRoutes = require('./routes/adminRoutes.cjs');
 const contactRoutes = require('./routes/contactRoutes.cjs');
+
+// ✅ IMPORTANT: Add this line
+const linkSettingsRoutes = require('./routes/linkSettingsRoutes.cjs');
 
 const app = express();
 
@@ -42,6 +44,11 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// ❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌
+// ❌ REMOVE THIS MIDDLEWARE - IT'S CAUSING THE ERROR
+// ❌ Lines 81-91 DELETE THEM COMPLETELY
+// ❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌
 
 // ✅ DYNAMIC SITEMAP GENERATOR - SEO OPTIMIZED
 app.get('/sitemap.xml', async (req, res) => {
@@ -176,6 +183,7 @@ app.get('/robots.txt', (req, res) => {
 Allow: /
 Disallow: /admin/
 Disallow: /api/admin/
+Disallow: /download/ # Added to prevent crawling download pages
 Sitemap: https://animebing.in/sitemap.xml
 
 # SEO Instructions for Google
@@ -353,18 +361,25 @@ app.get('/api/admin/emergency-reset', async (req, res) => {
 app.get('/api/admin/debug', async (req, res) => {
   try {
     const Admin = require('./models/Admin.cjs');
+    const LinkSettings = require('./models/LinkSettings.cjs');
     
     const adminCount = await Admin.countDocuments();
     const allAdmins = await Admin.find().select('username email createdAt');
+    const linkSettings = await LinkSettings.getSettings();
     
     console.log('🔍 ADMIN DEBUG INFO:');
     console.log('Total Admins:', adminCount);
     console.log('Admin List:', allAdmins);
+    console.log('Link Settings:', linkSettings.getActiveLinks());
     
     res.json({
       success: true,
       totalAdmins: adminCount,
       admins: allAdmins,
+      linkSettings: {
+        ...linkSettings.toObject(),
+        activeLinks: linkSettings.getActiveLinks()
+      },
       serverTime: new Date().toISOString(),
       nodeVersion: process.version,
       environment: process.env.NODE_ENV || 'development'
@@ -533,8 +548,16 @@ app.get('/api/episodes/:animeId', async (req, res) => {
 app.use('/api/admin/protected', adminAuth, adminRoutes);
 
 // ============================================
+// ✅ CRITICAL FIX: LINK SETTINGS ROUTES 
+// ============================================
+// ✅ MOUNT LINK SETTINGS ROUTES AT THE CORRECT PATH
+app.use('/api/link-settings', linkSettingsRoutes);
+console.log('✅ Link Settings Routes mounted at /api/link-settings');
+
+// ============================================
 // ✅ PUBLIC ROUTES - CORRECTED ORDER
 // ============================================
+
 // ✅ SOCIAL MEDIA ROUTES MUST COME BEFORE ADMIN ROUTES FOR /admin paths
 app.use('/api/social', socialRoutes);
 
@@ -618,6 +641,36 @@ app.get('/api/debug/animes', async (req, res) => {
   }
 });
 
+app.get('/api/debug/link-settings', async (req, res) => {
+  try {
+    const LinkSettings = require('./models/LinkSettings.cjs');
+    
+    const settings = await LinkSettings.getSettings();
+    const activeLinks = settings.getActiveLinks();
+    
+    console.log('🔗 LINK SETTINGS DEBUG:');
+    console.log('Link 1 Active:', settings.link1);
+    console.log('Link 2 Active:', settings.link2);
+    console.log('Link 3 Active:', settings.link3);
+    console.log('Link 4 Active:', settings.link4);
+    console.log('Link 5 Active:', settings.link5);
+    console.log('Active Links:', activeLinks);
+    
+    res.json({
+      success: true,
+      settings: settings,
+      activeLinks: activeLinks,
+      totalActive: activeLinks.length
+    });
+  } catch (error) {
+    console.error('Link settings debug error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
+
 // ✅ SOCIAL MEDIA DEBUG ROUTE
 app.get('/api/debug/social', async (req, res) => {
   try {
@@ -651,21 +704,72 @@ app.get('/api/debug/social', async (req, res) => {
 });
 
 // ✅ HEALTH CHECK WITH SEO INFO
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
-    message: 'Animabing Server Running - SEO OPTIMIZED',
-    timestamp: new Date().toISOString(),
-    version: '1.0.0',
-    seoFeatures: {
-      sitemap: 'https://animebing.in/sitemap.xml',
-      robots: 'https://animebing.in/robots.txt',
-      rssFeed: 'https://animebing.in/rss.xml',
-      dynamicUrls: 'Enabled',
-      structuredData: 'Enabled'
-    },
-    seoWarning: '✅ Search query URLs REMOVED from sitemap to avoid Google penalties'
-  });
+app.get('/api/health', async (req, res) => {
+  try {
+    const LinkSettings = require('./models/LinkSettings.cjs');
+    const settings = await LinkSettings.getSettings();
+    const activeLinks = settings.getActiveLinks();
+    
+    res.json({ 
+      status: 'OK', 
+      message: 'Animabing Server Running - SEO OPTIMIZED',
+      timestamp: new Date().toISOString(),
+      version: '1.0.0',
+      linkSettings: {
+        activeLinks: activeLinks,
+        totalLinks: 5,
+        settings: {
+          link1: settings.link1,
+          link2: settings.link2,
+          link3: settings.link3,
+          link4: settings.link4,
+          link5: settings.link5
+        }
+      },
+      seoFeatures: {
+        sitemap: 'https://animebing.in/sitemap.xml',
+        robots: 'https://animebing.in/robots.txt',
+        rssFeed: 'https://animebing.in/rss.xml',
+        dynamicUrls: 'Enabled',
+        structuredData: 'Enabled',
+        linkControl: 'Enabled'
+      },
+      seoWarning: '✅ Search query URLs REMOVED from sitemap to avoid Google penalties'
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      status: 'ERROR', 
+      message: 'Server error',
+      error: error.message 
+    });
+  }
+});
+
+// ✅ TEST ENDPOINT FOR LINK SETTINGS
+app.get('/api/test-link-settings', async (req, res) => {
+  try {
+    const LinkSettings = require('./models/LinkSettings.cjs');
+    const settings = await LinkSettings.getSettings();
+    
+    res.json({
+      success: true,
+      message: 'Link settings test endpoint working',
+      settings: settings,
+      activeLinks: settings.getActiveLinks(),
+      totalActive: settings.getActiveLinks().length,
+      testEndpoints: {
+        getAll: 'GET /api/link-settings',
+        toggleLink: 'PUT /api/link-settings/toggle/1',
+        getStatus: 'GET /api/link-settings/status'
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      stack: error.stack
+    });
+  }
 });
 
 // ✅ EMERGENCY: SET ALL ANIME AS FEATURED ROUTE
@@ -795,6 +899,42 @@ app.get('/api/emergency/fix-social-urls', async (req, res) => {
   }
 });
 
+// ✅ EMERGENCY: INITIALIZE LINK SETTINGS
+app.get('/api/emergency/init-link-settings', async (req, res) => {
+  try {
+    const LinkSettings = require('./models/LinkSettings.cjs');
+    
+    console.log('🆕 EMERGENCY: Initializing link settings...');
+    
+    // Delete existing settings
+    await LinkSettings.deleteMany({});
+    
+    // Create default settings
+    const settings = await LinkSettings.create({
+      link1: true,
+      link2: true,
+      link3: true,
+      link4: true,
+      link5: true
+    });
+    
+    console.log('✅ Link settings initialized');
+    
+    res.json({
+      success: true,
+      message: 'Link settings initialized successfully',
+      settings: settings,
+      activeLinks: settings.getActiveLinks()
+    });
+  } catch (error) {
+    console.error('❌ Link settings init error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
 // ============================================
 // ✅ ROOT ROUTE - SEO OPTIMIZED VERSION
 // ============================================
@@ -912,14 +1052,38 @@ app.get('/', (req, res) => {
           left: 0;
           color: #4CAF50;
         }
+        .link-status {
+          background: #2d3748;
+          padding: 10px;
+          border-radius: 8px;
+          margin: 10px 0;
+        }
+        .link-status .active {
+          color: #4CAF50;
+        }
+        .link-status .inactive {
+          color: #f56565;
+        }
       </style>
     </head>
     <body>
       <div class="container">
-        <h1>AnimeBing Server <span class="seo-badge">SEO OPTIMIZED</span></h1>
+        <h1>AnimeBing Server <span class="seo-badge">SEO OPTIMIZED + LINK CONTROL</span></h1>
         <p class="status">✅ Backend API is running correctly - SEO Ready for Google</p>
         <p>📺 Frontend: <a href="https://animebing.in" target="_blank">AnimeBing.in</a></p>
         <p>⚙️ Admin Access: Press Ctrl+Shift+Alt on the frontend</p>
+        
+        <div class="section">
+          <h3>🔗 Global Download Link Settings:</h3>
+          <div class="link-status">
+            <p>Link 1: <span class="active">ON</span></p>
+            <p>Link 2: <span class="active">ON</span></p>
+            <p>Link 3: <span class="active">ON</span></p>
+            <p>Link 4: <span class="active">ON</span></p>
+            <p>Link 5: <span class="active">ON</span></p>
+            <p><small>Control these links from Admin Dashboard → Global Link Settings</small></p>
+          </div>
+        </div>
         
         <div class="seo-info">
           <h3>🔍 SEO Features Enabled:</h3>
@@ -932,6 +1096,7 @@ app.get('/', (req, res) => {
             <li>Meta Tags on all pages</li>
             <li>Open Graph & Twitter Cards</li>
             <li>Admin SEO Control Panel</li>
+            <li>Global Download Link Control ✅ NEW!</li>
           </ul>
           <p style="color: #4CAF50; margin-top: 10px; font-weight: bold;">
             ✅ SEO FIX APPLIED: Search query URLs removed from sitemap to avoid Google penalties
@@ -955,12 +1120,14 @@ app.get('/', (req, res) => {
           <a href="/sitemap.xml" class="btn" target="_blank">View Sitemap</a>
           <a href="/robots.txt" class="btn" target="_blank">View Robots.txt</a>
           <a href="/api/anime/featured" class="btn">Check Featured Anime</a>
-          <a href="/api/debug/animes" class="btn">Debug Anime</a>
+          <a href="/api/debug/link-settings" class="btn">Check Link Settings</a>
+          <a href="/api/test-link-settings" class="btn">Test Link Settings API</a>
         </div>
         
         <p style="margin-top: 2rem; color: #9CA3AF; font-size: 0.9rem;">
           Server Time: ${new Date().toLocaleString()}<br>
           SEO Status: Complete - Ready for Google Indexing<br>
+          Link Control: Active (5 links globally controllable)<br>
           Sitemap Status: ✅ SEO Safe (No search query URLs)<br>
           Next Step: Submit to Google Search Console
         </p>
@@ -989,20 +1156,28 @@ app.get('/', (req, res) => {
 // ✅ START SERVER
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server running on port ${PORT} - SEO OPTIMIZED`);
+  console.log(`🚀 Server running on port ${PORT} - SEO OPTIMIZED + LINK CONTROL`);
   console.log(`🔧 Admin: ${process.env.ADMIN_USER} / ${process.env.ADMIN_PASS}`);
   console.log(`🌐 Frontend: https://animebing.in`);
   console.log(`🗺️ Sitemap: https://animebing.in/sitemap.xml`);
   console.log(`🤖 Robots: https://animebing.in/robots.txt`);
   console.log(`📰 RSS Feed: https://animebing.in/rss.xml`);
+  console.log(`🔗 Link Settings: /api/link-settings`);
+  console.log(`🔗 Link Settings Test: /api/test-link-settings`);
   console.log(`✅ SEO Features:`);
   console.log(`   - ✅ Dynamic sitemap with anime pages`);
   console.log(`   - ✅ Robots.txt for search engines`);
   console.log(`   - ✅ RSS feed for updates`);
   console.log(`   - ✅ Structured data for Google`);
   console.log(`   - ✅ ID + Slug support for URLs`);
+  console.log(`   - ✅ Global Download Link Control ✅ NEW!`);
   console.log(`🚨 SEO IMPORTANT FIX:`);
   console.log(`   - ❌ Search query URLs REMOVED from sitemap`);
   console.log(`   - ✅ Now safe from Google duplicate content penalty`);
+  console.log(`🔗 Link Control Features:`);
+  console.log(`   - 5 Download links globally controllable`);
+  console.log(`   - ON/OFF toggle for each link`);
+  console.log(`   - Affects all episodes across website`);
+  console.log(`   - Random selection from active links`);
   console.log(`📈 Next Step: Submit sitemap to Google Search Console`);
 });

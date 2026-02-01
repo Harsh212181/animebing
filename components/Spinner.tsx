@@ -1,8 +1,8 @@
-// components/Spinner.tsx - VERIFY THIS FILE EXISTS
+ // components/Spinner.tsx - UPDATED WITH 'xs' SIZE
 import React from 'react';
 
 interface SpinnerProps {
-  size?: 'sm' | 'md' | 'lg' | 'xl';
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   color?: 'purple' | 'white' | 'blue' | 'green';
   text?: string;
   className?: string;
@@ -15,7 +15,8 @@ const Spinner: React.FC<SpinnerProps> = ({
   className = ''
 }) => {
   const sizeClasses = {
-    sm: 'h-4 w-4',
+    xs: 'h-4 w-4',
+    sm: 'h-6 w-6',
     md: 'h-8 w-8',
     lg: 'h-12 w-12',
     xl: 'h-16 w-16'
@@ -57,4 +58,4 @@ const Spinner: React.FC<SpinnerProps> = ({
   );
 };
 
-export default Spinner; // ✅ MAKE SURE THIS EXPORT EXISTS
+export default Spinner;

@@ -1,4 +1,4 @@
-  // src/components/admin/EpisodesManager.tsx - UPDATED WITH INLINE EDIT
+ // src/components/admin/EpisodesManager.tsx - UPDATED WITH DEFAULT DOWNLOAD LINK NAMES
 import React, { useState, useEffect } from 'react';
 import type { Anime, Episode, Chapter } from '../../types';
 import axios from 'axios';
@@ -13,6 +13,15 @@ interface DownloadLink {
   type?: string;
 }
 
+// ✅ Default download link names
+const DEFAULT_LINK_NAMES = [
+  'Cuty.io',
+  'Shrinkme', 
+  'Linkjust.com',
+  'Gplinks',
+  'bas'
+];
+
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000/api';
 const token = localStorage.getItem('adminToken') || '';
 
@@ -25,7 +34,7 @@ const EpisodesManager: React.FC = () => {
     number: 1,
     title: '',
     session: 1,
-    downloadLinks: [{ name: 'Download Link 1', url: '', quality: '', type: 'direct' }] as DownloadLink[]
+    downloadLinks: [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }] as DownloadLink[]
   });
   const [loading, setLoading] = useState(true);
   const [animesLoading, setAnimesLoading] = useState(true);
@@ -36,7 +45,7 @@ const EpisodesManager: React.FC = () => {
     number: 1,
     title: '',
     session: 1,
-    downloadLinks: [{ name: 'Download Link 1', url: '', quality: '', type: 'direct' }] as DownloadLink[]
+    downloadLinks: [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }] as DownloadLink[]
   });
 
   const isManga = selectedAnime?.contentType === 'Manga';
@@ -136,7 +145,7 @@ const EpisodesManager: React.FC = () => {
           ...prev,
           number: lastChapter.length > 0 ? Math.max(...lastChapter.map((ch: Chapter) => ch.chapterNumber)) + 1 : 1,
           session: selectedSession,
-          downloadLinks: [{ name: 'Download Link 1', url: '', quality: '', type: 'direct' }]
+          downloadLinks: [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }]
         }));
       } else {
         const { data } = await axios.get(`${API_BASE}/episodes/${contentId}`);
@@ -146,7 +155,7 @@ const EpisodesManager: React.FC = () => {
           ...prev,
           number: lastEpisode.length > 0 ? Math.max(...lastEpisode.map((ep: Episode) => ep.episodeNumber)) + 1 : 1,
           session: selectedSession,
-          downloadLinks: [{ name: 'Download Link 1', url: '', quality: '', type: 'direct' }]
+          downloadLinks: [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }]
         }));
       }
     } catch (err: any) {
@@ -169,10 +178,10 @@ const EpisodesManager: React.FC = () => {
       const itemData = item as any;
       const downloadLinks: DownloadLink[] = itemData.downloadLinks || [];
       
-      // If no download links, add one default
+      // If no download links, add one default with default name
       const linksToSet = downloadLinks.length > 0 
         ? downloadLinks 
-        : [{ name: 'Download Link 1', url: '', quality: '', type: 'direct' }];
+        : [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }];
       
       setEditForm({
         number: isManga ? (item as Chapter).chapterNumber : (item as Episode).episodeNumber,
@@ -207,7 +216,7 @@ const EpisodesManager: React.FC = () => {
       downloadLinks: [
         ...prev.downloadLinks,
         { 
-          name: `Download Link ${prev.downloadLinks.length + 1}`, 
+          name: DEFAULT_LINK_NAMES[prev.downloadLinks.length] || `Download Link ${prev.downloadLinks.length + 1}`, 
           url: '', 
           quality: '', 
           type: 'direct' 
@@ -228,7 +237,7 @@ const EpisodesManager: React.FC = () => {
       downloadLinks: [
         ...prev.downloadLinks,
         { 
-          name: `Download Link ${prev.downloadLinks.length + 1}`, 
+          name: DEFAULT_LINK_NAMES[prev.downloadLinks.length] || `Download Link ${prev.downloadLinks.length + 1}`, 
           url: '', 
           quality: '', 
           type: 'direct' 
@@ -355,13 +364,13 @@ const EpisodesManager: React.FC = () => {
 
       alert(`${isManga ? 'Chapter' : 'Episode'} added successfully!`);
       
-      // Reset form
+      // Reset form with default name
       const nextNumber = getNextAvailableNumber();
       setNewItem({
         number: nextNumber,
         title: '',
         session: selectedSession,
-        downloadLinks: [{ name: 'Download Link 1', url: '', quality: '', type: 'direct' }]
+        downloadLinks: [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }]
       });
       
       fetchContent(selectedAnime.id);
@@ -589,7 +598,7 @@ const EpisodesManager: React.FC = () => {
               {newItem.downloadLinks.map((link, index) => (
                 <div key={index} className="bg-slate-800/70 p-3 rounded-lg border border-slate-700">
                   <div className="flex justify-between items-center mb-2">
-                    <span className="text-slate-300 font-medium">Download Link {index + 1}</span>
+                    <span className="text-slate-300 font-medium">{link.name}</span>
                     {newItem.downloadLinks.length > 1 && (
                       <button
                         type="button"
@@ -609,7 +618,7 @@ const EpisodesManager: React.FC = () => {
                         value={link.name}
                         onChange={(e) => handleUpdateDownloadLink(index, 'name', e.target.value)}
                         className="w-full bg-slate-900 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm"
-                        placeholder="e.g., Download Link 1, Server 1, etc."
+                        placeholder="e.g., Cuty.io, Shrinkme, etc."
                         required
                       />
                     </div>
@@ -863,7 +872,7 @@ const EpisodesManager: React.FC = () => {
                                       {editForm.downloadLinks.map((link, index) => (
                                         <div key={index} className="bg-slate-900/70 p-3 rounded-lg border border-slate-600">
                                           <div className="flex justify-between items-center mb-2">
-                                            <span className="text-slate-300 font-medium">Download Link {index + 1}</span>
+                                            <span className="text-slate-300 font-medium">{link.name}</span>
                                             {editForm.downloadLinks.length > 1 && (
                                               <button
                                                 type="button"
@@ -883,7 +892,7 @@ const EpisodesManager: React.FC = () => {
                                                 value={link.name}
                                                 onChange={(e) => handleEditUpdateDownloadLink(index, 'name', e.target.value)}
                                                 className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm"
-                                                placeholder="e.g., Download Link 1, Server 1, etc."
+                                                placeholder="e.g., Cuty.io, Shrinkme, etc."
                                                 required
                                               />
                                             </div>

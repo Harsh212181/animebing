@@ -1,4 +1,4 @@
- // components/AnimeDetailPage.tsx - UPDATED WITHOUT EPISODE/MANGA/MOVIE COUNT IN HEADINGS
+ // components/AnimeDetailPage.tsx - UPDATED WITH GLOBAL LINK SETTINGS
 import React, { useState, useEffect, useCallback } from 'react';
 import type { Anime, Episode, Chapter } from '../src/types';
 import { DownloadIcon } from './icons/DownloadIcon';
@@ -22,6 +22,17 @@ interface DownloadLink {
   type?: string;
 }
 
+// ✅ ADD LinkSettings interface for global link control
+interface LinkSettings {
+  link1: boolean;
+  link2: boolean;
+  link3: boolean;
+  link4: boolean;
+  link5: boolean;
+  _id?: string;
+  lastUpdated?: string;
+}
+
 interface Props {
   anime: Anime | null;
   onBack: () => void;
@@ -29,7 +40,7 @@ interface Props {
   isLoading?: boolean;
 }
 
-// ✅ Use environment variable for API base (same as animeService.ts)
+// ✅ Use environment variable for API base
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://animabing.onrender.com/api';
 
 // ✅ SHUFFLE ARRAY FUNCTION - For randomizing content
@@ -78,11 +89,35 @@ const generateSrcSet = (url: string, baseWidth: number, baseHeight: number): str
   }
 };
 
-// ✅ Helper function to get random download link
-const getRandomDownloadLink = (downloadLinks: DownloadLink[]): string | null => {
-  if (!downloadLinks || downloadLinks.length === 0) return null;
-  const randomIndex = Math.floor(Math.random() * downloadLinks.length);
-  return downloadLinks[randomIndex].url;
+// ✅ Helper function to get ACTIVE download links based on global settings
+const getActiveDownloadLinks = (downloadLinks: DownloadLink[], linkSettings: LinkSettings): DownloadLink[] => {
+  if (!downloadLinks || downloadLinks.length === 0) return [];
+  
+  const activeLinks: DownloadLink[] = [];
+  
+  // Check each link against global settings
+  downloadLinks.forEach((link, index) => {
+    const linkNumber = index + 1;
+    const linkKey = `link${linkNumber}` as keyof LinkSettings;
+    
+    // Only include if link is globally active AND has a valid URL
+    if (linkSettings[linkKey] && link.url && link.url.trim() !== '') {
+      activeLinks.push(link);
+    }
+  });
+  
+  return activeLinks;
+};
+
+// ✅ Helper function to get random download link FROM ACTIVE LINKS ONLY
+const getRandomDownloadLink = (downloadLinks: DownloadLink[], linkSettings: LinkSettings): string | null => {
+  // First get only active links
+  const activeLinks = getActiveDownloadLinks(downloadLinks, linkSettings);
+  
+  if (activeLinks.length === 0) return null;
+  
+  const randomIndex = Math.floor(Math.random() * activeLinks.length);
+  return activeLinks[randomIndex].url;
 };
 
 // ✅ Helper function to generate SEO keywords based on anime
@@ -170,6 +205,16 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
   const [animeLoading, setAnimeLoading] = useState(false);
   const [downloadingItem, setDownloadingItem] = useState<string | null>(null);
 
+  // ✅ STATE FOR GLOBAL LINK SETTINGS (CRITICAL FEATURE)
+  const [linkSettings, setLinkSettings] = useState<LinkSettings>({
+    link1: true,
+    link2: true,
+    link3: true,
+    link4: true,
+    link5: true
+  });
+  const [linkSettingsLoading, setLinkSettingsLoading] = useState(false);
+
   // ✅ STATE FOR MORE LIKE THIS SECTION
   const [similarContent, setSimilarContent] = useState<Anime[]>([]);
   const [similarLoading, setSimilarLoading] = useState(false);
@@ -195,6 +240,67 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     if (isManga) return 'Episodes will be added soon!';
     if (isMovie) return 'Movie will be added soon!';
     return 'Episodes will be added soon!';
+  };
+
+  // ✅ FIXED: FETCH GLOBAL LINK SETTINGS - WITH CORS FIX
+  const fetchLinkSettings = async () => {
+    try {
+      setLinkSettingsLoading(true);
+      console.log('🔗 Fetching global link settings...');
+      
+      // ✅ USE FULL URL FOR LOCAL DEVELOPMENT
+      const apiUrl = window.location.hostname === 'localhost' 
+        ? 'http://localhost:3000/api/link-settings'
+        : '/api/link-settings';
+      
+      console.log('🌐 API URL:', apiUrl);
+      
+      const response = await fetch(apiUrl, {
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      // ✅ Verify response is JSON
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('❌ Received non-JSON response:', text.substring(0, 100));
+        throw new Error('Server returned non-JSON response');
+      }
+      
+      const data = await response.json();
+      
+      console.log('✅ Global link settings fetched:', {
+        link1: data.link1,
+        link2: data.link2,
+        link3: data.link3,
+        link4: data.link4,
+        link5: data.link5,
+        totalActive: [data.link1, data.link2, data.link3, data.link4, data.link5]
+          .filter(Boolean).length
+      });
+      
+      setLinkSettings(data);
+    } catch (err: any) {
+      console.error('❌ Error fetching link settings:', err);
+      console.error('Error stack:', err.stack);
+      // Fallback to all links active
+      setLinkSettings({
+        link1: true,
+        link2: true,
+        link3: true,
+        link4: true,
+        link5: true
+      });
+    } finally {
+      setLinkSettingsLoading(false);
+    }
   };
 
   // ✅ UPDATED: FETCH SIMILAR CONTENT WITH RANDOMIZATION AND UNIQUE FILTERING
@@ -268,10 +374,11 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     }
   }, [anime?.id, anime?.contentType]);
 
-  // ✅ INITIAL FETCH FOR SIMILAR CONTENT
+  // ✅ INITIAL FETCH FOR SIMILAR CONTENT AND LINK SETTINGS
   useEffect(() => {
     if (anime) {
       fetchSimilarContent();
+      fetchLinkSettings();
     }
   }, [anime?.id, anime?.contentType, fetchSimilarContent]);
 
@@ -431,22 +538,29 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     fetchContent();
   }, [anime, isManga]);
 
-  // ✅ UPDATED: Handle download click
+  // ✅ UPDATED: Handle download click WITH GLOBAL LINK SETTINGS
   const handleDownloadClick = async (item: Episode | Chapter) => {
     try {
       const itemData = item as any;
       const downloadLinks: DownloadLink[] = itemData.downloadLinks || [];
       
-      if (downloadLinks.length === 0) {
-        alert(
-          `${getContentLabelSingular()} - Download links will be added soon!`
-        );
+      // First get only active links based on global settings
+      const activeLinks = getActiveDownloadLinks(downloadLinks, linkSettings);
+      
+      console.log(`📊 Download stats: ${activeLinks.length}/${downloadLinks.length} active links`);
+      
+      if (activeLinks.length === 0) {
+        alert(`⚠️ No active download links available. Admin has disabled all links for this content.`);
         return;
       }
       
       setDownloadingItem(itemData._id);
       
-      const randomLink = getRandomDownloadLink(downloadLinks);
+      // Randomly select from ACTIVE links only
+      const randomIndex = Math.floor(Math.random() * activeLinks.length);
+      const randomLink = activeLinks[randomIndex].url;
+      
+      console.log(`🎲 Selected active link ${randomIndex + 1}/${activeLinks.length}`);
       
       if (randomLink) {
         window.open(randomLink, '_blank');
@@ -462,7 +576,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     }
   };
 
-  // ✅ Download button component
+  // ✅ Download button component WITHOUT LINK COUNT
   const DownloadButton: React.FC<{ 
     item: Episode | Chapter; 
     className?: string;
@@ -472,19 +586,21 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     const episodeItem = item as any;
     const downloadLinks: DownloadLink[] = episodeItem.downloadLinks || [];
     
-    if (downloadLinks.length === 0) {
+    // Check how many links are active
+    const activeLinks = getActiveDownloadLinks(downloadLinks, linkSettings);
+    const totalLinks = downloadLinks.length;
+    
+    if (activeLinks.length === 0) {
       return (
         <button
           onClick={() => {
-            alert(
-              `${getContentLabelSingular()} - Download links will be added soon!`
-            );
+            alert(`⚠️ No active download links available.`);
           }}
           className={`${className} opacity-70 cursor-not-allowed`}
-          title="Download links not available yet"
+          title="Download links disabled"
           disabled
         >
-          {showText ? 'Download' : <DownloadIcon className="h-3 w-3" />}
+          {showText ? 'Disabled' : <DownloadIcon className="h-3 w-3" />}
         </button>
       );
     }
@@ -493,11 +609,13 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
       <button
         onClick={() => handleDownloadClick(item)}
         className={`${className} ${downloadingItem === itemId ? 'animate-pulse' : ''}`}
-        title={`Download ${item.title || getContentLabelSingular()}`}
-        disabled={downloadingItem === itemId}
+        title="Download"
+        disabled={downloadingItem === itemId || linkSettingsLoading}
       >
         {downloadingItem === itemId ? (
           showText ? 'Downloading...' : <Spinner size="sm" />
+        ) : linkSettingsLoading ? (
+          showText ? 'Checking...' : <Spinner size="sm" />
         ) : (
           showText ? 'Download' : <DownloadIcon className="h-3 w-3" />
         )}
@@ -536,6 +654,8 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
             <span className="group-hover:-translate-x-0.5 transition-transform">←</span>
             Back to Home
           </button>
+
+          {/* ✅ Link Settings Status Indicator REMOVED */}
 
           {/* MOBILE VIEW */}
           <div className="lg:hidden">
@@ -703,7 +823,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                     })
                     .map((item, index) => {
                       const itemData = item as any;
-                      const downloadLinks: DownloadLink[] = itemData.downloadLinks || [];
                       
                       return (
                         <div
@@ -915,7 +1034,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                       })
                       .map((item, index) => {
                         const itemData = item as any;
-                        const downloadLinks: DownloadLink[] = itemData.downloadLinks || [];
                         
                         return (
                           <div
