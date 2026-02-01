@@ -22,7 +22,7 @@ const DEFAULT_LINK_NAMES = [
   'bas'
 ];
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000/api';
+const API_BASE = import.meta.env.VITE_API_BASE || 'https://animabing.onrender.com/api';
 const token = localStorage.getItem('adminToken') || '';
 
 const EpisodesManager: React.FC = () => {

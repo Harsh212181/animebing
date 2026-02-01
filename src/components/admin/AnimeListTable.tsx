@@ -4,7 +4,7 @@ import type { Anime } from '../../types';
 import axios from 'axios';
 import Spinner from '../Spinner';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000/api';
+const API_BASE = import.meta.env.VITE_API_BASE || 'https://animabing.onrender.com/api';
 const token = localStorage.getItem('adminToken') || '';
 
 const AnimeListTable: React.FC = () => {

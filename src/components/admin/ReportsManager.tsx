@@ -37,7 +37,7 @@ interface Report {
   responseDate?: string;
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000/api';
+const API_BASE = import.meta.env.VITE_API_BASE || 'https://animabing.onrender.com/api';
 const token = localStorage.getItem('adminToken') || '';
 
 const ReportsManager: React.FC = () => {
