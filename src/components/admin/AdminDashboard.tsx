@@ -16,7 +16,7 @@ const getApiBase = () => {
   const isLocal = window.location.hostname === 'localhost' || 
                   window.location.hostname === '127.0.0.1';
   
-  return isLocal ? 'http://localhost:3000/api' : '/api';
+  return isLocal ? 'https://animabing.onrender.com/api' : '/api';
 };
 
 const API_BASE = getApiBase();
