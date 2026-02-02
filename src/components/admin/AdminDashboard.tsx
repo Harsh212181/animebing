@@ -1,4 +1,4 @@
- // src/components/admin/AdminDashboard.tsx - UPDATED VERSION
+ // src/components/admin/AdminDashboard.tsx - FIXED VERSION
 import React, { useState, useEffect } from 'react';
 import AnimeListTable from './AnimeListTable';
 import AddAnimeForm from './AddAnimeForm';
@@ -9,14 +9,15 @@ import SocialMediaManager from './SocialMediaManager';
 import Spinner from '../Spinner';
 import axios from 'axios';
 
-// ✅ LOCAL VS PRODUCTION API BASE
+// ✅ FIXED: Production पर हमेशा full URL use करें
 const getApiBase = () => {
-  if (typeof window === 'undefined') return '/api'; // SSR
+  if (typeof window === 'undefined') return 'https://animabing.onrender.com/api';
   
+  // Development में localhost use करें
   const isLocal = window.location.hostname === 'localhost' || 
                   window.location.hostname === '127.0.0.1';
   
-  return isLocal ? 'https://animabing.onrender.com/api' : '/api';
+  return isLocal ? 'http://localhost:3000/api' : 'https://animabing.onrender.com/api';
 };
 
 const API_BASE = getApiBase();
@@ -81,7 +82,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     if (!token) {
       setError('No authentication token found. Redirecting to login...');
       setTimeout(() => {
-        window.location.href = '/';
+        window.location.href = '/admin-login';
       }, 2000);
       return;
     }
@@ -96,21 +97,44 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     try {
       console.log('📡 Loading admin data from:', `${API_BASE}/admin/protected/user-info`);
       
-      const { data: userData } = await axios.get(`${API_BASE}/admin/protected/user-info`, {
-        headers: { Authorization: `Bearer ${token}` }
+      // Axios instance with better error handling
+      const axiosInstance = axios.create({
+        timeout: 10000,
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       });
-      setUser(userData);
 
-      const { data: stats } = await axios.get(`${API_BASE}/admin/protected/analytics`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setAnalytics(stats);
+      // Fetch user info
+      const userResponse = await axiosInstance.get(`${API_BASE}/admin/protected/user-info`);
+      setUser(userResponse.data);
+      console.log('✅ User info loaded:', userResponse.data);
+
+      // Fetch analytics
+      const analyticsResponse = await axiosInstance.get(`${API_BASE}/admin/protected/analytics`);
+      setAnalytics(analyticsResponse.data);
+      console.log('✅ Analytics loaded:', analyticsResponse.data);
+
     } catch (err: any) {
-      console.error('❌ Admin data error:', err);
-      setError(err.response?.data?.error || 'Failed to load dashboard data');
+      console.error('❌ Admin data error details:', {
+        message: err.message,
+        status: err.response?.status,
+        statusText: err.response?.statusText,
+        data: err.response?.data,
+        url: err.config?.url,
+        API_BASE: API_BASE
+      });
+      
+      const errorMsg = err.response?.data?.error || 
+                      err.message || 
+                      'Failed to load dashboard data. Check API endpoint.';
+      setError(errorMsg);
+      
       if (err.response?.status === 401) {
         localStorage.removeItem('adminToken');
-        window.location.href = '/';
+        localStorage.removeItem('adminUsername');
+        window.location.href = '/admin-login';
       }
     } finally {
       setLoading(false);
@@ -122,7 +146,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       setLinkSettingsLoading(true);
       console.log('🔗 Fetching link settings from:', `${API_BASE}/link-settings`);
       
-      const { data } = await axios.get(`${API_BASE}/link-settings`);
+      const { data } = await axios.get(`${API_BASE}/link-settings`, {
+        timeout: 5000
+      });
       console.log('✅ Link settings fetched:', data);
       setLinkSettings(data);
     } catch (err: any) {
@@ -152,7 +178,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       console.log(`🔄 Toggling link ${linkNumber} at:`, `${API_BASE}/link-settings/toggle/${linkNumber}`);
       
       // Use the toggle endpoint
-      const { data } = await axios.put(`${API_BASE}/link-settings/toggle/${linkNumber}`);
+      const { data } = await axios.put(`${API_BASE}/link-settings/toggle/${linkNumber}`, {}, {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
       console.log('✅ Link toggled successfully:', data);
       
       // Update local state with the response
@@ -227,7 +257,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       if (onLogout) {
         onLogout();
       } else {
-        window.location.href = '/';
+        window.location.href = '/admin-login';
       }
     }
   };
@@ -295,10 +325,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-950 via-purple-900 to-purple-950 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-purple-950 via-purple-900 to-purple-950 flex items-center justify-center flex-col">
         <Spinner />
-        <div className="ml-4 text-purple-300">
+        <div className="mt-4 text-purple-300">
           Loading from: {API_BASE.replace('/api', '')}
+        </div>
+        <div className="mt-2 text-sm text-purple-500">
+          Token: {token ? 'Present' : 'Missing'}
         </div>
       </div>
     );
@@ -309,19 +342,38 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       <div className="min-h-screen bg-gradient-to-br from-purple-950 via-purple-900 to-purple-950 text-white p-6">
         <div className="max-w-4xl mx-auto">
           <div className="bg-gradient-to-br from-purple-600/20 to-purple-700/10 border border-purple-500/50 backdrop-blur rounded-2xl p-8 text-center shadow-2xl shadow-purple-500/10">
-            <h2 className="text-3xl font-bold mb-4 text-purple-300">Error</h2>
-            <p className="mb-6 text-purple-100">{error}</p>
-            <p className="mb-4 text-purple-200 text-sm">
-              API Base: {API_BASE}
+            <h2 className="text-3xl font-bold mb-4 text-purple-300">Error Loading Dashboard</h2>
+            <p className="mb-4 p-3 bg-red-900/30 border border-red-700/50 rounded-lg text-red-200">
+              {error}
             </p>
+            <div className="bg-purple-900/40 p-4 rounded-lg mb-6 text-left">
+              <p className="text-sm font-mono text-purple-300">
+                <strong>API Base:</strong> {API_BASE}
+              </p>
+              <p className="text-sm font-mono text-purple-300">
+                <strong>Current Host:</strong> {window.location.hostname}
+              </p>
+              <p className="text-sm font-mono text-purple-300">
+                <strong>Token Status:</strong> {token ? 'Present' : 'Missing'}
+              </p>
+            </div>
             <div className="space-x-4">
               <button
                 onClick={loadInitialData}
                 className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white px-8 py-3 rounded-lg transition transform hover:scale-105 font-semibold shadow-lg shadow-purple-500/30"
               >
-                Retry
+                ↻ Retry Loading
+              </button>
+              <button
+                onClick={() => window.location.href = '/admin-login'}
+                className="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white px-8 py-3 rounded-lg transition font-semibold"
+              >
+                🔑 Go to Login
               </button>
             </div>
+            <p className="mt-6 text-xs text-purple-400">
+              Check browser console (F12) for detailed error information
+            </p>
           </div>
         </div>
       </div>
@@ -343,7 +395,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                 Admin Dashboard
               </h1>
               <p className="text-sm text-purple-300">
-                Welcome back, <span className="font-semibold">{user.username || 'Admin'}</span> • {window.location.hostname === 'localhost' ? 'Local Development' : 'Production'}
+                Welcome back, <span className="font-semibold text-pink-300">{user.username || 'Admin'}</span> • 
+                <span className="ml-2 text-xs bg-gradient-to-r from-purple-600 to-pink-600 text-white px-2 py-1 rounded-full">
+                  {window.location.hostname === 'localhost' ? 'Local Development' : 'Production'}
+                </span>
+              </p>
+              <p className="text-xs text-purple-400 mt-1">
+                API: {API_BASE.replace('/api', '')}
               </p>
             </div>
           </div>
@@ -351,15 +409,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           <div className="flex items-center gap-3">
             <button
               onClick={loadInitialData}
-              className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-5 py-2 rounded-lg transition transform hover:scale-105 font-semibold shadow-lg shadow-purple-500/30 whitespace-nowrap text-sm"
+              className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-5 py-2 rounded-lg transition transform hover:scale-105 font-semibold shadow-lg shadow-purple-500/30 whitespace-nowrap text-sm flex items-center gap-2"
             >
-              ↻ Refresh Data
+              <span>↻</span> Refresh Data
             </button>
             <button
               onClick={handleLogout}
-              className="bg-gradient-to-r from-red-600/80 to-red-700/80 hover:from-red-600 hover:to-red-700 text-white px-5 py-2 rounded-lg transition font-semibold text-sm border border-red-500/40 shadow-lg"
+              className="bg-gradient-to-r from-red-600/80 to-red-700/80 hover:from-red-600 hover:to-red-700 text-white px-5 py-2 rounded-lg transition font-semibold text-sm border border-red-500/40 shadow-lg flex items-center gap-2"
             >
-              🏴‍☠️ Logout
+              <span>🚪</span> Logout
             </button>
           </div>
         </div>
@@ -398,6 +456,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                     {getActiveLinkCount()}/5 Active
                   </span>
                 </h3>
+                <p className="text-xs text-purple-300 mt-1">
+                  Toggle links to show/hide from all download pages
+                </p>
               </div>
               <button
                 onClick={fetchLinkSettings}
@@ -413,7 +474,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               </button>
             </div>
             
-            <div className="grid grid-cols-5 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
               {[1, 2, 3, 4, 5].map((num) => {
                 const isActive = getLinkStatus(num);
                 const isLoading = linkSettingsLoading;
@@ -456,7 +517,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                     </button>
                     <div className="mt-2 h-2 rounded-full overflow-hidden bg-gray-800">
                       <div 
-                        className={`h-full transition-all duration-500 ${isActive ? 
+                        className={`h-full transition-all duration-500 ${
+                          isActive ? 
                           `bg-gradient-to-r ${linkColor.replace('from-', 'from-').replace('to-', 'to-')}` : 
                           'bg-gray-600'
                         }`}
@@ -464,7 +526,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                       ></div>
                     </div>
                     <p className="text-xs mt-2 font-medium opacity-80">
-                      Link {num} • {isActive ? 'Visible to users' : 'Hidden'}
+                      Link {num} • {isActive ? '✅ Visible to users' : '❌ Hidden'}
                     </p>
                   </div>
                 );
@@ -473,7 +535,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           </div>
         </div>
 
-        {/* Analytics Cards - Updated colors without emojis */}
+        {/* Analytics Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
           {/* Total Content Card */}
           <div className={`${analyticsColors[0].bg} border ${analyticsColors[0].border} rounded-xl p-4 backdrop-blur shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all duration-300 relative overflow-hidden group`}>
@@ -491,7 +553,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                 Anime • Movies • Manga
               </div>
             </div>
-            <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${analyticsColors[0].gradient} opacity-50 group-hover:opacity-100 transition-opacity"></div>
+            <div className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${analyticsColors[0].gradient} opacity-50 group-hover:opacity-100 transition-opacity`}></div>
           </div>
 
           {/* Anime Card */}
@@ -510,7 +572,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                 Series Collection
               </div>
             </div>
-            <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${analyticsColors[1].gradient} opacity-50 group-hover:opacity-100 transition-opacity"></div>
+            <div className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${analyticsColors[1].gradient} opacity-50 group-hover:opacity-100 transition-opacity`}></div>
           </div>
 
           {/* Movies Card */}
@@ -529,7 +591,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                 Movie Collection
               </div>
             </div>
-            <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${analyticsColors[2].gradient} opacity-50 group-hover:opacity-100 transition-opacity"></div>
+            <div className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${analyticsColors[2].gradient} opacity-50 group-hover:opacity-100 transition-opacity`}></div>
           </div>
 
           {/* Manga Card */}
@@ -548,7 +610,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                 Comic Collection
               </div>
             </div>
-            <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${analyticsColors[3].gradient} opacity-50 group-hover:opacity-100 transition-opacity"></div>
+            <div className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${analyticsColors[3].gradient} opacity-50 group-hover:opacity-100 transition-opacity`}></div>
           </div>
 
           {/* Episodes Card */}
@@ -567,7 +629,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                 Total Episodes
               </div>
             </div>
-            <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${analyticsColors[4].gradient} opacity-50 group-hover:opacity-100 transition-opacity"></div>
+            <div className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${analyticsColors[4].gradient} opacity-50 group-hover:opacity-100 transition-opacity`}></div>
           </div>
 
           {/* Users Today Card */}
@@ -586,7 +648,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                 Active Today
               </div>
             </div>
-            <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${analyticsColors[5].gradient} opacity-50 group-hover:opacity-100 transition-opacity"></div>
+            <div className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${analyticsColors[5].gradient} opacity-50 group-hover:opacity-100 transition-opacity`}></div>
           </div>
         </div>
       </header>
