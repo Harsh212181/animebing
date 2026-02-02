@@ -1,11 +1,10 @@
-  // src/components/admin/ReportManager.tsx - UPDATED VERSION
+ // src/components/admin/ReportManager.tsx - UPDATED VERSION
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Spinner from '../Spinner';
 
 interface Report {
   _id: string;
-  // Episode Report Fields
   animeId?: {
     _id: string;
     title: string;
@@ -15,14 +14,10 @@ interface Report {
   episodeNumber?: number;
   issueType?: string;
   description?: string;
-  
-  // Contact Form Fields
   name?: string;
   email: string;
   subject?: string;
   message: string;
-  
-  // Common Fields
   type: 'episode' | 'contact';
   username: string;
   status: 'Pending' | 'In Progress' | 'Fixed' | 'Invalid';
@@ -46,11 +41,11 @@ const ReportsManager: React.FC = () => {
   const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState<'All' | 'Pending' | 'In Progress' | 'Fixed' | 'Invalid'>('All');
   const [typeFilter, setTypeFilter] = useState<'All' | 'episode' | 'contact'>('All');
-  const [selectedReport, setSelectedReport] = useState<Report | null>(null);
-  const [adminResponse, setAdminResponse] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; report: Report | null }>({ show: false, report: null });
+  const [expandedReports, setExpandedReports] = useState<string[]>([]);
   const [bulkDeleteMode, setBulkDeleteMode] = useState(false);
   const [selectedReports, setSelectedReports] = useState<string[]>([]);
+  const [adminResponses, setAdminResponses] = useState<{ [key: string]: string }>({});
 
   useEffect(() => {
     fetchReports();
@@ -71,7 +66,6 @@ const ReportsManager: React.FC = () => {
     }
   };
 
-  // Delete single report
   const handleDeleteReport = async (reportId: string) => {
     try {
       console.log('🗑️ Deleting report:', reportId);
@@ -91,7 +85,6 @@ const ReportsManager: React.FC = () => {
     }
   };
 
-  // Bulk delete reports
   const handleBulkDelete = async () => {
     if (selectedReports.length === 0) {
       alert('Please select reports to delete');
@@ -116,7 +109,6 @@ const ReportsManager: React.FC = () => {
     }
   };
 
-  // Toggle report selection for bulk delete
   const toggleReportSelection = (reportId: string) => {
     setSelectedReports(prev => 
       prev.includes(reportId) 
@@ -125,7 +117,6 @@ const ReportsManager: React.FC = () => {
     );
   };
 
-  // Select all reports for bulk delete
   const toggleSelectAll = () => {
     if (selectedReports.length === filteredReports.length) {
       setSelectedReports([]);
@@ -134,9 +125,25 @@ const ReportsManager: React.FC = () => {
     }
   };
 
-  const updateReportStatus = async (reportId: string, status: Report['status'], response?: string) => {
+  const toggleReportExpansion = (reportId: string) => {
+    setExpandedReports(prev => 
+      prev.includes(reportId) 
+        ? prev.filter(id => id !== reportId)
+        : [...prev, reportId]
+    );
+  };
+
+  const handleResponseChange = (reportId: string, response: string) => {
+    setAdminResponses(prev => ({
+      ...prev,
+      [reportId]: response
+    }));
+  };
+
+  const updateReportStatus = async (reportId: string, status: Report['status']) => {
     try {
       const updateData: any = { status };
+      const response = adminResponses[reportId];
       
       if (response && status === 'Fixed') {
         updateData.adminResponse = response;
@@ -152,8 +159,25 @@ const ReportsManager: React.FC = () => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      setSelectedReport(null);
-      setAdminResponse('');
+      // Clear the response for this report
+      setAdminResponses(prev => {
+        const newResponses = { ...prev };
+        delete newResponses[reportId];
+        return newResponses;
+      });
+
+      fetchReports();
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Failed to update report');
+    }
+  };
+
+  const quickUpdateStatus = async (reportId: string, status: Report['status']) => {
+    try {
+      await axios.put(`${API_BASE}/admin/protected/reports/${reportId}`,
+        { status },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
       fetchReports();
     } catch (err: any) {
       alert(err.response?.data?.error || 'Failed to update report');
@@ -193,6 +217,16 @@ const ReportsManager: React.FC = () => {
     (statusFilter === 'All' || report.status === statusFilter) &&
     (typeFilter === 'All' || report.type === typeFilter)
   );
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
 
   if (loading) return <div className="flex justify-center py-8"><Spinner size="lg" /></div>;
   if (error) return <p className="text-red-400 text-center p-4">{error}</p>;
@@ -293,81 +327,6 @@ const ReportsManager: React.FC = () => {
         </div>
       )}
 
-      {/* Response Modal */}
-      {selectedReport && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 animate-fade-in backdrop-blur-sm">
-          <div className="bg-slate-900 border border-slate-700 p-6 rounded-lg shadow-2xl max-w-md w-full animate-scale-in">
-            <h3 className="text-lg font-bold text-white mb-4">
-              Respond to {selectedReport.type === 'contact' ? 'Contact' : 'Report'}
-            </h3>
-            
-            {selectedReport.type === 'contact' ? (
-              <>
-                <p className="text-slate-300 mb-2">
-                  <strong>From:</strong> {selectedReport.name} ({selectedReport.email})
-                </p>
-                <p className="text-slate-300 mb-2">
-                  <strong>Subject:</strong> {selectedReport.subject}
-                </p>
-                <p className="text-slate-300 mb-4">
-                  <strong>Message:</strong> {selectedReport.message}
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="text-slate-300 mb-2">
-                  <strong>User:</strong> {selectedReport.username} ({selectedReport.email})
-                </p>
-                <p className="text-slate-300 mb-4">
-                  <strong>Issue:</strong> {selectedReport.issueType}
-                </p>
-              </>
-            )}
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Admin Response (Optional)
-                </label>
-                <textarea
-                  value={adminResponse}
-                  onChange={(e) => setAdminResponse(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500 h-24"
-                  placeholder="Add response or notes..."
-                />
-              </div>
-
-              <div className="flex gap-2 flex-wrap">
-                <button
-                  onClick={() => updateReportStatus(selectedReport._id, 'Fixed', adminResponse)}
-                  className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded transition-colors flex-1"
-                >
-                  Mark Fixed
-                </button>
-                <button
-                  onClick={() => updateReportStatus(selectedReport._id, 'In Progress')}
-                  className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded transition-colors"
-                >
-                  In Progress
-                </button>
-                <button
-                  onClick={() => updateReportStatus(selectedReport._id, 'Invalid')}
-                  className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded transition-colors"
-                >
-                  Mark Invalid
-                </button>
-                <button
-                  onClick={() => setSelectedReport(null)}
-                  className="bg-slate-600 hover:bg-slate-500 text-white px-4 py-2 rounded transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Delete Confirmation Modal */}
       {deleteConfirm.show && deleteConfirm.report && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 animate-fade-in backdrop-blur-sm">
@@ -440,7 +399,6 @@ const ReportsManager: React.FC = () => {
             <table className="w-full">
               <thead className="bg-slate-700/50">
                 <tr>
-                  {/* Checkbox for Bulk Delete */}
                   {bulkDeleteMode && (
                     <th className="p-4 text-left text-slate-300 font-medium">
                       <input
@@ -453,9 +411,7 @@ const ReportsManager: React.FC = () => {
                   )}
                   <th className="p-4 text-left text-slate-300 font-medium">Type</th>
                   <th className="p-4 text-left text-slate-300 font-medium">Details</th>
-                  <th className="p-4 text-left text-slate-300 font-medium">User Contact</th>
-                  <th className="p-4 text-left text-slate-300 font-medium">Issue/Subject</th>
-                  <th className="p-4 text-left text-slate-300 font-medium">Message</th>
+                  <th className="p-4 text-left text-slate-300 font-medium">User</th>
                   <th className="p-4 text-left text-slate-300 font-medium">Status</th>
                   <th className="p-4 text-left text-slate-300 font-medium">Date</th>
                   <th className="p-4 text-left text-slate-300 font-medium">Actions</th>
@@ -463,133 +419,351 @@ const ReportsManager: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-700">
                 {filteredReports.map(report => (
-                  <tr key={report._id} className="hover:bg-slate-700/30 transition-colors">
-                    {/* Checkbox for each report */}
-                    {bulkDeleteMode && (
+                  <React.Fragment key={report._id}>
+                    <tr className="hover:bg-slate-700/30 transition-colors">
+                      {bulkDeleteMode && (
+                        <td className="p-4">
+                          <input
+                            type="checkbox"
+                            checked={selectedReports.includes(report._id)}
+                            onChange={() => toggleReportSelection(report._id)}
+                            className="w-4 h-4 text-purple-600 bg-slate-800 border-slate-600 rounded focus:ring-purple-500"
+                          />
+                        </td>
+                      )}
+                      
+                      {/* Type */}
                       <td className="p-4">
-                        <input
-                          type="checkbox"
-                          checked={selectedReports.includes(report._id)}
-                          onChange={() => toggleReportSelection(report._id)}
-                          className="w-4 h-4 text-purple-600 bg-slate-800 border-slate-600 rounded focus:ring-purple-500"
-                        />
+                        <span className={`px-2 py-1 rounded text-xs font-semibold ${getTypeColor(report.type)}`}>
+                          {report.type === 'contact' ? 'Contact Form' : 'Episode Report'}
+                        </span>
                       </td>
-                    )}
-                    
-                    {/* Type */}
-                    <td className="p-4">
-                      <span className={`px-2 py-1 rounded text-xs font-semibold ${getTypeColor(report.type)}`}>
-                        {report.type === 'contact' ? 'Contact Form' : 'Episode Report'}
-                      </span>
-                    </td>
 
-                    {/* Details */}
-                    <td className="p-4">
-                      {report.type === 'episode' ? (
-                        <div className="flex items-center gap-3">
-                          {report.animeId?.thumbnail && (
-                            <img
-                              src={report.animeId.thumbnail}
-                              alt={report.animeId.title}
-                              className="w-12 h-16 object-cover rounded"
-                            />
-                          )}
-                          <div>
-                            <div className="font-medium text-white text-sm">
-                              {report.animeId?.title || 'Unknown Anime'}
-                            </div>
-                            {report.episodeNumber && (
-                              <div className="text-xs text-slate-400">
-                                Episode {report.episodeNumber}
-                              </div>
+                      {/* Details */}
+                      <td className="p-4">
+                        {report.type === 'episode' ? (
+                          <div className="flex items-center gap-3">
+                            {report.animeId?.thumbnail && (
+                              <img
+                                src={report.animeId.thumbnail}
+                                alt={report.animeId.title}
+                                className="w-12 h-16 object-cover rounded"
+                              />
                             )}
+                            <div className="min-w-0">
+                              <div className="font-medium text-white text-sm truncate max-w-[150px]">
+                                {report.animeId?.title || 'Unknown Anime'}
+                              </div>
+                              {report.episodeNumber && (
+                                <div className="text-xs text-slate-400">
+                                  Episode {report.episodeNumber}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="min-w-0">
+                            <div className="text-white font-medium text-sm truncate max-w-[150px]" title={report.subject}>
+                              {report.subject || 'No Subject'}
+                            </div>
+                            <div className="text-xs text-slate-400">
+                              {report.name || 'Anonymous'}
+                            </div>
+                          </div>
+                        )}
+                      </td>
+
+                      {/* User */}
+                      <td className="p-4">
+                        <div className="text-sm">
+                          <div className="text-white font-medium truncate max-w-[120px]" title={report.type === 'contact' ? report.name : report.username}>
+                            {report.type === 'contact' ? report.name || 'Anonymous' : report.username}
+                          </div>
+                          <div className="text-blue-400 text-xs truncate max-w-[120px]" title={report.email}>
+                            {report.email}
                           </div>
                         </div>
-                      ) : (
-                        <div className="text-sm">
-                          <div className="text-white font-medium">{report.name}</div>
-                          <div className="text-xs text-slate-400">Contact Form</div>
-                        </div>
-                      )}
-                    </td>
+                      </td>
 
-                    {/* User Contact */}
-                    <td className="p-4">
-                      <div className="text-sm">
-                        <div className="text-white font-medium">
-                          {report.type === 'contact' ? report.name : report.username}
-                        </div>
-                        <div className="text-blue-400 text-xs break-all">{report.email}</div>
+                      {/* Status */}
+                      <td className="p-4">
+                        <span className={`px-2 py-1 rounded text-xs font-semibold ${getStatusColor(report.status)}`}>
+                          {report.status}
+                        </span>
                         {report.adminResponse && (
                           <div className="text-green-400 text-xs mt-1">
                             ✅ Replied
                           </div>
                         )}
-                      </div>
-                    </td>
+                      </td>
 
-                    {/* Issue/Subject */}
-                    <td className="p-4">
-                      {report.type === 'episode' ? (
-                        <span className={`px-2 py-1 rounded text-xs font-semibold ${getIssueTypeColor(report.issueType || 'Other')}`}>
-                          {report.issueType}
-                        </span>
-                      ) : (
-                        <div className="text-sm text-white font-medium max-w-xs truncate">
-                          {report.subject}
-                        </div>
-                      )}
-                    </td>
+                      {/* Date */}
+                      <td className="p-4 text-slate-400 text-sm">
+                        {new Date(report.createdAt).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric'
+                        })}
+                      </td>
 
-                    {/* Message */}
-                    <td className="p-4 text-slate-300 text-sm max-w-xs">
-                      {report.type === 'episode' ? report.description : report.message}
-                      {report.adminResponse && (
-                        <div className="mt-2 p-2 bg-green-600/20 rounded border border-green-500/30">
-                          <strong className="text-green-400 text-xs">Admin Response:</strong>
-                          <p className="text-green-300 text-xs mt-1">{report.adminResponse}</p>
-                        </div>
-                      )}
-                    </td>
-
-                    {/* Status */}
-                    <td className="p-4">
-                      <span className={`px-2 py-1 rounded text-xs font-semibold ${getStatusColor(report.status)}`}>
-                        {report.status}
-                      </span>
-                    </td>
-
-                    {/* Date */}
-                    <td className="p-4 text-slate-400 text-sm">
-                      {new Date(report.createdAt).toLocaleDateString()}
-                    </td>
-
-                    {/* Actions */}
-                    <td className="p-4">
-                      <div className="flex flex-col gap-2">
-                        <button
-                          onClick={() => setSelectedReport(report)}
-                          className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-sm transition-colors text-xs"
-                        >
-                          Respond
-                        </button>
-                        <button
-                          onClick={() => setDeleteConfirm({ show: true, report })}
-                          className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-sm transition-colors text-xs"
-                        >
-                          Delete
-                        </button>
-                        {report.status === 'Pending' && (
+                      {/* Actions */}
+                      <td className="p-4">
+                        <div className="flex flex-col gap-2">
                           <button
-                            onClick={() => updateReportStatus(report._id, 'In Progress')}
-                            className="bg-orange-600 hover:bg-orange-500 text-white px-3 py-1 rounded text-sm transition-colors text-xs"
+                            onClick={() => toggleReportExpansion(report._id)}
+                            className={`px-3 py-1 rounded text-sm transition-colors text-xs ${
+                              expandedReports.includes(report._id)
+                                ? 'bg-slate-500 text-white'
+                                : 'bg-slate-600 hover:bg-slate-500 text-white'
+                            }`}
                           >
-                            Start Progress
+                            {expandedReports.includes(report._id) ? '▲ Hide Details' : '▼ Show Details'}
                           </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => setDeleteConfirm({ show: true, report })}
+                              className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-sm transition-colors text-xs flex-1"
+                            >
+                              Delete
+                            </button>
+                            {report.status === 'Pending' && (
+                              <button
+                                onClick={() => quickUpdateStatus(report._id, 'In Progress')}
+                                className="bg-orange-600 hover:bg-orange-500 text-white px-2 py-1 rounded text-sm transition-colors text-xs"
+                                title="Start Progress"
+                              >
+                                ▶
+                              </button>
+                            )}
+                            {report.status === 'In Progress' && (
+                              <button
+                                onClick={() => quickUpdateStatus(report._id, 'Fixed')}
+                                className="bg-green-600 hover:bg-green-500 text-white px-2 py-1 rounded text-sm transition-colors text-xs"
+                                title="Mark Fixed"
+                              >
+                                ✓
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+
+                    {/* Expanded Details Row */}
+                    {expandedReports.includes(report._id) && (
+                      <tr className="bg-slate-900/50 transition-all duration-300">
+                        <td colSpan={bulkDeleteMode ? 8 : 7} className="p-0">
+                          <div className="p-6 border-t border-slate-700">
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                              {/* Left Column */}
+                              <div className="space-y-4">
+                                {report.type === 'episode' ? (
+                                  <>
+                                    <div className="bg-slate-800/50 p-4 rounded-lg">
+                                      <h4 className="text-white font-semibold mb-3 flex items-center gap-2">
+                                        <span className="text-blue-400">🎬</span> Anime Information
+                                      </h4>
+                                      <div className="flex items-start gap-3">
+                                        {report.animeId?.thumbnail && (
+                                          <img
+                                            src={report.animeId.thumbnail}
+                                            alt={report.animeId.title}
+                                            className="w-16 h-20 object-cover rounded"
+                                          />
+                                        )}
+                                        <div>
+                                          <p className="text-white font-medium">
+                                            {report.animeId?.title || 'Unknown Anime'}
+                                          </p>
+                                          {report.episodeNumber && (
+                                            <p className="text-slate-300 text-sm">
+                                              Episode {report.episodeNumber}
+                                            </p>
+                                          )}
+                                          {report.episodeId && (
+                                            <p className="text-slate-400 text-xs mt-1">
+                                              Episode ID: {report.episodeId}
+                                            </p>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div className="bg-slate-800/50 p-4 rounded-lg">
+                                      <h4 className="text-white font-semibold mb-3 flex items-center gap-2">
+                                        <span className="text-orange-400">⚠️</span> Issue Details
+                                      </h4>
+                                      <div className="space-y-2">
+                                        <div>
+                                          <p className="text-slate-400 text-sm">Issue Type</p>
+                                          <span className={`px-2 py-1 rounded text-xs font-semibold mt-1 inline-block ${getIssueTypeColor(report.issueType || 'Other')}`}>
+                                            {report.issueType || 'N/A'}
+                                          </span>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-400 text-sm">Description</p>
+                                          <p className="text-white text-sm mt-1 p-2 bg-slate-900/50 rounded whitespace-pre-wrap">
+                                            {report.description || 'No description provided'}
+                                          </p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div className="bg-slate-800/50 p-4 rounded-lg">
+                                      <h4 className="text-white font-semibold mb-3 flex items-center gap-2">
+                                        <span className="text-purple-400">📧</span> Contact Information
+                                      </h4>
+                                      <div className="space-y-2">
+                                        <div>
+                                          <p className="text-slate-400 text-sm">Name</p>
+                                          <p className="text-white">{report.name || 'Not provided'}</p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-400 text-sm">Email</p>
+                                          <p className="text-blue-400">{report.email}</p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-400 text-sm">Subject</p>
+                                          <p className="text-white">{report.subject || 'No subject'}</p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+
+                              {/* Right Column */}
+                              <div className="space-y-4">
+                                <div className="bg-slate-800/50 p-4 rounded-lg">
+                                  <h4 className="text-white font-semibold mb-3 flex items-center gap-2">
+                                    <span className="text-green-400">👤</span> User Information
+                                  </h4>
+                                  <div className="space-y-2">
+                                    <div>
+                                      <p className="text-slate-400 text-sm">Username</p>
+                                      <p className="text-white">{report.username}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-slate-400 text-sm">Reported At</p>
+                                      <p className="text-slate-300 text-sm">{formatDate(report.createdAt)}</p>
+                                    </div>
+                                    {report.resolvedAt && (
+                                      <div>
+                                        <p className="text-slate-400 text-sm">Resolved At</p>
+                                        <p className="text-slate-300 text-sm">{formatDate(report.resolvedAt)}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="bg-slate-800/50 p-4 rounded-lg">
+                                  <h4 className="text-white font-semibold mb-3 flex items-center gap-2">
+                                    <span className="text-yellow-400">💬</span> Message
+                                  </h4>
+                                  <p className="text-slate-300 text-sm p-3 bg-slate-900/50 rounded-lg whitespace-pre-wrap">
+                                    {report.type === 'episode' 
+                                      ? report.description || 'No description provided'
+                                      : report.message || 'No message provided'
+                                    }
+                                  </p>
+                                </div>
+
+                                {report.adminResponse && (
+                                  <div className="bg-green-600/10 border border-green-600/30 p-4 rounded-lg">
+                                    <h4 className="text-white font-semibold mb-2 flex items-center gap-2">
+                                      <span className="text-green-400">✅</span> Admin Response
+                                    </h4>
+                                    <p className="text-green-300 text-sm whitespace-pre-wrap">
+                                      {report.adminResponse}
+                                    </p>
+                                    {report.responseDate && (
+                                      <p className="text-green-400/70 text-xs mt-2">
+                                        Responded on: {formatDate(report.responseDate)}
+                                      </p>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Admin Response Section */}
+                            <div className="mt-6 pt-6 border-t border-slate-700">
+                              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                <div className="lg:col-span-2">
+                                  <h4 className="text-white font-semibold mb-3 flex items-center gap-2">
+                                    <span className="text-blue-400">✍️</span> Admin Response
+                                  </h4>
+                                  <textarea
+                                    value={adminResponses[report._id] || ''}
+                                    onChange={(e) => handleResponseChange(report._id, e.target.value)}
+                                    className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 h-32"
+                                    placeholder="Add your response here..."
+                                  />
+                                  <p className="text-slate-400 text-xs mt-2">
+                                    Note: Response will be saved when you mark the report as "Fixed"
+                                  </p>
+                                </div>
+
+                                <div className="space-y-3">
+                                  <h4 className="text-white font-semibold flex items-center gap-2">
+                                    <span className="text-purple-400">⚡</span> Quick Actions
+                                  </h4>
+                                  <div className="flex flex-col gap-2">
+                                    <button
+                                      onClick={() => updateReportStatus(report._id, 'Fixed')}
+                                      className="bg-green-600 hover:bg-green-500 text-white px-4 py-3 rounded transition-colors text-sm flex items-center justify-center gap-2"
+                                    >
+                                      <span>✓</span> Mark as Fixed
+                                    </button>
+                                    <button
+                                      onClick={() => updateReportStatus(report._id, 'In Progress')}
+                                      className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-3 rounded transition-colors text-sm flex items-center justify-center gap-2"
+                                    >
+                                      <span>⏳</span> Mark In Progress
+                                    </button>
+                                    <button
+                                      onClick={() => updateReportStatus(report._id, 'Invalid')}
+                                      className="bg-red-600 hover:bg-red-500 text-white px-4 py-3 rounded transition-colors text-sm flex items-center justify-center gap-2"
+                                    >
+                                      <span>✗</span> Mark Invalid
+                                    </button>
+                                    <button
+                                      onClick={() => toggleReportExpansion(report._id)}
+                                      className="bg-slate-600 hover:bg-slate-500 text-white px-4 py-3 rounded transition-colors text-sm"
+                                    >
+                                      Close Details
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Technical Details */}
+                              <div className="mt-6 bg-slate-800/50 p-4 rounded-lg">
+                                <h4 className="text-white font-semibold mb-3 flex items-center gap-2">
+                                  <span className="text-red-400">🌐</span> Technical Details
+                                </h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  <div>
+                                    <p className="text-slate-400 text-sm">User IP</p>
+                                    <p className="text-slate-300 text-sm font-mono bg-slate-900/50 p-2 rounded">
+                                      {report.userIP}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-slate-400 text-sm">User Agent</p>
+                                    <p className="text-slate-300 text-xs font-mono bg-slate-900/50 p-2 rounded truncate" title={report.userAgent}>
+                                      {report.userAgent}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>

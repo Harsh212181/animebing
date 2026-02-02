@@ -90,7 +90,7 @@ const DMCA: React.FC = () => {
                 We respond to valid copyright infringement notices and will act promptly to remove indexed links.
               </p>
               
-              <h3 className="text-lg sm:text-xl font-semibold text-white mt-4 sm:mt-6 mb-3 sm:mb-4 text-sm sm:text-base">
+              <h3 className="text-lm sm:text-lm font-semibold text-white mt-4 sm:mt-6 mb-3 sm:mb-4 text-sm sm:text-base">
                 If you believe we have indexed material that infringes your copyright, please send a formal takedown request including:
               </h3>
               
