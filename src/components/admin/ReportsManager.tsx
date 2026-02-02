@@ -510,7 +510,7 @@ const ReportsManager: React.FC = () => {
                         <div className="flex flex-col gap-2">
                           <button
                             onClick={() => toggleReportExpansion(report._id)}
-                            className={`px-3 py-1 rounded text-sm transition-colors text-xs ${
+                            className={`px-3 py-1 rounded text-ml transition-colors text-xs ${
                               expandedReports.includes(report._id)
                                 ? 'bg-slate-500 text-white'
                                 : 'bg-slate-600 hover:bg-slate-500 text-white'
@@ -521,14 +521,14 @@ const ReportsManager: React.FC = () => {
                           <div className="flex gap-1">
                             <button
                               onClick={() => setDeleteConfirm({ show: true, report })}
-                              className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-sm transition-colors text-xs flex-1"
+                              className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-ml transition-colors text-xs flex-1"
                             >
                               Delete
                             </button>
                             {report.status === 'Pending' && (
                               <button
                                 onClick={() => quickUpdateStatus(report._id, 'In Progress')}
-                                className="bg-orange-600 hover:bg-orange-500 text-white px-2 py-1 rounded text-sm transition-colors text-xs"
+                                className="bg-orange-600 hover:bg-orange-500 text-white px-2 py-1 rounded text-ml transition-colors text-xs"
                                 title="Start Progress"
                               >
                                 ▶
@@ -537,7 +537,7 @@ const ReportsManager: React.FC = () => {
                             {report.status === 'In Progress' && (
                               <button
                                 onClick={() => quickUpdateStatus(report._id, 'Fixed')}
-                                className="bg-green-600 hover:bg-green-500 text-white px-2 py-1 rounded text-sm transition-colors text-xs"
+                                className="bg-green-600 hover:bg-green-500 text-white px-2 py-1 rounded text-lm transition-colors text-xs"
                                 title="Mark Fixed"
                               >
                                 ✓
