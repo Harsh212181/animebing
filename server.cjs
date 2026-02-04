@@ -1,4 +1,5 @@
- const express = require('express');
+ // server.cjs - COMPLETE FIXED VERSION
+const express = require('express');
 const cors = require('cors');
 const connectDB = require('./db.cjs');
 require('dotenv').config();
@@ -17,13 +18,20 @@ const appDownloadRoutes = require('./routes/appDownloadRoutes.cjs');
 const adminRoutes = require('./routes/adminRoutes.cjs');
 const contactRoutes = require('./routes/contactRoutes.cjs');
 
+// ✅ POLL ROUTES ADDED HERE
+const pollRoutes = require('./routes/pollRoutes.cjs');
+
 // ✅ IMPORTANT: Add this line
 const linkSettingsRoutes = require('./routes/linkSettingsRoutes.cjs');
 
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+
+// ✅ FIX: INCREASE BODY LIMIT FOR IMAGE URLS AND POLL DATA
+app.use(express.json({ limit: '50mb' })); // 50MB तक की data allow करें
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
 app.use(express.static('public'));
 
 // Database Connection
@@ -44,11 +52,6 @@ app.use((req, res, next) => {
   }
   next();
 });
-
-// ❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌
-// ❌ REMOVE THIS MIDDLEWARE - IT'S CAUSING THE ERROR
-// ❌ Lines 81-91 DELETE THEM COMPLETELY
-// ❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌❌
 
 // ✅ DYNAMIC SITEMAP GENERATOR - SEO OPTIMIZED
 app.get('/sitemap.xml', async (req, res) => {
@@ -80,7 +83,8 @@ app.get('/sitemap.xml', async (req, res) => {
       { url: 'https://animebing.in/privacy', priority: '0.5', changefreq: 'monthly' },
       { url: 'https://animebing.in/terms', priority: '0.5', changefreq: 'monthly' },
       { url: 'https://animebing.in/dmca', priority: '0.5', changefreq: 'monthly' },
-      { url: 'https://animebing.in/contact', priority: '0.5', changefreq: 'monthly' }
+      { url: 'https://animebing.in/contact', priority: '0.5', changefreq: 'monthly' },
+      { url: 'https://animebing.in/polls', priority: '0.6', changefreq: 'weekly' } // ✅ Polls page added
     ];
     
     // Add static pages
@@ -561,6 +565,10 @@ console.log('✅ Link Settings Routes mounted at /api/link-settings');
 // ✅ SOCIAL MEDIA ROUTES MUST COME BEFORE ADMIN ROUTES FOR /admin paths
 app.use('/api/social', socialRoutes);
 
+// ✅ POLL ROUTES ADDED HERE
+app.use('/api/poll', pollRoutes);
+console.log('✅ Poll Routes mounted at /api/poll');
+
 // Other routes
 app.use('/api/anime', animeRoutes);
 app.use('/api/episodes', episodeRoutes);
@@ -703,16 +711,52 @@ app.get('/api/debug/social', async (req, res) => {
   }
 });
 
+// ✅ POLL SYSTEM DEBUG ROUTE
+app.get('/api/debug/polls', async (req, res) => {
+  try {
+    const Poll = require('./models/Poll.cjs');
+    
+    const allPolls = await Poll.find().sort({ createdAt: -1 });
+    const activePolls = await Poll.find({ isActive: true }).sort({ createdAt: -1 });
+    
+    console.log('🗳️ POLL SYSTEM DEBUG:');
+    console.log('Total Polls:', allPolls.length);
+    console.log('Active Polls:', activePolls.length);
+    
+    allPolls.forEach(poll => {
+      console.log(`- "${poll.question}" [${poll.isActive ? 'Active' : 'Inactive'}] - ${poll.options.length} options - ${poll.totalVotes || 0} votes`);
+    });
+    
+    res.json({
+      success: true,
+      totalPolls: allPolls.length,
+      activePolls: activePolls.length,
+      allPolls: allPolls,
+      activePolls: activePolls
+    });
+  } catch (error) {
+    console.error('Poll debug error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
+
 // ✅ HEALTH CHECK WITH SEO INFO
 app.get('/api/health', async (req, res) => {
   try {
     const LinkSettings = require('./models/LinkSettings.cjs');
+    const Poll = require('./models/Poll.cjs');
+    
     const settings = await LinkSettings.getSettings();
     const activeLinks = settings.getActiveLinks();
+    const activePolls = await Poll.countDocuments({ isActive: true });
+    const totalPolls = await Poll.countDocuments();
     
     res.json({ 
       status: 'OK', 
-      message: 'Animabing Server Running - SEO OPTIMIZED',
+      message: 'Animabing Server Running - SEO OPTIMIZED + POLL SYSTEM',
       timestamp: new Date().toISOString(),
       version: '1.0.0',
       linkSettings: {
@@ -726,13 +770,30 @@ app.get('/api/health', async (req, res) => {
           link5: settings.link5
         }
       },
+      pollSystem: {
+        totalPolls: totalPolls,
+        activePolls: activePolls,
+        endpoints: {
+          activePoll: 'GET /api/poll/active',
+          submitVote: 'POST /api/poll/vote',
+          createPoll: 'POST /api/poll/admin/create (admin)',
+          allPolls: 'GET /api/poll/admin/all (admin)'
+        }
+      },
       seoFeatures: {
         sitemap: 'https://animebing.in/sitemap.xml',
         robots: 'https://animebing.in/robots.txt',
         rssFeed: 'https://animebing.in/rss.xml',
         dynamicUrls: 'Enabled',
         structuredData: 'Enabled',
-        linkControl: 'Enabled'
+        linkControl: 'Enabled',
+        pollSystem: 'Enabled'
+      },
+      serverConfig: {
+        bodyLimit: '50MB',
+        cors: 'Enabled',
+        rateLimiting: 'Enabled',
+        pollLimit: '10 options per poll'
       },
       seoWarning: '✅ Search query URLs REMOVED from sitemap to avoid Google penalties'
     });
@@ -761,6 +822,42 @@ app.get('/api/test-link-settings', async (req, res) => {
         getAll: 'GET /api/link-settings',
         toggleLink: 'PUT /api/link-settings/toggle/1',
         getStatus: 'GET /api/link-settings/status'
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      stack: error.stack
+    });
+  }
+});
+
+// ✅ TEST ENDPOINT FOR POLL SYSTEM
+app.get('/api/test-poll-system', async (req, res) => {
+  try {
+    const Poll = require('./models/Poll.cjs');
+    
+    const activePoll = await Poll.findOne({ isActive: true });
+    const totalPolls = await Poll.countDocuments();
+    
+    res.json({
+      success: true,
+      message: 'Poll system test endpoint working',
+      pollStatus: {
+        totalPolls: totalPolls,
+        hasActivePoll: !!activePoll,
+        activePoll: activePoll ? {
+          question: activePoll.question,
+          options: activePoll.options.length,
+          votes: activePoll.totalVotes || 0
+        } : null
+      },
+      endpoints: {
+        getActivePoll: 'GET /api/poll/active',
+        submitVote: 'POST /api/poll/vote',
+        adminCreate: 'POST /api/poll/admin/create',
+        adminAll: 'GET /api/poll/admin/all'
       }
     });
   } catch (error) {
@@ -935,6 +1032,61 @@ app.get('/api/emergency/init-link-settings', async (req, res) => {
   }
 });
 
+// ✅ EMERGENCY: INITIALIZE POLL SYSTEM
+app.get('/api/emergency/init-poll-system', async (req, res) => {
+  try {
+    const Poll = require('./models/Poll.cjs');
+    
+    console.log('🆕 EMERGENCY: Initializing poll system...');
+    
+    // Delete existing polls
+    await Poll.deleteMany({});
+    
+    // Create sample poll
+    const samplePoll = await Poll.create({
+      question: "Which anime should we watch next?",
+      options: [
+        {
+          animeId: "sample_1",
+          title: "One Piece",
+          image: "https://res.cloudinary.com/dqgioy4ys/image/upload/f_webp,q_auto:eco,w_193/v1767165392/WhatsApp_Image_2025-12-31_at_9.12.59_AM_doqp5k.jpg"
+        },
+        {
+          animeId: "sample_2",
+          title: "Demon Slayer",
+          image: "https://example.com/demon-slayer.jpg"
+        }
+      ],
+      isActive: true,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days from now
+    });
+    
+    console.log('✅ Poll system initialized with sample poll');
+    
+    res.json({
+      success: true,
+      message: 'Poll system initialized successfully',
+      samplePoll: {
+        question: samplePoll.question,
+        options: samplePoll.options.length,
+        expiresAt: samplePoll.expiresAt
+      },
+      endpoints: {
+        getActivePoll: 'GET /api/poll/active',
+        submitVote: 'POST /api/poll/vote',
+        adminCreate: 'POST /api/poll/admin/create',
+        adminAll: 'GET /api/poll/admin/all'
+      }
+    });
+  } catch (error) {
+    console.error('❌ Poll system init error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
 // ============================================
 // ✅ ROOT ROUTE - SEO OPTIMIZED VERSION
 // ============================================
@@ -1064,11 +1216,19 @@ app.get('/', (req, res) => {
         .link-status .inactive {
           color: #f56565;
         }
+        .feature-badge {
+          background: #8B5CF6;
+          color: white;
+          padding: 3px 8px;
+          border-radius: 12px;
+          font-size: 10px;
+          margin-left: 8px;
+        }
       </style>
     </head>
     <body>
       <div class="container">
-        <h1>AnimeBing Server <span class="seo-badge">SEO OPTIMIZED + LINK CONTROL</span></h1>
+        <h1>AnimeBing Server <span class="seo-badge">SEO OPTIMIZED + LINK CONTROL + POLL SYSTEM</span></h1>
         <p class="status">✅ Backend API is running correctly - SEO Ready for Google</p>
         <p>📺 Frontend: <a href="https://animebing.in" target="_blank">AnimeBing.in</a></p>
         <p>⚙️ Admin Access: Press Ctrl+Shift+Alt on the frontend</p>
@@ -1085,6 +1245,18 @@ app.get('/', (req, res) => {
           </div>
         </div>
         
+        <div class="section">
+          <h3>🗳️ Poll/Voting System <span class="feature-badge">NEW</span>:</h3>
+          <div class="link-status">
+            <p>✅ Poll System Active</p>
+            <p>✅ Create polls from admin panel</p>
+            <p>✅ Add anime or custom options</p>
+            <p>✅ Real-time voting</p>
+            <p>✅ Users can vote on website</p>
+            <p><small>Control polls from Admin Dashboard → Poll Manager</small></p>
+          </div>
+        </div>
+        
         <div class="seo-info">
           <h3>🔍 SEO Features Enabled:</h3>
           <ul class="seo-checklist">
@@ -1096,7 +1268,8 @@ app.get('/', (req, res) => {
             <li>Meta Tags on all pages</li>
             <li>Open Graph & Twitter Cards</li>
             <li>Admin SEO Control Panel</li>
-            <li>Global Download Link Control ✅ NEW!</li>
+            <li>Global Download Link Control ✅</li>
+            <li>Poll/Voting System ✅ <span class="feature-badge">NEW</span></li>
           </ul>
           <p style="color: #4CAF50; margin-top: 10px; font-weight: bold;">
             ✅ SEO FIX APPLIED: Search query URLs removed from sitemap to avoid Google penalties
@@ -1122,12 +1295,17 @@ app.get('/', (req, res) => {
           <a href="/api/anime/featured" class="btn">Check Featured Anime</a>
           <a href="/api/debug/link-settings" class="btn">Check Link Settings</a>
           <a href="/api/test-link-settings" class="btn">Test Link Settings API</a>
+          <a href="/api/poll/active" class="btn">Check Active Poll</a>
+          <a href="/api/test-poll-system" class="btn">Test Poll System</a>
+          <a href="/api/debug/polls" class="btn">Debug Polls</a>
         </div>
         
         <p style="margin-top: 2rem; color: #9CA3AF; font-size: 0.9rem;">
           Server Time: ${new Date().toLocaleString()}<br>
           SEO Status: Complete - Ready for Google Indexing<br>
           Link Control: Active (5 links globally controllable)<br>
+          Poll System: ✅ Active (Users can vote on website)<br>
+          Body Limit: 50MB (Fixed for poll system)<br>
           Sitemap Status: ✅ SEO Safe (No search query URLs)<br>
           Next Step: Submit to Google Search Console
         </p>
@@ -1156,28 +1334,41 @@ app.get('/', (req, res) => {
 // ✅ START SERVER
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server running on port ${PORT} - SEO OPTIMIZED + LINK CONTROL`);
-  console.log(`🔧 Admin: ${process.env.ADMIN_USER} / ${process.env.ADMIN_PASS}`);
-  console.log(`🌐 Frontend: https://animebing.in`);
-  console.log(`🗺️ Sitemap: https://animebing.in/sitemap.xml`);
-  console.log(`🤖 Robots: https://animebing.in/robots.txt`);
-  console.log(`📰 RSS Feed: https://animebing.in/rss.xml`);
-  console.log(`🔗 Link Settings: /api/link-settings`);
-  console.log(`🔗 Link Settings Test: /api/test-link-settings`);
-  console.log(`✅ SEO Features:`);
-  console.log(`   - ✅ Dynamic sitemap with anime pages`);
-  console.log(`   - ✅ Robots.txt for search engines`);
-  console.log(`   - ✅ RSS feed for updates`);
-  console.log(`   - ✅ Structured data for Google`);
-  console.log(`   - ✅ ID + Slug support for URLs`);
-  console.log(`   - ✅ Global Download Link Control ✅ NEW!`);
-  console.log(`🚨 SEO IMPORTANT FIX:`);
-  console.log(`   - ❌ Search query URLs REMOVED from sitemap`);
-  console.log(`   - ✅ Now safe from Google duplicate content penalty`);
-  console.log(`🔗 Link Control Features:`);
-  console.log(`   - 5 Download links globally controllable`);
-  console.log(`   - ON/OFF toggle for each link`);
-  console.log(`   - Affects all episodes across website`);
-  console.log(`   - Random selection from active links`);
-  console.log(`📈 Next Step: Submit sitemap to Google Search Console`);
+  console.log('===============================================');
+  console.log('🚀 AnimeBing Server Started Successfully!');
+  console.log('===============================================');
+  console.log(`📊 PORT: ${PORT}`);
+  console.log(`🌐 URL: http://localhost:${PORT}`);
+  console.log(`🔧 Admin: ${process.env.ADMIN_USER || 'Hellobrother'}`);
+  console.log(`🔑 Pass: ${process.env.ADMIN_PASS || 'Anime2121818144'}`);
+  console.log('===============================================');
+  console.log('✅ FIXES APPLIED:');
+  console.log('   1. ✅ Body limit increased to 50MB');
+  console.log('   2. ✅ Poll system fully integrated');
+  console.log('   3. ✅ Image URL uploads now work');
+  console.log('   4. ✅ Base64 image issues resolved');
+  console.log('===============================================');
+  console.log('📁 API ENDPOINTS:');
+  console.log('   - GET /api/poll/active - Get active poll');
+  console.log('   - POST /api/poll/vote - Submit vote');
+  console.log('   - POST /api/poll/admin/create - Create poll (admin)');
+  console.log('   - GET /api/poll/admin/all - All polls (admin)');
+  console.log('   - PUT /api/poll/admin/{id}/toggle - Toggle poll (admin)');
+  console.log('   - DELETE /api/poll/admin/{id} - Delete poll (admin)');
+  console.log('===============================================');
+  console.log('🔗 SEO FEATURES:');
+  console.log('   - Sitemap: /sitemap.xml');
+  console.log('   - Robots.txt: /robots.txt');
+  console.log('   - RSS Feed: /rss.xml');
+  console.log('   - SEO Safe: No search query URLs in sitemap');
+  console.log('===============================================');
+  console.log('💡 NEXT STEPS:');
+  console.log('   1. Go to frontend (http://localhost:5173)');
+  console.log('   2. Press Ctrl+Shift+Alt for admin button');
+  console.log('   3. Login with admin credentials');
+  console.log('   4. Go to Poll Manager');
+  console.log('   5. Create poll with image URLs');
+  console.log('===============================================');
+  console.log('✅ SERVER READY - Poll system will now work!');
+  console.log('===============================================');
 });

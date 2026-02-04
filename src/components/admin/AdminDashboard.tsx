@@ -1,4 +1,4 @@
- // src/components/admin/AdminDashboard.tsx - FIXED VERSION
+ // src/components/admin/AdminDashboard.tsx - UPDATED WITH FIXED POLL MANAGER
 import React, { useState, useEffect } from 'react';
 import AnimeListTable from './AnimeListTable';
 import AddAnimeForm from './AddAnimeForm';
@@ -6,6 +6,7 @@ import EpisodesManager from './EpisodesManager';
 import FeaturedAnimeManager from './FeaturedAnimeManager';
 import ReportsManager from './ReportsManager';
 import SocialMediaManager from './SocialMediaManager';
+import PollManager from './PollManager'; // ✅ POLL MANAGER IMPORT ADDED
 import Spinner from '../Spinner';
 import axios from 'axios';
 
@@ -269,6 +270,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     { id: 'featured', label: 'Featured Anime', icon: '🎈', color: 'from-amber-600 to-orange-600' },
     { id: 'reports', label: 'User Reports', icon: '🍂', color: 'from-rose-600 to-pink-600' },
     { id: 'social', label: 'Social Media', icon: '☣️', color: 'from-violet-600 to-purple-600' },
+    { id: 'polls', label: 'Poll Manager', icon: '🕶️', color: 'from-indigo-600 to-blue-600' }, // ✅ NEW TAB ADDED
   ];
 
   const ActiveComponent = () => {
@@ -279,6 +281,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       case 'featured': return <FeaturedAnimeManager />;
       case 'reports': return <ReportsManager />;
       case 'social': return <SocialMediaManager />;
+      // ✅ FIXED: Pass both token and apiBase to PollManager
+      case 'polls': return <PollManager token={token || ''} apiBase={API_BASE} />;
       default: return <AnimeListTable />;
     }
   };
@@ -424,7 +428,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
         {/* Navigation Tabs - Moved to top */}
         <div className="mb-6">
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1.5">
             {tabs.map(tab => (
               <button
                 key={tab.id}

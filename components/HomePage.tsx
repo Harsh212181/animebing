@@ -1,11 +1,12 @@
- // components/HomePage.tsx - UPDATED WITH A6A6A6 TO PURPLE BACKGROUND
+ // components/HomePage.tsx - UPDATED WITH LEFT ALIGNED HEADINGS
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import type { Anime, FilterType, ContentTypeFilter } from '../src/types';
 import AnimeCard from './AnimeCard';
 import { SkeletonLoader } from './SkeletonLoader';
 import { getAnimePaginated, searchAnime, getFeaturedAnime } from '../services/animeService';
 import FeaturedAnimeCarousel from '../src/components/FeaturedAnimeCarousel';
-import SEO from '../src/components/SEO'; // ✅ SEO IMPORT ADDED
+import SEO from '../src/components/SEO';
+import PollCard from './PollCard';
 
 interface Props {
   onAnimeSelect: (anime: Anime) => void;
@@ -41,6 +42,11 @@ const GLOW_COLORS = [
   ['#059669', '#047857', '#059669'], // emerald-green-emerald
 ];
 
+// API BASE URL for poll check
+const API_BASE_URL = import.meta.env.MODE === 'production' 
+  ? '' 
+  : 'http://localhost:3000';
+
 const HomePage: React.FC<Props> = ({
   onAnimeSelect,
   searchQuery,
@@ -56,6 +62,8 @@ const HomePage: React.FC<Props> = ({
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [isPollActive, setIsPollActive] = useState(false); // New state for poll activity
+  const [pollChecked, setPollChecked] = useState(false); // To track if poll status has been checked
   
   // Naya state border color ke liye
   const [currentBorderColorIndex, setCurrentBorderColorIndex] = useState(0);
@@ -63,6 +71,72 @@ const HomePage: React.FC<Props> = ({
   // Refs for tracking
   const isMounted = useRef(true);
   const lastSearchQuery = useRef(searchQuery);
+
+  // ✅ FUNCTION TO CHECK IF POLL IS ACTIVE
+  const checkPollStatus = useCallback(async (): Promise<boolean> => {
+    try {
+      console.log('🔍 HomePage: Checking poll status...');
+      
+      const res = await fetch(`${API_BASE_URL}/api/poll/active`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      });
+      
+      if (!res.ok) {
+        console.log('📭 HomePage: No active poll available');
+        return false;
+      }
+      
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        return false;
+      }
+      
+      const data = await res.json();
+      const isActive = data.success && data.poll && data.poll.isActive !== false;
+      console.log('🔍 HomePage: Poll status is', isActive);
+      return isActive;
+    } catch (err) {
+      console.error('❌ HomePage: Error checking poll status:', err);
+      return false;
+    }
+  }, []);
+
+  // ✅ CHECK POLL STATUS ON MOUNT AND WHEN SEARCH CHANGES
+  useEffect(() => {
+    if (!isMounted.current) return;
+
+    const checkPoll = async () => {
+      if (searchQuery.trim() || isSearching) {
+        // Don't check poll during search
+        setIsPollActive(false);
+        setPollChecked(true);
+        return;
+      }
+      
+      try {
+        const active = await checkPollStatus();
+        if (isMounted.current) {
+          setIsPollActive(active);
+          setPollChecked(true);
+        }
+      } catch (error) {
+        if (isMounted.current) {
+          setIsPollActive(false);
+          setPollChecked(true);
+        }
+      }
+    };
+
+    // Delay the check slightly to avoid blocking initial render
+    const timer = setTimeout(() => {
+      checkPoll();
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, isSearching, checkPollStatus]);
 
   // ✅ GENERATE SEO DATA FOR HOMEPAGE
   const getSEOData = () => {
@@ -189,17 +263,27 @@ const HomePage: React.FC<Props> = ({
     }
   }, []);
 
-  // Heading
+  // ✅ FIXED: Emoji colors in headings - अब emoji अलग color में दिखेंगे
   const getAllContentHeading = useCallback(() => {
-    if (isSearching && searchQuery) return `Search: ${searchQuery}`;
-    if (contentType !== 'All') return `All ${contentType}`;
+    if (isSearching && searchQuery) {
+      return { text: `Search: ${searchQuery}`, emojiStart: '', emojiEnd: '' };
+    }
+    if (contentType !== 'All') {
+      return { text: `All ${contentType}`, emojiStart: '', emojiEnd: '' };
+    }
     switch (localFilter) {
-      case 'Hindi Dub': return 'All Hindi Dub';
-      case 'Hindi Sub': return 'All Hindi Sub';
-      case 'English Sub': return 'All English Sub';
-      default: return 'All Content';
+      case 'Hindi Dub': 
+        return { text: 'All Hindi Dub', emojiStart: '🪁', emojiEnd: '🪁' };
+      case 'Hindi Sub': 
+        return { text: 'All Hindi Sub', emojiStart: '👀', emojiEnd: '👀' };
+      case 'English Sub': 
+        return { text: 'All English Sub', emojiStart: '🎗️', emojiEnd: '🎗️' };
+      default: 
+        return { text: 'All Anime', emojiStart: '🍂', emojiEnd: '🍂' };
     }
   }, [localFilter, contentType, isSearching, searchQuery]);
+
+  const headingData = getAllContentHeading();
 
   // Helper function to get unique anime ID
   const getAnimeId = (anime: Anime): string => {
@@ -541,14 +625,22 @@ const HomePage: React.FC<Props> = ({
           .scrollbar-hide::-webkit-scrollbar {
             display: none;
           }
+          
+          /* ✅ FIXED: Container for inner content with reduced margin */
+          .homepage-content-container {
+            padding: 0.5rem !important;
+            margin: 0.1rem !important;
+          }
         `}</style>
         
-        <div className="container mx-auto px-3 sm:px-4 py-4 lg:py-8">
+        {/* ✅ FIXED: Main container with reduced padding and margin */}
+        <div className="homepage-content-container mx-auto px-2 sm:px-3 py-2 lg:py-4">
 
-          {/* Featured */}
+          {/* ✅ FEATURED ANIME CAROUSEL - पहले दिखेगा */}
           {!searchQuery && !isSearching && featuredAnimes.length > 0 && (
-            <div className="mb-8">
-              <h2 className="text-2xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mb-4">
+            <div className="mb-6">
+              {/* ✅ LEFT ALIGNED: Latest Content heading */}
+              <h2 className="text-2xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mb-4 text-left">
                 Latest Content
               </h2>
               <FeaturedAnimeCarousel
@@ -558,9 +650,24 @@ const HomePage: React.FC<Props> = ({
             </div>
           )}
 
+          {/* ✅ POLL SECTION - ONLY SHOW IF POLL IS ACTIVE AND CHECKED */}
+          {!searchQuery && !isSearching && isPollActive && pollChecked && (
+            <div className="mb-6">
+              {/* ✅ LEFT ALIGNED: Community heading */}
+              <h2 className="text-2xl font-bold mb-4 text-left">
+                <span className="text-purple-300">🪶</span>
+                <span className="bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mx-2">Community</span>
+                <span className="text-purple-300">🪶</span>
+              </h2>
+              <PollCard onVoteSuccess={() => {
+                console.log('Vote submitted successfully!');
+              }} />
+            </div>
+          )}
+
           {/* Mobile Filter Buttons - Only visible on mobile */}
           {!isSearching && (
-            <div className="mb-3 lg:hidden">
+            <div className="mb-2 lg:hidden">
               <div className="flex flex-nowrap gap-1 overflow-x-auto pb-1.5 scrollbar-hide px-1">
                 {filterButtons.map(btn => (
                   <button
@@ -585,8 +692,8 @@ const HomePage: React.FC<Props> = ({
 
           {/* Result */}
           {filteredAnime.length === 0 ? (
-            <div className="text-center py-20">
-              <div className="bg-purple-800/60 backdrop-blur rounded-2xl p-10 max-w-md mx-auto border border-purple-700">
+            <div className="text-center py-16">
+              <div className="bg-purple-800/60 backdrop-blur rounded-2xl p-8 max-w-md mx-auto border border-purple-700">
                 <div className="text-6xl mb-4">🔍</div>
                 <h2 className="text-2xl font-bold text-white mb-3">
                   {searchQuery ? 'No Results Found' : 'No Content'}
@@ -603,13 +710,22 @@ const HomePage: React.FC<Props> = ({
             </div>
           ) : (
             <>
-              {/* Header - Clean design without count */}
-              <h2 className="text-2xl lg:text-3xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mb-6">
-                {getAllContentHeading()}
+              {/* Header - LEFT ALIGNED with fixed emoji colors */}
+              <h2 className="text-2xl lg:text-3xl font-bold mb-4 text-left">
+                {/* ✅ FIXED: Emojis with purple color, text with gradient - ALL LEFT ALIGNED */}
+                {headingData.emojiStart && (
+                  <span className="text-purple-300 mr-2">{headingData.emojiStart}</span>
+                )}
+                <span className="bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent">
+                  {headingData.text}
+                </span>
+                {headingData.emojiEnd && (
+                  <span className="text-purple-300 ml-2">{headingData.emojiEnd}</span>
+                )}
               </h2>
 
-              {/* Cards Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+              {/* ✅ Cards Grid with tighter spacing */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
                 {filteredAnime.map((anime, i) => (
                   <div 
                     key={`${getAnimeId(anime)}-${i}`}
@@ -632,7 +748,7 @@ const HomePage: React.FC<Props> = ({
                     ></div>
                     
                     {/* Main Card Container */}
-                    <div className="card-hover-effect relative rounded-xl border border-purple-700/30 bg-gradient-to-b from-purple-900/95 to-purple-800/90 p-1.5 transition-all duration-300 overflow-hidden group-hover:border-transparent">
+                    <div className="card-hover-effect relative rounded-xl border border-purple-700/30 bg-gradient-to-b from-purple-900/95 to-purple-800/90 p-1 transition-all duration-300 overflow-hidden group-hover:border-transparent">
                       
                       {/* Subtle Shimmer Effect */}
                       <div className="shimmer-effect"></div>
@@ -736,7 +852,7 @@ const HomePage: React.FC<Props> = ({
 
               {/* Load More */}
               {hasMore && !isSearching && !searchQuery && (
-                <div className="text-center mt-10">
+                <div className="text-center mt-8">
                   <button
                     onClick={loadMoreAnime}
                     disabled={isLoadingMore}
@@ -762,11 +878,11 @@ const HomePage: React.FC<Props> = ({
               )}
 
               {isLoadingMore && (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 mt-6">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 mt-4">
                   {Array.from({ length: 12 }).map((_, i) => (
                     <div 
                       key={`skeleton-${i}`} 
-                      className="relative rounded-xl border border-purple-700/40 p-1.5 bg-gradient-to-b from-purple-900/80 to-purple-800/70 overflow-hidden"
+                      className="relative rounded-xl border border-purple-700/40 p-1 bg-gradient-to-b from-purple-900/80 to-purple-800/70 overflow-hidden"
                     >
                       {/* Skeleton shimmer effect */}
                       <div className="absolute inset-0 bg-gradient-to-r from-transparent via-purple-700/10 to-transparent animate-shimmer"></div>

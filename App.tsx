@@ -1,6 +1,6 @@
  // App.tsx - UPDATED WITH PURPLE THEME AND GREEN OUTLINE
 // ✅ ADS REMOVED + FIXED SEARCH RELOAD ISSUE + REMOVED SECRET CODE CONSOLE LOGS + GA4 ANALYTICS FIX
-// ✅ ID + SLUG SUPPORT ADDED
+// ✅ ID + SLUG SUPPORT ADDED + ✅ FIXED BORDER MARGIN (0.1) + ✅ FIXED SCROLL TO TOP ON PAGE CHANGE
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
@@ -26,7 +26,39 @@ import AnimeDetailWrapper from './components/AnimeDetailWrapper';
 type ViewType = 'home' | 'list' | 'detail';
 type AdminViewType = 'login' | 'dashboard';
 
-// ✅ REMOVED: OLD DetailPageWrapper (replaced with AnimeDetailWrapper)
+// ✅ SCROLL TO TOP COMPONENT
+const ScrollToTop: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const location = useLocation();
+  
+  useEffect(() => {
+    // ✅ HAR PAGE CHANGE PAR TOP PAR SCROLL
+    window.scrollTo({
+      top: 0,
+      left: 0,
+      behavior: 'instant' as ScrollBehavior
+    });
+    
+    // ✅ EXTRA SAFETY: RequestAnimationFrame use karein
+    requestAnimationFrame(() => {
+      if (window.scrollY > 0) {
+        window.scrollTo(0, 0);
+      }
+    });
+    
+    // ✅ EXTRA SAFETY: 10ms baad bhi check karein
+    const timer = setTimeout(() => {
+      if (window.scrollY > 0) {
+        window.scrollTo(0, 0);
+      }
+    }, 10);
+    
+    return () => clearTimeout(timer);
+  }, [location.pathname, location.search]); // ✅ Path aur search params change hone par trigger hoga
+  
+  return <>{children}</>;
+};
+
+// ✅ OLD DetailPageWrapper (replaced with AnimeDetailWrapper)
 
 const MainApp: React.FC = () => {
   const navigate = useNavigate();
@@ -239,7 +271,15 @@ const MainApp: React.FC = () => {
     const identifier = anime.slug || anime.id || anime._id;
     if (identifier) {
       navigate(`/detail/${identifier}`);
-      window.scrollTo(0, 0);
+      
+      // ✅ INSTANT SCROLL TO TOP ON ANIME SELECT
+      requestAnimationFrame(() => {
+        window.scrollTo({
+          top: 0,
+          left: 0,
+          behavior: 'instant' as ScrollBehavior
+        });
+      });
     }
   };
 
@@ -292,6 +332,15 @@ const MainApp: React.FC = () => {
       setContentType('All');
       setSearchQuery('');
     }
+    
+    // ✅ INSTANT SCROLL TO TOP ON NAVIGATION
+    requestAnimationFrame(() => {
+      window.scrollTo({
+        top: 0,
+        left: 0,
+        behavior: 'instant' as ScrollBehavior
+      });
+    });
   };
 
   if (isAppLoading) {
@@ -348,9 +397,11 @@ const MainApp: React.FC = () => {
           0%, 100% { opacity: 0.3; }
           50% { opacity: 1; }
         }
+        /* ✅ FIXED: Border margin reduced to 0.1rem */
         .glow-green-border {
           border: 2px solid rgba(115, 245, 138, 0.5);
           box-shadow: 0 0 20px rgba(115, 245, 138, 0.3);
+          margin: 0.1rem !important;
         }
         .hover-glow-green:hover {
           box-shadow: 0 0 15px rgba(115, 245, 138, 0.5);
@@ -362,187 +413,202 @@ const MainApp: React.FC = () => {
         .border-green-custom-30 {
           border-color: rgba(115, 245, 138, 0.3);
         }
+        /* ✅ FIXED: Main content container should have less outer margin */
+        .main-content-container {
+          margin: 0.1rem !important;
+        }
+        /* ✅ FORCE SCROLL TO TOP STYLES */
+        html {
+          scroll-behavior: auto !important;
+        }
+        body {
+          overflow-anchor: none;
+        }
       `}</style>
       
       {/* ✅ GA4 ANALYTICS TRACKER - UTM FIX KA MANTRA */}
       <AnalyticsTracker />
       
-      {/* ✅ Header ko sabhi 5 props dein */}
-      <Header 
-        onSearchChange={handleSearchChange} 
-        searchQuery={searchQuery}
-        onNavigate={handleNavigate}
-        onFilterAndNavigateHome={dummyFilterFunction}
-        onContentTypeNavigate={dummyContentTypeFunction}
-      />
-      
-      <main className="container mx-auto px-4 py-8">
-        <div 
-          className="rounded-xl p-2 mb-8 glow-green-border"
-          style={{
-            background: 'rgba(30, 41, 59, 0.5)',
-            backdropFilter: 'blur(10px)'
-          }}
-        >
-          <Routes>
-            <Route path="/" element={
-              <div className="rounded-lg overflow-hidden">
-                <HomePage 
-                  onAnimeSelect={handleAnimeSelect} 
-                  searchQuery={searchQuery} 
-                  filter={filter}
-                  contentType={contentType}
-                />
-              </div>
-            } />
-            
-            {/* ✅ Anime List Route */}
-            <Route path="/anime" element={
-              <div className="rounded-lg overflow-hidden">
-                <AnimeListPage 
-                  onAnimeSelect={handleAnimeSelect}
-                />
-              </div>
-            } />
-            
-            {/* ✅ FIXED: Anime Detail Route with ID/Slug Support */}
-            <Route path="/detail/:idOrSlug" element={
-              <div className="rounded-lg overflow-hidden">
-                <AnimeDetailWrapper />
-              </div>
-            } />
-            
-            {/* ✅ FIXED: Both Download Routes Added */}
-            <Route path="/download" element={
-              <div className="rounded-lg overflow-hidden">
-                <DownloadRedirectPage />
-              </div>
-            } />
-            <Route path="/download-redirect" element={
-              <div className="rounded-lg overflow-hidden">
-                <DownloadRedirectPage />
-              </div>
-            } />
-            
-            {/* Other Pages with Green Outline */}
-            <Route path="/privacy" element={
-              <div className="rounded-lg overflow-hidden glow-green-border">
-                <PrivacyPolicy />
-              </div>
-            } />
-            <Route path="/dmca" element={
-              <div className="rounded-lg overflow-hidden glow-green-border">
-                <DMCA />
-              </div>
-            } />
-            <Route path="/terms" element={
-              <div className="rounded-lg overflow-hidden glow-green-border">
-                <TermsAndConditions />
-              </div>
-            } />
-            <Route path="/contact" element={
-              <div className="rounded-lg overflow-hidden glow-green-border">
-                <Contact />
-              </div>
-            } />
-          </Routes>
-        </div>
-      </main>
-      
-      <Footer />
-      <ScrollToTopButton />
-      
-      {/* Secret Code Typing Hint */}
-      {showCodeHint && (
-        <div 
-          className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[99999] glow-green-border hover-glow-green"
-          style={{
-            background: 'rgba(30, 41, 59, 0.9)',
-            backdropFilter: 'blur(10px)',
-            borderRadius: '0.75rem'
-          }}
-        >
-          <div className="p-4 min-w-[300px]">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-3">
-                <div 
-                  className="p-2 rounded-lg"
-                  style={{
-                    background: 'rgba(115, 245, 138, 0.2)',
-                    border: '1px solid rgba(115, 245, 138, 0.3)'
-                  }}
-                >
-                  <span className="text-green-400">🔐</span>
-                </div>
-                <div>
-                  <div className="text-sm text-green-300 font-medium">Secret Code Active</div>
-                  <div className="text-xs text-purple-400">Type "2007harsh" for admin access</div>
-                </div>
-              </div>
-              <div className="text-purple-500 text-sm">
-                {typedText.length}/9
-              </div>
-            </div>
-            
-            <div className="mb-3">
-              <div className="text-xs text-purple-400 mb-1">Current typing:</div>
-              <div className="flex items-center gap-1">
-                {Array.from('2007harsh').map((char, index) => (
-                  <div 
-                    key={index}
-                    className={`w-7 h-8 flex items-center justify-center rounded text-sm font-mono font-bold
-                      ${index < typedText.length 
-                        ? typedText[index] === char
-                          ? 'bg-green-600 text-white border border-green-400' 
-                          : 'bg-red-600 text-white border border-red-400'
-                        : 'bg-purple-800 text-purple-500 border border-purple-700'
-                      }`}
-                    style={{
-                      boxShadow: index < typedText.length && typedText[index] === char 
-                        ? '0 0 10px rgba(115, 245, 138, 0.5)' 
-                        : 'none'
-                    }}
-                  >
-                    {char}
-                  </div>
-                ))}
-              </div>
-            </div>
-            
-            <div 
-              className="w-full h-1.5 rounded-full overflow-hidden"
-              style={{ background: 'rgba(115, 245, 138, 0.1)' }}
-            >
-              <div 
-                className="h-full transition-all duration-300"
-                style={{ 
-                  width: `${(typedText.length / 9) * 100}%`,
-                  background: 'linear-gradient(90deg, #10b981, #34d399, #73F58A)'
-                }}
-              ></div>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Old button (optional - keep or remove) */}
-      {showAdminButton && (
-        <div className="fixed bottom-4 left-4 z-50 animate-fade-in">
-          <button
-            onClick={() => setAdminView('login')}
-            className="bg-gradient-to-r from-purple-600 to-green-600 hover:from-purple-500 hover:to-green-500 text-white font-semibold py-2 px-4 rounded-lg shadow-lg transition-all transform hover:scale-105 flex items-center gap-2 border border-green-400/50 hover:border-green-400"
+      {/* ✅ ScrollToTop component wrap karein */}
+      <ScrollToTop>
+        {/* ✅ Header ko sabhi 5 props dein */}
+        <Header 
+          onSearchChange={handleSearchChange} 
+          searchQuery={searchQuery}
+          onNavigate={handleNavigate}
+          onFilterAndNavigateHome={dummyFilterFunction}
+          onContentTypeNavigate={dummyContentTypeFunction}
+        />
+        
+        <main className="container mx-auto px-4 py-4"> {/* ✅ Reduced padding for more space */}
+          {/* ✅ FIXED: Added main-content-container class and removed excessive padding */}
+          <div 
+            className="rounded-xl main-content-container glow-green-border"
             style={{
-              boxShadow: '0 0 15px rgba(115, 245, 138, 0.3)'
+              background: 'rgba(30, 41, 59, 0.5)',
+              backdropFilter: 'blur(10px)'
             }}
           >
-            <span>⚙️</span>
-            Admin Access
-          </button>
-          <p className="text-xs text-purple-400 mt-1 bg-black/50 p-1 rounded border border-green-500/20">
-            Press Ctrl+Shift+Alt to hide
-          </p>
-        </div>
-      )}
+            <Routes>
+              <Route path="/" element={
+                <div className="rounded-lg overflow-hidden">
+                  <HomePage 
+                    onAnimeSelect={handleAnimeSelect} 
+                    searchQuery={searchQuery} 
+                    filter={filter}
+                    contentType={contentType}
+                  />
+                </div>
+              } />
+              
+              {/* ✅ Anime List Route */}
+              <Route path="/anime" element={
+                <div className="rounded-lg overflow-hidden">
+                  <AnimeListPage 
+                    onAnimeSelect={handleAnimeSelect}
+                  />
+                </div>
+              } />
+              
+              {/* ✅ FIXED: Anime Detail Route with ID/Slug Support */}
+              <Route path="/detail/:idOrSlug" element={
+                <div className="rounded-lg overflow-hidden">
+                  <AnimeDetailWrapper />
+                </div>
+              } />
+              
+              {/* ✅ FIXED: Both Download Routes Added */}
+              <Route path="/download" element={
+                <div className="rounded-lg overflow-hidden">
+                  <DownloadRedirectPage />
+                </div>
+              } />
+              <Route path="/download-redirect" element={
+                <div className="rounded-lg overflow-hidden">
+                  <DownloadRedirectPage />
+                </div>
+              } />
+              
+              {/* Other Pages with Green Outline */}
+              <Route path="/privacy" element={
+                <div className="rounded-lg overflow-hidden glow-green-border">
+                  <PrivacyPolicy />
+                </div>
+              } />
+              <Route path="/dmca" element={
+                <div className="rounded-lg overflow-hidden glow-green-border">
+                  <DMCA />
+                </div>
+              } />
+              <Route path="/terms" element={
+                <div className="rounded-lg overflow-hidden glow-green-border">
+                  <TermsAndConditions />
+                </div>
+              } />
+              <Route path="/contact" element={
+                <div className="rounded-lg overflow-hidden glow-green-border">
+                  <Contact />
+                </div>
+              } />
+            </Routes>
+          </div>
+        </main>
+        
+        <Footer />
+        <ScrollToTopButton />
+        
+        {/* Secret Code Typing Hint */}
+        {showCodeHint && (
+          <div 
+            className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[99999] glow-green-border hover-glow-green"
+            style={{
+              background: 'rgba(30, 41, 59, 0.9)',
+              backdropFilter: 'blur(10px)',
+              borderRadius: '0.75rem'
+            }}
+          >
+            <div className="p-4 min-w-[300px]">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <div 
+                    className="p-2 rounded-lg"
+                    style={{
+                      background: 'rgba(115, 245, 138, 0.2)',
+                      border: '1px solid rgba(115, 245, 138, 0.3)'
+                    }}
+                  >
+                    <span className="text-green-400">🔐</span>
+                  </div>
+                  <div>
+                    <div className="text-sm text-green-300 font-medium">Secret Code Active</div>
+                    <div className="text-xs text-purple-400">Type "2007harsh" for admin access</div>
+                  </div>
+                </div>
+                <div className="text-purple-500 text-sm">
+                  {typedText.length}/9
+                </div>
+              </div>
+              
+              <div className="mb-3">
+                <div className="text-xs text-purple-400 mb-1">Current typing:</div>
+                <div className="flex items-center gap-1">
+                  {Array.from('2007harsh').map((char, index) => (
+                    <div 
+                      key={index}
+                      className={`w-7 h-8 flex items-center justify-center rounded text-sm font-mono font-bold
+                        ${index < typedText.length 
+                          ? typedText[index] === char
+                            ? 'bg-green-600 text-white border border-green-400' 
+                            : 'bg-red-600 text-white border border-red-400'
+                          : 'bg-purple-800 text-purple-500 border border-purple-700'
+                        }`}
+                      style={{
+                        boxShadow: index < typedText.length && typedText[index] === char 
+                          ? '0 0 10px rgba(115, 245, 138, 0.5)' 
+                          : 'none'
+                      }}
+                    >
+                      {char}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              <div 
+                className="w-full h-1.5 rounded-full overflow-hidden"
+                style={{ background: 'rgba(115, 245, 138, 0.1)' }}
+              >
+                <div 
+                  className="h-full transition-all duration-300"
+                  style={{ 
+                    width: `${(typedText.length / 9) * 100}%`,
+                    background: 'linear-gradient(90deg, #10b981, #34d399, #73F58A)'
+                  }}
+                ></div>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* Old button (optional - keep or remove) */}
+        {showAdminButton && (
+          <div className="fixed bottom-4 left-4 z-50 animate-fade-in">
+            <button
+              onClick={() => setAdminView('login')}
+              className="bg-gradient-to-r from-purple-600 to-green-600 hover:from-purple-500 hover:to-green-500 text-white font-semibold py-2 px-4 rounded-lg shadow-lg transition-all transform hover:scale-105 flex items-center gap-2 border border-green-400/50 hover:border-green-400"
+              style={{
+                boxShadow: '0 0 15px rgba(115, 245, 138, 0.3)'
+              }}
+            >
+              <span>⚙️</span>
+              Admin Access
+            </button>
+            <p className="text-xs text-purple-400 mt-1 bg-black/50 p-1 rounded border border-green-500/20">
+              Press Ctrl+Shift+Alt to hide
+            </p>
+          </div>
+        )}
+      </ScrollToTop>
     </div>
   );
 };
