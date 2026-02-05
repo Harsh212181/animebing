@@ -674,7 +674,7 @@ const HomePage: React.FC<Props> = ({
                     key={btn.key}
                     onClick={() => handleFilterChange(btn.key)}
                     className={`
-                      px-2.5 py-1.5 rounded text-[10px] sm:text-[11px] font-medium transition-all duration-200
+                      px-4 py-2 rounded text-[10px] sm:text-[11px] font-medium transition-all duration-200
                       border whitespace-nowrap flex-shrink-0 min-w-[62px] sm:min-w-[68px]
                       ${
                         localFilter === btn.key

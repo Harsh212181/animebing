@@ -1,6 +1,7 @@
- // App.tsx - UPDATED WITH PURPLE THEME AND GREEN OUTLINE
+ // App.tsx - MAIN CONTAINER GREEN BORDER REMOVED FOR MORE SPACE
 // ✅ ADS REMOVED + FIXED SEARCH RELOAD ISSUE + REMOVED SECRET CODE CONSOLE LOGS + GA4 ANALYTICS FIX
 // ✅ ID + SLUG SUPPORT ADDED + ✅ FIXED BORDER MARGIN (0.1) + ✅ FIXED SCROLL TO TOP ON PAGE CHANGE
+// ✅ GREEN BORDER REMOVED FROM MAIN CONTAINER FOR MORE ANIME CARD SPACE
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
@@ -397,7 +398,7 @@ const MainApp: React.FC = () => {
           0%, 100% { opacity: 0.3; }
           50% { opacity: 1; }
         }
-        /* ✅ FIXED: Border margin reduced to 0.1rem */
+        /* ✅ FIXED: Green border styling - keep for other elements but removed from main container */
         .glow-green-border {
           border: 2px solid rgba(115, 245, 138, 0.5);
           box-shadow: 0 0 20px rgba(115, 245, 138, 0.3);
@@ -413,10 +414,7 @@ const MainApp: React.FC = () => {
         .border-green-custom-30 {
           border-color: rgba(115, 245, 138, 0.3);
         }
-        /* ✅ FIXED: Main content container should have less outer margin */
-        .main-content-container {
-          margin: 0.1rem !important;
-        }
+        /* ✅ REMOVED: Main content container border styling */
         /* ✅ FORCE SCROLL TO TOP STYLES */
         html {
           scroll-behavior: auto !important;
@@ -440,10 +438,11 @@ const MainApp: React.FC = () => {
           onContentTypeNavigate={dummyContentTypeFunction}
         />
         
-        <main className="container mx-auto px-4 py-4"> {/* ✅ Reduced padding for more space */}
-          {/* ✅ FIXED: Added main-content-container class and removed excessive padding */}
+        {/* ✅ MAIN CONTAINER WITHOUT GREEN BORDER - MORE SPACE FOR ANIME CARDS */}
+        <main className="container mx-auto px-2 py-2"> {/* ✅ Reduced padding even more */}
+          {/* ✅ REMOVED: glow-green-border class for more space */}
           <div 
-            className="rounded-xl main-content-container glow-green-border"
+            className="rounded-xl"
             style={{
               background: 'rgba(30, 41, 59, 0.5)',
               backdropFilter: 'blur(10px)'
@@ -489,7 +488,7 @@ const MainApp: React.FC = () => {
                 </div>
               } />
               
-              {/* Other Pages with Green Outline */}
+              {/* Other Pages with Green Outline - KEEP border for these */}
               <Route path="/privacy" element={
                 <div className="rounded-lg overflow-hidden glow-green-border">
                   <PrivacyPolicy />
