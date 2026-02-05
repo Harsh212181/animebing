@@ -1,8 +1,7 @@
- // App.tsx - PRODUCTION LOGS ENABLED + MAIN CONTAINER GREEN BORDER REMOVED
+ // App.tsx - MAIN CONTAINER GREEN BORDER REMOVED FOR MORE SPACE
 // ✅ ADS REMOVED + FIXED SEARCH RELOAD ISSUE + REMOVED SECRET CODE CONSOLE LOGS + GA4 ANALYTICS FIX
 // ✅ ID + SLUG SUPPORT ADDED + ✅ FIXED BORDER MARGIN (0.1) + ✅ FIXED SCROLL TO TOP ON PAGE CHANGE
 // ✅ GREEN BORDER REMOVED FROM MAIN CONTAINER FOR MORE ANIME CARD SPACE
-// ✅ PRODUCTION LOGS ENABLED (ALL import.meta.env.DEV CHECKS REMOVED)
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
@@ -93,32 +92,34 @@ const MainApp: React.FC = () => {
   };
 
   useEffect(() => {
-    // ✅ PRODUCTION MODE MEIN BHI LOGS SHOW HONGE
-    console.log('📍 URL Changed:', location.search);
-    
-    const urlContentType = searchParams.get('contentType') as ContentTypeFilter | null;
-    const urlFilter = searchParams.get('filter') as FilterType | null;
-    const urlSearchQuery = searchParams.get('search') || '';
+    // Sirf development mode mein logs show karein
+    if (import.meta.env.DEV) {
+      console.log('📍 URL Changed:', location.search);
+      
+      const urlContentType = searchParams.get('contentType') as ContentTypeFilter | null;
+      const urlFilter = searchParams.get('filter') as FilterType | null;
+      const urlSearchQuery = searchParams.get('search') || '';
 
-    console.log('📋 URL Parameters:', {
-      contentType: urlContentType,
-      filter: urlFilter,
-      searchQuery: urlSearchQuery
-    });
+      console.log('📋 URL Parameters:', {
+        contentType: urlContentType,
+        filter: urlFilter,
+        searchQuery: urlSearchQuery
+      });
 
-    if (urlContentType && urlContentType !== contentType) {
-      console.log('🔄 Updating contentType from URL:', urlContentType);
-      setContentType(urlContentType);
-    }
+      if (urlContentType && urlContentType !== contentType) {
+        console.log('🔄 Updating contentType from URL:', urlContentType);
+        setContentType(urlContentType);
+      }
 
-    if (urlFilter && urlFilter !== filter) {
-      console.log('🔄 Updating filter from URL:', urlFilter);
-      setFilter(urlFilter);
-    }
+      if (urlFilter && urlFilter !== filter) {
+        console.log('🔄 Updating filter from URL:', urlFilter);
+        setFilter(urlFilter);
+      }
 
-    if (urlSearchQuery && urlSearchQuery !== searchQuery) {
-      console.log('🔄 Updating searchQuery from URL:', urlSearchQuery);
-      setSearchQuery(urlSearchQuery);
+      if (urlSearchQuery && urlSearchQuery !== searchQuery) {
+        console.log('🔄 Updating searchQuery from URL:', urlSearchQuery);
+        setSearchQuery(urlSearchQuery);
+      }
     }
   }, [location.search, searchParams]);
 
@@ -152,8 +153,10 @@ const MainApp: React.FC = () => {
           setIsAdminAuthenticated(true);
         }
       } catch (error) {
-        // ✅ PRODUCTION MEIN BHI ERROR LOGS SHOW HONGE
-        console.error('App initialization error:', error);
+        // Sirf development mein error show karein
+        if (import.meta.env.DEV) {
+          console.error('App initialization error:', error);
+        }
       } finally {
         setIsAppLoading(false);
       }
@@ -308,8 +311,10 @@ const MainApp: React.FC = () => {
       const newUrl = `${window.location.pathname}${params.toString() ? '?' + params.toString() : ''}`;
       window.history.pushState({}, '', newUrl);
       
-      // ✅ PRODUCTION MEIN BHI LOGS SHOW HONGE
-      console.log('🔍 Search updated to:', query);
+      // Log in development only
+      if (import.meta.env.DEV) {
+        console.log('🔍 Search updated to:', query);
+      }
     }, 400); // 400ms debounce
   }, []);
   
