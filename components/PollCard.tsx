@@ -2,11 +2,13 @@
 import React, { useEffect, useState } from 'react';
 
 /* =========================
-   API BASE URL
+   API BASE URL - UPDATED FOR BOTH LOCAL AND PRODUCTION
 ========================= */
-const API_BASE_URL = import.meta.env.MODE === 'production' 
-  ? 'https://animabing.onrender.com' 
-  : 'http://localhost:3000';
+const API_BASE_URL = window.location.hostname === 'localhost' 
+  ? 'http://localhost:3000/api' 
+  : 'https://animabing.onrender.com/api';
+
+console.log('🌐 API Base URL:', API_BASE_URL, 'Mode:', import.meta.env.MODE);
 
 /* =========================
    TYPES
@@ -55,33 +57,46 @@ interface VoteStatus {
 ========================= */
 const getVoteStatus = (pollId: string): VoteStatus | false => {
   if (typeof window === 'undefined') return false;
-  const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
-  const voteData = votedPolls[pollId];
-  
-  // Handle old format (boolean) and new format (object)
-  if (typeof voteData === 'boolean') {
-    return { voted: voteData };
+  try {
+    const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
+    const voteData = votedPolls[pollId];
+    
+    // Handle old format (boolean) and new format (object)
+    if (typeof voteData === 'boolean') {
+      return { voted: voteData };
+    }
+    
+    return voteData || false;
+  } catch (error) {
+    console.error('Error reading localStorage:', error);
+    return false;
   }
-  
-  return voteData || false;
 };
 
 const setVoteStatus = (pollId: string, optionId?: string) => {
   if (typeof window === 'undefined') return;
-  const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
-  votedPolls[pollId] = {
-    voted: true,
-    optionId: optionId,
-    timestamp: Date.now()
-  };
-  localStorage.setItem('votedPolls', JSON.stringify(votedPolls));
+  try {
+    const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
+    votedPolls[pollId] = {
+      voted: true,
+      optionId: optionId,
+      timestamp: Date.now()
+    };
+    localStorage.setItem('votedPolls', JSON.stringify(votedPolls));
+  } catch (error) {
+    console.error('Error writing to localStorage:', error);
+  }
 };
 
 const clearVoteStatus = (pollId: string) => {
   if (typeof window === 'undefined') return;
-  const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
-  delete votedPolls[pollId];
-  localStorage.setItem('votedPolls', JSON.stringify(votedPolls));
+  try {
+    const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
+    delete votedPolls[pollId];
+    localStorage.setItem('votedPolls', JSON.stringify(votedPolls));
+  } catch (error) {
+    console.error('Error clearing localStorage:', error);
+  }
 };
 
 /* =========================
@@ -110,13 +125,14 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
         setLoading(true);
         setError(null);
         
-        console.log('🔄 Fetching active poll...');
+        console.log('🔄 Fetching active poll from:', `${API_BASE_URL}/poll/active`);
         
-        const res = await fetch(`${API_BASE_URL}/api/poll/active`, {
+        // Add timestamp to prevent caching
+        const timestamp = new Date().getTime();
+        const res = await fetch(`${API_BASE_URL}/poll/active?t=${timestamp}`, {
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
-            // Add cache control headers
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache',
             'Expires': '0'
@@ -126,6 +142,16 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
         
         console.log('📊 Fetch Response Status:', res.status);
         
+        // Check if response is OK
+        if (res.status === 404) {
+          console.log('📭 No active poll found (404)');
+          setPoll(null);
+          setLoading(false);
+          setIsActive(false);
+          return;
+        }
+        
+        // Check if response is JSON
         const contentType = res.headers.get('content-type');
         if (!contentType || !contentType.includes('application/json')) {
           const text = await res.text();
@@ -137,19 +163,11 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
           return;
         }
         
-        if (!res.ok) {
-          console.log('📭 No active poll available');
-          setPoll(null);
-          setLoading(false);
-          setIsActive(false);
-          return;
-        }
-
         const data = await res.json();
-        console.log('📊 Poll API response data:', data);
+        console.log('📊 Poll API response:', data);
 
         if (!data.success || !data.poll) {
-          console.log('📭 No active poll found');
+          console.log('📭 No active poll available in response');
           setPoll(null);
           setLoading(false);
           setIsActive(false);
@@ -157,7 +175,29 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
         }
 
         const pollData = data.poll;
-        console.log('📊 Poll data loaded:', pollData._id);
+        console.log('📊 Poll data loaded:', pollData._id, 'Active:', pollData.isActive);
+        
+        // Check if poll is active and not expired
+        if (!pollData.isActive) {
+          console.log('🚫 Poll is not active');
+          setPoll(null);
+          setLoading(false);
+          setIsActive(false);
+          return;
+        }
+        
+        // Check expiration
+        if (pollData.expiresAt) {
+          const expireDate = new Date(pollData.expiresAt);
+          const now = new Date();
+          if (expireDate < now) {
+            console.log('🚫 Poll has expired');
+            setPoll(null);
+            setLoading(false);
+            setIsActive(false);
+            return;
+          }
+        }
         
         // Get vote status from localStorage
         const localStorageVote = getVoteStatus(pollData._id);
@@ -187,6 +227,10 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
           if (!localStorageVote && userVoteOption) {
             setVoteStatus(pollData._id, userVoteOption);
           }
+        } else {
+          setHasVoted(false);
+          setUserVoteOption(null);
+          setSelectedOption(null);
         }
         
         // Calculate percentages correctly
@@ -219,6 +263,7 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
         console.error('❌ Error loading poll:', err);
         setError('Failed to load poll. Please try again later.');
         setIsActive(false);
+        setPoll(null);
       } finally {
         setLoading(false);
       }
@@ -229,7 +274,7 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
     // Don't auto-refresh if user has voted
     if (!hasVoted) {
       const interval = setInterval(() => {
-        if (poll) {
+        if (poll && poll.isActive) {
           loadPoll();
         }
       }, 30000);
@@ -246,7 +291,7 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
     
     try {
       console.log('🔍 Checking vote status for poll:', poll._id);
-      const res = await fetch(`${API_BASE_URL}/api/poll/check-vote/${poll._id}`, {
+      const res = await fetch(`${API_BASE_URL}/poll/check-vote/${poll._id}`, {
         headers: {
           'Cache-Control': 'no-cache'
         }
@@ -279,9 +324,9 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
 
     try {
       console.log('🗳️ Voting for option:', optionId);
-      console.log('🔗 API URL:', `${API_BASE_URL}/api/poll/vote`);
+      console.log('🔗 API URL:', `${API_BASE_URL}/poll/vote`);
       
-      const res = await fetch(`${API_BASE_URL}/api/poll/vote`, {
+      const res = await fetch(`${API_BASE_URL}/poll/vote`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -305,10 +350,10 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
       
       if (!res.ok) {
         // Handle already voted error
-        if (result.message?.includes('already voted')) {
+        if (result.message?.includes('already voted') || result.message?.includes('Already voted')) {
           setHasVoted(true);
           setVoteStatus(poll._id, optionId);
-          // Force reload to get updated poll data
+          // Re-fetch poll to get updated data
           window.location.reload();
           return;
         }
@@ -359,6 +404,7 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
       }
     } catch (err: any) {
       console.error('❌ Vote error:', err);
+      alert('Failed to vote. Please try again.');
     } finally {
       setVoting(false);
     }
@@ -394,6 +440,7 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
      ERROR STATE
   ========================= */
   if (error) {
+    console.error('Poll error:', error);
     return null; // Hide error state from user
   }
 
@@ -401,6 +448,7 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
      NO POLL STATE
   ========================= */
   if (!poll) {
+    console.log('No poll data available');
     return null;
   }
 
@@ -411,9 +459,9 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
   const isUserVoteOption = userVoteOption || poll.userVoteOption;
 
   return (
-    <div className="w-full bg-[#1a1a1a] rounded-lg border border-gray-700 overflow-hidden">
+    <div className="w-full bg-[#1a1a1a] rounded-lg border border-gray-700 overflow-hidden mb-4">
       {/* POLL HEADER - ONLY QUESTION */}
-      <div className="p-3">
+      <div className="p-3 border-b border-gray-800">
         <h3 className="text-sm font-semibold text-gray-100 leading-tight">
           {poll.question}
         </h3>
@@ -504,6 +552,18 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
             </div>
           );
         })}
+      </div>
+
+      {/* FOOTER - TOTAL VOTES (Minimal) */}
+      <div className="px-3 py-2 border-t border-gray-800">
+        <div className="flex justify-between items-center">
+          <span className="text-xs text-gray-500">
+            {totalVotes} {totalVotes === 1 ? 'vote' : 'votes'}
+          </span>
+          {!hasVoted && !voting && (
+            <span className="text-xs text-gray-400">Click to vote</span>
+          )}
+        </div>
       </div>
 
       {/* VOTING OVERLAY (when voting is in progress) - NO TEXT */}
