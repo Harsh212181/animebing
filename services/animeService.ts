@@ -1,4 +1,4 @@
-// services/animeService.ts - UPDATED WITH ID + SLUG SUPPORT
+ // services/animeService.ts - UPDATED WITH ID + SLUG SUPPORT
 import type { Anime, Episode, Chapter } from '../src/types';
 
 // ✅ FIX: Local development के लिए PORT 5173 है, server PORT 3000 पर है
@@ -238,6 +238,128 @@ export const searchAnime = async (query: string, fields?: string): Promise<Anime
  */
 export const getAllAnime = async (fields?: string): Promise<Anime[]> => {
   return getAnimePaginated(1, 50, fields); // First page with more items
+};
+
+// ================== POLL FUNCTIONS ==================
+
+/**
+ * ✅ ADDED: Fetch active poll
+ */
+export const fetchPoll = async (): Promise<any> => {
+  const cacheKey = 'active-poll';
+  
+  // Check cache first
+  const cached = cache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    console.log('🎯 Cache hit for poll');
+    return cached.data;
+  }
+
+  try {
+    console.log('📡 Fetching poll from API...');
+    
+    const response = await fetch(`${API_BASE}/polls/active`);
+    
+    if (!response.ok) {
+      if (response.status === 404) {
+        console.log('🔍 No active poll found');
+        return null;
+      }
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    
+    // Store in cache
+    cache.set(cacheKey, {
+      data: result,
+      timestamp: Date.now()
+    });
+    
+    console.log('✅ Poll loaded successfully');
+    return result;
+  } catch (error) {
+    console.error('❌ Error fetching poll:', error);
+    return null;
+  }
+};
+
+/**
+ * ✅ ADDED: Submit poll vote
+ */
+export const submitPollVote = async (pollId: string, optionId: string): Promise<any> => {
+  try {
+    const response = await fetch(`${API_BASE}/polls/vote`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ pollId, optionId }),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    
+    // Clear poll cache after voting
+    cache.delete('active-poll');
+    
+    return result;
+  } catch (error) {
+    console.error('❌ Error submitting vote:', error);
+    throw error;
+  }
+};
+
+/**
+ * ✅ ADDED: Get poll results
+ */
+export const getPollResults = async (pollId: string): Promise<any> => {
+  const cacheKey = `poll-results-${pollId}`;
+  
+  const cached = cache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    return cached.data;
+  }
+
+  try {
+    const response = await fetch(`${API_BASE}/polls/results/${pollId}`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    
+    // Store in cache
+    cache.set(cacheKey, {
+      data: result,
+      timestamp: Date.now()
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('❌ Error fetching poll results:', error);
+    return null;
+  }
+};
+
+/**
+ * ✅ ADDED: Clear poll cache
+ */
+export const clearPollCache = () => {
+  const keysToDelete: string[] = [];
+  
+  cache.forEach((value, key) => {
+    if (key.includes('poll') || key.includes('active-poll')) {
+      keysToDelete.push(key);
+    }
+  });
+  
+  keysToDelete.forEach(key => cache.delete(key));
+  console.log('🗑️ Poll cache cleared');
 };
 
 // ================== EPISODES & CHAPTERS ==================
