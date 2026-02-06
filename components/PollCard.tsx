@@ -4,9 +4,9 @@ import React, { useEffect, useState } from 'react';
 /* =========================
    API BASE URL - UPDATED FOR BOTH LOCAL AND PRODUCTION
 ========================= */
-const API_BASE_URL = window.location.hostname === 'animabing.onrender.com' 
+const API_BASE_URL = window.location.hostname === 'https://animabing.onrender.com/api' 
   ? 'https://animabing.onrender.com/api' 
-  : 'http://localhost:3000/api';
+  : 'https://animabing.onrender.com/api';
 
 console.log('🌐 API Base URL:', API_BASE_URL, 'Mode:', import.meta.env.MODE);
 

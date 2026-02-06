@@ -2,6 +2,7 @@
 // ✅ ADS REMOVED + FIXED SEARCH RELOAD ISSUE + REMOVED SECRET CODE CONSOLE LOGS + GA4 ANALYTICS FIX
 // ✅ ID + SLUG SUPPORT ADDED + ✅ FIXED BORDER MARGIN (0.1) + ✅ FIXED SCROLL TO TOP ON PAGE CHANGE
 // ✅ GREEN BORDER REMOVED FROM MAIN CONTAINER FOR MORE ANIME CARD SPACE
+// ✅ 404 ERROR PAGE ADDED FOR NON-EXISTENT ROUTES
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
@@ -23,6 +24,64 @@ import AnalyticsTracker from './src/components/AnalyticsTracker'; // ✅ GA4 ANA
 
 // ✅ NEW IMPORT: AnimeDetailWrapper
 import AnimeDetailWrapper from './components/AnimeDetailWrapper';
+
+// ✅ 404 ERROR PAGE COMPONENT
+const ErrorPage: React.FC = () => {
+  const navigate = useNavigate();
+  
+  return (
+    <div className="min-h-[70vh] flex flex-col items-center justify-center p-4 text-center">
+      <style>{`
+        .error-glow {
+          animation: errorPulse 2s infinite alternate;
+        }
+        @keyframes errorPulse {
+          0% { box-shadow: 0 0 10px rgba(220, 38, 38, 0.3); }
+          100% { box-shadow: 0 0 25px rgba(220, 38, 38, 0.6); }
+        }
+      `}</style>
+      
+      <div className="error-glow border-2 border-red-500/50 rounded-2xl p-8 bg-purple-900/40 backdrop-blur-sm max-w-md w-full">
+        <div className="text-8xl mb-6 animate-bounce">
+          <span className="text-red-400">4</span>
+          <span className="text-purple-400">0</span>
+          <span className="text-red-400">4</span>
+        </div>
+        
+        <h1 className="text-3xl font-bold text-white mb-4">
+          Page Not Found
+        </h1>
+        
+        <p className="text-purple-300 mb-6">
+          Oops! The page you're looking for doesn't exist or has been moved.
+        </p>
+        
+        <div className="space-y-4">
+          <button
+            onClick={() => navigate('/')}
+            className="w-full bg-gradient-to-r from-red-600 to-purple-600 hover:from-red-500 hover:to-purple-500 text-white font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-[1.02] flex items-center justify-center gap-3"
+          >
+            <span className="text-xl">👾</span>
+            <span>Go Back to Home</span>
+          </button>
+          
+          <button
+            onClick={() => navigate(-1)}
+            className="w-full bg-gradient-to-r from-purple-800 to-gray-800 hover:from-purple-700 hover:to-gray-700 text-white font-medium py-2 px-4 rounded-lg transition-all border border-purple-700/50"
+          >
+            ← Go Back to Previous Page
+          </button>
+        </div>
+        
+        <div className="mt-8 pt-6 border-t border-purple-800/50">
+          <p className="text-purple-400 text-sm">
+            If you believe this is an error, please check the URL or contact support.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 type ViewType = 'home' | 'list' | 'detail';
 type AdminViewType = 'login' | 'dashboard';
@@ -58,8 +117,6 @@ const ScrollToTop: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   
   return <>{children}</>;
 };
-
-// ✅ OLD DetailPageWrapper (replaced with AnimeDetailWrapper)
 
 const MainApp: React.FC = () => {
   const navigate = useNavigate();
@@ -507,6 +564,13 @@ const MainApp: React.FC = () => {
               <Route path="/contact" element={
                 <div className="rounded-lg overflow-hidden glow-green-border">
                   <Contact />
+                </div>
+              } />
+              
+              {/* ✅ 404 ERROR PAGE FOR NON-EXISTENT ROUTES */}
+              <Route path="*" element={
+                <div className="rounded-lg overflow-hidden glow-green-border">
+                  <ErrorPage />
                 </div>
               } />
             </Routes>

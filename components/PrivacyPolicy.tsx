@@ -106,20 +106,20 @@ const PrivacyPolicy: React.FC = () => {
                 <p className="text-slate-300 mb-2 text-sm sm:text-base">
                   Users can opt out of personalized advertising anytime:
                 </p>
-                <a href="https://www.google.com/settings/ads" 
+                <a href="https://www.google.com;/settings/ads" 
                    target="_blank" 
                    rel="noopener noreferrer"
                    className="text-purple-400 hover:text-purple-300 transition-colors block break-words text-sm sm:text-base">
-                  👉 https://www.google.com/settings/ads
+                  👉 https://www.google.com;/settings/ads
                 </a>
                 <p className="text-slate-300 mt-3 mb-2 text-sm sm:text-base">
                   For more information on Google's ad policies:
                 </p>
-                <a href="https://policies.google.com/technologies/ads" 
+                <a href="https://policies.google.com;/technologies/ads" 
                    target="_blank" 
                    rel="noopener noreferrer"
                    className="text-purple-400 hover:text-purple-300 transition-colors block break-words text-sm sm:text-base">
-                  👉 https://policies.google.com/technologies/ads
+                  👉 https://policies.google.com;/technologies/ads
                 </a>
               </div>
             </section>
