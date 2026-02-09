@@ -1,6 +1,6 @@
- // src/types.ts – COMPLETE UPDATED VERSION WITH VOTERS TRACKING
+ // src/types.ts – COMPLETE UPDATED VERSION WITH VOTERS TRACKING AND MAIN LINK
 /* =========================
-   DOWNLOAD / EPISODE
+   DOWNLOAD / EPISODE / CHAPTER
 ========================= */
 
 export interface DownloadLink {
@@ -18,6 +18,8 @@ export interface Episode {
   downloadLinks: DownloadLink[];
   secureFileReference?: string;
   session?: number;
+  // ✅ ADDED: Main link for admin internal use only
+  mainLink?: string;
 }
 
 export interface Chapter {
@@ -28,6 +30,8 @@ export interface Chapter {
   downloadLinks: DownloadLink[];
   secureFileReference?: string;
   session?: number;
+  // ✅ ADDED: Main link for admin internal use only
+  mainLink?: string;
 }
 
 /* =========================
@@ -122,6 +126,8 @@ export interface EditEpisodeData {
   downloadLinks?: DownloadLink[];
   secureFileReference?: string;
   session?: number;
+  // ✅ ADDED: Main link for admin edit
+  mainLink?: string;
 }
 
 export interface EditChapterData {
@@ -129,6 +135,8 @@ export interface EditChapterData {
   downloadLinks?: DownloadLink[];
   secureFileReference?: string;
   session?: number;
+  // ✅ ADDED: Main link for admin edit
+  mainLink?: string;
 }
 
 export interface SEODetails {

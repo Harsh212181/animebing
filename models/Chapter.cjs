@@ -1,4 +1,4 @@
-  // models/Chapter.cjs
+ // models/Chapter.cjs
 const mongoose = require("mongoose");
 
 const downloadLinkSchema = new mongoose.Schema({
@@ -46,6 +46,13 @@ const chapterSchema = new mongoose.Schema({
     type: Number,
     default: 1,
     min: 1
+  },
+  // ✅ ADDED: Main link for admin internal use only
+  mainLink: {
+    type: String,
+    required: false,
+    trim: true,
+    default: ""
   },
   // ✅ Changed from cutyLink to downloadLinks array
   downloadLinks: {

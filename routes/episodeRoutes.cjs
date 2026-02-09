@@ -1,4 +1,4 @@
-  // routes/episodeRoutes.cjs - FIXED VERSION
+ // routes/episodeRoutes.cjs - COMPLETELY FIXED VERSION
 const express = require('express');
 const router = express.Router();
 const Episode = require('../models/Episode.cjs');
@@ -31,16 +31,17 @@ router.get('/', async (req, res) => {
   }
 });
 
-// POST /api/episodes -> ADD NEW EPISODE (WITH MULTIPLE DOWNLOAD LINKS)
+// POST /api/episodes -> ADD NEW EPISODE (WITH MULTIPLE DOWNLOAD LINKS AND MAIN LINK)
 router.post('/', async (req, res) => {
   try {
-    const { animeId, title, episodeNumber, secureFileReference, downloadLinks, session } = req.body;
+    const { animeId, title, episodeNumber, secureFileReference, mainLink, downloadLinks, session } = req.body;
 
     console.log('📥 ADD EPISODE REQUEST:', {
       animeId,
       title,
       episodeNumber,
       session,
+      mainLink, // ✅ Debug log
       downloadLinksCount: downloadLinks ? downloadLinks.length : 0
     });
 
@@ -93,6 +94,8 @@ router.post('/', async (req, res) => {
       title: title || `Episode ${episodeNumber}`,
       episodeNumber: Number(episodeNumber),
       secureFileReference: secureFileReference || null,
+      // ✅ FIXED: mainLink को हमेशा include करें
+      mainLink: mainLink || '',
       downloadLinks: downloadLinks.map((link, index) => ({
         name: link.name || `Download Link ${index + 1}`,
         url: link.url,
@@ -102,10 +105,11 @@ router.post('/', async (req, res) => {
       session: session || 1
     });
 
-    console.log('💾 Saving episode to database...');
+    console.log('💾 Saving episode to database with mainLink:', newEpisode.mainLink); // ✅ Debug
+    
     await newEpisode.save();
     
-    // ✅ YEH IMPORTANT LINE ADD KARO: Anime ko update karo for homepage sorting
+    // ✅ Anime ko update karo for homepage sorting
     await Anime.updateLastContent(animeId);
     
     console.log('✅ Episode saved with ID:', newEpisode._id);
@@ -126,7 +130,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-// GET /api/episodes/:animeId -> all episodes for anime
+// GET /api/episodes/:animeId -> all episodes for anime - FIXED VERSION
 router.get('/:animeId', async (req, res) => {
   try {
     console.log('📥 Fetching episodes for anime:', req.params.animeId);
@@ -141,7 +145,44 @@ router.get('/:animeId', async (req, res) => {
     
     console.log('✅ Found episodes:', episodes.length);
     
-    res.json(episodes || []);
+    // ✅ CRITICAL FIX: Force add mainLink field to every episode
+    const fixedEpisodes = episodes.map(episode => {
+      // Create new object with guaranteed mainLink field
+      const fixedEpisode = {
+        _id: episode._id,
+        animeId: episode.animeId,
+        title: episode.title,
+        episodeNumber: episode.episodeNumber,
+        session: episode.session || 1,
+        downloadLinks: episode.downloadLinks || [],
+        secureFileReference: episode.secureFileReference,
+        createdAt: episode.createdAt,
+        updatedAt: episode.updatedAt,
+        __v: episode.__v || 0,
+        // ✅ Always include mainLink field (even if it doesn't exist in database)
+        mainLink: episode.mainLink !== undefined && episode.mainLink !== null 
+          ? episode.mainLink 
+          : ''
+      };
+      
+      return fixedEpisode;
+    });
+    
+    // ✅ Debug: Check mainLink in first episode
+    if (fixedEpisodes.length > 0) {
+      console.log('🔍 First episode after fix:', {
+        title: fixedEpisodes[0].title,
+        mainLink: fixedEpisodes[0].mainLink,
+        type: typeof fixedEpisodes[0].mainLink,
+        hasMainLink: fixedEpisodes[0].hasOwnProperty('mainLink'),
+        allFields: Object.keys(fixedEpisodes[0])
+      });
+      
+      // Show all episodes data for debugging
+      console.log('📊 All episodes data:', JSON.stringify(fixedEpisodes, null, 2));
+    }
+    
+    res.json(fixedEpisodes || []);
     
   } catch (error) {
     console.error('❌ Error fetching episodes:', error);
@@ -149,10 +190,12 @@ router.get('/:animeId', async (req, res) => {
   }
 });
 
-// PATCH /api/episodes -> UPDATE EPISODE (WITH MULTIPLE DOWNLOAD LINKS)
+// PATCH /api/episodes -> UPDATE EPISODE (WITH MULTIPLE DOWNLOAD LINKS AND MAIN LINK) - FIXED
 router.patch('/', async (req, res) => {
   try {
-    const { animeId, episodeNumber, title, secureFileReference, downloadLinks, session } = req.body;
+    const { animeId, episodeNumber, title, secureFileReference, mainLink, downloadLinks, session } = req.body;
+    
+    console.log('📥 PATCH EPISODE REQUEST - mainLink value:', mainLink); // ✅ Debug
     
     if (!animeId || typeof episodeNumber === 'undefined') {
       return res.status(400).json({ error: 'animeId and episodeNumber are required' });
@@ -174,6 +217,10 @@ router.patch('/', async (req, res) => {
     if (typeof title !== 'undefined') update.title = title;
     if (typeof secureFileReference !== 'undefined') update.secureFileReference = secureFileReference;
     if (typeof session !== 'undefined') update.session = session;
+    
+    // ✅ CRITICAL FIX: mainLink को हमेशा update करें
+    // Frontend से mainLink हमेशा आता है (empty string भी)
+    update.mainLink = mainLink || '';
     
     // ✅ Handle downloadLinks update if provided
     if (downloadLinks) {
@@ -203,11 +250,23 @@ router.patch('/', async (req, res) => {
       }));
     }
 
-    const updated = await Episode.findOneAndUpdate(query, { $set: update }, { new: true });
+    console.log('📤 UPDATE DATA:', update); // ✅ Debug
+    
+    const updated = await Episode.findOneAndUpdate(
+      query, 
+      { $set: update }, 
+      { 
+        new: true, 
+        runValidators: true, // ✅ Validators run करें
+        upsert: false 
+      }
+    );
     
     if (!updated) return res.status(404).json({ error: 'Episode not found' });
     
-    // ✅ YEH BHI ADD KARO: Anime update karo jab episode modify ho
+    console.log('✅ Episode updated with mainLink:', updated.mainLink); // ✅ Debug
+    
+    // ✅ Anime update karo jab episode modify ho
     await Anime.updateLastContent(animeId);
     
     res.json({ 
@@ -215,7 +274,7 @@ router.patch('/', async (req, res) => {
       episode: updated
     });
   } catch (error) {
-    console.error('Error updating episode:', error);
+    console.error('❌ Error updating episode:', error);
     if (error.name === 'ValidationError') {
       return res.status(400).json({ error: error.message });
     }
@@ -260,7 +319,7 @@ router.delete('/', async (req, res) => {
 router.get('/download/:animeId/:episodeNumber', async (req, res) => {
   try {
     const { animeId, episodeNumber } = req.params;
-    const { session = 1 } = req.query; // ✅ Session को query parameter से लो
+    const { session = 1 } = req.query;
     
     console.log('📥 DOWNLOAD REQUEST:', { animeId, episodeNumber, session });
     

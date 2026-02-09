@@ -1,4 +1,4 @@
- // src/components/admin/EpisodesManager.tsx - UPDATED WITH DEFAULT DOWNLOAD LINK NAMES
+// src/components/admin/EpisodesManager.tsx - COMPLETELY FIXED VERSION
 import React, { useState, useEffect } from 'react';
 import type { Anime, Episode, Chapter } from '../../types';
 import axios from 'axios';
@@ -19,7 +19,7 @@ const DEFAULT_LINK_NAMES = [
   'Shrinkme', 
   'Linkjust.com',
   'Gplinks',
-  'bas'
+  'Link 5'
 ];
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://animabing.onrender.com/api';
@@ -34,6 +34,7 @@ const EpisodesManager: React.FC = () => {
     number: 1,
     title: '',
     session: 1,
+    mainLink: '', // ✅ New field for main link
     downloadLinks: [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }] as DownloadLink[]
   });
   const [loading, setLoading] = useState(true);
@@ -45,6 +46,7 @@ const EpisodesManager: React.FC = () => {
     number: 1,
     title: '',
     session: 1,
+    mainLink: '', // ✅ New field for main link
     downloadLinks: [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }] as DownloadLink[]
   });
 
@@ -139,22 +141,39 @@ const EpisodesManager: React.FC = () => {
     try {
       if (isManga) {
         const { data } = await axios.get(`${API_BASE}/chapters/${contentId}`);
+        console.log('📥 Chapters API Response FULL DATA:', JSON.stringify(data, null, 2)); // ✅ Detailed log
+        if (data && data.length > 0) {
+          console.log('📊 First chapter COMPLETE DATA:', data[0]);
+          console.log('🔍 mainLink exists?', data[0].hasOwnProperty('mainLink'));
+          console.log('🔍 mainLink value:', data[0].mainLink);
+          console.log('🔍 mainLink type:', typeof data[0].mainLink);
+        }
         setChapters(data);
         const lastChapter = data.filter((ch: Chapter) => (ch.session || 1) === selectedSession);
         setNewItem(prev => ({
           ...prev,
           number: lastChapter.length > 0 ? Math.max(...lastChapter.map((ch: Chapter) => ch.chapterNumber)) + 1 : 1,
           session: selectedSession,
+          mainLink: '', // Reset main link
           downloadLinks: [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }]
         }));
       } else {
         const { data } = await axios.get(`${API_BASE}/episodes/${contentId}`);
+        console.log('📥 Episodes API Response FULL DATA:', JSON.stringify(data, null, 2)); // ✅ Detailed log
+        if (data && data.length > 0) {
+          console.log('📊 First episode COMPLETE DATA:', data[0]);
+          console.log('🔍 mainLink exists?', data[0].hasOwnProperty('mainLink'));
+          console.log('🔍 mainLink value:', data[0].mainLink);
+          console.log('🔍 mainLink type:', typeof data[0].mainLink);
+          console.log('🔍 ALL FIELDS:', Object.keys(data[0]));
+        }
         setEpisodes(data);
         const lastEpisode = data.filter((ep: Episode) => (ep.session || 1) === selectedSession);
         setNewItem(prev => ({
           ...prev,
           number: lastEpisode.length > 0 ? Math.max(...lastEpisode.map((ep: Episode) => ep.episodeNumber)) + 1 : 1,
           session: selectedSession,
+          mainLink: '', // Reset main link
           downloadLinks: [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }]
         }));
       }
@@ -174,9 +193,26 @@ const EpisodesManager: React.FC = () => {
     } else {
       setEditingItemId((item as any)._id);
       
-      // ✅ Get downloadLinks from item
+      // ✅ Get downloadLinks and mainLink from item - FIXED
       const itemData = item as any;
       const downloadLinks: DownloadLink[] = itemData.downloadLinks || [];
+      
+      // ✅ CRITICAL FIX: mainLink को सही तरीके से लें
+      let mainLink = '';
+      if (itemData.mainLink !== undefined && itemData.mainLink !== null) {
+        mainLink = itemData.mainLink;
+      } else if (itemData.hasOwnProperty('mainLink')) {
+        mainLink = itemData.mainLink || '';
+      } else {
+        mainLink = '';
+      }
+      
+      console.log('✏️ Editing item DETAILED:', {
+        title: item.title,
+        mainLink: mainLink,
+        hasMainLink: itemData.hasOwnProperty('mainLink'),
+        itemData: itemData
+      });
       
       // If no download links, add one default with default name
       const linksToSet = downloadLinks.length > 0 
@@ -187,6 +223,7 @@ const EpisodesManager: React.FC = () => {
         number: isManga ? (item as Chapter).chapterNumber : (item as Episode).episodeNumber,
         title: item.title || '',
         session: item.session || 1,
+        mainLink: mainLink, // Set main link from item
         downloadLinks: linksToSet
       });
     }
@@ -345,6 +382,7 @@ const EpisodesManager: React.FC = () => {
             chapterNumber: newItem.number,
             title: newItem.title || `Chapter ${newItem.number}`,
             session: newItem.session,
+            mainLink: newItem.mainLink || '', // ✅ Send empty string instead of undefined
             downloadLinks: newItem.downloadLinks
           }
         : {
@@ -352,16 +390,21 @@ const EpisodesManager: React.FC = () => {
             episodeNumber: newItem.number,
             title: newItem.title || `Episode ${newItem.number}`,
             session: newItem.session,
+            mainLink: newItem.mainLink || '', // ✅ Send empty string instead of undefined
             downloadLinks: newItem.downloadLinks
           };
 
-      await axios.post(`${API_BASE}${endpoint}`, requestBody, {
+      console.log('📤 Sending POST request with mainLink:', requestBody.mainLink);
+      
+      const response = await axios.post(`${API_BASE}${endpoint}`, requestBody, {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         }
       });
 
+      console.log('✅ POST Response:', response.data);
+      
       alert(`${isManga ? 'Chapter' : 'Episode'} added successfully!`);
       
       // Reset form with default name
@@ -370,6 +413,7 @@ const EpisodesManager: React.FC = () => {
         number: nextNumber,
         title: '',
         session: selectedSession,
+        mainLink: '', // Reset main link
         downloadLinks: [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }]
       });
       
@@ -399,6 +443,7 @@ const EpisodesManager: React.FC = () => {
             chapterNumber: editForm.number,
             title: editForm.title || `Chapter ${editForm.number}`,
             session: editForm.session,
+            mainLink: editForm.mainLink || '', // ✅ Send empty string instead of undefined
             downloadLinks: editForm.downloadLinks
           }
         : {
@@ -406,16 +451,21 @@ const EpisodesManager: React.FC = () => {
             episodeNumber: editForm.number,
             title: editForm.title || `Episode ${editForm.number}`,
             session: editForm.session,
+            mainLink: editForm.mainLink || '', // ✅ Send empty string instead of undefined
             downloadLinks: editForm.downloadLinks
           };
 
-      await axios.patch(`${API_BASE}${endpoint}`, requestBody, {
+      console.log('📤 Sending PATCH request with mainLink:', requestBody.mainLink);
+      
+      const response = await axios.patch(`${API_BASE}${endpoint}`, requestBody, {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         }
       });
 
+      console.log('✅ PATCH Response:', response.data);
+      
       alert(`${isManga ? 'Chapter' : 'Episode'} updated successfully!`);
       setEditingItemId(null);
       fetchContent(selectedAnime.id);
@@ -446,6 +496,13 @@ const EpisodesManager: React.FC = () => {
     } catch (err: any) {
       console.error('❌ Delete error:', err.response?.data || err.message);
       alert(err.response?.data?.error || `Failed to delete ${isManga ? 'chapter' : 'episode'}`);
+    }
+  };
+
+  // ✅ Function to open main link in new tab
+  const openMainLink = (link: string) => {
+    if (link) {
+      window.open(link, '_blank', 'noopener,noreferrer');
     }
   };
 
@@ -578,11 +635,62 @@ const EpisodesManager: React.FC = () => {
             </div>
           </div>
 
+          {/* ✅ MAIN LINK SECTION - FOR ADMIN ONLY */}
+          <div className="bg-slate-800/70 p-4 rounded-lg border-l-4 border-yellow-500">
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-yellow-300">
+                🔗 Main Link (Admin Only - Optional)
+              </label>
+              <span className="text-xs text-yellow-400 bg-yellow-900/30 px-2 py-1 rounded">Internal Use</span>
+            </div>
+            <p className="text-slate-400 text-xs mb-3">
+              This is for admin reference only. It won't be shown to users. Use it to store the original source link or internal notes.
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newItem.mainLink}
+                onChange={(e) => setNewItem({ ...newItem, mainLink: e.target.value })}
+                placeholder="https://example.com/original-source.mp4"
+                className="flex-1 bg-slate-900 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-yellow-500 focus:border-yellow-500"
+              />
+              <button
+                type="button"
+                onClick={() => openMainLink(newItem.mainLink)}
+                disabled={!newItem.mainLink}
+                className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-2 rounded text-sm transition-colors flex items-center gap-1"
+                title="Open in new tab"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+                Open
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (newItem.mainLink) {
+                    navigator.clipboard.writeText(newItem.mainLink);
+                    alert('Main link copied to clipboard!');
+                  }
+                }}
+                disabled={!newItem.mainLink}
+                className="bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-2 rounded text-sm transition-colors flex items-center gap-1"
+                title="Copy to clipboard"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+                Copy
+              </button>
+            </div>
+          </div>
+
           {/* DOWNLOAD LINKS SECTION - FOR ADD FORM */}
           <div>
             <div className="flex justify-between items-center mb-2">
               <label className="block text-sm font-medium text-slate-300">
-                Download Links (Required) *
+                User Download Links (Required) *
               </label>
               <button
                 type="button"
@@ -666,7 +774,7 @@ const EpisodesManager: React.FC = () => {
             </div>
             
             <p className="text-slate-400 text-xs mt-2">
-              💡 You can add up to 5 download links. At least one link with name and URL is required.
+              💡 These download links will be shown to users. You can add up to 5 links. At least one link with name and URL is required.
             </p>
           </div>
 
@@ -729,14 +837,44 @@ const EpisodesManager: React.FC = () => {
                     <th className="p-3 text-left text-slate-300 font-medium">#</th>
                     <th className="p-3 text-left text-slate-300 font-medium">Session</th>
                     <th className="p-3 text-left text-slate-300 font-medium">Title</th>
-                    <th className="p-3 text-left text-slate-300 font-medium">Download Links</th>
+                    <th className="p-3 text-left text-slate-300 font-medium">Main Link (Admin)</th>
+                    <th className="p-3 text-left text-slate-300 font-medium">User Download Links</th>
                     <th className="p-3 text-left text-slate-300 font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700">
-                  {filteredItems.map((item: any) => {
+                  {filteredItems.map((item: any, index: number) => {
                     const downloadLinks: DownloadLink[] = item.downloadLinks || [];
+                    
+                    // ✅ CRITICAL FIX: mainLink को सही तरीके से access करें
+                    let mainLink = '';
+                    
+                    // Method 1: Direct property check
+                    if (item.mainLink !== undefined && item.mainLink !== null) {
+                      mainLink = item.mainLink;
+                    } 
+                    // Method 2: Check if property exists
+                    else if (Object.prototype.hasOwnProperty.call(item, 'mainLink')) {
+                      mainLink = item.mainLink || '';
+                    }
+                    // Method 3: Type casting
+                    else {
+                      mainLink = (item as any).mainLink || '';
+                    }
+                    
                     const isEditing = editingItemId === item._id;
+                    
+                    // ✅ EXTENDED DEBUG LOG
+                    console.log(`🔍 DEBUG Item ${index + 1}:`, {
+                      title: item.title,
+                      number: isManga ? item.chapterNumber : item.episodeNumber,
+                      mainLinkValue: mainLink,
+                      itemMainLinkProperty: item.mainLink,
+                      hasMainLinkProp: item.hasOwnProperty('mainLink'),
+                      mainLinkType: typeof item.mainLink,
+                      allProperties: Object.keys(item),
+                      fullItem: item // सावधान: बड़ा output हो सकता है
+                    });
                     
                     return (
                       <React.Fragment key={item._id}>
@@ -750,6 +888,53 @@ const EpisodesManager: React.FC = () => {
                             </span>
                           </td>
                           <td className="p-3 text-white">{item.title}</td>
+                          <td className="p-3">
+                            {/* ✅ FIXED RENDERING - Better condition check */}
+                            {mainLink && mainLink.trim() !== '' ? (
+                              <div className="space-y-2">
+                                <div className="text-xs">
+                                  <span className="text-yellow-400 bg-yellow-900/20 px-2 py-1 rounded mr-2">Admin</span>
+                                  <span 
+                                    className="text-yellow-300 truncate block max-w-xs cursor-help" 
+                                    title={mainLink}
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(mainLink);
+                                      alert('Main link copied to clipboard!');
+                                    }}
+                                  >
+                                    {mainLink.length > 30 ? mainLink.substring(0, 30) + '...' : mainLink}
+                                  </span>
+                                </div>
+                                <div className="flex gap-1">
+                                  <button
+                                    onClick={() => window.open(mainLink, '_blank', 'noopener,noreferrer')}
+                                    className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded flex items-center gap-1"
+                                    title="Open in new tab"
+                                  >
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                    </svg>
+                                    Open
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(mainLink);
+                                      alert('Main link copied to clipboard!');
+                                    }}
+                                    className="text-xs bg-yellow-600 hover:bg-yellow-500 text-white px-2 py-1 rounded flex items-center gap-1"
+                                    title="Copy to clipboard"
+                                  >
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                    </svg>
+                                    Copy
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-slate-500 text-xs italic">No main link</span>
+                            )}
+                          </td>
                           <td className="p-3">
                             {downloadLinks.length > 0 ? (
                               <div className="space-y-1">
@@ -806,7 +991,7 @@ const EpisodesManager: React.FC = () => {
                         {/* EDIT FORM ROW - Appears below the episode/chapter */}
                         {isEditing && (
                           <tr className="bg-slate-800/70 border-b border-slate-700">
-                            <td colSpan={5} className="p-4">
+                            <td colSpan={6} className="p-4">
                               <div className="border-l-4 border-yellow-500 pl-4 py-3">
                                 <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
                                   <svg className="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -852,11 +1037,62 @@ const EpisodesManager: React.FC = () => {
                                     </div>
                                   </div>
 
+                                  {/* ✅ MAIN LINK SECTION - FOR EDIT FORM */}
+                                  <div className="bg-slate-800/70 p-4 rounded-lg border-l-4 border-yellow-500">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <label className="block text-sm font-medium text-yellow-300">
+                                        🔗 Main Link (Admin Only - Optional)
+                                      </label>
+                                      <span className="text-xs text-yellow-400 bg-yellow-900/30 px-2 py-1 rounded">Internal Use</span>
+                                    </div>
+                                    <p className="text-slate-400 text-xs mb-3">
+                                      This is for admin reference only. It won't be shown to users.
+                                    </p>
+                                    <div className="flex gap-2">
+                                      <input
+                                        type="text"
+                                        value={editForm.mainLink}
+                                        onChange={(e) => setEditForm({ ...editForm, mainLink: e.target.value })}
+                                        placeholder="https://example.com/original-source.mp4"
+                                        className="flex-1 bg-slate-900 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-yellow-500 focus:border-yellow-500"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => openMainLink(editForm.mainLink)}
+                                        disabled={!editForm.mainLink}
+                                        className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-2 rounded text-sm transition-colors flex items-center gap-1"
+                                        title="Open in new tab"
+                                      >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                        </svg>
+                                        Open
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (editForm.mainLink) {
+                                            navigator.clipboard.writeText(editForm.mainLink);
+                                            alert('Main link copied to clipboard!');
+                                          }
+                                        }}
+                                        disabled={!editForm.mainLink}
+                                        className="bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-2 rounded text-sm transition-colors flex items-center gap-1"
+                                        title="Copy to clipboard"
+                                      >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                        </svg>
+                                        Copy
+                                      </button>
+                                    </div>
+                                  </div>
+
                                   {/* DOWNLOAD LINKS SECTION - FOR EDIT FORM */}
                                   <div>
                                     <div className="flex justify-between items-center mb-2">
                                       <label className="block text-sm font-medium text-slate-300">
-                                        Download Links (Required) *
+                                        User Download Links (Required) *
                                       </label>
                                       <button
                                         type="button"

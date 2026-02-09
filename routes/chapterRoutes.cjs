@@ -1,4 +1,4 @@
-  // routes/chapterRoutes.cjs - FIXED VERSION
+// routes/chapterRoutes.cjs - COMPLETELY FIXED VERSION
 const express = require('express');
 const router = express.Router();
 const Chapter = require('../models/Chapter.cjs');
@@ -31,16 +31,17 @@ router.get('/', async (req, res) => {
   }
 });
 
-// POST /api/chapters -> ADD NEW CHAPTER (WITH MULTIPLE DOWNLOAD LINKS)
+// POST /api/chapters -> ADD NEW CHAPTER (WITH MULTIPLE DOWNLOAD LINKS AND MAIN LINK)
 router.post('/', async (req, res) => {
   try {
-    const { mangaId, title, chapterNumber, secureFileReference, downloadLinks, session } = req.body;
+    const { mangaId, title, chapterNumber, secureFileReference, mainLink, downloadLinks, session } = req.body;
 
     console.log('📥 ADD CHAPTER REQUEST:', {
       mangaId,
       title,
       chapterNumber,
       session,
+      mainLink, // ✅ Debug log
       downloadLinksCount: downloadLinks ? downloadLinks.length : 0
     });
 
@@ -93,6 +94,8 @@ router.post('/', async (req, res) => {
       title: title || `Chapter ${chapterNumber}`,
       chapterNumber: Number(chapterNumber),
       secureFileReference: secureFileReference || null,
+      // ✅ FIXED: mainLink को हमेशा include करें
+      mainLink: mainLink || '',
       downloadLinks: downloadLinks.map((link, index) => ({
         name: link.name || `Download Link ${index + 1}`,
         url: link.url,
@@ -102,10 +105,11 @@ router.post('/', async (req, res) => {
       session: session || 1
     });
 
-    console.log('💾 Saving chapter to database...');
+    console.log('💾 Saving chapter to database with mainLink:', newChapter.mainLink); // ✅ Debug
+    
     await newChapter.save();
     
-    // ✅ YEH IMPORTANT LINE ADD KARO: Manga ko update karo for homepage sorting
+    // ✅ Manga ko update karo for homepage sorting
     await Anime.updateLastContent(mangaId);
     
     console.log('✅ Chapter saved with ID:', newChapter._id);
@@ -141,6 +145,15 @@ router.get('/:mangaId', async (req, res) => {
     
     console.log('✅ Found chapters:', chapters.length);
     
+    // ✅ Debug: Check mainLink in first chapter
+    if (chapters.length > 0) {
+      console.log('🔍 First chapter mainLink:', {
+        title: chapters[0].title,
+        mainLink: chapters[0].mainLink,
+        exists: chapters[0].hasOwnProperty('mainLink')
+      });
+    }
+    
     res.json(chapters || []);
     
   } catch (error) {
@@ -149,10 +162,12 @@ router.get('/:mangaId', async (req, res) => {
   }
 });
 
-// PATCH /api/chapters -> UPDATE CHAPTER (WITH MULTIPLE DOWNLOAD LINKS)
+// PATCH /api/chapters -> UPDATE CHAPTER (WITH MULTIPLE DOWNLOAD LINKS AND MAIN LINK) - FIXED
 router.patch('/', async (req, res) => {
   try {
-    const { mangaId, chapterNumber, title, secureFileReference, downloadLinks, session } = req.body;
+    const { mangaId, chapterNumber, title, secureFileReference, mainLink, downloadLinks, session } = req.body;
+    
+    console.log('📥 PATCH CHAPTER REQUEST - mainLink value:', mainLink); // ✅ Debug
     
     if (!mangaId || typeof chapterNumber === 'undefined') {
       return res.status(400).json({ error: 'mangaId and chapterNumber are required' });
@@ -174,6 +189,10 @@ router.patch('/', async (req, res) => {
     if (typeof title !== 'undefined') update.title = title;
     if (typeof secureFileReference !== 'undefined') update.secureFileReference = secureFileReference;
     if (typeof session !== 'undefined') update.session = session;
+    
+    // ✅ CRITICAL FIX: mainLink को हमेशा update करें
+    // Frontend से mainLink हमेशा आता है (empty string भी)
+    update.mainLink = mainLink || '';
     
     // ✅ Handle downloadLinks update if provided
     if (downloadLinks) {
@@ -203,11 +222,23 @@ router.patch('/', async (req, res) => {
       }));
     }
 
-    const updated = await Chapter.findOneAndUpdate(query, { $set: update }, { new: true });
+    console.log('📤 UPDATE DATA:', update); // ✅ Debug
+    
+    const updated = await Chapter.findOneAndUpdate(
+      query, 
+      { $set: update }, 
+      { 
+        new: true, 
+        runValidators: true, // ✅ Validators run करें
+        upsert: false 
+      }
+    );
     
     if (!updated) return res.status(404).json({ error: 'Chapter not found' });
     
-    // ✅ YEH BHI ADD KARO: Manga update karo jab chapter modify ho
+    console.log('✅ Chapter updated with mainLink:', updated.mainLink); // ✅ Debug
+    
+    // ✅ Manga update karo jab chapter modify ho
     await Anime.updateLastContent(mangaId);
     
     res.json({ 
@@ -215,7 +246,7 @@ router.patch('/', async (req, res) => {
       chapter: updated
     });
   } catch (error) {
-    console.error('Error updating chapter:', error);
+    console.error('❌ Error updating chapter:', error);
     if (error.name === 'ValidationError') {
       return res.status(400).json({ error: error.message });
     }
@@ -260,7 +291,9 @@ router.delete('/', async (req, res) => {
 router.get('/download/:mangaId/:chapterNumber', async (req, res) => {
   try {
     const { mangaId, chapterNumber } = req.params;
-    const { session = 1 } = req.query; // ✅ Session को query parameter से लो
+    const { session = 1 } = req.query;
+    
+    console.log('📥 DOWNLOAD REQUEST:', { mangaId, chapterNumber, session });
     
     const chapter = await Chapter.findOne({
       mangaId,
