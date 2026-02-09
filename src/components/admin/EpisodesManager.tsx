@@ -1,4 +1,4 @@
-// src/components/admin/EpisodesManager.tsx - COMPLETELY FIXED VERSION
+ // src/components/admin/EpisodesManager.tsx - COMPLETELY FIXED VERSION
 import React, { useState, useEffect } from 'react';
 import type { Anime, Episode, Chapter } from '../../types';
 import axios from 'axios';
@@ -135,21 +135,37 @@ const EpisodesManager: React.FC = () => {
     }
   }, [selectedAnime]);
 
+  // ✅ CRITICAL FIX: Enhanced data transformation function
+  const transformEpisodeData = (data: any): Episode => {
+    // Create a new object with guaranteed mainLink field
+    return {
+      ...data,
+      mainLink: data.mainLink || (data.downloadLinks && data.downloadLinks.length > 0 ? data.downloadLinks[0].url : '')
+    };
+  };
+
+  const transformChapterData = (data: any): Chapter => {
+    // Create a new object with guaranteed mainLink field
+    return {
+      ...data,
+      mainLink: data.mainLink || (data.downloadLinks && data.downloadLinks.length > 0 ? data.downloadLinks[0].url : '')
+    };
+  };
+
   const fetchContent = async (contentId: string) => {
     setLoading(true);
     setEditingItemId(null); // Reset editing state on content change
     try {
       if (isManga) {
         const { data } = await axios.get(`${API_BASE}/chapters/${contentId}`);
-        console.log('📥 Chapters API Response FULL DATA:', JSON.stringify(data, null, 2)); // ✅ Detailed log
-        if (data && data.length > 0) {
-          console.log('📊 First chapter COMPLETE DATA:', data[0]);
-          console.log('🔍 mainLink exists?', data[0].hasOwnProperty('mainLink'));
-          console.log('🔍 mainLink value:', data[0].mainLink);
-          console.log('🔍 mainLink type:', typeof data[0].mainLink);
-        }
-        setChapters(data);
-        const lastChapter = data.filter((ch: Chapter) => (ch.session || 1) === selectedSession);
+        console.log('📥 Chapters API Response FULL DATA:', JSON.stringify(data, null, 2));
+        
+        // ✅ CRITICAL FIX: Transform all chapters to ensure mainLink exists
+        const transformedChapters = data.map(transformChapterData);
+        console.log('✅ Transformed chapters:', transformedChapters);
+        
+        setChapters(transformedChapters);
+        const lastChapter = transformedChapters.filter((ch: Chapter) => (ch.session || 1) === selectedSession);
         setNewItem(prev => ({
           ...prev,
           number: lastChapter.length > 0 ? Math.max(...lastChapter.map((ch: Chapter) => ch.chapterNumber)) + 1 : 1,
@@ -159,16 +175,25 @@ const EpisodesManager: React.FC = () => {
         }));
       } else {
         const { data } = await axios.get(`${API_BASE}/episodes/${contentId}`);
-        console.log('📥 Episodes API Response FULL DATA:', JSON.stringify(data, null, 2)); // ✅ Detailed log
-        if (data && data.length > 0) {
-          console.log('📊 First episode COMPLETE DATA:', data[0]);
-          console.log('🔍 mainLink exists?', data[0].hasOwnProperty('mainLink'));
-          console.log('🔍 mainLink value:', data[0].mainLink);
-          console.log('🔍 mainLink type:', typeof data[0].mainLink);
-          console.log('🔍 ALL FIELDS:', Object.keys(data[0]));
+        console.log('📥 Episodes API Response FULL DATA:', JSON.stringify(data, null, 2));
+        
+        // ✅ CRITICAL FIX: Transform all episodes to ensure mainLink exists
+        const transformedEpisodes = data.map(transformEpisodeData);
+        console.log('✅ Transformed episodes:', transformedEpisodes);
+        
+        // ✅ Debug first episode
+        if (transformedEpisodes.length > 0) {
+          const firstEp = transformedEpisodes[0];
+          console.log('🔍 First episode AFTER transformation:', {
+            title: firstEp.title,
+            mainLink: firstEp.mainLink,
+            hasMainLink: firstEp.hasOwnProperty('mainLink'),
+            type: typeof firstEp.mainLink
+          });
         }
-        setEpisodes(data);
-        const lastEpisode = data.filter((ep: Episode) => (ep.session || 1) === selectedSession);
+        
+        setEpisodes(transformedEpisodes);
+        const lastEpisode = transformedEpisodes.filter((ep: Episode) => (ep.session || 1) === selectedSession);
         setNewItem(prev => ({
           ...prev,
           number: lastEpisode.length > 0 ? Math.max(...lastEpisode.map((ep: Episode) => ep.episodeNumber)) + 1 : 1,
@@ -197,17 +222,10 @@ const EpisodesManager: React.FC = () => {
       const itemData = item as any;
       const downloadLinks: DownloadLink[] = itemData.downloadLinks || [];
       
-      // ✅ CRITICAL FIX: mainLink को सही तरीके से लें
-      let mainLink = '';
-      if (itemData.mainLink !== undefined && itemData.mainLink !== null) {
-        mainLink = itemData.mainLink;
-      } else if (itemData.hasOwnProperty('mainLink')) {
-        mainLink = itemData.mainLink || '';
-      } else {
-        mainLink = '';
-      }
+      // ✅ CRITICAL FIX: Always use mainLink from item data
+      let mainLink = itemData.mainLink || '';
       
-      console.log('✏️ Editing item DETAILED:', {
+      console.log('🪶 Editing item DETAILED:', {
         title: item.title,
         mainLink: mainLink,
         hasMainLink: itemData.hasOwnProperty('mainLink'),
@@ -360,7 +378,7 @@ const EpisodesManager: React.FC = () => {
     return true;
   };
 
-  // Add New Item Function
+  // ✅ CRITICAL FIX: Enhanced Add New Item Function
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedAnime) {
@@ -376,13 +394,17 @@ const EpisodesManager: React.FC = () => {
     setAddingItem(true);
     try {
       const endpoint = isManga ? '/chapters' : '/episodes';
+      
+      // ✅ CRITICAL: Ensure mainLink is always sent
+      const mainLinkToSend = newItem.mainLink || '';
+      
       const requestBody = isManga
         ? {
             mangaId: selectedAnime.id,
             chapterNumber: newItem.number,
             title: newItem.title || `Chapter ${newItem.number}`,
             session: newItem.session,
-            mainLink: newItem.mainLink || '', // ✅ Send empty string instead of undefined
+            mainLink: mainLinkToSend, // ✅ Always send mainLink (even if empty)
             downloadLinks: newItem.downloadLinks
           }
         : {
@@ -390,11 +412,12 @@ const EpisodesManager: React.FC = () => {
             episodeNumber: newItem.number,
             title: newItem.title || `Episode ${newItem.number}`,
             session: newItem.session,
-            mainLink: newItem.mainLink || '', // ✅ Send empty string instead of undefined
+            mainLink: mainLinkToSend, // ✅ Always send mainLink (even if empty)
             downloadLinks: newItem.downloadLinks
           };
 
       console.log('📤 Sending POST request with mainLink:', requestBody.mainLink);
+      console.log('📤 Full request body:', requestBody);
       
       const response = await axios.post(`${API_BASE}${endpoint}`, requestBody, {
         headers: {
@@ -407,6 +430,15 @@ const EpisodesManager: React.FC = () => {
       
       alert(`${isManga ? 'Chapter' : 'Episode'} added successfully!`);
       
+      // ✅ Transform and add to state
+      if (isManga) {
+        const transformedChapter = transformChapterData(response.data.episode || response.data);
+        setChapters(prev => [...prev, transformedChapter]);
+      } else {
+        const transformedEpisode = transformEpisodeData(response.data.episode || response.data);
+        setEpisodes(prev => [...prev, transformedEpisode]);
+      }
+      
       // Reset form with default name
       const nextNumber = getNextAvailableNumber();
       setNewItem({
@@ -417,16 +449,15 @@ const EpisodesManager: React.FC = () => {
         downloadLinks: [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }]
       });
       
-      fetchContent(selectedAnime.id);
     } catch (err: any) {
       console.error('❌ Add error:', err.response?.data || err.message);
-      alert(`Failed to add ${isManga ? 'chapter' : 'episode'}`);
+      alert(`Failed to add ${isManga ? 'chapter' : 'episode'}: ${err.response?.data?.error || err.message}`);
     } finally {
       setAddingItem(false);
     }
   };
 
-  // Update Item Function
+  // ✅ CRITICAL FIX: Enhanced Update Item Function
   const handleUpdateItem = async () => {
     if (!editingItemId || !selectedAnime) return;
 
@@ -437,13 +468,17 @@ const EpisodesManager: React.FC = () => {
 
     try {
       const endpoint = isManga ? '/chapters' : '/episodes';
+      
+      // ✅ CRITICAL: Ensure mainLink is always sent
+      const mainLinkToSend = editForm.mainLink || '';
+      
       const requestBody = isManga
         ? {
             mangaId: selectedAnime.id,
             chapterNumber: editForm.number,
             title: editForm.title || `Chapter ${editForm.number}`,
             session: editForm.session,
-            mainLink: editForm.mainLink || '', // ✅ Send empty string instead of undefined
+            mainLink: mainLinkToSend, // ✅ Always send mainLink (even if empty)
             downloadLinks: editForm.downloadLinks
           }
         : {
@@ -451,11 +486,12 @@ const EpisodesManager: React.FC = () => {
             episodeNumber: editForm.number,
             title: editForm.title || `Episode ${editForm.number}`,
             session: editForm.session,
-            mainLink: editForm.mainLink || '', // ✅ Send empty string instead of undefined
+            mainLink: mainLinkToSend, // ✅ Always send mainLink (even if empty)
             downloadLinks: editForm.downloadLinks
           };
 
       console.log('📤 Sending PATCH request with mainLink:', requestBody.mainLink);
+      console.log('📤 Full request body:', requestBody);
       
       const response = await axios.patch(`${API_BASE}${endpoint}`, requestBody, {
         headers: {
@@ -468,10 +504,13 @@ const EpisodesManager: React.FC = () => {
       
       alert(`${isManga ? 'Chapter' : 'Episode'} updated successfully!`);
       setEditingItemId(null);
+      
+      // ✅ Refresh content
       fetchContent(selectedAnime.id);
+      
     } catch (err: any) {
       console.error('❌ Update error:', err.response?.data || err.message);
-      alert(`Failed to update ${isManga ? 'chapter' : 'episode'}`);
+      alert(`Failed to update ${isManga ? 'chapter' : 'episode'}: ${err.response?.data?.error || err.message}`);
     }
   };
 
@@ -845,36 +884,8 @@ const EpisodesManager: React.FC = () => {
                 <tbody className="divide-y divide-slate-700">
                   {filteredItems.map((item: any, index: number) => {
                     const downloadLinks: DownloadLink[] = item.downloadLinks || [];
-                    
-                    // ✅ CRITICAL FIX: mainLink को सही तरीके से access करें
-                    let mainLink = '';
-                    
-                    // Method 1: Direct property check
-                    if (item.mainLink !== undefined && item.mainLink !== null) {
-                      mainLink = item.mainLink;
-                    } 
-                    // Method 2: Check if property exists
-                    else if (Object.prototype.hasOwnProperty.call(item, 'mainLink')) {
-                      mainLink = item.mainLink || '';
-                    }
-                    // Method 3: Type casting
-                    else {
-                      mainLink = (item as any).mainLink || '';
-                    }
-                    
+                    const mainLink = item.mainLink || '';
                     const isEditing = editingItemId === item._id;
-                    
-                    // ✅ EXTENDED DEBUG LOG
-                    console.log(`🔍 DEBUG Item ${index + 1}:`, {
-                      title: item.title,
-                      number: isManga ? item.chapterNumber : item.episodeNumber,
-                      mainLinkValue: mainLink,
-                      itemMainLinkProperty: item.mainLink,
-                      hasMainLinkProp: item.hasOwnProperty('mainLink'),
-                      mainLinkType: typeof item.mainLink,
-                      allProperties: Object.keys(item),
-                      fullItem: item // सावधान: बड़ा output हो सकता है
-                    });
                     
                     return (
                       <React.Fragment key={item._id}>
@@ -889,7 +900,6 @@ const EpisodesManager: React.FC = () => {
                           </td>
                           <td className="p-3 text-white">{item.title}</td>
                           <td className="p-3">
-                            {/* ✅ FIXED RENDERING - Better condition check */}
                             {mainLink && mainLink.trim() !== '' ? (
                               <div className="space-y-2">
                                 <div className="text-xs">
@@ -973,7 +983,7 @@ const EpisodesManager: React.FC = () => {
                                 }`}
                                 title={isEditing ? "Cancel Edit" : "Edit"}
                               >
-                                {isEditing ? '❌ Cancel Edit' : '✏️ Edit'}
+                                {isEditing ? '❌ Cancel Edit' : '🪶 Edit'}
                               </button>
                               {!isEditing && (
                                 <button
