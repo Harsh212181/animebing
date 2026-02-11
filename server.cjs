@@ -1,4 +1,4 @@
- // server.cjs - UPDATED FOR LIKE/DISLIKE SYSTEM FIX
+ // server.cjs - UPDATED WITH PRODUCTION-SAFE TRUST PROXY
 const express = require('express');
 const cors = require('cors');
 const connectDB = require('./db.cjs');
@@ -26,8 +26,10 @@ const linkSettingsRoutes = require('./routes/linkSettingsRoutes.cjs');
 
 const app = express();
 
-// ✅ CRITICAL FIX: SET TRUST PROXY FOR IP ADDRESS
-app.set('trust proxy', true);
+// ✅ CRITICAL FIX: TRUST PROXY ONLY IN PRODUCTION (safe for express-rate-limit)
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);  // trust first proxy
+} // else: no trust proxy in development → no ERR_ERL_PERMISSIVE_TRUST_PROXY
 
 app.use(cors());
 
@@ -908,7 +910,7 @@ app.get('/api/health', async (req, res) => {
         cors: 'Enabled',
         rateLimiting: 'Enabled',
         pollLimit: '10 options per poll',
-        trustProxy: 'Enabled',
+        trustProxy: process.env.NODE_ENV === 'production' ? 'Enabled (1 hop)' : 'Disabled',
         ipDetection: 'Automatic from request'
       },
       seoWarning: '✅ Search query URLs REMOVED from sitemap to avoid Google penalties'
@@ -1365,7 +1367,7 @@ app.get('/', (req, res) => {
           <h3>👍👎 Like/Dislike System <span class="feature-badge">FIXED</span>:</h3>
           <div class="link-status">
             <p>✅ IP address automatically detected</p>
-            <p>✅ Trust proxy enabled</p>
+            <p>✅ Trust proxy enabled in production only</p>
             <p>✅ Route order fixed</p>
             <p>✅ Real-time vote updates</p>
             <p>✅ Monthly/Weekly rankings</p>
@@ -1436,7 +1438,7 @@ app.get('/', (req, res) => {
           Link Control: Active (5 links globally controllable)<br>
           Poll System: ✅ Active (Users can vote on website)<br>
           Body Limit: 50MB (Fixed for poll system)<br>
-          Trust Proxy: ✅ Enabled (for IP detection)<br>
+          Trust Proxy: ${process.env.NODE_ENV === 'production' ? '✅ Enabled (1 hop)' : '❌ Disabled (development)'}<br>
           Sitemap Status: ✅ SEO Safe (No search query URLs)<br>
           Next Step: Submit to Google Search Console
         </p>
@@ -1474,7 +1476,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🔑 Pass: ${process.env.ADMIN_PASS || 'Anime2121818144'}`);
   console.log('===============================================');
   console.log('✅ LIKE/DISLIKE SYSTEM FIXES APPLIED:');
-  console.log('   1. ✅ Trust proxy enabled (app.set("trust proxy", true))');
+  console.log('   1. ✅ Trust proxy ONLY in production (conditional)');
   console.log('   2. ✅ Route order fixed in animeRoutes.cjs');
   console.log('   3. ✅ IP address automatically detected from request');
   console.log('   4. ✅ Vote status endpoint updated');
@@ -1496,6 +1498,6 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('   3. Like/Dislike buttons should now work');
   console.log('   4. Check /api/test-vote-system for testing');
   console.log('===============================================');
-  console.log('✅ SERVER READY - Like/Dislike system should now work!');
+  console.log(`🛡️  TRUST PROXY STATUS: ${process.env.NODE_ENV === 'production' ? 'ENABLED (1 hop)' : 'DISABLED (development safe)'}`);
   console.log('===============================================');
 });

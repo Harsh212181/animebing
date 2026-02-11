@@ -1,5 +1,4 @@
- // components/PollCard.tsx - Production Ready
-import React, { useEffect, useState } from 'react';
+ import React, { useEffect, useState } from 'react';
 
 /* =========================
    API CONFIGURATION - FIXED
@@ -107,16 +106,15 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
 
   /* =========================
      FETCH ACTIVE POLL
+     ✅ DIRECT API URL – NO PROD CONDITIONAL
   ========================= */
   const loadPoll = async () => {
     try {
       setLoading(true);
       setError(null);
       
-      // Use relative path in production, absolute in development
-      const endpoint = import.meta.env.PROD 
-        ? '/api/poll/active'
-        : `${API_BASE_URL}/poll/active`;
+      // ✅ ALWAYS uses full API_BASE_URL
+      const endpoint = `${API_BASE_URL}/poll/active`;
       
       console.log('🔄 Fetching from:', endpoint);
       
@@ -239,6 +237,7 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
 
   /* =========================
      VOTE HANDLER
+     ✅ DIRECT API URL – NO PROD CONDITIONAL
   ========================= */
   const handleVote = async (optionId: string) => {
     if (!poll || hasVoted || voting) return;
@@ -247,10 +246,8 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
     setSelectedOption(optionId);
 
     try {
-      // Use relative path in production, absolute in development
-      const endpoint = import.meta.env.PROD 
-        ? '/api/poll/vote'
-        : `${API_BASE_URL}/poll/vote`;
+      // ✅ ALWAYS uses full API_BASE_URL
+      const endpoint = `${API_BASE_URL}/poll/vote`;
       
       console.log('🗳️ Voting via:', endpoint);
       
