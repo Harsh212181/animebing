@@ -6,7 +6,9 @@ import React, { useEffect, useState } from 'react';
 ========================= */
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE ||
-  'http://localhost:3000/api';
+  (import.meta.env.PROD
+    ? 'https://animabing.onrender.com/api'
+    : 'http://localhost:3000/api');
 
 console.log("🌍 API BASE:", API_BASE_URL);
 
