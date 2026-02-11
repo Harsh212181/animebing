@@ -1,4 +1,4 @@
- // server.cjs - COMPLETE FIXED VERSION
+ // server.cjs - UPDATED FOR LIKE/DISLIKE SYSTEM FIX
 const express = require('express');
 const cors = require('cors');
 const connectDB = require('./db.cjs');
@@ -25,6 +25,9 @@ const pollRoutes = require('./routes/pollRoutes.cjs');
 const linkSettingsRoutes = require('./routes/linkSettingsRoutes.cjs');
 
 const app = express();
+
+// ✅ CRITICAL FIX: SET TRUST PROXY FOR IP ADDRESS
+app.set('trust proxy', true);
 
 app.use(cors());
 
@@ -547,35 +550,34 @@ app.get('/api/episodes/:animeId', async (req, res) => {
 });
 
 // ============================================
-// ✅ PROTECTED ADMIN ROUTES
+// ✅ PUBLIC ROUTES - UPDATED ORDER
 // ============================================
-app.use('/api/admin/protected', adminAuth, adminRoutes);
 
-// ============================================
-// ✅ CRITICAL FIX: LINK SETTINGS ROUTES 
-// ============================================
-// ✅ MOUNT LINK SETTINGS ROUTES AT THE CORRECT PATH
+// ✅ LINK SETTINGS ROUTES
 app.use('/api/link-settings', linkSettingsRoutes);
 console.log('✅ Link Settings Routes mounted at /api/link-settings');
 
-// ============================================
-// ✅ PUBLIC ROUTES - CORRECTED ORDER
-// ============================================
-
-// ✅ SOCIAL MEDIA ROUTES MUST COME BEFORE ADMIN ROUTES FOR /admin paths
+// ✅ SOCIAL MEDIA ROUTES
 app.use('/api/social', socialRoutes);
 
-// ✅ POLL ROUTES ADDED HERE
+// ✅ POLL ROUTES
 app.use('/api/poll', pollRoutes);
 console.log('✅ Poll Routes mounted at /api/poll');
 
-// Other routes
+// ✅ ANIME ROUTES (MUST BE BEFORE ADMIN PROTECTED ROUTES)
 app.use('/api/anime', animeRoutes);
+
+// ✅ OTHER PUBLIC ROUTES
 app.use('/api/episodes', episodeRoutes);
 app.use('/api/chapters', chapterRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/app-downloads', appDownloadRoutes);
 app.use('/api', contactRoutes);
+
+// ============================================
+// ✅ PROTECTED ADMIN ROUTES
+// ============================================
+app.use('/api/admin/protected', adminAuth, adminRoutes);
 
 // ============================================
 // ✅ DEBUG ROUTES (KEEP FOR TROUBLESHOOTING)
@@ -743,20 +745,121 @@ app.get('/api/debug/polls', async (req, res) => {
   }
 });
 
+// ✅ NEW: LIKE/DISLIKE SYSTEM DEBUG ROUTE
+app.get('/api/debug/vote-system', async (req, res) => {
+  try {
+    const Anime = require('./models/Anime.cjs');
+    
+    const totalAnime = await Anime.countDocuments();
+    const animeWithVotes = await Anime.find({ 
+      $or: [
+        { likes: { $gt: 0 } },
+        { dislikes: { $gt: 0 } }
+      ]
+    }).select('title likes dislikes monthlyLikes weeklyLikes totalVotes');
+    
+    const totalLikes = animeWithVotes.reduce((sum, anime) => sum + (anime.likes || 0), 0);
+    const totalDislikes = animeWithVotes.reduce((sum, anime) => sum + (anime.dislikes || 0), 0);
+    
+    console.log('👍👎 LIKE/DISLIKE SYSTEM DEBUG:');
+    console.log('Total Anime:', totalAnime);
+    console.log('Anime with votes:', animeWithVotes.length);
+    console.log('Total Likes:', totalLikes);
+    console.log('Total Dislikes:', totalDislikes);
+    
+    // Sample top 5 anime by likes
+    const topAnime = await Anime.find()
+      .select('title likes dislikes monthlyLikes weeklyLikes')
+      .sort({ likes: -1 })
+      .limit(5)
+      .lean();
+    
+    res.json({
+      success: true,
+      stats: {
+        totalAnime,
+        animeWithVotes: animeWithVotes.length,
+        totalLikes,
+        totalDislikes,
+        totalVotes: totalLikes + totalDislikes
+      },
+      endpoints: {
+        getVoteStatus: 'GET /api/anime/:id/vote-status',
+        submitVote: 'POST /api/anime/:id/vote',
+        animeStatistics: 'GET /api/anime/:id/statistics',
+        top100: 'GET /api/anime/top100'
+      },
+      sampleTopAnime: topAnime
+    });
+  } catch (error) {
+    console.error('Vote system debug error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
+
+// ✅ TEST LIKE/DISLIKE API
+app.get('/api/test-vote-system', async (req, res) => {
+  try {
+    const Anime = require('./models/Anime.cjs');
+    
+    // Get first anime to test
+    const testAnime = await Anime.findOne().select('_id title slug');
+    
+    if (!testAnime) {
+      return res.json({
+        success: false,
+        message: 'No anime found to test'
+      });
+    }
+    
+    const clientIP = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    
+    res.json({
+      success: true,
+      message: 'Like/Dislike System Test Endpoint',
+      testAnime: {
+        id: testAnime._id,
+        title: testAnime.title,
+        slug: testAnime.slug
+      },
+      clientIP: clientIP,
+      testEndpoints: {
+        getVoteStatus: `GET /api/anime/${testAnime._id}/vote-status`,
+        submitLike: `POST /api/anime/${testAnime._id}/vote - Body: {"voteType": "like"}`,
+        submitDislike: `POST /api/anime/${testAnime._id}/vote - Body: {"voteType": "dislike"}`,
+        getStatistics: `GET /api/anime/${testAnime._id}/statistics`
+      },
+      note: 'IP address is automatically captured from request headers'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      stack: error.stack
+    });
+  }
+});
+
 // ✅ HEALTH CHECK WITH SEO INFO
 app.get('/api/health', async (req, res) => {
   try {
     const LinkSettings = require('./models/LinkSettings.cjs');
     const Poll = require('./models/Poll.cjs');
+    const Anime = require('./models/Anime.cjs');
     
     const settings = await LinkSettings.getSettings();
     const activeLinks = settings.getActiveLinks();
     const activePolls = await Poll.countDocuments({ isActive: true });
     const totalPolls = await Poll.countDocuments();
+    const totalAnime = await Anime.countDocuments();
+    const animeWithVotes = await Anime.countDocuments({ $or: [{ likes: { $gt: 0 } }, { dislikes: { $gt: 0 } }] });
     
     res.json({ 
       status: 'OK', 
-      message: 'Animabing Server Running - SEO OPTIMIZED + POLL SYSTEM',
+      message: 'Animabing Server Running - SEO OPTIMIZED + POLL SYSTEM + LIKE/DISLIKE',
       timestamp: new Date().toISOString(),
       version: '1.0.0',
       linkSettings: {
@@ -780,6 +883,16 @@ app.get('/api/health', async (req, res) => {
           allPolls: 'GET /api/poll/admin/all (admin)'
         }
       },
+      likeDislikeSystem: {
+        totalAnime: totalAnime,
+        animeWithVotes: animeWithVotes,
+        endpoints: {
+          getVoteStatus: 'GET /api/anime/:id/vote-status',
+          submitVote: 'POST /api/anime/:id/vote',
+          getStatistics: 'GET /api/anime/:id/statistics',
+          top100: 'GET /api/anime/top100'
+        }
+      },
       seoFeatures: {
         sitemap: 'https://animebing.in/sitemap.xml',
         robots: 'https://animebing.in/robots.txt',
@@ -787,13 +900,16 @@ app.get('/api/health', async (req, res) => {
         dynamicUrls: 'Enabled',
         structuredData: 'Enabled',
         linkControl: 'Enabled',
-        pollSystem: 'Enabled'
+        pollSystem: 'Enabled',
+        likeDislike: 'Enabled'
       },
       serverConfig: {
         bodyLimit: '50MB',
         cors: 'Enabled',
         rateLimiting: 'Enabled',
-        pollLimit: '10 options per poll'
+        pollLimit: '10 options per poll',
+        trustProxy: 'Enabled',
+        ipDetection: 'Automatic from request'
       },
       seoWarning: '✅ Search query URLs REMOVED from sitemap to avoid Google penalties'
     });
@@ -1228,7 +1344,7 @@ app.get('/', (req, res) => {
     </head>
     <body>
       <div class="container">
-        <h1>AnimeBing Server <span class="seo-badge">SEO OPTIMIZED + LINK CONTROL + POLL SYSTEM</span></h1>
+        <h1>AnimeBing Server <span class="seo-badge">SEO OPTIMIZED + LINK CONTROL + POLL SYSTEM + LIKE/DISLIKE</span></h1>
         <p class="status">✅ Backend API is running correctly - SEO Ready for Google</p>
         <p>📺 Frontend: <a href="https://animebing.in" target="_blank">AnimeBing.in</a></p>
         <p>⚙️ Admin Access: Press Ctrl+Shift+Alt on the frontend</p>
@@ -1242,6 +1358,18 @@ app.get('/', (req, res) => {
             <p>Link 4: <span class="active">ON</span></p>
             <p>Link 5: <span class="active">ON</span></p>
             <p><small>Control these links from Admin Dashboard → Global Link Settings</small></p>
+          </div>
+        </div>
+        
+        <div class="section">
+          <h3>👍👎 Like/Dislike System <span class="feature-badge">FIXED</span>:</h3>
+          <div class="link-status">
+            <p>✅ IP address automatically detected</p>
+            <p>✅ Trust proxy enabled</p>
+            <p>✅ Route order fixed</p>
+            <p>✅ Real-time vote updates</p>
+            <p>✅ Monthly/Weekly rankings</p>
+            <p><small>Users can now like/dislike anime on detail pages</small></p>
           </div>
         </div>
         
@@ -1269,10 +1397,11 @@ app.get('/', (req, res) => {
             <li>Open Graph & Twitter Cards</li>
             <li>Admin SEO Control Panel</li>
             <li>Global Download Link Control ✅</li>
+            <li>Like/Dislike System ✅ <span class="feature-badge">FIXED</span></li>
             <li>Poll/Voting System ✅ <span class="feature-badge">NEW</span></li>
           </ul>
           <p style="color: #4CAF50; margin-top: 10px; font-weight: bold;">
-            ✅ SEO FIX APPLIED: Search query URLs removed from sitemap to avoid Google penalties
+            ✅ LIKE/DISLIKE SYSTEM FIXED: IP detection, route order, and trust proxy configured
           </p>
         </div>
         
@@ -1294,18 +1423,20 @@ app.get('/', (req, res) => {
           <a href="/robots.txt" class="btn" target="_blank">View Robots.txt</a>
           <a href="/api/anime/featured" class="btn">Check Featured Anime</a>
           <a href="/api/debug/link-settings" class="btn">Check Link Settings</a>
-          <a href="/api/test-link-settings" class="btn">Test Link Settings API</a>
+          <a href="/api/test-vote-system" class="btn">Test Vote System</a>
+          <a href="/api/debug/vote-system" class="btn">Debug Vote System</a>
           <a href="/api/poll/active" class="btn">Check Active Poll</a>
           <a href="/api/test-poll-system" class="btn">Test Poll System</a>
-          <a href="/api/debug/polls" class="btn">Debug Polls</a>
         </div>
         
         <p style="margin-top: 2rem; color: #9CA3AF; font-size: 0.9rem;">
           Server Time: ${new Date().toLocaleString()}<br>
           SEO Status: Complete - Ready for Google Indexing<br>
+          Like/Dislike: ✅ Fixed and Working<br>
           Link Control: Active (5 links globally controllable)<br>
           Poll System: ✅ Active (Users can vote on website)<br>
           Body Limit: 50MB (Fixed for poll system)<br>
+          Trust Proxy: ✅ Enabled (for IP detection)<br>
           Sitemap Status: ✅ SEO Safe (No search query URLs)<br>
           Next Step: Submit to Google Search Console
         </p>
@@ -1342,33 +1473,29 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🔧 Admin: ${process.env.ADMIN_USER || 'Hellobrother'}`);
   console.log(`🔑 Pass: ${process.env.ADMIN_PASS || 'Anime2121818144'}`);
   console.log('===============================================');
-  console.log('✅ FIXES APPLIED:');
-  console.log('   1. ✅ Body limit increased to 50MB');
-  console.log('   2. ✅ Poll system fully integrated');
-  console.log('   3. ✅ Image URL uploads now work');
-  console.log('   4. ✅ Base64 image issues resolved');
+  console.log('✅ LIKE/DISLIKE SYSTEM FIXES APPLIED:');
+  console.log('   1. ✅ Trust proxy enabled (app.set("trust proxy", true))');
+  console.log('   2. ✅ Route order fixed in animeRoutes.cjs');
+  console.log('   3. ✅ IP address automatically detected from request');
+  console.log('   4. ✅ Vote status endpoint updated');
+  console.log('   5. ✅ Featured route comes before dynamic routes');
   console.log('===============================================');
-  console.log('📁 API ENDPOINTS:');
-  console.log('   - GET /api/poll/active - Get active poll');
-  console.log('   - POST /api/poll/vote - Submit vote');
-  console.log('   - POST /api/poll/admin/create - Create poll (admin)');
-  console.log('   - GET /api/poll/admin/all - All polls (admin)');
-  console.log('   - PUT /api/poll/admin/{id}/toggle - Toggle poll (admin)');
-  console.log('   - DELETE /api/poll/admin/{id} - Delete poll (admin)');
+  console.log('📁 API ENDPOINTS FOR LIKE/DISLIKE:');
+  console.log('   - GET /api/anime/:id/vote-status - Check user vote');
+  console.log('   - POST /api/anime/:id/vote - Vote (send voteType in body)');
+  console.log('   - GET /api/anime/:id/statistics - Anime stats');
+  console.log('   - GET /api/anime/top100 - Top 100 anime by likes');
   console.log('===============================================');
-  console.log('🔗 SEO FEATURES:');
-  console.log('   - Sitemap: /sitemap.xml');
-  console.log('   - Robots.txt: /robots.txt');
-  console.log('   - RSS Feed: /rss.xml');
-  console.log('   - SEO Safe: No search query URLs in sitemap');
+  console.log('🔍 DEBUG ENDPOINTS:');
+  console.log('   - GET /api/debug/vote-system - Debug vote system');
+  console.log('   - GET /api/test-vote-system - Test vote system');
   console.log('===============================================');
   console.log('💡 NEXT STEPS:');
   console.log('   1. Go to frontend (http://localhost:5173)');
-  console.log('   2. Press Ctrl+Shift+Alt for admin button');
-  console.log('   3. Login with admin credentials');
-  console.log('   4. Go to Poll Manager');
-  console.log('   5. Create poll with image URLs');
+  console.log('   2. Navigate to any anime detail page');
+  console.log('   3. Like/Dislike buttons should now work');
+  console.log('   4. Check /api/test-vote-system for testing');
   console.log('===============================================');
-  console.log('✅ SERVER READY - Poll system will now work!');
+  console.log('✅ SERVER READY - Like/Dislike system should now work!');
   console.log('===============================================');
 });

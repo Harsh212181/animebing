@@ -1,4 +1,4 @@
- // components/Header.tsx - UPDATED WITH SOCIAL LINKS IN MOBILE MENU
+ // components/Header.tsx - UPDATED WITH TOP 100 LINK & SOCIAL LINKS IN MOBILE MENU
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { FilterType, ContentType } from '../src/types';
 import { SearchIcon } from './icons/SearchIcon';
@@ -9,7 +9,7 @@ import axios from 'axios';
 interface HeaderProps {
   onSearchChange: (query: string) => void;
   searchQuery: string;
-  onNavigate: (destination: 'home' | 'list') => void;
+  onNavigate: (destination: 'home' | 'list' | 'top100') => void;
   onFilterAndNavigateHome: (filter: 'Hindi Dub' | 'Hindi Sub' | 'English Sub') => void;
   onContentTypeNavigate: (contentType: ContentType) => void;
 }
@@ -151,15 +151,11 @@ const Header: React.FC<HeaderProps> = ({
     }
   };
 
-  const handleNavClick = (destination: 'home' | 'list') => {
+  const handleNavClick = (destination: 'home' | 'list' | 'top100') => {
     if (isNavigating) return;
     
     setIsNavigating(true);
-    if (destination === 'list') {
-      onNavigate('list');
-    } else {
-      onNavigate('home');
-    }
+    onNavigate(destination);
     setIsMenuOpen(false);
     setIsMobileSearchOpen(false);
     setTimeout(() => setIsNavigating(false), 800);
@@ -368,6 +364,30 @@ const Header: React.FC<HeaderProps> = ({
           box-shadow: 0 0 10px rgba(115, 245, 138, 0.4);
         }
         
+        /* Top 100 Button - Gold gradient for ranking */
+        .top100-btn {
+          border: 2px solid rgba(255, 215, 0, 0.6);
+          background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+          color: #000;
+          font-weight: bold;
+          transition: all 0.3s ease;
+        }
+        
+        .top100-btn:hover {
+          border: 2px solid #FFD700;
+          box-shadow: 
+            0 0 15px rgba(255, 215, 0, 0.8),
+            0 0 25px rgba(255, 215, 0, 0.4);
+          transform: translateY(-2px);
+        }
+        
+        .top100-btn:active {
+          transform: translateY(0);
+          box-shadow: 
+            0 0 20px rgba(255, 215, 0, 1),
+            0 0 30px rgba(255, 215, 0, 0.6);
+        }
+        
         /* Anime List Button - FIXED: No continuous glow */
         .anime-list-btn {
           border: 2px solid rgba(115, 245, 138, 0.5);
@@ -530,6 +550,15 @@ const Header: React.FC<HeaderProps> = ({
                   disabled={isNavigating}
                 >
                   Manga
+                </button>
+                
+                {/* ✅ TOP 100 BUTTON - Gold color for ranking */}
+                <button 
+                  onClick={() => handleNavClick('top100')} 
+                  className="px-4 py-1.5 rounded-md top100-btn transition-all duration-300 font-bold text-sm disabled:opacity-50"
+                  disabled={isNavigating}
+                >
+                  Top 100
                 </button>
                 
                 {/* Anime List Button */}
@@ -741,8 +770,20 @@ const Header: React.FC<HeaderProps> = ({
                   </div>
                 </div>
                 
+                {/* ✅ TOP 100 BUTTON */}
+                <div className="pt-2">
+                  <button 
+                    onClick={() => handleNavClick('top100')} 
+                    className="w-full px-4 py-3 rounded-lg top100-btn text-black transition-all duration-300 font-bold disabled:opacity-50 flex items-center justify-center space-x-2 hover-glow-green"
+                    disabled={isNavigating}
+                  >
+                    <span>🔥 Top 100</span>
+                    <span className="text-lg">🏆</span>
+                  </button>
+                </div>
+                
                 {/* Anime List Button */}
-                <div className="pt-4 border-t border-green-500/30">
+                <div className="pt-2">
                   <button 
                     onClick={() => handleNavClick('list')} 
                     className="w-full px-4 py-3 rounded-lg anime-list-btn text-white transition-all duration-300 font-semibold disabled:opacity-50 flex items-center justify-center space-x-2 hover-glow-green"

@@ -1,11 +1,6 @@
- // App.tsx - MAIN CONTAINER GREEN BORDER REMOVED FOR MORE SPACE
-// ✅ ADS REMOVED + FIXED SEARCH RELOAD ISSUE + REMOVED SECRET CODE CONSOLE LOGS + GA4 ANALYTICS FIX
-// ✅ ID + SLUG SUPPORT ADDED + ✅ FIXED BORDER MARGIN (0.1) + ✅ FIXED SCROLL TO TOP ON PAGE CHANGE
-// ✅ GREEN BORDER REMOVED FROM MAIN CONTAINER FOR MORE ANIME CARD SPACE
-// ✅ 404 ERROR PAGE ADDED FOR NON-EXISTENT ROUTES
-
+ // App.tsx - UPDATED WITH TOP 100 ROUTE
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import type { Anime, FilterType, ContentType, ContentTypeFilter } from './src/types';
 import Header from './components/Header';
 import Footer from './components/Footer';
@@ -24,6 +19,9 @@ import AnalyticsTracker from './src/components/AnalyticsTracker'; // ✅ GA4 ANA
 
 // ✅ NEW IMPORT: AnimeDetailWrapper
 import AnimeDetailWrapper from './components/AnimeDetailWrapper';
+
+// ✅ NEW IMPORT: Top100Page
+import Top100Page from './components/Top100Page';
 
 // ✅ 404 ERROR PAGE COMPONENT
 const ErrorPage: React.FC = () => {
@@ -83,7 +81,7 @@ const ErrorPage: React.FC = () => {
   );
 };
 
-type ViewType = 'home' | 'list' | 'detail';
+type ViewType = 'home' | 'list' | 'detail' | 'top100';
 type AdminViewType = 'login' | 'dashboard';
 
 // ✅ SCROLL TO TOP COMPONENT
@@ -345,6 +343,10 @@ const MainApp: React.FC = () => {
     navigate(-1);
   };
 
+  const handleBackToHome = () => {
+    navigate('/');
+  };
+
   // ✅ FIXED: handleSearchChange WITHOUT PAGE RELOAD
   const handleSearchChange = useCallback((query: string) => {
     setSearchQuery(query);
@@ -379,12 +381,15 @@ const MainApp: React.FC = () => {
     setFilter(newFilter);
   };
 
-  const handleNavigate = (destination: 'home' | 'list') => {
+  const handleNavigate = (destination: 'home' | 'list' | 'top100') => {
     if (destination === 'list') {
       navigate('/anime');
+    } else if (destination === 'top100') {
+      navigate('/top-100');
     } else {
       navigate('/');
     }
+    
     if (destination === 'home') {
       setFilter('All');
       setContentType('All');
@@ -412,6 +417,7 @@ const MainApp: React.FC = () => {
           .glow-green-border {
             border: 2px solid rgba(115, 245, 138, 0.5);
             box-shadow: 0 0 20px rgba(115, 245, 138, 0.3);
+            margin: 0.1rem !important;
           }
         `}</style>
         
@@ -486,7 +492,7 @@ const MainApp: React.FC = () => {
       
       {/* ✅ ScrollToTop component wrap karein */}
       <ScrollToTop>
-        {/* ✅ Header ko sabhi 5 props dein */}
+        {/* ✅ Header ko sabhi 5 props dein - Updated with top100 navigation */}
         <Header 
           onSearchChange={handleSearchChange} 
           searchQuery={searchQuery}
@@ -530,6 +536,16 @@ const MainApp: React.FC = () => {
               <Route path="/detail/:idOrSlug" element={
                 <div className="rounded-lg overflow-hidden">
                   <AnimeDetailWrapper />
+                </div>
+              } />
+              
+              {/* ✅ NEW: Top 100 Rankings Route */}
+              <Route path="/top-100" element={
+                <div className="rounded-lg overflow-hidden">
+                  <Top100Page 
+                    onAnimeSelect={handleAnimeSelect}
+                    onBack={handleBackToHome}
+                  />
                 </div>
               } />
               

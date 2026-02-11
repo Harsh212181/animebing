@@ -1,4 +1,4 @@
- // services/animeService.ts - UPDATED WITH ID + SLUG SUPPORT
+ // services/animeService.ts - UPDATED WITH TOP 100 FUNCTION & LIKE/DISLIKE SUPPORT
 import type { Anime, Episode, Chapter } from '../src/types';
 
 // ✅ FIX: Local development के लिए PORT 5173 है, server PORT 3000 पर है
@@ -7,6 +7,291 @@ const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000/api';
 // ✅ CACHE IMPLEMENTATION
 const cache = new Map();
 const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
+
+// ================== TOP 100 ANIME FUNCTIONS ==================
+
+/**
+ * ✅ NEW: GET TOP 100 ANIME
+ * Fetches top ranked anime based on likes
+ */
+export const getTopAnime = async (options: {
+  type?: 'all-time' | 'monthly' | 'weekly';
+  contentType?: 'all' | 'Anime' | 'Movie' | 'Manga' | null;
+  limit?: number;
+  page?: number;
+}): Promise<{
+  success: boolean;
+  data: Anime[];
+  pagination?: {
+    current: number;
+    totalPages: number;
+    hasMore: boolean;
+    totalItems: number;
+  };
+  ranking?: {
+    type: string;
+    contentType: string;
+    period: string;
+  };
+  error?: string;
+}> => {
+  const { 
+    type = 'all-time', 
+    contentType = 'all', 
+    limit = 100, 
+    page = 1 
+  } = options;
+
+  const cacheKey = `top-anime-${type}-${contentType}-${limit}-${page}`;
+
+  // Check cache first
+  const cached = cache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    console.log('🎯 Cache hit for top anime:', cacheKey);
+    return cached.data;
+  }
+
+  try {
+    console.log('📡 Fetching top anime from API...', { type, contentType, limit, page });
+
+    // Build URL with query parameters
+    const params = new URLSearchParams({
+      type,
+      contentType,
+      limit: limit.toString(),
+      page: page.toString()
+    });
+
+    const url = `${API_BASE}/anime/top100?${params.toString()}`;
+    console.log('🌐 Fetching from:', url);
+
+    const response = await fetch(url, {
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    if (result.success && Array.isArray(result.data)) {
+      const transformedData = result.data.map((anime: any) => ({
+        ...anime,
+        id: anime._id || anime.id,
+        slug: anime.slug,
+        likes: anime.likes || 0,
+        dislikes: anime.dislikes || 0,
+        monthlyLikes: anime.monthlyLikes || 0,
+        weeklyLikes: anime.weeklyLikes || 0
+      }));
+
+      const responseData = {
+        ...result,
+        data: transformedData
+      };
+
+      // Store in cache
+      cache.set(cacheKey, {
+        data: responseData,
+        timestamp: Date.now()
+      });
+
+      console.log(`✅ Loaded ${transformedData.length} top anime`);
+      return responseData;
+    }
+
+    // Return empty result
+    return {
+      success: false,
+      data: [],
+      error: 'No data returned from API'
+    };
+
+  } catch (error: any) {
+    console.error('❌ Error in getTopAnime:', error);
+    return {
+      success: false,
+      data: [],
+      error: error.message || 'Failed to fetch top anime'
+    };
+  }
+};
+
+/**
+ * ✅ NEW: SUBMIT LIKE/DISLIKE VOTE
+ */
+export const submitVote = async (
+  animeId: string, 
+  voteType: 'like' | 'dislike', 
+  ipAddress: string
+): Promise<{
+  success: boolean;
+  message?: string;
+  data?: {
+    likes: number;
+    dislikes: number;
+    totalVotes: number;
+    userVote: string | null;
+    hasVoted: boolean;
+    monthlyLikes?: number;
+    weeklyLikes?: number;
+  };
+  error?: string;
+}> => {
+  try {
+    console.log('📡 Submitting vote:', { animeId, voteType, ipAddress });
+
+    const response = await fetch(`${API_BASE}/anime/${animeId}/vote`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ voteType, ipAddress })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    // Clear cache for this anime to get fresh data
+    const keysToDelete: string[] = [];
+    cache.forEach((value, key) => {
+      if (key.includes(`anime-${animeId}`) || key.includes('top-anime')) {
+        keysToDelete.push(key);
+      }
+    });
+    keysToDelete.forEach(key => cache.delete(key));
+
+    console.log('✅ Vote submitted successfully');
+    return result;
+
+  } catch (error: any) {
+    console.error('❌ Error submitting vote:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to submit vote'
+    };
+  }
+};
+
+/**
+ * ✅ NEW: GET USER VOTE STATUS
+ */
+export const getUserVoteStatus = async (
+  animeId: string, 
+  ipAddress: string
+): Promise<{
+  success: boolean;
+  data?: {
+    hasVoted: boolean;
+    userVote: 'like' | 'dislike' | null;
+    likes: number;
+    dislikes: number;
+    totalVotes: number;
+  };
+  error?: string;
+}> => {
+  try {
+    const cacheKey = `vote-status-${animeId}-${ipAddress}`;
+    
+    // Check cache first
+    const cached = cache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      return cached.data;
+    }
+
+    const response = await fetch(`${API_BASE}/anime/${animeId}/vote-status/${ipAddress}`);
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    // Store in cache
+    cache.set(cacheKey, {
+      data: result,
+      timestamp: Date.now()
+    });
+
+    return result;
+
+  } catch (error: any) {
+    console.error('❌ Error getting vote status:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to get vote status'
+    };
+  }
+};
+
+/**
+ * ✅ NEW: GET ANIME STATISTICS
+ */
+export const getAnimeStatistics = async (
+  animeId: string
+): Promise<{
+  success: boolean;
+  data?: {
+    likes: number;
+    dislikes: number;
+    monthlyLikes: number;
+    weeklyLikes: number;
+    totalVotes: number;
+    likePercentage: string;
+    dislikePercentage: string;
+    recentVotes: {
+      last30Days: number;
+      likes: number;
+      dislikes: number;
+    };
+    ranking: {
+      allTime: number;
+      monthly: number;
+      weekly: number;
+    };
+  };
+  error?: string;
+}> => {
+  try {
+    const cacheKey = `anime-stats-${animeId}`;
+    
+    // Check cache first
+    const cached = cache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      return cached.data;
+    }
+
+    const response = await fetch(`${API_BASE}/anime/${animeId}/statistics`);
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    // Store in cache
+    cache.set(cacheKey, {
+      data: result,
+      timestamp: Date.now()
+    });
+
+    return result;
+
+  } catch (error: any) {
+    console.error('❌ Error getting anime statistics:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to get anime statistics'
+    };
+  }
+};
 
 // ================== CORE FUNCTIONS ==================
 
@@ -49,7 +334,9 @@ export const getAnimeByIdOrSlug = async (idOrSlug: string, fields?: string): Pro
       const animeData = {
         ...result.data,
         id: result.data._id || result.data.id,
-        slug: result.data.slug || idOrSlug // Ensure slug is preserved
+        slug: result.data.slug || idOrSlug, // Ensure slug is preserved
+        likes: result.data.likes || 0,
+        dislikes: result.data.dislikes || 0
       };
       
       // Store in cache
@@ -114,7 +401,9 @@ export const getFeaturedAnime = async (): Promise<Anime[]> => {
         ...anime,
         id: anime._id || anime.id,
         lastUpdated: anime.updatedAt ? new Date(anime.updatedAt).getTime() : Date.now(),
-        slug: anime.slug // Ensure slug is included
+        slug: anime.slug, // Ensure slug is included
+        likes: anime.likes || 0,
+        dislikes: anime.dislikes || 0
       }));
     }
 
@@ -168,7 +457,9 @@ export const getAnimePaginated = async (page: number = 1, limit: number = 24, fi
         ...anime,
         id: anime._id || anime.id,
         lastUpdated: anime.updatedAt ? new Date(anime.updatedAt).getTime() : Date.now(),
-        slug: anime.slug // Ensure slug is included
+        slug: anime.slug, // Ensure slug is included
+        likes: anime.likes || 0,
+        dislikes: anime.dislikes || 0
       }));
     }
 
@@ -217,7 +508,9 @@ export const searchAnime = async (query: string, fields?: string): Promise<Anime
         ...anime,
         id: anime._id || anime.id,
         lastUpdated: anime.updatedAt ? new Date(anime.updatedAt).getTime() : Date.now(),
-        slug: anime.slug // Ensure slug is included
+        slug: anime.slug, // Ensure slug is included
+        likes: anime.likes || 0,
+        dislikes: anime.dislikes || 0
       }));
     }
 
@@ -615,6 +908,22 @@ export const clearChapterCache = (mangaId: string) => {
   console.log(`🗑️ Cleared ${keysToDelete.length} chapter cache entries for manga ${mangaId}`);
 };
 
+/**
+ * ✅ ADDED: Clear top anime cache
+ */
+export const clearTopAnimeCache = () => {
+  const keysToDelete: string[] = [];
+  
+  cache.forEach((value, key) => {
+    if (key.includes('top-anime')) {
+      keysToDelete.push(key);
+    }
+  });
+  
+  keysToDelete.forEach(key => cache.delete(key));
+  console.log(`🗑️ Cleared ${keysToDelete.length} top anime cache entries`);
+};
+
 // ================== EXPORT TYPES ==================
 
 /**
@@ -639,4 +948,24 @@ export interface PaginatedResponse<T> {
     hasMore: boolean;
     totalItems: number;
   };
+}
+
+/**
+ * ✅ Type for top anime response
+ */
+export interface TopAnimeResponse {
+  success: boolean;
+  data: Anime[];
+  pagination?: {
+    current: number;
+    totalPages: number;
+    hasMore: boolean;
+    totalItems: number;
+  };
+  ranking?: {
+    type: string;
+    contentType: string;
+    period: string;
+  };
+  error?: string;
 }

@@ -1,4 +1,4 @@
- // components/AnimeDetailPage.tsx - UPDATED WITH GLOBAL LINK SETTINGS
+ // components/AnimeDetailPage.tsx - UPDATED WITH LIKE/DISLIKE & SHARE SYSTEM
 import React, { useState, useEffect, useCallback } from 'react';
 import type { Anime, Episode, Chapter } from '../src/types';
 import { DownloadIcon } from './icons/DownloadIcon';
@@ -13,6 +13,44 @@ import {
   getAnimePaginated 
 } from '../services/animeService';
 import SEO from '../src/components/SEO';
+
+// ✅ ADDED: ShareIcon import
+import ShareIcon from './icons/ShareIcon';
+
+// ✅ ADDED: Simple SVG Icons for Like/Dislike (Alternative to Heroicons)
+const HeartIcon = ({ className = "w-5 h-5", filled = false }: { className?: string, filled?: boolean }) => (
+  <svg 
+    className={className} 
+    fill={filled ? "currentColor" : "none"} 
+    stroke="currentColor" 
+    viewBox="0 0 24 24" 
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <path 
+      strokeLinecap="round" 
+      strokeLinejoin="round" 
+      strokeWidth="2" 
+      d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" 
+    />
+  </svg>
+);
+
+const HandThumbDownIcon = ({ className = "w-5 h-5", filled = false }: { className?: string, filled?: boolean }) => (
+  <svg 
+    className={className} 
+    fill={filled ? "currentColor" : "none"} 
+    stroke="currentColor" 
+    viewBox="0 0 24 24" 
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <path 
+      strokeLinecap="round" 
+      strokeLinejoin="round" 
+      strokeWidth="2" 
+      d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.736 3h4.018a2 2 0 01.485.06l3.76.94m-7 10v5a2 2 0 002 2h.096c.5 0 .905-.405.905-.904 0-.715.211-1.413.608-2.008L17 13V4m-7 10h2m5-10h2a2 2 0 012 2v6a2 2 0 01-2 2h-2.5" 
+    />
+  </svg>
+);
 
 // ✅ ADD DownloadLink interface locally since it might not be in types.ts
 interface DownloadLink {
@@ -40,8 +78,11 @@ interface Props {
   isLoading?: boolean;
 }
 
-// ✅ Use environment variable for API base
-const API_BASE = import.meta.env.VITE_API_BASE || 'https://animabing.onrender.com/api';
+// ✅ UPDATED: Use dynamic API base for local development and production
+const API_BASE =
+  window.location.hostname === 'localhost'
+    ? 'http://localhost:3000/api'
+    : 'https://animabing.onrender.com/api';
 
 // ✅ SHUFFLE ARRAY FUNCTION - For randomizing content
 const shuffleArray = <T,>(array: T[]): T[] => {
@@ -177,6 +218,8 @@ const generateAnimeKeywords = (anime: Anime): string => {
 const generateAnimeStructuredData = (anime: Anime) => {
   if (!anime) return null;
   
+  const totalVotes = (anime.likes || 0) + (anime.dislikes || 0);
+  
   return {
     "@context": "https://schema.org",
     "@type": anime.contentType === 'Movie' ? "Movie" : "TVSeries",
@@ -185,6 +228,11 @@ const generateAnimeStructuredData = (anime: Anime) => {
     "image": anime.thumbnail,
     "genre": anime.genreList || ["Anime"],
     "dateCreated": anime.releaseYear ? `${anime.releaseYear}` : undefined,
+    "aggregateRating": {
+      "@type": "AggregateRating",
+      "ratingValue": anime.rating || 0,
+      "ratingCount": totalVotes
+    },
     "potentialAction": {
       "@type": "WatchAction",
       "target": window.location.href
@@ -219,6 +267,15 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
   const [similarContent, setSimilarContent] = useState<Anime[]>([]);
   const [similarLoading, setSimilarLoading] = useState(false);
 
+  // ✅ STATE FOR LIKE/DISLIKE SYSTEM
+  const [likes, setLikes] = useState<number>(0);
+  const [dislikes, setDislikes] = useState<number>(0);
+  const [userVote, setUserVote] = useState<'like' | 'dislike' | null>(null);
+  const [isVoting, setIsVoting] = useState(false);
+
+  // ✅ STATE FOR SHARE FUNCTIONALITY
+  const [isSharing, setIsSharing] = useState(false);
+
   // Check content types
   const isManga = anime?.contentType === 'Manga';
   const isMovie = anime?.contentType === 'Movie';
@@ -240,6 +297,129 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     if (isManga) return 'Episodes will be added soon!';
     if (isMovie) return 'Movie will be added soon!';
     return 'Episodes will be added soon!';
+  };
+
+  // ✅ FETCH LIKE/DISLIKE DATA - UPDATED TO NOT USE IP PARAMETER
+  const fetchVoteData = async () => {
+    if (!anime) return;
+
+    try {
+      // Get anime ID
+      const animeId = anime._id || anime.id;
+      if (!animeId) return;
+
+      // ✅ FIXED: Fetch vote status without IP parameter
+      const response = await fetch(`${API_BASE}/anime/${animeId}/vote-status`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setLikes(data.data.likes || 0);
+          setDislikes(data.data.dislikes || 0);
+          setUserVote(data.data.userVote);
+          console.log('✅ Vote data fetched:', data.data);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching vote data:', error);
+    }
+  };
+
+  // ✅ HANDLE LIKE/DISLIKE VOTE - UPDATED TO NOT SEND IP
+  const handleVote = async (voteType: 'like' | 'dislike') => {
+    if (!anime || isVoting) return;
+
+    setIsVoting(true);
+    try {
+      const animeId = anime._id || anime.id;
+      if (!animeId) return;
+
+      // ✅ FIXED: Don't send IP address, server will get it from request
+      const response = await fetch(`${API_BASE}/anime/${animeId}/vote`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          voteType // ✅ Only send voteType, no IP
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setLikes(data.data.likes);
+          setDislikes(data.data.dislikes);
+          setUserVote(data.data.userVote);
+          
+          // Show success message
+          const message = voteType === 'like' 
+            ? data.data.userVote === null ? 'Like removed' : 'Liked!'
+            : data.data.userVote === null ? 'Dislike removed' : 'Disliked!';
+          
+          // Optional: Show a toast notification
+          console.log('✅ ' + message);
+          
+          // Update anime data if available
+          if (fullAnime) {
+            setFullAnime({
+              ...fullAnime,
+              likes: data.data.likes,
+              dislikes: data.data.dislikes
+            });
+          }
+        }
+      } else {
+        const errorData = await response.json();
+        console.error('Vote failed:', errorData);
+        alert(`Vote failed: ${errorData.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error voting:', error);
+      alert('Error submitting vote. Please try again.');
+    } finally {
+      setIsVoting(false);
+    }
+  };
+
+  // ✅ ADDED: HANDLE SHARE FUNCTIONALITY
+  const handleShare = async () => {
+    if (!displayAnime) return;
+    
+    setIsSharing(true);
+    
+    try {
+      const shareData = {
+        title: `Watch ${displayAnime.title} on AnimeBing`,
+        text: `Check out "${displayAnime.title}" on AnimeBing - Watch anime online in HD quality with Hindi and English subtitles!`,
+        url: window.location.href,
+      };
+      
+      // Try Web Share API first (works on mobile devices)
+      if (navigator.share && navigator.canShare(shareData)) {
+        await navigator.share(shareData);
+      } else {
+        // Fallback: Copy to clipboard
+        await navigator.clipboard.writeText(window.location.href);
+        alert('Link copied to clipboard! 📋\nShare it with your friends!');
+      }
+    } catch (error) {
+      console.error('Error sharing:', error);
+      // If user cancels share, don't show error
+      if (error.toString().includes('AbortError')) {
+        return;
+      }
+      
+      // Fallback to clipboard if share fails
+      try {
+        await navigator.clipboard.writeText(window.location.href);
+        alert('Link copied to clipboard! 📋');
+      } catch (clipboardError) {
+        console.error('Clipboard error:', clipboardError);
+        alert('Failed to copy link. Please copy the URL manually.');
+      }
+    } finally {
+      setIsSharing(false);
+    }
   };
 
   // ✅ FIXED: FETCH GLOBAL LINK SETTINGS - WITH CORS FIX
@@ -316,7 +496,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
       
       for (let page = 1; page <= pagesToFetch; page++) {
         pagePromises.push(
-          getAnimePaginated(page, 24, 'title,thumbnail,releaseYear,status,contentType,subDubStatus,description,genreList,slug')
+          getAnimePaginated(page, 24, 'title,thumbnail,releaseYear,status,contentType,subDubStatus,description,genreList,slug,likes,dislikes')
         );
       }
       
@@ -376,11 +556,22 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
 
   // ✅ INITIAL FETCH FOR SIMILAR CONTENT AND LINK SETTINGS
   useEffect(() => {
-    if (anime) {
-      fetchSimilarContent();
-      fetchLinkSettings();
-    }
+    const initializeData = async () => {
+      if (anime) {
+        fetchSimilarContent();
+        fetchLinkSettings();
+      }
+    };
+    
+    initializeData();
   }, [anime?.id, anime?.contentType, fetchSimilarContent]);
+
+  // ✅ FETCH VOTE DATA WHEN ANIME CHANGES
+  useEffect(() => {
+    if (anime) {
+      fetchVoteData();
+    }
+  }, [anime]);
 
   // ✅ UPDATED: FETCH FULL ANIME DETAILS IF NEEDED
   useEffect(() => {
@@ -389,6 +580,9 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
 
       if (anime.description && anime.genreList && anime.genreList.length > 0) {
         setFullAnime(anime);
+        // Initialize likes/dislikes from anime data if available
+        if (anime.likes !== undefined) setLikes(anime.likes);
+        if (anime.dislikes !== undefined) setDislikes(anime.dislikes);
         return;
       }
 
@@ -402,11 +596,14 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
           return;
         }
 
-        const fields = 'title,thumbnail,releaseYear,status,contentType,subDubStatus,description,genreList,seoTitle,seoDescription,seoKeywords,slug';
+        const fields = 'title,thumbnail,releaseYear,status,contentType,subDubStatus,description,genreList,seoTitle,seoDescription,seoKeywords,slug,likes,dislikes';
         const fullAnimeData = await getAnimeByIdOrSlug(animeIdentifier, fields);
         
         if (fullAnimeData) {
           setFullAnime(fullAnimeData);
+          // Initialize likes/dislikes from fetched data
+          if (fullAnimeData.likes !== undefined) setLikes(fullAnimeData.likes);
+          if (fullAnimeData.dislikes !== undefined) setDislikes(fullAnimeData.dislikes);
         } else {
           setFullAnime(anime);
         }
@@ -576,6 +773,78 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     }
   };
 
+  // ✅ UPDATED: LIKE/DISLIKE/SHARE BUTTONS COMPONENT - WITH SHARE TEXT FOR MOBILE
+  const VoteAndShareButtons = ({ isMobile = false }: { isMobile?: boolean }) => {
+    const buttonSize = isMobile ? 'h-4 w-4' : 'h-5 w-5';
+    const textSize = isMobile ? 'text-xs' : 'text-sm';
+    const padding = isMobile ? 'px-2 py-1' : 'px-3 py-1.5';
+    
+    return (
+      <div className="flex items-center gap-2 mt-4">
+        {/* Like Button */}
+        <button
+          onClick={() => handleVote('like')}
+          disabled={isVoting}
+          className={`${padding} ${textSize} rounded-lg font-medium transition-all duration-200 flex items-center gap-1.5 ${
+            userVote === 'like'
+              ? 'bg-gradient-to-r from-pink-600 to-rose-600 text-white shadow-lg'
+              : 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50 hover:shadow-md'
+          } ${isVoting ? 'opacity-50 cursor-not-allowed' : ''}`}
+          title={userVote === 'like' ? 'Remove like' : 'Like this anime'}
+          aria-label={userVote === 'like' ? 'Remove like' : 'Like this anime'}
+        >
+          {userVote === 'like' ? (
+            <HeartIcon className={buttonSize} filled={true} />
+          ) : (
+            <HeartIcon className={buttonSize} filled={false} />
+          )}
+          <span className="font-bold">{likes}</span>
+        </button>
+        
+        {/* Dislike Button */}
+        <button
+          onClick={() => handleVote('dislike')}
+          disabled={isVoting}
+          className={`${padding} ${textSize} rounded-lg font-medium transition-all duration-200 flex items-center gap-1 ${
+            userVote === 'dislike'
+              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg'
+              : 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50 hover:shadow-md'
+          } ${isVoting ? 'opacity-50 cursor-not-allowed' : ''}`}
+          title={userVote === 'dislike' ? 'Remove dislike' : 'Dislike this anime'}
+          aria-label={userVote === 'dislike' ? 'Remove dislike' : 'Dislike this anime'}
+        >
+          {userVote === 'dislike' ? (
+            <HandThumbDownIcon className={buttonSize} filled={true} />
+          ) : (
+            <HandThumbDownIcon className={buttonSize} filled={false} />
+          )}
+          <span className="font-bold">{dislikes}</span>
+        </button>
+        
+        {/* ✅ UPDATED: Share Button - NOW SHOWS TEXT ON MOBILE TOO */}
+        <button
+          onClick={handleShare}
+          disabled={isSharing}
+          className={`${padding} ${textSize} rounded-lg font-medium transition-all duration-200 flex items-center gap-1 ${
+            isSharing
+              ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg'
+              : 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50 hover:shadow-md'
+          } ${isSharing ? 'opacity-50 cursor-not-allowed' : ''}`}
+          title="Share this anime with friends"
+          aria-label="Share this anime"
+        >
+          {isSharing ? (
+            <Spinner size="xs" className="mr-1" />
+          ) : (
+            <ShareIcon className={buttonSize} />
+          )}
+          {/* ✅ CHANGED: Now shows "Share" text on mobile too */}
+          <span className="font-bold">Share</span>
+        </button>
+      </div>
+    );
+  };
+
   // ✅ Download button component WITHOUT LINK COUNT
   const DownloadButton: React.FC<{ 
     item: Episode | Chapter; 
@@ -588,7 +857,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     
     // Check how many links are active
     const activeLinks = getActiveDownloadLinks(downloadLinks, linkSettings);
-    const totalLinks = downloadLinks.length;
     
     if (activeLinks.length === 0) {
       return (
@@ -599,6 +867,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
           className={`${className} opacity-70 cursor-not-allowed`}
           title="Download links disabled"
           disabled
+          aria-label="Download links disabled"
         >
           {showText ? 'Disabled' : <DownloadIcon className="h-3 w-3" />}
         </button>
@@ -611,6 +880,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
         className={`${className} ${downloadingItem === itemId ? 'animate-pulse' : ''}`}
         title="Download"
         disabled={downloadingItem === itemId || linkSettingsLoading}
+        aria-label="Download"
       >
         {downloadingItem === itemId ? (
           showText ? 'Downloading...' : <Spinner size="sm" />
@@ -655,14 +925,12 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
             Back to Home
           </button>
 
-          {/* ✅ Link Settings Status Indicator REMOVED */}
-
           {/* MOBILE VIEW */}
           <div className="lg:hidden">
             {/* Mobile Anime Card */}
             <div className="bg-slate-800/40 backdrop-blur-sm rounded-xl p-4 border border-slate-700 shadow-xl mb-0">
               <div className="flex flex-col">
-                <div className="flex gap-3 mb-3">
+                <div className="flex gap-2 mb-0">
                   <div className="flex-shrink-0">
                     <div className="relative group">
                       <img
@@ -681,13 +949,21 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                     </div>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h1 className="text-lg font-bold text-white mb-2 break-words">{displayAnime?.title}</h1>
-                    <div className="flex flex-wrap gap-1">
+                    {/* ✅ UPDATED: Dynamic font size based on title length for mobile */}
+                    <h1 className={`font-bold text-white mb-2 break-words ${
+                      displayAnime?.title && displayAnime.title.length > 40 
+                        ? 'text-sm leading-tight' 
+                        : 'text-lg'
+                    }`}>
+                      {displayAnime?.title}
+                    </h1>
+                    
+                    <div className="flex flex-wrap gap-1 mt-1">
                       <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-2 py-1 rounded text-xs font-bold whitespace-nowrap">
                         {displayAnime?.releaseYear}
                       </span>
                       <span
-                        className={`px-2 py-1 rounded text-xs font-bold whitespace-nowrap ${
+                        className={`px-4 py-1 rounded text-xs font-bold whitespace-nowrap ${
                           displayAnime?.status === 'Ongoing'
                             ? 'bg-gradient-to-r from-yellow-500 to-orange-600 text-white'
                             : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white'
@@ -695,16 +971,16 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                       >
                         {displayAnime?.status}
                       </span>
-                      <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-2 py-1 rounded text-xs font-bold whitespace-nowrap">
+                      <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-3 py-1 rounded text-xs font-bold whitespace-nowrap">
                         {displayAnime?.contentType}
                       </span>
                       {!isManga && displayAnime?.subDubStatus && (
-                        <div className="flex flex-wrap gap-1">
+                        <div className="flex flex-wrap gap-0">
                           {displayAnime.subDubStatus
                             .split(',')
                             .map(s => s.trim().toLowerCase())
                             .includes('hindi dub'.toLowerCase()) && (
-                            <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-2 py-1 rounded text-xs font-bold">
+                            <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-3 py-1 rounded text-xs font-bold">
                               Hindi Dub
                             </span>
                           )}
@@ -713,7 +989,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                             .split(',')
                             .map(s => s.trim().toLowerCase())
                             .includes('hindi sub'.toLowerCase()) && (
-                            <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-2 py-1 rounded text-xs font-bold">
+                            <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-3 py-1 rounded text-xs font-bold">
                               Hindi Sub
                             </span>
                           )}
@@ -736,6 +1012,9 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                     </div>
                   </div>
                   
+                  {/* ✅ MOVED: LIKE/DISLIKE/SHARE BUTTONS MOVED BELOW GENRES */}
+                  {/* First show genres, then buttons */}
+                  
                   <div>
                     <div className="flex flex-wrap gap-1">
                       {displayAnime?.genreList?.map((genre, index) => (
@@ -748,6 +1027,9 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                       ))}
                     </div>
                   </div>
+
+                  {/* ✅ UPDATED: LIKE/DISLIKE/SHARE BUTTONS FOR MOBILE - NOW BELOW GENRES */}
+                  <VoteAndShareButtons isMobile={true} />
                 </div>
 
                 <div className="mt-3">
@@ -884,7 +1166,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
             </div>
           </div>
 
-          {/* PC VIEW */}
+          {/* PC VIEW - UPDATED: BUTTONS MOVED BELOW GENRES */}
           <div className="hidden lg:block">
             <div className="bg-slate-800/40 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-slate-700 shadow-xl">
               <div className="flex flex-col lg:flex-row gap-8">
@@ -894,7 +1176,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                       src={desktopThumbnail}
                       srcSet={desktopThumbnailSrcSet}
                       alt={displayAnime?.title}
-                      className="w-full max-w-xs lg:w-80 h-auto lg:h-[28rem] object-cover rounded-xl shadow-2xl group-hover:scale-105 transition-transform duration-500"
+                      className="w-full max-w-xs lg:w-50 h-auto lg:h-[23rem] object-cover rounded-xl shadow-2xl group-hover:scale-105 transition-transform duration-500"
                       loading="lazy"
                       width="320"
                       height="448"
@@ -908,15 +1190,22 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                 </div>
                 <div className="flex-1 space-y-6">
                   <div>
-                    <h1 className="text-3xl lg:text-4xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mb-4">
+                    {/* ✅ UPDATED: Dynamic font size for PC based on title length */}
+                    <h1 className={`font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mb-1 ${
+                      displayAnime?.title && displayAnime.title.length > 60 
+                        ? 'text-xl lg:text-2xl' 
+                        : 'text-2xl lg:text-3xl'
+                    }`}>
                       {displayAnime?.title}
                     </h1>
-                    <p className="text-slate-300 leading-relaxed text-lg">
+                    
+                    <p className="text-slate-300 leading-relaxed text-lg mt-1">
                       {displayAnime?.description || 'No description available for this content.'}
                     </p>
+                    
                   </div>
-                  <div className="space-y-4">
-                    <div className="flex flex-wrap items-center gap-4">
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-1">
                       <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg font-bold">
                         {displayAnime?.releaseYear}
                       </div>
@@ -956,7 +1245,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                     </div>
                     <div>
                       <span className="text-slate-400 text-sm font-medium mr-3">Genres</span>
-                      <div className="flex flex-wrap gap-2 mt-3">
+                      <div className="flex flex-wrap gap-1 mt-1">
                         {displayAnime?.genreList?.map((genre, index) => (
                           <span
                             key={index}
@@ -968,11 +1257,14 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                       </div>
                     </div>
                   </div>
+                  
+                  {/* ✅ UPDATED: LIKE/DISLIKE/SHARE BUTTONS FOR PC - NOW BELOW GENRES */}
+                  <VoteAndShareButtons />
                 </div>
               </div>
             </div>
 
-            <div className="bg-slate-800/40 backdrop-blur-sm rounded-2xl p-6 border border-slate-700 shadow-xl">
+            <div className="bg-slate-800/40 backdrop-blur-sm rounded-2xl p-1 border border-slate-700 shadow-xl">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                 {/* ✅ UPDATED: Removed episode count from heading */}
                 <h2 className="text-2xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent">

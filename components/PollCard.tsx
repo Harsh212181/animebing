@@ -1,20 +1,14 @@
- // PollCard.tsx - Production Ready
+ // components/PollCard.tsx - Production Ready
 import React, { useEffect, useState } from 'react';
 
 /* =========================
    API CONFIGURATION - FIXED
 ========================= */
-const API_BASE_URL = import.meta.env.PROD 
-  ? import.meta.env.VITE_API_URL || 'https://animabing.onrender.com'
-  : 'http://localhost:3000';
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE ||
+  'http://localhost:3000/api';
 
-console.log('🌐 API Configuration:', {
-  mode: import.meta.env.MODE,
-  prod: import.meta.env.PROD,
-  apiUrl: import.meta.env.VITE_API_URL,
-  baseUrl: API_BASE_URL,
-  siteUrl: import.meta.env.VITE_SITE_URL
-});
+console.log("🌍 API BASE:", API_BASE_URL);
 
 /* =========================
    TYPES
@@ -120,7 +114,7 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
       // Use relative path in production, absolute in development
       const endpoint = import.meta.env.PROD 
         ? '/api/poll/active'
-        : `${API_BASE_URL}/api/poll/active`;
+        : `${API_BASE_URL}/poll/active`;
       
       console.log('🔄 Fetching from:', endpoint);
       
@@ -254,7 +248,7 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
       // Use relative path in production, absolute in development
       const endpoint = import.meta.env.PROD 
         ? '/api/poll/vote'
-        : `${API_BASE_URL}/api/poll/vote`;
+        : `${API_BASE_URL}/poll/vote`;
       
       console.log('🗳️ Voting via:', endpoint);
       

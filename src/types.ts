@@ -1,4 +1,4 @@
- // src/types.ts – COMPLETE UPDATED VERSION WITH VOTERS TRACKING AND MAIN LINK
+ // src/types.ts – COMPLETE UPDATED VERSION WITH LIKE/DISLIKE SYSTEM
 /* =========================
    DOWNLOAD / EPISODE / CHAPTER
 ========================= */
@@ -35,6 +35,16 @@ export interface Chapter {
 }
 
 /* =========================
+   LIKE/DISLIKE VOTE TYPES (NEW)
+========================= */
+
+export interface Vote {
+  ipAddress: string;
+  voteType: 'like' | 'dislike';
+  date: Date | string;
+}
+
+/* =========================
    ANIME TYPES
 ========================= */
 
@@ -59,6 +69,7 @@ export interface Anime {
   thumbnail?: string;
   posterImage?: string;
   coverImage?: string;
+  bannerImage?: string; // ✅ ADDED: For carousel/featured display
   releaseYear?: number;
   subDubStatus: SubDubStatus;
   contentType: ContentType;
@@ -76,6 +87,15 @@ export interface Anime {
   createdAt?: string;
   updatedAt?: string;
 
+  /* ✅ NEW: LIKE/DISLIKE SYSTEM FIELDS */
+  likes?: number;
+  dislikes?: number;
+  votes?: Vote[];
+  lastLikedDate?: Date | string;
+  monthlyLikes?: number;
+  weeklyLikes?: number;
+  totalVotes?: number;
+
   /* SEO */
   seoTitle?: string;
   seoDescription?: string;
@@ -87,10 +107,65 @@ export interface Anime {
   rating?: number;
   views?: number;
   episodeCount?: number;
+  totalEpisodes?: number;
+  lastContentAdded?: Date | string;
 }
 
 export interface FeaturedAnime extends Anime {
   featuredOrder: number;
+}
+
+/* =========================
+   TOP 100 ANIME TYPES (NEW)
+========================= */
+
+export interface TopAnimeParams {
+  type?: 'all-time' | 'monthly' | 'weekly';
+  contentType?: ContentTypeFilter;
+  page?: number;
+  limit?: number;
+}
+
+export interface TopAnimeItem {
+  _id: string;
+  title: string;
+  thumbnail?: string;
+  bannerImage?: string;
+  likes: number;
+  dislikes: number;
+  monthlyLikes?: number;
+  weeklyLikes?: number;
+  contentType?: ContentType;
+  slug?: string;
+  rating?: number;
+  totalVotes?: number;
+}
+
+export interface AnimeStats {
+  totalAnime: number;
+  totalLikes: number;
+  totalVotes: number;
+}
+
+/* =========================
+   ANIME API RESPONSE TYPES (NEW)
+========================= */
+
+export interface AnimeResponse {
+  success: boolean;
+  data?: Anime;
+  message?: string;
+  likes?: number;
+  dislikes?: number;
+  userVote?: 'like' | 'dislike' | null;
+}
+
+export interface VoteResponse {
+  success: boolean;
+  message?: string;
+  likes?: number;
+  dislikes?: number;
+  userVote?: 'like' | 'dislike' | null;
 }
 
 /* =========================
@@ -207,7 +282,7 @@ export interface Poll {
    API RESPONSES
 ========================= */
 
-export interface VoteResponse {
+export interface PollVoteResponse {
   success: boolean;
   totalVotes: number;
   optionVotes: number;
