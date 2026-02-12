@@ -1,4 +1,4 @@
- // src/components/admin/AddAnimeForm.tsx - FULL SCREEN VERSION
+  // src/components/admin/AddAnimeForm.tsx - FULL SCREEN VERSION
 import React, { useState } from 'react';
 import axios from 'axios';
 import type { SubDubStatus } from '../../types';

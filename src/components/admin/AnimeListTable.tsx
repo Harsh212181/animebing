@@ -1,4 +1,4 @@
- // src/components/admin/AnimeListTable.tsx - UPDATED (Genre & Slug hidden from table)
+ // src/components/admin/AnimeListTable.tsx - UPDATED WITH PARTNER MODE SUPPORT
 import React, { useState, useEffect } from 'react';
 import type { Anime } from '../../types';
 import axios from 'axios';
@@ -7,7 +7,23 @@ import Spinner from '../Spinner';
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://animabing.onrender.com/api';
 const token = localStorage.getItem('adminToken') || '';
 
-const AnimeListTable: React.FC = () => {
+interface AnimeListTableProps {
+  /** Optional: Pass anime list directly (used by PartnerManager) */
+  animeList?: Anime[];
+  /** Callback for remove button (PartnerManager) */
+  onRemoveFromPartner?: (animeId: string) => void;
+  /** Show remove button instead of edit/delete */
+  showRemoveButton?: boolean;
+  /** External loading state (PartnerManager) */
+  isLoading?: boolean;
+}
+
+const AnimeListTable: React.FC<AnimeListTableProps> = ({ 
+  animeList: propAnimeList, 
+  onRemoveFromPartner, 
+  showRemoveButton = false,
+  isLoading: propIsLoading = false
+}) => {
   const [animes, setAnimes] = useState<Anime[]>([]);
   const [filteredAnimes, setFilteredAnimes] = useState<Anime[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,12 +49,62 @@ const AnimeListTable: React.FC = () => {
     slug: ''
   });
 
-  useEffect(() => {
-    fetchAnimes();
-  }, [statusFilter, contentTypeFilter]);
+  // Determine if we are in "partner mode" (external anime list provided)
+  const isPartnerMode = propAnimeList !== undefined;
 
+  // Initialize or update animes when propAnimeList changes (partner mode)
   useEffect(() => {
-    // Search functionality - INCLUDES SEO FIELDS
+    if (isPartnerMode && propAnimeList) {
+      setAnimes(propAnimeList);
+      setFilteredAnimes(propAnimeList);
+      setLoading(false); // No internal loading needed
+      setError('');
+    }
+  }, [propAnimeList, isPartnerMode]);
+
+  // Fetch animes (only in normal admin mode)
+  useEffect(() => {
+    if (isPartnerMode) return;
+
+    const fetchAnimes = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const params = new URLSearchParams();
+        if (statusFilter !== 'All') params.append('status', statusFilter);
+        if (contentTypeFilter !== 'All') params.append('contentType', contentTypeFilter);
+        
+        const url = `${API_BASE}/admin/protected/anime-list${params.toString() ? `?${params.toString()}` : ''}`;
+        const { data } = await axios.get(url, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        // Transform data with SEO fields
+        const animeData = data.map((a: any) => ({ 
+          ...a, 
+          id: a._id,
+          seoTitle: a.seoTitle || '',
+          seoDescription: a.seoDescription || '',
+          seoKeywords: a.seoKeywords || '',
+          slug: a.slug || '',
+          episodes: a.episodes || []
+        }));
+        
+        setAnimes(animeData);
+        setFilteredAnimes(animeData);
+      } catch (err: any) {
+        console.error('Error fetching animes:', err);
+        setError(err.response?.data?.error || 'Failed to load anime list');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAnimes();
+  }, [statusFilter, contentTypeFilter, isPartnerMode]);
+
+  // Search filtering – works for both normal and partner mode
+  useEffect(() => {
     if (searchQuery.trim() === '') {
       setFilteredAnimes(animes);
     } else {
@@ -58,41 +124,9 @@ const AnimeListTable: React.FC = () => {
     }
   }, [searchQuery, animes]);
 
-  const fetchAnimes = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const params = new URLSearchParams();
-      if (statusFilter !== 'All') params.append('status', statusFilter);
-      if (contentTypeFilter !== 'All') params.append('contentType', contentTypeFilter);
-      
-      const url = `${API_BASE}/admin/protected/anime-list${params.toString() ? `?${params.toString()}` : ''}`;
-      const { data } = await axios.get(url, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      // ✅ Transform data with SEO fields
-      const animeData = data.map((a: any) => ({ 
-        ...a, 
-        id: a._id,
-        seoTitle: a.seoTitle || '',
-        seoDescription: a.seoDescription || '',
-        seoKeywords: a.seoKeywords || '',
-        slug: a.slug || '',
-        episodes: a.episodes || []
-      }));
-      
-      setAnimes(animeData);
-      setFilteredAnimes(animeData);
-    } catch (err: any) {
-      console.error('Error fetching animes:', err);
-      setError(err.response?.data?.error || 'Failed to load anime list');
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Normal admin actions (Edit, Delete) – not used in partner mode
   const handleDelete = async (id: string) => {
+    if (isPartnerMode) return;
     const animeTitle = animes.find(a => a.id === id)?.title || 'this anime';
     if (!confirm(`Delete "${animeTitle}"? This will also delete all episodes/chapters.`)) return;
     try {
@@ -100,8 +134,20 @@ const AnimeListTable: React.FC = () => {
         headers: { Authorization: `Bearer ${token}` },
         data: { id }
       });
-      setEditingAnimeId(null); // Close edit form if open
-      fetchAnimes();
+      setEditingAnimeId(null);
+      // Refresh will be triggered by filter useEffect due to status/contentType change? 
+      // Better to manually fetch or update state. We'll rely on the fetchAnimes effect.
+      // Since we changed statusFilter or contentTypeFilter? No, we didn't. Let's just refetch.
+      const params = new URLSearchParams();
+      if (statusFilter !== 'All') params.append('status', statusFilter);
+      if (contentTypeFilter !== 'All') params.append('contentType', contentTypeFilter);
+      const url = `${API_BASE}/admin/protected/anime-list${params.toString() ? `?${params.toString()}` : ''}`;
+      const { data } = await axios.get(url, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const animeData = data.map((a: any) => ({ ...a, id: a._id, seoTitle: a.seoTitle || '', seoDescription: a.seoDescription || '', seoKeywords: a.seoKeywords || '', slug: a.slug || '', episodes: a.episodes || [] }));
+      setAnimes(animeData);
+      setFilteredAnimes(animeData);
       alert('✅ Anime deleted successfully!');
     } catch (err: any) {
       console.error('Delete error:', err);
@@ -110,8 +156,9 @@ const AnimeListTable: React.FC = () => {
   };
 
   const handleEdit = (anime: Anime) => {
+    if (isPartnerMode) return;
     if (editingAnimeId === anime.id) {
-      setEditingAnimeId(null); // Toggle off
+      setEditingAnimeId(null);
     } else {
       setEditingAnimeId(anime.id);
       setEditForm({
@@ -123,7 +170,6 @@ const AnimeListTable: React.FC = () => {
         genreList: anime.genreList || [''],
         status: anime.status || 'Ongoing',
         contentType: anime.contentType || 'Anime',
-        // ✅ SEO FIELDS
         seoTitle: anime.seoTitle || '',
         seoDescription: anime.seoDescription || '',
         seoKeywords: anime.seoKeywords || '',
@@ -134,7 +180,7 @@ const AnimeListTable: React.FC = () => {
 
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingAnimeId) return;
+    if (!editingAnimeId || isPartnerMode) return;
 
     try {
       await axios.put(`${API_BASE}/admin/protected/edit-anime/${editingAnimeId}`, 
@@ -144,7 +190,18 @@ const AnimeListTable: React.FC = () => {
       
       alert('✅ Anime updated successfully! SEO data has been saved.');
       setEditingAnimeId(null);
-      fetchAnimes();
+      
+      // Refresh list
+      const params = new URLSearchParams();
+      if (statusFilter !== 'All') params.append('status', statusFilter);
+      if (contentTypeFilter !== 'All') params.append('contentType', contentTypeFilter);
+      const url = `${API_BASE}/admin/protected/anime-list${params.toString() ? `?${params.toString()}` : ''}`;
+      const { data } = await axios.get(url, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const animeData = data.map((a: any) => ({ ...a, id: a._id, seoTitle: a.seoTitle || '', seoDescription: a.seoDescription || '', seoKeywords: a.seoKeywords || '', slug: a.slug || '', episodes: a.episodes || [] }));
+      setAnimes(animeData);
+      setFilteredAnimes(animeData);
     } catch (err: any) {
       console.error('Update error:', err);
       alert(err.response?.data?.error || 'Update failed. Please try again.');
@@ -164,12 +221,11 @@ const AnimeListTable: React.FC = () => {
     setSearchQuery('');
   };
 
-  // ✅ Auto-generate SEO data when title changes
+  // Auto-generate SEO when title changes
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newTitle = e.target.value;
     setEditForm({ ...editForm, title: newTitle });
     
-    // Auto-generate slug if empty
     if (!editForm.slug && newTitle.trim()) {
       const generatedSlug = generateSlug(newTitle);
       setEditForm(prev => ({ 
@@ -180,19 +236,16 @@ const AnimeListTable: React.FC = () => {
     }
   };
 
-  // ✅ Function to generate SEO-friendly slug
   const generateSlug = (title: string): string => {
     if (!title.trim()) return '';
-    
     return title
       .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, '') // Remove special characters
-      .replace(/\s+/g, '-')         // Replace spaces with hyphens
-      .replace(/-+/g, '-')          // Remove multiple hyphens
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
       .trim();
   };
 
-  // ✅ Auto-generate SEO title when language changes
   const handleSubDubStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newStatus = e.target.value as Anime['subDubStatus'];
     setEditForm({ ...editForm, subDubStatus: newStatus });
@@ -205,16 +258,12 @@ const AnimeListTable: React.FC = () => {
     }
   };
 
-  // ✅ Generate full SEO data
   const generateFullSEO = (): string => {
     if (!editForm.title.trim()) {
       return 'Please enter a title first';
     }
 
-    // Generate keywords
     const keywords = [];
-    
-    // Title-based keywords
     keywords.push(
       `${editForm.title} anime`,
       `watch ${editForm.title} online`,
@@ -222,7 +271,6 @@ const AnimeListTable: React.FC = () => {
       `${editForm.title} free download`
     );
     
-    // Genre-based keywords
     if (editForm.genreList && editForm.genreList.length > 0) {
       editForm.genreList.forEach((genre: string) => {
         keywords.push(
@@ -233,7 +281,6 @@ const AnimeListTable: React.FC = () => {
       });
     }
     
-    // Language/Type based keywords
     const statuses = editForm.subDubStatus.toLowerCase().split(',').map(s => s.trim());
     
     if (statuses.includes('hindi dub')) {
@@ -266,7 +313,6 @@ const AnimeListTable: React.FC = () => {
       );
     }
     
-    // Content type keywords
     if (editForm.contentType === 'Movie') {
       keywords.push(
         `${editForm.title} movie`,
@@ -293,7 +339,6 @@ const AnimeListTable: React.FC = () => {
       );
     }
     
-    // Platform keywords
     keywords.push(
       'animebing',
       'animebing.in',
@@ -301,11 +346,9 @@ const AnimeListTable: React.FC = () => {
       'free anime downloads'
     );
     
-    // Remove duplicates and join
     return [...new Set(keywords)].join(', ');
   };
 
-  // ✅ Auto-generate SEO fields button
   const handleAutoGenerateSEO = () => {
     if (!editForm.title.trim()) {
       alert('Please enter a title first');
@@ -329,28 +372,29 @@ const AnimeListTable: React.FC = () => {
     alert('✅ SEO data auto-generated successfully!');
   };
 
-  // ✅ Function to get SEO status badge
   const getSEOStatus = (anime: Anime): { text: string, color: string, bgColor: string } => {
     if (!anime.seoTitle && !anime.seoDescription && !anime.slug) {
       return { text: 'No SEO', color: 'text-red-400', bgColor: 'bg-red-600/20' };
     }
-    
     if (!anime.slug) {
       return { text: 'Missing Slug', color: 'text-orange-400', bgColor: 'bg-orange-600/20' };
     }
-    
     if (anime.seoTitle && anime.seoDescription && anime.slug) {
       return { text: 'SEO ✓', color: 'text-green-400', bgColor: 'bg-green-600/20' };
     }
-    
     return { text: 'Partial SEO', color: 'text-yellow-400', bgColor: 'bg-yellow-600/20' };
   };
 
-  if (loading) return <div className="flex justify-center py-8"><Spinner size="lg" /></div>;
+  // Loading state: normal mode or partner mode with external loading
+  if ((!isPartnerMode && loading) || (isPartnerMode && propIsLoading)) {
+    return <div className="flex justify-center py-8"><Spinner size="lg" /></div>;
+  }
+
   if (error) return <p className="text-red-400 text-center p-4">{error}</p>;
 
   return (
     <div>
+      {/* Search & Filters – hide in partner mode? We'll keep them but conditionally show some elements */}
       <div className="flex flex-col gap-4 mb-6">
         {/* Search Bar */}
         <div className="relative">
@@ -381,7 +425,6 @@ const AnimeListTable: React.FC = () => {
               )}
             </div>
             
-            {/* Results Count */}
             <div className="text-sm text-slate-300 whitespace-nowrap">
               {searchQuery ? (
                 <span>
@@ -393,7 +436,6 @@ const AnimeListTable: React.FC = () => {
             </div>
           </div>
           
-          {/* Search Tips */}
           {searchQuery && filteredAnimes.length === 0 && (
             <div className="mt-2 text-sm text-slate-400">
               💡 Try searching by: title, genre (action, romance), language (hindi, english), SEO keywords, slug, or type (anime, movie)
@@ -401,10 +443,10 @@ const AnimeListTable: React.FC = () => {
           )}
         </div>
 
-        {/* Filters and Controls */}
+        {/* Filters and Controls – Hide refresh button and filters in partner mode? We'll keep but disable some? */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <h3 className="text-xl font-semibold text-white">
-            Content List
+            {isPartnerMode ? 'Assigned Anime' : 'Content List'}
             <span className="text-sm text-slate-400 ml-2">
               {contentTypeFilter !== 'All' && `- ${contentTypeFilter}s`}
               {statusFilter !== 'All' && ` - ${statusFilter}`}
@@ -412,103 +454,118 @@ const AnimeListTable: React.FC = () => {
             </span>
           </h3>
           
-          <div className="flex items-center gap-4">
-            {/* Content Type Filter */}
-            <div className="flex items-center gap-2 bg-slate-800/50 p-1 rounded-lg">
-              <button
-                onClick={() => setContentTypeFilter('All')}
-                className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                  contentTypeFilter === 'All'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-slate-300 hover:bg-slate-700'
-                }`}
-                aria-label="Show all content types"
-              >
-                All
-              </button>
-              <button
-                onClick={() => setContentTypeFilter('Anime')}
-                className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                  contentTypeFilter === 'Anime'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-slate-300 hover:bg-slate-700'
-                }`}
-                aria-label="Filter by Anime"
-              >
-                Anime
-              </button>
-              <button
-                onClick={() => setContentTypeFilter('Movie')}
-                className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                  contentTypeFilter === 'Movie'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-slate-300 hover:bg-slate-700'
-                }`}
-                aria-label="Filter by Movies"
-              >
-                Movies
-              </button>
-              <button
-                onClick={() => setContentTypeFilter('Manga')}
-                className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                  contentTypeFilter === 'Manga'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-slate-300 hover:bg-slate-700'
-                }`}
-                aria-label="Filter by Manga"
-              >
-                Manga
-              </button>
-            </div>
+          {!isPartnerMode && (
+            <div className="flex items-center gap-4">
+              {/* Content Type Filter */}
+              <div className="flex items-center gap-2 bg-slate-800/50 p-1 rounded-lg">
+                <button
+                  onClick={() => setContentTypeFilter('All')}
+                  className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                    contentTypeFilter === 'All'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-300 hover:bg-slate-700'
+                  }`}
+                  aria-label="Show all content types"
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setContentTypeFilter('Anime')}
+                  className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                    contentTypeFilter === 'Anime'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-300 hover:bg-slate-700'
+                  }`}
+                  aria-label="Filter by Anime"
+                >
+                  Anime
+                </button>
+                <button
+                  onClick={() => setContentTypeFilter('Movie')}
+                  className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                    contentTypeFilter === 'Movie'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-300 hover:bg-slate-700'
+                  }`}
+                  aria-label="Filter by Movies"
+                >
+                  Movies
+                </button>
+                <button
+                  onClick={() => setContentTypeFilter('Manga')}
+                  className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                    contentTypeFilter === 'Manga'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-300 hover:bg-slate-700'
+                  }`}
+                  aria-label="Filter by Manga"
+                >
+                  Manga
+                </button>
+              </div>
 
-            {/* Status Filter */}
-            <div className="flex items-center gap-2 bg-slate-800/50 p-1 rounded-lg">
-              <button
-                onClick={() => setStatusFilter('All')}
-                className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                  statusFilter === 'All'
-                    ? 'bg-purple-600 text-white'
-                    : 'text-slate-300 hover:bg-slate-700'
-                }`}
-                aria-label="Show all status"
+              {/* Status Filter */}
+              <div className="flex items-center gap-2 bg-slate-800/50 p-1 rounded-lg">
+                <button
+                  onClick={() => setStatusFilter('All')}
+                  className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                    statusFilter === 'All'
+                      ? 'bg-purple-600 text-white'
+                      : 'text-slate-300 hover:bg-slate-700'
+                  }`}
+                  aria-label="Show all status"
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setStatusFilter('Ongoing')}
+                  className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                    statusFilter === 'Ongoing'
+                      ? 'bg-purple-600 text-white'
+                      : 'text-slate-300 hover:bg-slate-700'
+                  }`}
+                  aria-label="Filter by Ongoing"
+                >
+                  Ongoing
+                </button>
+                <button
+                  onClick={() => setStatusFilter('Complete')}
+                  className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                    statusFilter === 'Complete'
+                      ? 'bg-purple-600 text-white'
+                      : 'text-slate-300 hover:bg-slate-700'
+                  }`}
+                  aria-label="Filter by Complete"
+                >
+                  Complete
+                </button>
+              </div>
+              
+              <button 
+                onClick={() => {
+                  // Refresh by re-fetching
+                  const params = new URLSearchParams();
+                  if (statusFilter !== 'All') params.append('status', statusFilter);
+                  if (contentTypeFilter !== 'All') params.append('contentType', contentTypeFilter);
+                  const url = `${API_BASE}/admin/protected/anime-list${params.toString() ? `?${params.toString()}` : ''}`;
+                  axios.get(url, { headers: { Authorization: `Bearer ${token}` } })
+                    .then(({ data }) => {
+                      const animeData = data.map((a: any) => ({ ...a, id: a._id, seoTitle: a.seoTitle || '', seoDescription: a.seoDescription || '', seoKeywords: a.seoKeywords || '', slug: a.slug || '', episodes: a.episodes || [] }));
+                      setAnimes(animeData);
+                      setFilteredAnimes(animeData);
+                    })
+                    .catch(err => console.error('Refresh error:', err));
+                }}
+                className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-sm transition flex items-center gap-2"
+                aria-label="Refresh anime list"
               >
-                All
-              </button>
-              <button
-                onClick={() => setStatusFilter('Ongoing')}
-                className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                  statusFilter === 'Ongoing'
-                    ? 'bg-purple-600 text-white'
-                    : 'text-slate-300 hover:bg-slate-700'
-                }`}
-                aria-label="Filter by Ongoing"
-              >
-                Ongoing
-              </button>
-              <button
-                onClick={() => setStatusFilter('Complete')}
-                className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                  statusFilter === 'Complete'
-                    ? 'bg-purple-600 text-white'
-                    : 'text-slate-300 hover:bg-slate-700'
-                }`}
-                aria-label="Filter by Complete"
-              >
-                Complete
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
               </button>
             </div>
-            
-            <button 
-              onClick={fetchAnimes}
-              className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-sm transition flex items-center gap-2"
-              aria-label="Refresh anime list"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Refresh
-            </button>
-          </div>
+          )}
         </div>
       </div>
 
@@ -523,19 +580,20 @@ const AnimeListTable: React.FC = () => {
                 <th className="p-4 text-left text-slate-300 font-medium">Status</th>
                 <th className="p-4 text-left text-slate-300 font-medium">Sub/Dub</th>
                 <th className="p-4 text-left text-slate-300 font-medium">Episodes</th>
-                <th className="p-4 text-left text-slate-300 font-medium">SEO Status</th>
+                {!isPartnerMode && (
+                  <th className="p-4 text-left text-slate-300 font-medium">SEO Status</th>
+                )}
                 <th className="p-4 text-left text-slate-300 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700">
               {filteredAnimes.map(anime => {
-                const seoStatus = getSEOStatus(anime);
+                const seoStatus = !isPartnerMode ? getSEOStatus(anime) : null;
                 
                 return (
                   <React.Fragment key={anime.id}>
                     <tr className={`hover:bg-slate-700/30 transition-colors ${editingAnimeId === anime.id ? 'bg-slate-700/50' : ''}`}>
                       <td className="p-4 font-medium text-white">
-                        {/* ✅ TITLE COLUMN - Only show Title and Thumbnail */}
                         <div className="flex items-center gap-3">
                           <img 
                             src={anime.thumbnail} 
@@ -547,14 +605,11 @@ const AnimeListTable: React.FC = () => {
                             }}
                           />
                           <div>
-                            {/* ✅ Only Title (No genre or slug text) */}
                             <div className="font-semibold">{anime.title}</div>
-                            {/* ✅ Genre and slug text REMOVED from display */}
                           </div>
                         </div>
                       </td>
                       
-                      {/* ✅ TYPE COLUMN */}
                       <td className="p-4">
                         <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
                           anime.contentType === 'Movie' 
@@ -567,12 +622,10 @@ const AnimeListTable: React.FC = () => {
                         </span>
                       </td>
                       
-                      {/* ✅ YEAR COLUMN */}
                       <td className="p-4 text-slate-300 text-center">
                         {anime.releaseYear || 'N/A'}
                       </td>
                       
-                      {/* ✅ STATUS COLUMN */}
                       <td className="p-4">
                         <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
                           anime.status === 'Complete' 
@@ -583,7 +636,6 @@ const AnimeListTable: React.FC = () => {
                         </span>
                       </td>
                       
-                      {/* ✅ SUB/DUB COLUMN */}
                       <td className="p-4">
                         <span 
                           className={`px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
@@ -601,49 +653,64 @@ const AnimeListTable: React.FC = () => {
                         </span>
                       </td>
                       
-                      {/* ✅ EPISODES COLUMN */}
                       <td className="p-4 text-slate-300 text-center">
                         <span className="bg-blue-600/20 text-blue-400 px-2 py-1 rounded text-xs whitespace-nowrap">
                           {anime.episodes?.length || 0} episodes
                         </span>
                       </td>
                       
-                      {/* ✅ SEO STATUS COLUMN */}
-                      <td className="p-4">
-                        <span className={`${seoStatus.bgColor} ${seoStatus.color} px-2 py-1 rounded text-xs whitespace-nowrap`}>
-                          {seoStatus.text}
-                        </span>
-                      </td>
+                      {!isPartnerMode && (
+                        <td className="p-4">
+                          {seoStatus && (
+                            <span className={`${seoStatus.bgColor} ${seoStatus.color} px-2 py-1 rounded text-xs whitespace-nowrap`}>
+                              {seoStatus.text}
+                            </span>
+                          )}
+                        </td>
+                      )}
                       
-                      {/* ✅ ACTIONS COLUMN */}
                       <td className="p-4">
                         <div className="flex gap-2">
-                          <button
-                            onClick={() => handleEdit(anime)}
-                            className={`px-3 py-1 rounded text-sm transition-colors whitespace-nowrap ${
-                              editingAnimeId === anime.id 
-                                ? 'bg-yellow-600 hover:bg-yellow-500 text-white' 
-                                : 'bg-blue-600 hover:bg-blue-500 text-white'
-                            }`}
-                            aria-label={`Edit ${anime.title}`}
-                          >
-                            {editingAnimeId === anime.id ? 'Cancel Edit' : 'Edit SEO'}
-                          </button>
-                          {editingAnimeId !== anime.id && (
+                          {showRemoveButton && onRemoveFromPartner ? (
                             <button
-                              onClick={() => handleDelete(anime.id)}
+                              onClick={() => onRemoveFromPartner(anime.id)}
                               className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-sm transition-colors whitespace-nowrap"
-                              aria-label={`Delete ${anime.title}`}
+                              aria-label={`Remove ${anime.title} from partner`}
                             >
-                              Delete
+                              Remove
                             </button>
+                          ) : (
+                            !isPartnerMode && (
+                              <>
+                                <button
+                                  onClick={() => handleEdit(anime)}
+                                  className={`px-3 py-1 rounded text-sm transition-colors whitespace-nowrap ${
+                                    editingAnimeId === anime.id 
+                                      ? 'bg-yellow-600 hover:bg-yellow-500 text-white' 
+                                      : 'bg-blue-600 hover:bg-blue-500 text-white'
+                                  }`}
+                                  aria-label={`Edit ${anime.title}`}
+                                >
+                                  {editingAnimeId === anime.id ? 'Cancel Edit' : 'Edit SEO'}
+                                </button>
+                                {editingAnimeId !== anime.id && (
+                                  <button
+                                    onClick={() => handleDelete(anime.id)}
+                                    className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-sm transition-colors whitespace-nowrap"
+                                    aria-label={`Delete ${anime.title}`}
+                                  >
+                                    Delete
+                                  </button>
+                                )}
+                              </>
+                            )
                           )}
                         </div>
                       </td>
                     </tr>
                     
-                    {/* ✅ EDIT FORM ROW - Appears only when Edit button clicked */}
-                    {editingAnimeId === anime.id && (
+                    {/* Edit form row – only in normal mode */}
+                    {!isPartnerMode && editingAnimeId === anime.id && (
                       <tr className="bg-slate-800/70">
                         <td colSpan={8} className="p-4">
                           <div className="border-l-4 border-blue-500 pl-4 py-2">
@@ -679,7 +746,6 @@ const AnimeListTable: React.FC = () => {
                                     aria-required="true"
                                   />
                                 </div>
-
                                 <div>
                                   <label className="block text-sm font-medium text-slate-300 mb-1">Content Type</label>
                                   <select
@@ -692,7 +758,6 @@ const AnimeListTable: React.FC = () => {
                                     <option value="Manga">Manga</option>
                                   </select>
                                 </div>
-
                                 <div>
                                   <label className="block text-sm font-medium text-slate-300 mb-1">Release Year</label>
                                   <input
@@ -704,7 +769,6 @@ const AnimeListTable: React.FC = () => {
                                     max="2030"
                                   />
                                 </div>
-
                                 <div>
                                   <label className="block text-sm font-medium text-slate-300 mb-1">Sub/Dub Status</label>
                                   <select
@@ -722,7 +786,6 @@ const AnimeListTable: React.FC = () => {
                                     <option value="Dual Audio">Dual Audio</option>
                                   </select>
                                 </div>
-
                                 <div>
                                   <label className="block text-sm font-medium text-slate-300 mb-1">Status</label>
                                   <select
@@ -734,7 +797,6 @@ const AnimeListTable: React.FC = () => {
                                     <option value="Complete">Complete</option>
                                   </select>
                                 </div>
-
                                 <div>
                                   <label className="block text-sm font-medium text-slate-300 mb-1">Thumbnail URL</label>
                                   <input
@@ -768,7 +830,7 @@ const AnimeListTable: React.FC = () => {
                                 />
                               </div>
 
-                              {/* ✅ SEO SECTION - This is where genre and slug will be edited */}
+                              {/* SEO SECTION */}
                               <div className="mt-6 pt-4 border-t border-slate-600">
                                 <h4 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
                                   <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -885,6 +947,8 @@ const AnimeListTable: React.FC = () => {
             <p className="text-slate-400">
               {searchQuery 
                 ? `No results found for "${searchQuery}". Try different keywords.`
+                : isPartnerMode
+                ? 'No anime assigned to this partner yet.'
                 : statusFilter !== 'All' || contentTypeFilter !== 'All'
                 ? `No ${contentTypeFilter !== 'All' ? contentTypeFilter : ''} ${statusFilter !== 'All' ? statusFilter : ''} content found.` 
                 : 'Get started by adding your first anime or movie!'

@@ -1,4 +1,4 @@
- // src/components/admin/AdminDashboard.tsx - UPDATED WITH FIXED POLL MANAGER
+// src/components/admin/AdminDashboard.tsx - UPDATED WITH PARTNER MANAGER IN TOP BAR
 import React, { useState, useEffect } from 'react';
 import AnimeListTable from './AnimeListTable';
 import AddAnimeForm from './AddAnimeForm';
@@ -6,7 +6,8 @@ import EpisodesManager from './EpisodesManager';
 import FeaturedAnimeManager from './FeaturedAnimeManager';
 import ReportsManager from './ReportsManager';
 import SocialMediaManager from './SocialMediaManager';
-import PollManager from './PollManager'; // ✅ POLL MANAGER IMPORT ADDED
+import PollManager from './PollManager'; // ✅ POLL MANAGER IMPORT
+import PartnerManager from './PartnerManager'; // ✅ PARTNER MANAGER IMPORT
 import Spinner from '../Spinner';
 import axios from 'axios';
 
@@ -263,6 +264,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
+  // ✅ REMOVED Partner Manager from tabs – now placed in top bar
   const tabs = [
     { id: 'list', label: 'Content List', icon: '🤖', color: 'from-purple-600 to-purple-700' },
     { id: 'add', label: 'Add Content', icon: '🐦‍🔥', color: 'from-emerald-600 to-green-600' },
@@ -270,7 +272,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     { id: 'featured', label: 'Featured Anime', icon: '🎈', color: 'from-amber-600 to-orange-600' },
     { id: 'reports', label: 'User Reports', icon: '🍂', color: 'from-rose-600 to-pink-600' },
     { id: 'social', label: 'Social Media', icon: '☣️', color: 'from-violet-600 to-purple-600' },
-    { id: 'polls', label: 'Poll Manager', icon: '🕶️', color: 'from-indigo-600 to-blue-600' }, // ✅ NEW TAB ADDED
+    { id: 'polls', label: 'Poll Manager', icon: '🕶️', color: 'from-indigo-600 to-blue-600' },
+    // ✅ Partner Manager moved to top bar
   ];
 
   const ActiveComponent = () => {
@@ -281,8 +284,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       case 'featured': return <FeaturedAnimeManager />;
       case 'reports': return <ReportsManager />;
       case 'social': return <SocialMediaManager />;
-      // ✅ FIXED: Pass both token and apiBase to PollManager
       case 'polls': return <PollManager token={token || ''} apiBase={API_BASE} />;
+      // ✅ Partner Manager still renders when activeTab === 'partners'
+      case 'partners': return <PartnerManager token={token || ''} apiBase={API_BASE} />;
       default: return <AnimeListTable />;
     }
   };
@@ -410,13 +414,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             </div>
           </div>
           
+          {/* ✅ Button group: Partner Manager → Refresh → Logout */}
           <div className="flex items-center gap-3">
+            {/* ✅ NEW: Partner Manager Button (now in top bar, left of refresh) */}
+            <button
+              onClick={() => setActiveTab('partners')}
+              className={`flex items-center gap-2 px-5 py-2 rounded-lg transition-all duration-300 font-semibold text-sm shadow-lg ${
+                activeTab === 'partners'
+                  ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white border-2 border-white/20 shadow-teal-500/30'
+                  : 'bg-purple-800/40 text-purple-300 hover:bg-purple-700/60 hover:text-white border border-purple-600/40'
+              }`}
+            >
+              <span className="text-lg">🎉</span>
+              <span>Partner Manager</span>
+              {activeTab === 'partners' && (
+                <div className="ml-2 w-2 h-2 bg-white rounded-full animate-pulse"></div>
+              )}
+            </button>
+
+            {/* Refresh Data button */}
             <button
               onClick={loadInitialData}
               className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-5 py-2 rounded-lg transition transform hover:scale-105 font-semibold shadow-lg shadow-purple-500/30 whitespace-nowrap text-sm flex items-center gap-2"
             >
               <span>↻</span> Refresh Data
             </button>
+
+            {/* Logout button */}
             <button
               onClick={handleLogout}
               className="bg-gradient-to-r from-red-600/80 to-red-700/80 hover:from-red-600 hover:to-red-700 text-white px-5 py-2 rounded-lg transition font-semibold text-sm border border-red-500/40 shadow-lg flex items-center gap-2"
@@ -426,7 +450,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           </div>
         </div>
 
-        {/* Navigation Tabs - Moved to top */}
+        {/* Navigation Tabs - All except Partner Manager */}
         <div className="mb-6">
           <div className="flex flex-wrap gap-1.5">
             {tabs.map(tab => (
@@ -663,9 +687,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           <div className="mb-6">
             <h2 className="text-2xl font-bold text-purple-300 mb-2 flex items-center gap-3">
               <span className="text-3xl">
-                {tabs.find(t => t.id === activeTab)?.icon}
+                {tabs.find(t => t.id === activeTab)?.icon || '🎉'}
               </span>
-              {tabs.find(t => t.id === activeTab)?.label} Management
+              {tabs.find(t => t.id === activeTab)?.label || 'Partner Manager'} Management
             </h2>
             <p className="text-purple-400/70 text-sm">
               Manage and control your content from this panel

@@ -1,4 +1,4 @@
- // server.cjs - UPDATED WITH PRODUCTION-SAFE TRUST PROXY
+ // server.cjs - UPDATED WITH PRODUCTION-SAFE TRUST PROXY + PARTNER ROUTES
 const express = require('express');
 const cors = require('cors');
 const connectDB = require('./db.cjs');
@@ -23,6 +23,9 @@ const pollRoutes = require('./routes/pollRoutes.cjs');
 
 // ✅ IMPORTANT: Add this line
 const linkSettingsRoutes = require('./routes/linkSettingsRoutes.cjs');
+
+// ✅ NEW: PARTNER ROUTES (Partner Manager)
+const partnerRoutes = require('./routes/partnerRoutes.cjs');
 
 const app = express();
 
@@ -581,6 +584,10 @@ app.use('/api', contactRoutes);
 // ============================================
 app.use('/api/admin/protected', adminAuth, adminRoutes);
 
+// ✅ NEW: PARTNER ROUTES (Partner Manager) - Admin Protected
+app.use('/api/partners', partnerRoutes);
+console.log('✅ Partner Routes mounted at /api/partners');
+
 // ============================================
 // ✅ DEBUG ROUTES (KEEP FOR TROUBLESHOOTING)
 // ============================================
@@ -861,7 +868,7 @@ app.get('/api/health', async (req, res) => {
     
     res.json({ 
       status: 'OK', 
-      message: 'Animabing Server Running - SEO OPTIMIZED + POLL SYSTEM + LIKE/DISLIKE',
+      message: 'Animabing Server Running - SEO OPTIMIZED + POLL SYSTEM + LIKE/DISLIKE + PARTNER MANAGER',
       timestamp: new Date().toISOString(),
       version: '1.0.0',
       linkSettings: {
@@ -895,6 +902,16 @@ app.get('/api/health', async (req, res) => {
           top100: 'GET /api/anime/top100'
         }
       },
+      partnerManager: {
+        endpoints: {
+          getAll: 'GET /api/partners',
+          create: 'POST /api/partners',
+          delete: 'DELETE /api/partners/:id',
+          getAnime: 'GET /api/partners/:id/anime',
+          assignAnime: 'POST /api/partners/:id/anime',
+          removeAnime: 'DELETE /api/partners/:id/anime/:animeId'
+        }
+      },
       seoFeatures: {
         sitemap: 'https://animebing.in/sitemap.xml',
         robots: 'https://animebing.in/robots.txt',
@@ -903,7 +920,8 @@ app.get('/api/health', async (req, res) => {
         structuredData: 'Enabled',
         linkControl: 'Enabled',
         pollSystem: 'Enabled',
-        likeDislike: 'Enabled'
+        likeDislike: 'Enabled',
+        partnerManager: 'Enabled'
       },
       serverConfig: {
         bodyLimit: '50MB',
@@ -1346,7 +1364,7 @@ app.get('/', (req, res) => {
     </head>
     <body>
       <div class="container">
-        <h1>AnimeBing Server <span class="seo-badge">SEO OPTIMIZED + LINK CONTROL + POLL SYSTEM + LIKE/DISLIKE</span></h1>
+        <h1>AnimeBing Server <span class="seo-badge">SEO OPTIMIZED + LINK CONTROL + POLL SYSTEM + LIKE/DISLIKE + PARTNER MANAGER</span></h1>
         <p class="status">✅ Backend API is running correctly - SEO Ready for Google</p>
         <p>📺 Frontend: <a href="https://animebing.in" target="_blank">AnimeBing.in</a></p>
         <p>⚙️ Admin Access: Press Ctrl+Shift+Alt on the frontend</p>
@@ -1387,6 +1405,17 @@ app.get('/', (req, res) => {
           </div>
         </div>
         
+        <div class="section">
+          <h3>🤝 Partner Manager <span class="feature-badge">NEW</span>:</h3>
+          <div class="link-status">
+            <p>✅ Create and manage partners</p>
+            <p>✅ Assign/remove anime to partners</p>
+            <p>✅ Partner-specific anime lists</p>
+            <p>✅ Anime count tracking</p>
+            <p><small>Control partners from Admin Dashboard → Partner Manager</small></p>
+          </div>
+        </div>
+        
         <div class="seo-info">
           <h3>🔍 SEO Features Enabled:</h3>
           <ul class="seo-checklist">
@@ -1401,6 +1430,7 @@ app.get('/', (req, res) => {
             <li>Global Download Link Control ✅</li>
             <li>Like/Dislike System ✅ <span class="feature-badge">FIXED</span></li>
             <li>Poll/Voting System ✅ <span class="feature-badge">NEW</span></li>
+            <li>Partner Manager ✅ <span class="feature-badge">NEW</span></li>
           </ul>
           <p style="color: #4CAF50; margin-top: 10px; font-weight: bold;">
             ✅ LIKE/DISLIKE SYSTEM FIXED: IP detection, route order, and trust proxy configured
@@ -1429,6 +1459,7 @@ app.get('/', (req, res) => {
           <a href="/api/debug/vote-system" class="btn">Debug Vote System</a>
           <a href="/api/poll/active" class="btn">Check Active Poll</a>
           <a href="/api/test-poll-system" class="btn">Test Poll System</a>
+          <a href="/api/partners" class="btn">Test Partners API</a>
         </div>
         
         <p style="margin-top: 2rem; color: #9CA3AF; font-size: 0.9rem;">
@@ -1437,6 +1468,7 @@ app.get('/', (req, res) => {
           Like/Dislike: ✅ Fixed and Working<br>
           Link Control: Active (5 links globally controllable)<br>
           Poll System: ✅ Active (Users can vote on website)<br>
+          Partner Manager: ✅ Active (Create and manage partners)<br>
           Body Limit: 50MB (Fixed for poll system)<br>
           Trust Proxy: ${process.env.NODE_ENV === 'production' ? '✅ Enabled (1 hop)' : '❌ Disabled (development)'}<br>
           Sitemap Status: ✅ SEO Safe (No search query URLs)<br>
@@ -1488,15 +1520,25 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('   - GET /api/anime/:id/statistics - Anime stats');
   console.log('   - GET /api/anime/top100 - Top 100 anime by likes');
   console.log('===============================================');
+  console.log('🤝 PARTNER MANAGER ENDPOINTS:');
+  console.log('   - GET /api/partners - List all partners');
+  console.log('   - POST /api/partners - Create partner');
+  console.log('   - DELETE /api/partners/:id - Delete partner');
+  console.log('   - GET /api/partners/:id/anime - Get partner anime');
+  console.log('   - POST /api/partners/:id/anime - Assign anime');
+  console.log('   - DELETE /api/partners/:id/anime/:animeId - Remove anime');
+  console.log('===============================================');
   console.log('🔍 DEBUG ENDPOINTS:');
   console.log('   - GET /api/debug/vote-system - Debug vote system');
   console.log('   - GET /api/test-vote-system - Test vote system');
+  console.log('   - GET /api/partners - Test partners API');
   console.log('===============================================');
   console.log('💡 NEXT STEPS:');
   console.log('   1. Go to frontend (http://localhost:5173)');
   console.log('   2. Navigate to any anime detail page');
   console.log('   3. Like/Dislike buttons should now work');
   console.log('   4. Check /api/test-vote-system for testing');
+  console.log('   5. Go to Admin Dashboard → Partner Manager to manage partners');
   console.log('===============================================');
   console.log(`🛡️  TRUST PROXY STATUS: ${process.env.NODE_ENV === 'production' ? 'ENABLED (1 hop)' : 'DISABLED (development safe)'}`);
   console.log('===============================================');

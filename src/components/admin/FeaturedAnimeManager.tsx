@@ -1,9 +1,40 @@
- import React, { useState, useEffect } from 'react';
+ // src/components/admin/FeaturedAnimeManager.tsx – FULLY UPDATED, IMAGE FIXED, THEME MATCHED
+import React, { useState, useEffect } from 'react';
 import { Anime } from '../../types';
 
 interface FeaturedAnimeManagerProps {}
 
+// Helper to get optimized image URL with proper dimensions
+const getOptimizedImageUrl = (url: string, width: number, height: number): string => {
+  if (!url) return 'https://images.unsplash.com/photo-1518709268805-4e9042af2176?w=400&h=600&fit=crop';
+  
+  // Fix broken Unsplash URLs (e.g., "w-400" → "w=400")
+  let cleanUrl = url.replace(/w-(\d+)/, 'w=$1').replace(/h-(\d+)/, 'h=$1');
+  
+  // If it's an Unsplash URL, append size parameters
+  if (cleanUrl.includes('unsplash.com')) {
+    // Remove existing query params and add our own
+    const baseUrl = cleanUrl.split('?')[0];
+    return `${baseUrl}?w=${width}&h=${height}&fit=crop&auto=format`;
+  }
+  
+  // If it's a Cloudinary URL, use transformations
+  if (cleanUrl.includes('cloudinary.com')) {
+    try {
+      const baseUrl = cleanUrl.split('/upload/')[0];
+      const rest = cleanUrl.split('/upload/')[1];
+      const imagePath = rest.split('/').slice(1).join('/');
+      return `${baseUrl}/upload/f_webp,q_auto:good,w_${width},h_${height},c_fill/${imagePath}`;
+    } catch {
+      return cleanUrl;
+    }
+  }
+  
+  return cleanUrl;
+};
+
 const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
+  // ---------- ALL LOGIC UNCHANGED ----------
   const [allAnimes, setAllAnimes] = useState<Anime[]>([]);
   const [featuredAnimes, setFeaturedAnimes] = useState<Anime[]>([]);
   const [loading, setLoading] = useState(true);
@@ -134,7 +165,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
         id: '3',
         _id: '3',
         title: 'Attack on Titan',
-        thumbnail: 'https://images.unsplash.com/photo-1639322537228-f710d846310a?w-400&h=600&fit=crop',
+        thumbnail: 'https://images.unsplash.com/photo-1639322537228-f710d846310a?w=400&h=600&fit=crop', // FIXED: w=400&h=600
         releaseYear: 2013,
         subDubStatus: 'English Sub',
         contentType: 'Anime',
@@ -390,267 +421,243 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
     setSearchTerm('');
   };
 
+  // ---------- END OF LOGIC – JSX WITH IMAGE FIXES ----------
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-950 via-purple-900 to-purple-950 text-white">
-        <div className="container mx-auto px-4 py-8">
-          <div className="flex flex-col items-center justify-center min-h-[60vh]">
-            <div className="relative">
-              <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-purple-500"></div>
-              <div className="absolute inset-0 animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-pink-500 opacity-75" style={{ animationDirection: 'reverse' }}></div>
-            </div>
-            <p className="mt-6 text-xl font-semibold">Loading Anime Collection</p>
-            <p className="mt-2 text-purple-400">{apiStatus}</p>
-          </div>
+      <div className="flex flex-col items-center justify-center py-16 bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-purple-900/40 backdrop-blur-sm border border-purple-700/40 rounded-2xl">
+        <div className="relative">
+          <div className="w-16 h-16 border-4 border-amber-500/30 border-t-amber-500 rounded-full animate-spin"></div>
+          <div className="absolute inset-0 w-16 h-16 border-4 border-orange-500/30 border-b-orange-500 rounded-full animate-spin" style={{ animationDirection: 'reverse' }}></div>
         </div>
+        <p className="mt-6 text-xl font-semibold text-white/90">Loading Anime Collection</p>
+        <p className="mt-2 text-white/60">{apiStatus}</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-950 via-purple-900 to-purple-950 text-white p-4 md:p-6">
-      {/* Header Section */}
-      <div className="mb-8">
-        <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent">
-          Featured Anime Manager
-        </h1>
-        <p className="text-purple-400 mt-2">Manage your featured anime collection for the homepage carousel</p>
-      </div>
-
-      {/* Stats Dashboard */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <div className="bg-gradient-to-br from-purple-800/80 to-purple-900/80 backdrop-blur-sm rounded-2xl border border-purple-700/50 p-6 shadow-xl">
-          <div className="flex items-center">
-            <div className="p-3 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 mr-4">
-              <span className="text-2xl">🎬</span>
-            </div>
-            <div>
-              <p className="text-sm text-purple-400">Total Anime</p>
-              <p className="text-2xl font-bold text-purple-300">{allAnimes.length}</p>
-            </div>
-          </div>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="p-2 bg-gradient-to-br from-amber-500/30 to-orange-500/30 rounded-xl">
+          <svg className="w-8 h-8 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+          </svg>
         </div>
-
-        <div className="bg-gradient-to-br from-purple-800/80 to-purple-900/80 backdrop-blur-sm rounded-2xl border border-purple-700/50 p-6 shadow-xl">
-          <div className="flex items-center">
-            <div className="p-3 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 mr-4">
-              <span className="text-2xl">⭐</span>
-            </div>
-            <div>
-              <p className="text-sm text-purple-400">Featured Anime</p>
-              <p className="text-2xl font-bold text-blue-300">{featuredAnimes.length}<span className="text-sm text-purple-400 ml-2">/ 24 max</span></p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-br from-purple-800/80 to-purple-900/80 backdrop-blur-sm rounded-2xl border border-purple-700/50 p-6 shadow-xl">
-          <div className="flex items-center">
-            <div className="p-3 rounded-xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 mr-4">
-              <span className="text-2xl">🔍</span>
-            </div>
-            <div>
-              <p className="text-sm text-purple-400">API Status</p>
-              <p className={`text-sm font-semibold ${apiStatus.includes('✅') ? 'text-green-400' : apiStatus.includes('❌') ? 'text-red-400' : 'text-yellow-400'}`}>
-                {apiStatus}
-              </p>
-            </div>
-          </div>
+        <div>
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-amber-300 to-orange-300 bg-clip-text text-transparent">
+            Featured Anime Manager
+          </h1>
+          <p className="text-white/50 text-sm mt-1">Manage your homepage carousel</p>
         </div>
       </div>
 
-      {/* Current Featured Section */}
-      <div className="mb-12">
-        <div className="flex justify-between items-center mb-6">
+      {/* Stats Dashboard – purple glass cards with amber/orange accents */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-purple-900/40 backdrop-blur-sm border border-purple-700/40 rounded-xl p-5 flex items-center gap-4">
+          <div className="p-3 bg-amber-500/20 rounded-lg">
+            <svg className="w-6 h-6 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 6.878V6a2.25 2.25 0 012.25-2.25h7.5A2.25 2.25 0 0118 6v.878m-12 0c.235-.083.487-.128.75-.128h10.5c.263 0 .515.045.75.128m-12 0A2.25 2.25 0 004.5 6v.878m13.5 0A2.25 2.25 0 0119.5 6v.878m0 0a2.246 2.246 0 00-.75-.128H5.25c-.263 0-.515.045-.75.128m15 0A2.25 2.25 0 0121 9v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V9a2.25 2.25 0 012.25-2.25V6.878" />
+            </svg>
+          </div>
           <div>
-            <h2 className="text-2xl font-bold text-white">Featured Collection</h2>
-            <p className="text-purple-400 text-sm mt-1">Drag and drop to reorder featured anime</p>
+            <p className="text-white/50 text-xs">Total Anime</p>
+            <p className="text-2xl font-bold text-white">{allAnimes.length}</p>
           </div>
-          <span className="px-4 py-2 bg-gradient-to-r from-purple-600/30 to-pink-600/30 border border-purple-500/30 rounded-full text-sm text-purple-300">
-            {featuredAnimes.length} Featured
+        </div>
+
+        <div className="bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-purple-900/40 backdrop-blur-sm border border-purple-700/40 rounded-xl p-5 flex items-center gap-4">
+          <div className="p-3 bg-orange-500/20 rounded-lg">
+            <svg className="w-6 h-6 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-white/50 text-xs">Featured Anime</p>
+            <p className="text-2xl font-bold text-white">{featuredAnimes.length} <span className="text-sm font-normal text-white/40">/ 24</span></p>
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-purple-900/40 backdrop-blur-sm border border-purple-700/40 rounded-xl p-5 flex items-center gap-4">
+          <div className={`p-3 rounded-lg ${
+            apiStatus.includes('✅') ? 'bg-emerald-500/20' : 
+            apiStatus.includes('❌') ? 'bg-rose-500/20' : 
+            'bg-amber-500/20'
+          }`}>
+            <svg className={`w-6 h-6 ${
+              apiStatus.includes('✅') ? 'text-emerald-400' : 
+              apiStatus.includes('❌') ? 'text-rose-400' : 
+              'text-amber-400'
+            }`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-white/50 text-xs">API Status</p>
+            <p className={`text-sm font-medium ${
+              apiStatus.includes('✅') ? 'text-emerald-400' : 
+              apiStatus.includes('❌') ? 'text-rose-400' : 
+              'text-amber-400'
+            }`}>
+              {apiStatus}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Current Featured Section – compact cards (h-40) with optimized images */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <span className="w-1.5 h-7 bg-gradient-to-b from-amber-400 to-orange-400 rounded-full"></span>
+          <h2 className="text-xl font-bold text-white/90">Featured Collection</h2>
+          <span className="text-sm text-white/50 bg-white/5 px-3 py-1 rounded-full">
+            {featuredAnimes.length} items
           </span>
         </div>
-        
+
         {featuredAnimes.length === 0 ? (
-          <div className="text-center py-16 bg-gradient-to-br from-purple-800/40 to-purple-900/40 backdrop-blur-sm rounded-2xl border-2 border-dashed border-purple-700/50">
-            <div className="text-6xl mb-4 opacity-30">🎬</div>
-            <h3 className="text-xl font-semibold text-purple-300 mb-2">No Featured Anime Yet</h3>
-            <p className="text-purple-500 max-w-md mx-auto mb-6">
-              Start building your featured collection by adding anime from the library below
+          <div className="text-center py-12 bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-purple-900/40 backdrop-blur-sm border border-purple-700/40 rounded-2xl">
+            <svg className="w-16 h-16 mx-auto text-white/20" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+            </svg>
+            <h3 className="mt-4 text-lg font-medium text-white/80">No Featured Anime Yet</h3>
+            <p className="mt-1 text-white/50 text-sm max-w-md mx-auto">
+              Start building your featured collection by adding anime from the library below.
             </p>
             <button
               onClick={() => document.getElementById('add-section')?.scrollIntoView({ behavior: 'smooth' })}
-              className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 rounded-xl font-medium transition-all transform hover:scale-105 shadow-lg shadow-purple-500/30"
+              className="mt-6 px-6 py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white text-sm font-medium rounded-xl shadow-lg shadow-amber-600/20 transition-all"
             >
               Add Anime to Featured
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
-            {featuredAnimes.map((anime, index) => (
-              <div 
-                key={getAnimeId(anime)} 
-                className="group relative bg-gradient-to-br from-purple-800 to-purple-900 rounded-2xl overflow-hidden shadow-2xl hover:shadow-purple-500/20 transition-all duration-300 border border-purple-700/50 hover:border-purple-500/50"
-              >
-                {/* Featured Badge */}
-                <div className="absolute top-3 left-3 z-20">
-                  <div className="px-3 py-1 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full text-xs font-bold shadow-lg">
-                    #{index + 1}
-                  </div>
-                </div>
-
-                {/* Card Image */}
-                <div className="relative h-64 overflow-hidden">
-                  <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent z-10"></div>
-                  <img 
-                    src={anime.thumbnail || anime.posterImage || anime.coverImage || 'https://images.unsplash.com/photo-1518709268805-4e9042af2176?w=400&h=600&fit=crop'} 
-                    alt={anime.title}
-                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1518709268805-4e9042af2176?w=400&h=600&fit=crop';
-                    }}
-                  />
-                  
-                  {/* Action Buttons */}
-                  <div className="absolute top-3 right-3 z-20 flex gap-2">
-                    {index > 0 && (
-                      <button
-                        onClick={() => reorderFeatured(index, index - 1)}
-                        className="w-8 h-8 flex items-center justify-center bg-purple-900/90 hover:bg-blue-600 backdrop-blur-sm text-white rounded-lg transition-all shadow-lg hover:shadow-blue-500/30"
-                        title="Move up"
-                      >
-                        <span className="text-xs">↑</span>
-                      </button>
-                    )}
-                    {index < featuredAnimes.length - 1 && (
-                      <button
-                        onClick={() => reorderFeatured(index, index + 1)}
-                        className="w-8 h-8 flex items-center justify-center bg-purple-900/90 hover:bg-blue-600 backdrop-blur-sm text-white rounded-lg transition-all shadow-lg hover:shadow-blue-500/30"
-                        title="Move down"
-                      >
-                        <span className="text-xs">↓</span>
-                      </button>
-                    )}
-                    <button
-                      onClick={() => removeFromFeatured(getAnimeId(anime))}
-                      className="w-8 h-8 flex items-center justify-center bg-purple-900/90 hover:bg-red-600 backdrop-blur-sm text-white rounded-lg transition-all shadow-lg hover:shadow-red-500/30"
-                      title="Remove from featured"
-                    >
-                      <span className="text-xs">✕</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Card Content */}
-                <div className="p-4">
-                  <div className="flex justify-between items-start mb-3">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-bold text-white text-lg truncate mb-1">{anime.title}</h3>
-                      <div className="flex items-center gap-2 text-sm text-purple-400">
-                        <span>{anime.releaseYear || 'N/A'}</span>
-                        <span className="w-1 h-1 bg-purple-600 rounded-full"></span>
-                        <span className="px-2 py-0.5 bg-purple-800 rounded text-xs">{anime.subDubStatus || 'Unknown'}</span>
-                      </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
+            {featuredAnimes.map((anime, index) => {
+              // Featured card image dimensions: height 40 (160px), width auto (approx 107px for 2:3)
+              const imgWidth = 150;
+              const imgHeight = 225;
+              const optimizedSrc = getOptimizedImageUrl(anime.thumbnail, imgWidth, imgHeight);
+              
+              return (
+                <div
+                  key={getAnimeId(anime)}
+                  className="group bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-purple-900/40 backdrop-blur-sm border border-purple-700/40 rounded-xl overflow-hidden hover:border-amber-500/50 transition-all hover:shadow-lg hover:shadow-amber-500/10"
+                >
+                  {/* Rank Badge */}
+                  <div className="absolute top-2 left-2 z-10">
+                    <div className="px-2 py-0.5 bg-gradient-to-r from-amber-600 to-orange-600 rounded-full text-[10px] font-bold shadow-lg">
+                      #{index + 1}
                     </div>
                   </div>
 
-                  {/* Genres */}
-                  {anime.genreList && anime.genreList.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mb-4">
-                      {anime.genreList.slice(0, 3).map((genre, idx) => (
-                        <span 
-                          key={idx} 
-                          className="px-2 py-1 bg-purple-800/60 text-purple-300 text-xs rounded-lg backdrop-blur-sm"
+                  {/* Image – compact height h-40, with optimized source */}
+                  <div className="relative h-40 overflow-hidden">
+                    <img
+                      src={optimizedSrc}
+                      alt={anime.title}
+                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                      loading="lazy"
+                      width={imgWidth}
+                      height={imgHeight}
+                      onError={(e) => {
+                        // Fallback to original URL with fixed dimensions
+                        e.currentTarget.src = getOptimizedImageUrl(anime.thumbnail || '', 150, 225);
+                      }}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-transparent"></div>
+
+                    {/* Action Buttons – compact */}
+                    <div className="absolute top-2 right-2 flex gap-1">
+                      {index > 0 && (
+                        <button
+                          onClick={() => reorderFeatured(index, index - 1)}
+                          className="w-7 h-7 flex items-center justify-center bg-purple-900/80 hover:bg-amber-600 rounded-lg text-white/80 hover:text-white text-xs transition-all"
+                          title="Move up"
                         >
-                          {genre}
-                        </span>
-                      ))}
-                      {anime.genreList.length > 3 && (
-                        <span className="px-2 py-1 bg-purple-900 text-purple-500 text-xs rounded-lg">
-                          +{anime.genreList.length - 3}
-                        </span>
+                          ↑
+                        </button>
                       )}
+                      {index < featuredAnimes.length - 1 && (
+                        <button
+                          onClick={() => reorderFeatured(index, index + 1)}
+                          className="w-7 h-7 flex items-center justify-center bg-purple-900/80 hover:bg-amber-600 rounded-lg text-white/80 hover:text-white text-xs transition-all"
+                          title="Move down"
+                        >
+                          ↓
+                        </button>
+                      )}
+                      <button
+                        onClick={() => removeFromFeatured(getAnimeId(anime))}
+                        className="w-7 h-7 flex items-center justify-center bg-purple-900/80 hover:bg-rose-600 rounded-lg text-white/80 hover:text-white text-xs transition-all"
+                        title="Remove"
+                      >
+                        ✕
+                      </button>
                     </div>
-                  )}
+                  </div>
 
-                  {/* Description (hover reveal) */}
-                  {anime.description && (
-                    <div className="mt-3 pt-3 border-t border-purple-800">
-                      <p className="text-purple-400 text-sm line-clamp-2 group-hover:line-clamp-4 transition-all">
-                        {anime.description}
-                      </p>
+                  {/* Content – compact padding */}
+                  <div className="p-3">
+                    <h3 className="font-semibold text-white text-sm truncate">{anime.title}</h3>
+                    <div className="flex items-center justify-between mt-1 text-[10px]">
+                      <span className="text-white/50">{anime.releaseYear || 'N/A'}</span>
+                      <span className={`px-1.5 py-0.5 rounded-full ${
+                        anime.subDubStatus?.includes('Dub') 
+                          ? 'bg-emerald-500/20 text-emerald-300' 
+                          : 'bg-amber-500/20 text-amber-300'
+                      }`}>
+                        {anime.subDubStatus?.includes('Dub') ? 'DUB' : 'SUB'}
+                      </span>
                     </div>
-                  )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
 
       {/* Add Anime Section */}
-      <div id="add-section">
-        <div className="mb-6">
-          <h2 className="text-2xl font-bold text-white mb-2">Add Anime to Featured</h2>
-          <p className="text-purple-400">Select anime from your collection to feature on the homepage</p>
+      <div id="add-section" className="space-y-4">
+        <div className="flex items-center gap-3">
+          <span className="w-1.5 h-7 bg-gradient-to-b from-amber-400 to-orange-400 rounded-full"></span>
+          <h2 className="text-xl font-bold text-white/90">Add Anime to Featured</h2>
         </div>
 
-        {/* Controls */}
-        <div className="flex flex-col md:flex-row gap-4 mb-8">
-          <div className="flex-1 relative">
-            <div className="relative group">
-              <input
-                type="text"
-                placeholder="Search anime by title..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full p-4 pl-12 pr-10 bg-gradient-to-br from-purple-800/50 to-purple-900/50 backdrop-blur-sm border border-purple-700/50 rounded-2xl text-white placeholder-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-transparent transition-all"
-              />
-              {/* Fixed Search Icon */}
-              <div className="absolute left-4 top-1/2 transform -translate-y-1/2">
-                <svg 
-                  className="w-5 h-5 text-purple-400 group-hover:text-purple-300 transition-colors" 
-                  fill="none" 
-                  stroke="currentColor" 
-                  viewBox="0 0 24 24"
-                  strokeWidth={2}
-                >
-                  <path 
-                    strokeLinecap="round" 
-                    strokeLinejoin="round" 
-                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" 
-                  />
-                </svg>
-              </div>
-              {searchTerm && (
-                <button
-                  onClick={() => setSearchTerm('')}
-                  className="absolute right-4 top-1/2 transform -translate-y-1/2 p-1.5 bg-purple-700/50 hover:bg-purple-600/50 rounded-full transition-all group"
-                  title="Clear search"
-                >
-                  <svg 
-                    className="w-4 h-4 text-purple-400 group-hover:text-white transition-colors" 
-                    fill="none" 
-                    stroke="currentColor" 
-                    viewBox="0 0 24 24"
-                    strokeWidth={2}
-                  >
-                    <path 
-                      strokeLinecap="round" 
-                      strokeLinejoin="round" 
-                      d="M6 18L18 6M6 6l12 12" 
-                    />
-                  </svg>
-                </button>
-              )}
+        {/* Search & Controls */}
+        <div className="flex flex-col md:flex-row gap-4">
+          <div className="flex-1 relative group">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <svg className="w-5 h-5 text-white/40 group-focus-within:text-amber-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
             </div>
+            <input
+              type="text"
+              placeholder="Search anime by title..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-10 py-3 bg-purple-800/40 border border-purple-700/50 rounded-xl text-white placeholder-purple-400 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center"
+              >
+                <svg className="w-5 h-5 text-white/40 hover:text-white/80 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
           </div>
-          
           <div className="flex gap-3">
             <button
               onClick={handleForceRefresh}
-              className="px-6 py-4 flex items-center gap-2 bg-gradient-to-r from-blue-600/90 to-blue-700/90 hover:from-blue-500 hover:to-blue-600 text-white rounded-2xl font-medium transition-all transform hover:scale-105 shadow-lg shadow-blue-500/30"
+              className="px-5 py-3 bg-purple-800/40 hover:bg-amber-500/20 border border-purple-700/50 hover:border-amber-500/50 rounded-xl text-white/80 hover:text-amber-300 text-sm font-medium transition-all flex items-center gap-2"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
               Refresh
@@ -662,9 +669,9 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
                 localStorage.setItem('animeList', JSON.stringify(sampleData));
                 setApiStatus('✅ Loaded sample data for testing');
               }}
-              className="px-6 py-4 flex items-center gap-2 bg-gradient-to-r from-green-600/90 to-emerald-700/90 hover:from-green-500 hover:to-emerald-600 text-white rounded-2xl font-medium transition-all transform hover:scale-105 shadow-lg shadow-green-500/30"
+              className="px-5 py-3 bg-purple-800/40 hover:bg-emerald-500/20 border border-purple-700/50 hover:border-emerald-500/50 rounded-xl text-white/80 hover:text-emerald-300 text-sm font-medium transition-all flex items-center gap-2"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
               </svg>
               Sample Data
@@ -672,159 +679,117 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
           </div>
         </div>
 
-        {/* Stats Bar */}
-        <div className="flex flex-wrap gap-4 mb-6">
-          <div className="flex items-center gap-2 px-4 py-2 bg-purple-800/50 rounded-xl">
-            <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
-            <span className="text-sm text-purple-300">Total: <strong className="text-white">{allAnimes.length}</strong></span>
+        {/* Quick Stats */}
+        <div className="flex flex-wrap gap-3 text-xs">
+          <div className="px-3 py-1.5 bg-purple-800/30 rounded-lg text-white/70 flex items-center gap-2">
+            <span className="w-2 h-2 bg-amber-400 rounded-full"></span>
+            Total: <span className="text-white font-semibold">{allAnimes.length}</span>
           </div>
-          <div className="flex items-center gap-2 px-4 py-2 bg-purple-600/20 rounded-xl">
-            <div className="w-3 h-3 bg-purple-500 rounded-full"></div>
-            <span className="text-sm text-purple-300">Featured: <strong className="text-white">{featuredAnimes.length}</strong></span>
+          <div className="px-3 py-1.5 bg-purple-800/30 rounded-lg text-white/70 flex items-center gap-2">
+            <span className="w-2 h-2 bg-orange-400 rounded-full"></span>
+            Featured: <span className="text-white font-semibold">{featuredAnimes.length}</span>
           </div>
-          <div className="flex items-center gap-2 px-4 py-2 bg-green-500/20 rounded-xl">
-            <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-            <span className="text-sm text-purple-300">Available: <strong className="text-white">{filteredAnimes.length}</strong></span>
+          <div className="px-3 py-1.5 bg-purple-800/30 rounded-lg text-white/70 flex items-center gap-2">
+            <span className="w-2 h-2 bg-emerald-400 rounded-full"></span>
+            Available: <span className="text-white font-semibold">{filteredAnimes.length}</span>
           </div>
         </div>
 
-        {/* Anime Grid */}
+        {/* Available Anime Grid – compact cards (h-36) with optimized images */}
         {filteredAnimes.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-6">
-            {filteredAnimes.map(anime => (
-              <div 
-                key={getAnimeId(anime)} 
-                className="group relative bg-gradient-to-br from-purple-800 to-purple-900 rounded-2xl overflow-hidden shadow-xl hover:shadow-2xl hover:shadow-green-500/10 transition-all duration-300 border border-purple-700/50 hover:border-green-500/50 hover:-translate-y-1"
-              >
-                {/* Anime Image */}
-                <div className="relative h-48 overflow-hidden">
-                  <img 
-                    src={anime.thumbnail || anime.posterImage || anime.coverImage || 'https://images.unsplash.com/photo-1518709268805-4e9042af2176?w=400&h=600&fit=crop'} 
-                    alt={anime.title}
-                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1518709268805-4e9042af2176?w=400&h=600&fit=crop';
-                    }}
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent"></div>
-                  
-                  {/* Audio Badge */}
-                  <div className="absolute top-3 right-3">
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold shadow-lg ${
-                      anime.subDubStatus?.includes('Dub') 
-                        ? 'bg-gradient-to-r from-purple-600 to-pink-600' 
-                        : 'bg-gradient-to-r from-blue-600 to-cyan-600'
-                    }`}>
-                      {anime.subDubStatus?.includes('Dub') ? 'DUB' : 'SUB'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Anime Info */}
-                <div className="p-4">
-                  <h3 className="font-bold text-white text-sm mb-2 truncate group-hover:text-green-400 transition-colors">
-                    {anime.title}
-                  </h3>
-                  
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs text-purple-400">
-                      {anime.releaseYear || 'N/A'}
-                    </span>
-                    {/* Removed episodeCount display */}
-                  </div>
-
-                  {/* Quick Info */}
-                  <div className="flex items-center justify-between text-xs text-purple-500 mb-4">
-                    <div className="flex items-center gap-1">
-                      <svg className="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <span>Anime</span>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4">
+            {filteredAnimes.map(anime => {
+              // Available card image dimensions: height 36 (144px), width auto (96px for 2:3)
+              const imgWidth = 120;
+              const imgHeight = 180;
+              const optimizedSrc = getOptimizedImageUrl(anime.thumbnail, imgWidth, imgHeight);
+              
+              return (
+                <div
+                  key={getAnimeId(anime)}
+                  className="group bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-purple-900/40 backdrop-blur-sm border border-purple-700/40 rounded-xl overflow-hidden hover:border-amber-500/50 transition-all hover:shadow-lg hover:shadow-amber-500/10"
+                >
+                  <div className="relative h-36 overflow-hidden">
+                    <img
+                      src={optimizedSrc}
+                      alt={anime.title}
+                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                      loading="lazy"
+                      width={imgWidth}
+                      height={imgHeight}
+                      onError={(e) => {
+                        e.currentTarget.src = getOptimizedImageUrl(anime.thumbnail || '', 120, 180);
+                      }}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-transparent"></div>
+                    <div className="absolute top-2 right-2">
+                      <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                        anime.subDubStatus?.includes('Dub')
+                          ? 'bg-emerald-500/20 text-emerald-300'
+                          : 'bg-amber-500/20 text-amber-300'
+                      }`}>
+                        {anime.subDubStatus?.includes('Dub') ? 'DUB' : 'SUB'}
+                      </span>
                     </div>
-                    {/* Genre Preview */}
-                    {anime.genreList && anime.genreList.length > 0 && (
-                      <div className="flex items-center gap-1">
-                        <span className="truncate max-w-[80px] text-purple-400">
-                          {anime.genreList[0]}
-                        </span>
-                        {anime.genreList.length > 1 && (
-                          <span className="text-purple-600">+{anime.genreList.length - 1}</span>
-                        )}
-                      </div>
-                    )}
                   </div>
-
-                  {/* Add Button */}
-                  <button
-                    onClick={() => addToFeatured(anime)}
-                    disabled={featuredAnimes.length >= 24}
-                    className={`w-full py-3 rounded-xl font-medium transition-all transform hover:scale-105 ${
-                      featuredAnimes.length >= 24
-                        ? 'bg-gradient-to-r from-purple-700 to-purple-800 text-purple-500 cursor-not-allowed'
-                        : 'bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-500 hover:to-emerald-600 text-white shadow-lg hover:shadow-green-500/30'
-                    }`}
-                  >
-                    {featuredAnimes.length >= 24 ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        Max Featured Reached
-                      </span>
-                    ) : (
-                      <span className="flex items-center justify-center gap-2">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                        </svg>
-                        Add to Featured
-                      </span>
-                    )}
-                  </button>
+                  <div className="p-3">
+                    <h3 className="font-medium text-white text-xs truncate mb-2">{anime.title}</h3>
+                    <button
+                      onClick={() => addToFeatured(anime)}
+                      disabled={featuredAnimes.length >= 24}
+                      className={`w-full py-1.5 text-[10px] font-medium rounded-lg transition-all flex items-center justify-center gap-1 ${
+                        featuredAnimes.length >= 24
+                          ? 'bg-white/10 text-white/40 cursor-not-allowed'
+                          : 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white shadow-lg hover:shadow-amber-600/30'
+                      }`}
+                    >
+                      {featuredAnimes.length >= 24 ? (
+                        <>
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          Max
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                          </svg>
+                          Add
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
-          <div className="text-center py-20 bg-gradient-to-br from-purple-800/30 to-purple-900/30 backdrop-blur-sm rounded-2xl border border-purple-700/50">
-            <div className="max-w-md mx-auto">
-              <div className="text-7xl mb-6 opacity-20">🎭</div>
-              {searchTerm ? (
-                <>
-                  <h3 className="text-2xl font-bold text-purple-300 mb-3">No Matches Found</h3>
-                  <p className="text-purple-500 mb-8">
-                    No anime found for "<span className="text-purple-400">{searchTerm}</span>". Try a different search term.
-                  </p>
-                </>
-              ) : allAnimes.length === 0 ? (
-                <>
-                  <h3 className="text-2xl font-bold text-purple-300 mb-3">No Anime Available</h3>
-                  <p className="text-purple-500 mb-8">
-                    Your anime database is empty. Try refreshing or loading sample data.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <h3 className="text-2xl font-bold text-purple-300 mb-3">All Anime Featured!</h3>
-                  <p className="text-purple-500 mb-8">
-                    Congratulations! All available anime are already in your featured collection.
-                  </p>
-                </>
-              )}
-              
-              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+          <div className="text-center py-12 bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-purple-900/40 backdrop-blur-sm border border-purple-700/40 rounded-2xl">
+            <svg className="w-16 h-16 mx-auto text-white/20" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+            </svg>
+            <h3 className="mt-4 text-lg font-medium text-white/80">
+              {searchTerm ? 'No Matches Found' : allAnimes.length === 0 ? 'No Anime Available' : 'All Anime Featured!'}
+            </h3>
+            <p className="mt-1 text-white/50 text-sm max-w-md mx-auto">
+              {searchTerm ? `No results for "${searchTerm}"` : allAnimes.length === 0 ? 'Your database is empty.' : 'All available anime are already featured.'}
+            </p>
+            <div className="mt-6 flex gap-3 justify-center">
+              {searchTerm && (
                 <button
                   onClick={() => setSearchTerm('')}
-                  className="px-6 py-3 bg-gradient-to-r from-purple-600/90 to-pink-600/90 hover:from-purple-500 hover:to-pink-500 text-white rounded-xl font-medium transition-all shadow-lg shadow-purple-500/30"
+                  className="px-5 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white text-sm transition-all"
                 >
                   Clear Search
                 </button>
-                <button
-                  onClick={handleForceRefresh}
-                  className="px-6 py-3 bg-gradient-to-r from-blue-600/90 to-blue-700/90 hover:from-blue-500 hover:to-blue-600 text-white rounded-xl font-medium transition-all shadow-lg shadow-blue-500/30"
-                >
-                  Refresh Database
-                </button>
-              </div>
+              )}
+              <button
+                onClick={handleForceRefresh}
+                className="px-5 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 rounded-lg text-white text-sm transition-all shadow-lg shadow-amber-600/20"
+              >
+                Refresh
+              </button>
             </div>
           </div>
         )}

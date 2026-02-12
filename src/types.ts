@@ -1,4 +1,4 @@
- // src/types.ts – COMPLETE UPDATED VERSION WITH LIKE/DISLIKE SYSTEM
+ // src/types.ts – COMPLETE UPDATED VERSION WITH LIKE/DISLIKE SYSTEM + PARTNER MANAGER
 /* =========================
    DOWNLOAD / EPISODE / CHAPTER
 ========================= */
@@ -35,7 +35,7 @@ export interface Chapter {
 }
 
 /* =========================
-   LIKE/DISLIKE VOTE TYPES (NEW)
+   LIKE/DISLIKE VOTE TYPES
 ========================= */
 
 export interface Vote {
@@ -69,7 +69,7 @@ export interface Anime {
   thumbnail?: string;
   posterImage?: string;
   coverImage?: string;
-  bannerImage?: string; // ✅ ADDED: For carousel/featured display
+  bannerImage?: string; // ✅ For carousel/featured display
   releaseYear?: number;
   subDubStatus: SubDubStatus;
   contentType: ContentType;
@@ -87,7 +87,7 @@ export interface Anime {
   createdAt?: string;
   updatedAt?: string;
 
-  /* ✅ NEW: LIKE/DISLIKE SYSTEM FIELDS */
+  /* ✅ LIKE/DISLIKE SYSTEM FIELDS */
   likes?: number;
   dislikes?: number;
   votes?: Vote[];
@@ -109,6 +109,9 @@ export interface Anime {
   episodeCount?: number;
   totalEpisodes?: number;
   lastContentAdded?: Date | string;
+
+  /* ✅ NEW: Partner association (Partner Manager) */
+  partnerId?: string | null;
 }
 
 export interface FeaturedAnime extends Anime {
@@ -116,7 +119,7 @@ export interface FeaturedAnime extends Anime {
 }
 
 /* =========================
-   TOP 100 ANIME TYPES (NEW)
+   TOP 100 ANIME TYPES
 ========================= */
 
 export interface TopAnimeParams {
@@ -148,7 +151,7 @@ export interface AnimeStats {
 }
 
 /* =========================
-   ANIME API RESPONSE TYPES (NEW)
+   ANIME API RESPONSE TYPES
 ========================= */
 
 export interface AnimeResponse {
@@ -359,4 +362,79 @@ export interface ExportPollData {
   format: 'csv' | 'json' | 'pdf';
   includeVoters?: boolean;
   includeTimestamps?: boolean;
+}
+
+/* =====================================================
+   ✅ PARTNER MANAGER – NEW TYPES (ADDED)
+===================================================== */
+
+/**
+ * Partner – represents a content partner / contributor
+ * Partners can have anime assigned to them.
+ */
+export interface Partner {
+  _id: string;
+  name: string;
+  createdAt: string;          // ISO date string
+
+  // Frontend computed / API enriched fields
+  animeCount?: number;        // Number of anime assigned to this partner
+}
+
+/**
+ * Partner API request payloads
+ */
+export interface CreatePartnerData {
+  name: string;
+}
+
+/**
+ * Assign anime to partner – request body
+ */
+export interface AssignAnimeToPartnerData {
+  animeId: string;
+}
+
+/**
+ * Partner with populated anime list (for modal view)
+ */
+export interface PartnerWithAnime extends Partner {
+  animeList?: Anime[];        // Full anime objects assigned to partner
+}
+
+/**
+ * API response for GET /api/partners
+ */
+export interface PartnersApiResponse {
+  success?: boolean;          // Not always present, but we can include
+  data?: Partner[];           // Some APIs wrap in data
+  message?: string;
+  // Direct array response is also possible
+}
+
+/**
+ * API response for GET /api/partners/:id/anime
+ */
+export interface PartnerAnimeApiResponse {
+  success?: boolean;
+  data?: Anime[];
+  message?: string;
+}
+
+/**
+ * API response for partner creation
+ */
+export interface CreatePartnerApiResponse {
+  success?: boolean;
+  partner?: Partner;
+  message?: string;
+}
+
+/**
+ * API response for assign/remove operations
+ */
+export interface AnimeAssignmentResponse {
+  success?: boolean;
+  anime?: Anime;             // Updated anime document
+  message?: string;
 }

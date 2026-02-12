@@ -1,7 +1,9 @@
-// routes/animeRoutes.cjs - UPDATED WITH LIKE/DISLIKE SYSTEM & SEO SUPPORT
+ // routes/animeRoutes.cjs - UPDATED WITH LIKE/DISLIKE SYSTEM, SEO SUPPORT & UNASSIGNED ROUTE
 const express = require('express');
 const router = express.Router();
 const Anime = require('../models/Anime.cjs');
+// ✅ FIXED: Import adminAuth directly (not destructured)
+const adminAuth = require('../middleware/adminAuth.cjs');
 
 // ✅ CRITICAL FIX: STATIC ROUTES MUST COME BEFORE DYNAMIC ROUTES
 
@@ -15,14 +17,13 @@ router.get('/featured', async (req, res) => {
     const featuredAnime = await Anime.find({ 
       featured: true 
     })
-    .select('title thumbnail releaseYear subDubStatus contentType updatedAt createdAt bannerImage rating slug seoTitle likes dislikes monthlyLikes weeklyLikes') // ✅ Added like fields
-    .sort({ featuredOrder: -1, createdAt: -1 }) // ✅ Added featuredOrder for manual ordering
+    .select('title thumbnail releaseYear subDubStatus contentType updatedAt createdAt bannerImage rating slug seoTitle likes dislikes monthlyLikes weeklyLikes')
+    .sort({ featuredOrder: -1, createdAt: -1 })
     .limit(10)
     .lean();
 
-    // ✅ Set cache headers for featured content
     res.set({
-      'Cache-Control': 'public, max-age=600', // 10 minutes cache for featured
+      'Cache-Control': 'public, max-age=600',
     });
 
     res.json({ 
@@ -41,8 +42,8 @@ router.get('/featured', async (req, res) => {
 router.get('/top100', async (req, res) => {
   try {
     const { 
-      type = 'all-time', // 'all-time', 'monthly', 'weekly'
-      contentType = 'all', // 'Anime', 'Movie', 'Manga', 'all'
+      type = 'all-time',
+      contentType = 'all',
       limit = 100,
       page = 1
     } = req.query;
@@ -56,7 +57,6 @@ router.get('/top100', async (req, res) => {
 
     const topAnime = await Anime.getTopAnime(options);
 
-    // ✅ Get total count for pagination
     let countQuery = {};
     if (contentType && contentType !== 'all') {
       countQuery.contentType = contentType;
@@ -64,9 +64,8 @@ router.get('/top100', async (req, res) => {
 
     const total = await Anime.countDocuments(countQuery);
 
-    // ✅ Set cache headers
     res.set({
-      'Cache-Control': 'public, max-age=300', // 5 minutes cache
+      'Cache-Control': 'public, max-age=300',
       'X-Total-Count': total,
       'X-Ranking-Type': type,
       'X-Content-Type': contentType
@@ -96,7 +95,7 @@ router.get('/top100', async (req, res) => {
 });
 
 /**
- * ✅ NEW: GET ANIME BY SLUG (SEO-friendly URL) - MUST COME BEFORE DYNAMIC ROUTES
+ * ✅ NEW: GET ANIME BY SLUG (SEO-friendly URL)
  */
 router.get('/slug/:slug', async (req, res) => {
   try {
@@ -120,14 +119,12 @@ router.get('/slug/:slug', async (req, res) => {
       });
     }
 
-    // ✅ Increment views when accessed by slug
     await Anime.findByIdAndUpdate(anime._id, { 
       $inc: { views: 1 } 
     });
 
-    // ✅ SEO cache headers
     res.set({
-      'Cache-Control': 'public, max-age=3600', // 1 hour cache for SEO pages
+      'Cache-Control': 'public, max-age=3600',
       'Content-Type': 'application/json; charset=utf-8'
     });
 
@@ -141,20 +138,41 @@ router.get('/slug/:slug', async (req, res) => {
   }
 });
 
+// ============================================
+// ✅ PARTNER MANAGER: GET UNASSIGNED ANIME (ADMIN ONLY)
+// ============================================
+router.get('/unassigned', adminAuth, async (req, res) => {
+  try {
+    const { search } = req.query;
+    
+    let query = { partnerId: null };
+    
+    if (search && search.trim()) {
+      query.title = { $regex: search.trim(), $options: 'i' };
+    }
+
+    const anime = await Anime.find(query)
+      .select('title thumbnail episodes status contentType')
+      .limit(20)
+      .lean();
+
+    res.json(anime);
+  } catch (err) {
+    console.error('❌ Error fetching unassigned anime:', err);
+    res.status(500).json({ error: 'Failed to fetch unassigned anime' });
+  }
+});
+
 /**
- * ✅ NEW: LIKE/DISLIKE VOTE SYSTEM - UPDATED TO USE req.ip
+ * ✅ LIKE/DISLIKE VOTE SYSTEM
  */
 router.post('/:id/vote', async (req, res) => {
   try {
     const { id } = req.params;
     const { voteType } = req.body;
 
-    // ✅ FIX: Get IP address from request object, not from body
     const ipAddress = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
 
-    console.log(`🗳️ Vote request from IP: ${ipAddress}, Vote Type: ${voteType}, Anime ID: ${id}`);
-
-    // Validate vote type
     if (!['like', 'dislike'].includes(voteType)) {
       return res.status(400).json({ 
         success: false, 
@@ -162,7 +180,6 @@ router.post('/:id/vote', async (req, res) => {
       });
     }
 
-    // Find anime
     const anime = await Anime.findById(id);
     if (!anime) {
       return res.status(404).json({ 
@@ -171,15 +188,10 @@ router.post('/:id/vote', async (req, res) => {
       });
     }
 
-    // Check if user already voted
     const hasVoted = anime.hasVoted(ipAddress);
     const userVote = anime.getUserVote(ipAddress);
 
-    console.log(`🔍 Vote check - HasVoted: ${hasVoted}, UserVote: ${userVote}`);
-
-    // If user is trying to vote same type again, remove vote
     if (hasVoted && userVote === voteType) {
-      console.log(`🗑️ Removing vote for IP: ${ipAddress}`);
       await anime.removeVote(ipAddress);
       
       return res.json({
@@ -195,14 +207,9 @@ router.post('/:id/vote', async (req, res) => {
       });
     }
 
-    // Add/update vote
-    console.log(`➕ Adding vote for IP: ${ipAddress}, Type: ${voteType}`);
     await anime.addVote(ipAddress, voteType);
-
-    // Update time-based counts
     await anime.updateTimeBasedCounts();
 
-    // Get updated anime
     const updatedAnime = await Anime.findById(id);
 
     res.json({
@@ -218,9 +225,6 @@ router.post('/:id/vote', async (req, res) => {
         weeklyLikes: updatedAnime.weeklyLikes
       }
     });
-
-    console.log(`✅ Vote processed successfully - Likes: ${updatedAnime.likes}, Dislikes: ${updatedAnime.dislikes}`);
-
   } catch (err) {
     console.error('Error processing vote:', err);
     res.status(500).json({ success: false, error: err.message });
@@ -228,16 +232,13 @@ router.post('/:id/vote', async (req, res) => {
 });
 
 /**
- * ✅ NEW: GET USER VOTE STATUS - UPDATED TO USE req.ip
+ * ✅ GET USER VOTE STATUS
  */
 router.get('/:id/vote-status', async (req, res) => {
   try {
     const { id } = req.params;
     
-    // ✅ FIX: Get IP address from request object
     const ipAddress = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
-
-    console.log(`🔍 Checking vote status for IP: ${ipAddress}, Anime ID: ${id}`);
 
     const anime = await Anime.findById(id).select('likes dislikes votes monthlyLikes weeklyLikes totalVotes');
     if (!anime) {
@@ -249,8 +250,6 @@ router.get('/:id/vote-status', async (req, res) => {
 
     const hasVoted = anime.hasVoted(ipAddress);
     const userVote = anime.getUserVote(ipAddress);
-
-    console.log(`✅ Vote status - HasVoted: ${hasVoted}, UserVote: ${userVote}`);
 
     res.json({
       success: true,
@@ -271,7 +270,7 @@ router.get('/:id/vote-status', async (req, res) => {
 });
 
 /**
- * ✅ NEW: GET ANIME STATISTICS (for admin/analytics)
+ * ✅ GET ANIME STATISTICS
  */
 router.get('/:id/statistics', async (req, res) => {
   try {
@@ -288,12 +287,10 @@ router.get('/:id/statistics', async (req, res) => {
       });
     }
 
-    // Calculate vote percentages
     const totalVotes = anime.likes + anime.dislikes;
     const likePercentage = totalVotes > 0 ? (anime.likes / totalVotes * 100).toFixed(1) : 0;
     const dislikePercentage = totalVotes > 0 ? (anime.dislikes / totalVotes * 100).toFixed(1) : 0;
 
-    // Get vote trend (last 30 days)
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
@@ -329,8 +326,7 @@ router.get('/:id/statistics', async (req, res) => {
 });
 
 /**
- * ✅ OPTIMIZED: GET anime with PAGINATION
- * Returns paginated anime from DB sorted by LATEST UPDATE
+ * ✅ GET anime with PAGINATION
  */
 router.get('/', async (req, res) => {
   try {
@@ -339,7 +335,6 @@ router.get('/', async (req, res) => {
     const skip = (page - 1) * limit;
     const sortBy = req.query.sortBy || 'updatedAt';
 
-    // Determine sort field
     let sortField = 'updatedAt';
     let sortOrder = -1;
 
@@ -355,19 +350,17 @@ router.get('/', async (req, res) => {
       sortField = 'featuredOrder';
     }
 
-    // ✅ OPTIMIZED: Only get necessary fields for listing
     const anime = await Anime.find()
-      .select('title thumbnail releaseYear subDubStatus contentType updatedAt createdAt slug likes dislikes rating monthlyLikes weeklyLikes totalVotes') // ✅ Added like fields
+      .select('title thumbnail releaseYear subDubStatus contentType updatedAt createdAt slug likes dislikes rating monthlyLikes weeklyLikes totalVotes')
       .sort({ [sortField]: sortOrder })
       .skip(skip)
       .limit(limit)
-      .lean(); // Faster response
+      .lean();
 
     const total = await Anime.countDocuments();
 
-    // ✅ OPTIMIZED: Set cache headers
     res.set({
-      'Cache-Control': 'public, max-age=300', // 5 minutes cache
+      'Cache-Control': 'public, max-age=300',
       'X-Total-Count': total,
       'X-Page': page,
       'X-Limit': limit,
@@ -391,7 +384,7 @@ router.get('/', async (req, res) => {
 });
 
 /**
- * ✅ OPTIMIZED: SEARCH anime with PAGINATION WITH SEO SUPPORT
+ * ✅ SEARCH anime with PAGINATION
  */
 router.get('/search', async (req, res) => {
   try {
@@ -400,7 +393,6 @@ router.get('/search', async (req, res) => {
     const limit = parseInt(req.query.limit) || 24;
     const skip = (page - 1) * limit;
 
-    // ✅ IMPROVED: Search in multiple fields for better SEO
     const searchQuery = {
       $or: [
         { title: { $regex: q, $options: 'i' } },
@@ -411,15 +403,14 @@ router.get('/search', async (req, res) => {
     };
 
     const found = await Anime.find(searchQuery)
-      .select('title thumbnail releaseYear subDubStatus contentType updatedAt createdAt slug seoTitle seoDescription likes dislikes rating monthlyLikes weeklyLikes') // ✅ Added like fields
-      .sort({ likes: -1, updatedAt: -1 }) // Sort by popularity first
+      .select('title thumbnail releaseYear subDubStatus contentType updatedAt createdAt slug seoTitle seoDescription likes dislikes rating monthlyLikes weeklyLikes')
+      .sort({ likes: -1, updatedAt: -1 })
       .skip(skip)
       .limit(limit)
       .lean();
 
     const total = await Anime.countDocuments(searchQuery);
 
-    // ✅ SEO headers for search results
     res.set({
       'Cache-Control': 'public, max-age=300',
       'X-Total-Count': total,
@@ -447,7 +438,7 @@ router.get('/search', async (req, res) => {
 });
 
 /**
- * ✅ NEW: GET ANIME LIST WITH SEO FILTERS
+ * ✅ GET ANIME LIST WITH SEO FILTERS
  */
 router.get('/filter/seo', async (req, res) => {
   try {
@@ -455,7 +446,6 @@ router.get('/filter/seo', async (req, res) => {
     
     const filter = {};
     
-    // Apply language filter
     if (language) {
       if (language === 'hindi') {
         filter.$or = [
@@ -470,17 +460,14 @@ router.get('/filter/seo', async (req, res) => {
       }
     }
     
-    // Apply type filter
     if (type && type !== 'all') {
       filter.contentType = type.charAt(0).toUpperCase() + type.slice(1);
     }
     
-    // Apply genre filter
     if (genre) {
       filter.genreList = { $regex: genre, $options: 'i' };
     }
     
-    // Determine sort field
     let sortField = 'likes';
     if (sortBy === 'newest') {
       sortField = 'createdAt';
@@ -498,9 +485,8 @@ router.get('/filter/seo', async (req, res) => {
       .limit(50)
       .lean();
     
-    // ✅ SEO cache for filtered results
     res.set({
-      'Cache-Control': 'public, max-age=1800', // 30 minutes
+      'Cache-Control': 'public, max-age=1800',
     });
     
     res.json({
@@ -515,25 +501,21 @@ router.get('/filter/seo', async (req, res) => {
 });
 
 /**
- * ✅ UPDATED: GET single anime by ID OR SLUG
- * THIS MUST BE THE LAST ROUTE IN THE FILE
+ * ✅ GET single anime by ID OR SLUG
  */
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Check if the ID is a valid MongoDB ObjectId
     const isObjectId = /^[0-9a-fA-F]{24}$/.test(id);
     
     let item;
     
     if (isObjectId) {
-      // Search by ID
       item = await Anime.findById(id)
         .populate('episodes')
         .lean();
     } else {
-      // Try searching by slug
       item = await Anime.findOne({ slug: id })
         .populate('episodes')
         .lean();
@@ -546,14 +528,12 @@ router.get('/:id', async (req, res) => {
       });
     }
     
-    // ✅ Increment views
     await Anime.findByIdAndUpdate(item._id, { 
       $inc: { views: 1 } 
     });
     
-    // ✅ SEO headers
     res.set({
-      'Cache-Control': 'public, max-age=3600', // 1 hour for anime details
+      'Cache-Control': 'public, max-age=3600',
       'Content-Type': 'application/json; charset=utf-8'
     });
     
@@ -562,7 +542,6 @@ router.get('/:id', async (req, res) => {
       data: item
     });
   } catch (err) {
-    // ✅ Better error handling for invalid ObjectId
     if (err.name === 'CastError') {
       return res.status(400).json({ 
         success: false, 
@@ -575,7 +554,7 @@ router.get('/:id', async (req, res) => {
 });
 
 /**
- * ✅ NEW: BULK UPDATE SEO DATA
+ * ✅ BULK UPDATE SEO DATA
  */
 router.put('/bulk/seo', async (req, res) => {
   try {
@@ -616,14 +595,12 @@ router.put('/bulk/seo', async (req, res) => {
   }
 });
 
-// ✅ ADDED: FEATURED MANAGEMENT ROUTES
+// ✅ FEATURED MANAGEMENT ROUTES (require adminAuth)
 
-// Add anime to featured
-router.post('/:id/featured', async (req, res) => {
+router.post('/:id/featured', adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Count current featured animes for ordering
     const featuredCount = await Anime.countDocuments({ featured: true });
     
     const updatedAnime = await Anime.findByIdAndUpdate(
@@ -650,8 +627,7 @@ router.post('/:id/featured', async (req, res) => {
   }
 });
 
-// Remove anime from featured
-router.delete('/:id/featured', async (req, res) => {
+router.delete('/:id/featured', adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
     
@@ -679,10 +655,9 @@ router.delete('/:id/featured', async (req, res) => {
   }
 });
 
-// Update featured order (bulk update)
-router.put('/featured/order', async (req, res) => {
+router.put('/featured/order', adminAuth, async (req, res) => {
   try {
-    const { order } = req.body; // array of anime IDs in desired order
+    const { order } = req.body;
     
     if (!Array.isArray(order)) {
       return res.status(400).json({ success: false, error: 'Order must be an array of anime IDs' });
@@ -693,7 +668,7 @@ router.put('/featured/order', async (req, res) => {
         filter: { _id: animeId },
         update: { 
           featuredOrder: index + 1,
-          featured: true // Ensure they remain featured
+          featured: true
         }
       }
     }));

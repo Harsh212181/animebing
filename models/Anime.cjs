@@ -1,4 +1,4 @@
-// models/Anime.cjs - UPDATED WITH LIKE/DISLIKE SYSTEM & SEO FIELDS
+ // models/Anime.cjs - UPDATED WITH PARTNER ID
 const mongoose = require('mongoose');
 
 // Schema for storing user votes
@@ -27,13 +27,13 @@ const animeSchema = new mongoose.Schema({
   genreList: [String],
   releaseYear: Number,
   thumbnail: String,
-  bannerImage: String, // ✅ ADDED: For featured/carousel display
+  bannerImage: String, // For featured/carousel display
   contentType: {
     type: String,
     enum: ['Anime', 'Movie', 'Manga'],
     default: 'Anime'
   },
-  // ✅ UPDATED: Added 'English Sub' to enum
+  // UPDATED: Added 'English Sub' to enum
   subDubStatus: {
     type: String,
     enum: ['Hindi Dub', 'Hindi Sub', 'English Sub', 'Both', 'Subbed', 'Dubbed', 'Sub & Dub', 'Dual Audio'],
@@ -50,13 +50,13 @@ const animeSchema = new mongoose.Schema({
   },
   lastReported: Date,
   
-  // ✅ YEH NAYA FIELD ADD KARO: Last episode/chapter added timestamp
+  // Last episode/chapter added timestamp
   lastContentAdded: { 
     type: Date, 
     default: Date.now 
   },
 
-  // ✅ CORRECTED: USE 'featured' INSTEAD OF 'isFeatured' FOR CONSISTENCY
+  // CORRECTED: USE 'featured' INSTEAD OF 'isFeatured' FOR CONSISTENCY
   featured: {
     type: Boolean,
     default: false
@@ -66,7 +66,7 @@ const animeSchema = new mongoose.Schema({
     default: 0
   },
   
-  // ✅ ADDITIONAL FIELDS FOR BETTER FUNCTIONALITY
+  // ADDITIONAL FIELDS FOR BETTER FUNCTIONALITY
   rating: {
     type: Number,
     min: 0,
@@ -82,7 +82,7 @@ const animeSchema = new mongoose.Schema({
     default: 0
   },
   
-  // ✅ SEO FIELDS ADDED HERE
+  // SEO FIELDS
   seoTitle: {
     type: String,
     default: ''
@@ -101,7 +101,14 @@ const animeSchema = new mongoose.Schema({
     sparse: true
   },
   
-  // ✅ LIKE/DISLIKE SYSTEM FIELDS (NEW ADDITION)
+  // ✅ NEW FIELD: Partner association (for Partner Manager feature)
+  partnerId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Partner',
+    default: null
+  },
+  
+  // LIKE/DISLIKE SYSTEM FIELDS
   likes: {
     type: Number,
     default: 0
@@ -112,7 +119,7 @@ const animeSchema = new mongoose.Schema({
   },
   votes: [voteSchema], // Store all votes with IP and type
   
-  // ✅ FOR TOP 100 RANKINGS
+  // FOR TOP 100 RANKINGS
   lastLikedDate: { 
     type: Date 
   },
@@ -129,12 +136,12 @@ const animeSchema = new mongoose.Schema({
     default: 0
   }
 }, { 
-  timestamps: true, // ✅ Yeh automatically createdAt and updatedAt fields add karega
+  timestamps: true, // Automatically adds createdAt and updatedAt
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
 });
 
-// ✅ YEH VIRTUAL FIELDS ADD KARO
+// VIRTUAL FIELDS
 animeSchema.virtual('episodes', {
   ref: 'Episode',
   localField: '_id',
@@ -147,7 +154,7 @@ animeSchema.virtual('chapters', {
   foreignField: 'mangaId'
 });
 
-// ✅ LIKE/DISLIKE HELPER METHODS
+// LIKE/DISLIKE HELPER METHODS
 animeSchema.methods.hasVoted = function(ip) {
   return this.votes.some(vote => vote.ipAddress === ip);
 };
@@ -217,7 +224,7 @@ animeSchema.methods.removeVote = function(ip) {
   return Promise.resolve(this);
 };
 
-// ✅ METHOD TO UPDATE TIME-BASED COUNTS
+// METHOD TO UPDATE TIME-BASED COUNTS
 animeSchema.methods.updateTimeBasedCounts = function() {
   const now = new Date();
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -235,30 +242,28 @@ animeSchema.methods.updateTimeBasedCounts = function() {
   return this.save();
 };
 
-// ✅ YEH MIDDLEWARE ADD KARO: Jab bhi anime save ho to slug auto-generate ho
+// MIDDLEWARE: Auto-generate slug, update lastContentAdded, set default SEO
 animeSchema.pre('save', function(next) {
-  // Agar slug nahi hai ya title change hua hai to slug generate karo
+  // Generate slug if not present or title changed
   if (!this.slug || this.isModified('title')) {
-    // Slug generate karo title se
     this.slug = this.title
       .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, '') // Special characters remove karo
-      .replace(/\s+/g, '-')         // Spaces ko dash se replace karo
-      .replace(/-+/g, '-')          // Multiple dashes ko single dash se replace karo
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
       .trim();
     
-    // Slug unique banane ke liye ID add karo agar duplicate ho
     if (this.slug) {
       this.slug = `${this.slug}-${Date.now().toString(36)}`;
     }
   }
   
-  // Agar episodes array modify hui hai to lastContentAdded update karo
+  // Update lastContentAdded if episodes were modified (via virtual population, not direct)
   if (this.isModified('episodes') && this.episodes && this.episodes.length > 0) {
     this.lastContentAdded = new Date();
   }
   
-  // Agar SEO fields empty hain to default values set karo
+  // Default SEO fields if empty
   if (!this.seoTitle) {
     this.seoTitle = `Watch ${this.title} Online in ${this.subDubStatus} | AnimeBing`;
   }
@@ -268,7 +273,6 @@ animeSchema.pre('save', function(next) {
   }
   
   if (!this.seoKeywords) {
-    // Auto-generate keywords based on title, genre, and subDubStatus
     const keywords = [];
     
     // Title-based keywords
@@ -297,7 +301,6 @@ animeSchema.pre('save', function(next) {
       keywords.push(`${this.title} movie`, 'anime movies', 'full anime movie');
     }
     
-    // Remove duplicates and join
     const uniqueKeywords = [...new Set(keywords)];
     this.seoKeywords = uniqueKeywords.join(', ');
   }
@@ -305,7 +308,7 @@ animeSchema.pre('save', function(next) {
   next();
 });
 
-// ✅ YEH STATIC METHOD ADD KARO: Anime update karo jab episode add ho
+// STATIC METHOD: Update lastContentAdded when episode added
 animeSchema.statics.updateLastContent = async function(animeId) {
   await this.findByIdAndUpdate(animeId, {
     lastContentAdded: new Date(),
@@ -313,7 +316,7 @@ animeSchema.statics.updateLastContent = async function(animeId) {
   });
 };
 
-// ✅ YEH STATIC METHOD ADD KARO: Slug generate karo
+// STATIC METHOD: Generate unique slug
 animeSchema.statics.generateSlug = async function(title) {
   let slug = title
     .toLowerCase()
@@ -322,7 +325,6 @@ animeSchema.statics.generateSlug = async function(title) {
     .replace(/-+/g, '-')
     .trim();
   
-  // Check if slug already exists
   let existing = await this.findOne({ slug });
   let counter = 1;
   let originalSlug = slug;
@@ -336,26 +338,23 @@ animeSchema.statics.generateSlug = async function(title) {
   return slug;
 };
 
-// ✅ YEH STATIC METHOD ADD KARO: Get top anime by likes
+// STATIC METHOD: Get top anime by likes
 animeSchema.statics.getTopAnime = async function(options = {}) {
   const { 
-    type = 'all-time', // 'all-time', 'monthly', 'weekly'
-    contentType = null, // 'Anime', 'Movie', 'Manga' or null for all
+    type = 'all-time',
+    contentType = null,
     limit = 100,
     page = 1
   } = options;
   
   const skip = (page - 1) * limit;
   
-  // Build query
   let query = {};
   
-  // Filter by content type if specified
   if (contentType && contentType !== 'all') {
     query.contentType = contentType;
   }
   
-  // Determine sort field based on type
   let sortField = 'likes';
   if (type === 'monthly') {
     sortField = 'monthlyLikes';
@@ -371,20 +370,23 @@ animeSchema.statics.getTopAnime = async function(options = {}) {
     .lean();
 };
 
-// ✅ YEH INDEXES ADD KARO FOR FASTER QUERIES
-animeSchema.index({ featured: 1, featuredOrder: -1 }); // For featured anime queries
-animeSchema.index({ title: 'text' }); // For text search
-animeSchema.index({ lastContentAdded: -1 }); // For recent updates
-animeSchema.index({ createdAt: -1 }); // For new arrivals
-animeSchema.index({ slug: 1 }); // ✅ SEO: For slug-based URL queries
-animeSchema.index({ seoTitle: 'text', seoDescription: 'text', seoKeywords: 'text' }); // ✅ SEO: For SEO content search
+// INDEXES FOR PERFORMANCE
+animeSchema.index({ featured: 1, featuredOrder: -1 });
+animeSchema.index({ title: 'text' });
+animeSchema.index({ lastContentAdded: -1 });
+animeSchema.index({ createdAt: -1 });
+animeSchema.index({ slug: 1 });
+animeSchema.index({ seoTitle: 'text', seoDescription: 'text', seoKeywords: 'text' });
 
-// ✅ LIKE/DISLIKE SYSTEM INDEXES
-animeSchema.index({ likes: -1 }); // For all-time ranking
-animeSchema.index({ monthlyLikes: -1 }); // For monthly ranking
-animeSchema.index({ weeklyLikes: -1 }); // For weekly ranking
-animeSchema.index({ 'votes.ipAddress': 1 }); // For checking user votes
-animeSchema.index({ contentType: 1, likes: -1 }); // For filtering by content type
-animeSchema.index({ 'votes.date': -1 }); // For time-based vote queries
+// LIKE/DISLIKE SYSTEM INDEXES
+animeSchema.index({ likes: -1 });
+animeSchema.index({ monthlyLikes: -1 });
+animeSchema.index({ weeklyLikes: -1 });
+animeSchema.index({ 'votes.ipAddress': 1 });
+animeSchema.index({ contentType: 1, likes: -1 });
+animeSchema.index({ 'votes.date': -1 });
+
+// ✅ NEW INDEX FOR PARTNER FILTERING
+animeSchema.index({ partnerId: 1 });
 
 module.exports = mongoose.models.Anime || mongoose.model('Anime', animeSchema);
