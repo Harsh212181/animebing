@@ -1,4 +1,4 @@
- // src/components/admin/SocialMediaManager.tsx - FIXED ICONS WITHOUT REACT-ICONS
+ // src/components/admin/SocialMediaManager.tsx - COMPLETELY NEW INSTAGRAM ICON
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Spinner from '../Spinner';
@@ -15,7 +15,8 @@ interface SocialMedia {
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://animabing.onrender.com/api';
 
 const SocialMediaManager: React.FC = () => {
-  const [socialLinks, setSocialLinks] = useState<SocialMedia[]>([
+  // Default list includes all five platforms, Twitter & YouTube inactive
+  const defaultSocialLinks: SocialMedia[] = [
     {
       platform: 'instagram',
       url: 'https://instagram.com/animebingofficial',
@@ -36,9 +37,24 @@ const SocialMediaManager: React.FC = () => {
       isActive: true,
       icon: 'facebook',
       displayName: 'Facebook'
+    },
+    {
+      platform: 'twitter',
+      url: 'https://twitter.com/animebing',
+      isActive: false,
+      icon: 'twitter',
+      displayName: 'Twitter'
+    },
+    {
+      platform: 'youtube',
+      url: 'https://youtube.com/c/animebing',
+      isActive: false,
+      icon: 'youtube',
+      displayName: 'YouTube'
     }
-  ]);
+  ];
   
+  const [socialLinks, setSocialLinks] = useState<SocialMedia[]>(defaultSocialLinks);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [editingLink, setEditingLink] = useState<SocialMedia | null>(null);
@@ -68,13 +84,19 @@ const SocialMediaManager: React.FC = () => {
         }
       });
       
-      // यदि कोई डेटा नहीं है तो डिफ़ॉल्ट सेट करें
       if (data && data.length > 0) {
-        setSocialLinks(data);
+        // Merge fetched data with default list so missing platforms are kept
+        const merged = defaultSocialLinks.map(defaultItem => {
+          const found = data.find((item: SocialMedia) => item.platform === defaultItem.platform);
+          return found ? { ...defaultItem, ...found } : defaultItem;
+        });
+        setSocialLinks(merged);
+      } else {
+        // No data from API, keep defaults
+        setSocialLinks(defaultSocialLinks);
       }
     } catch (err: any) {
       console.error('Fetch error:', err);
-      // API error होने पर भी डिफ़ॉल्ट दिखाएं
       setError('API connection failed. Using default links.');
     } finally {
       setLoading(false);
@@ -96,48 +118,60 @@ const SocialMediaManager: React.FC = () => {
     try {
       const token = getToken();
       
-      // URL validation और formatting
+      // URL validation and formatting
       let formattedUrl = editForm.url.trim();
       
-      // Instagram के लिए सही फॉर्मेट
-      if (editingLink.platform === 'instagram') {
-        // Remove query parameters and ensure correct format
-        if (formattedUrl.includes('?')) {
-          formattedUrl = formattedUrl.split('?')[0];
-        }
-        if (formattedUrl.includes('www.')) {
-          formattedUrl = formattedUrl.replace('www.', '');
-        }
-        if (!formattedUrl.startsWith('https://instagram.com/')) {
-          if (formattedUrl.includes('instagram.com/')) {
-            formattedUrl = 'https://instagram.com/' + formattedUrl.split('instagram.com/')[1];
-          } else {
-            formattedUrl = 'https://instagram.com/' + formattedUrl.split('/').pop();
+      // Platform-specific formatting
+      switch (editingLink.platform) {
+        case 'instagram':
+          if (formattedUrl.includes('?')) formattedUrl = formattedUrl.split('?')[0];
+          if (formattedUrl.includes('www.')) formattedUrl = formattedUrl.replace('www.', '');
+          if (!formattedUrl.startsWith('https://instagram.com/')) {
+            if (formattedUrl.includes('instagram.com/')) {
+              formattedUrl = 'https://instagram.com/' + formattedUrl.split('instagram.com/')[1];
+            } else {
+              formattedUrl = 'https://instagram.com/' + formattedUrl.split('/').pop();
+            }
           }
-        }
-      }
-      
-      // Telegram के लिए सही फॉर्मेट
-      if (editingLink.platform === 'telegram') {
-        if (!formattedUrl.startsWith('https://t.me/')) {
-          if (formattedUrl.includes('t.me/')) {
-            formattedUrl = 'https://t.me/' + formattedUrl.split('t.me/')[1];
-          } else {
-            formattedUrl = 'https://t.me/' + formattedUrl.split('/').pop();
+          break;
+        case 'telegram':
+          if (!formattedUrl.startsWith('https://t.me/')) {
+            if (formattedUrl.includes('t.me/')) {
+              formattedUrl = 'https://t.me/' + formattedUrl.split('t.me/')[1];
+            } else {
+              formattedUrl = 'https://t.me/' + formattedUrl.split('/').pop();
+            }
           }
-        }
-      }
-      
-      // Facebook के लिए सही फॉर्मेट
-      if (editingLink.platform === 'facebook') {
-        if (!formattedUrl.startsWith('https://facebook.com/') && 
-            !formattedUrl.startsWith('https://www.facebook.com/')) {
-          if (formattedUrl.includes('facebook.com/')) {
-            formattedUrl = 'https://facebook.com/' + formattedUrl.split('facebook.com/')[1];
-          } else {
-            formattedUrl = 'https://facebook.com/' + formattedUrl.split('/').pop();
+          break;
+        case 'facebook':
+          if (!formattedUrl.startsWith('https://facebook.com/') && !formattedUrl.startsWith('https://www.facebook.com/')) {
+            if (formattedUrl.includes('facebook.com/')) {
+              formattedUrl = 'https://facebook.com/' + formattedUrl.split('facebook.com/')[1];
+            } else {
+              formattedUrl = 'https://facebook.com/' + formattedUrl.split('/').pop();
+            }
           }
-        }
+          break;
+        case 'twitter':
+          if (!formattedUrl.startsWith('https://twitter.com/') && !formattedUrl.startsWith('https://x.com/')) {
+            if (formattedUrl.includes('twitter.com/')) {
+              formattedUrl = 'https://twitter.com/' + formattedUrl.split('twitter.com/')[1];
+            } else if (formattedUrl.includes('x.com/')) {
+              formattedUrl = 'https://twitter.com/' + formattedUrl.split('x.com/')[1];
+            } else {
+              formattedUrl = 'https://twitter.com/' + formattedUrl.split('/').pop();
+            }
+          }
+          break;
+        case 'youtube':
+          if (!formattedUrl.startsWith('https://youtube.com/') && !formattedUrl.startsWith('https://www.youtube.com/')) {
+            if (formattedUrl.includes('youtube.com/')) {
+              formattedUrl = 'https://youtube.com/' + formattedUrl.split('youtube.com/')[1];
+            } else {
+              formattedUrl = 'https://youtube.com/@' + formattedUrl.split('/').pop();
+            }
+          }
+          break;
       }
 
       await axios.put(
@@ -172,7 +206,9 @@ const SocialMediaManager: React.FC = () => {
       const linksToUpdate = [
         { platform: 'instagram', url: 'https://instagram.com/animebingofficial' },
         { platform: 'telegram', url: 'https://t.me/animebingofficial' },
-        { platform: 'facebook', url: 'https://facebook.com/animebingofficial' }
+        { platform: 'facebook', url: 'https://facebook.com/animebingofficial' },
+        { platform: 'twitter', url: 'https://twitter.com/animebing' },
+        { platform: 'youtube', url: 'https://youtube.com/c/animebing' }
       ];
       
       for (const link of linksToUpdate) {
@@ -201,51 +237,53 @@ const SocialMediaManager: React.FC = () => {
     window.open(url, '_blank');
   };
 
-  // Simple SVG Icons - FIXED VERSION
+  // BRAND NEW INSTAGRAM ICON - Simple and Clean Design
   const SocialIcon = ({ platform, className = "w-6 h-6" }: { platform: string; className?: string }) => {
-    const svgClass = `${className} ${platform === 'instagram' ? 'text-white' : 
-                     platform === 'facebook' ? 'text-white' : 'text-white'}`;
     
-    // Instagram Icon
     if (platform === 'instagram') {
+      // Brand new clean Instagram icon
       return (
-        <svg className={svgClass} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect width="24" height="24" rx="8" fill="url(#instagram-gradient)" />
-          <defs>
-            <linearGradient id="instagram-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#fdf497" />
-              <stop offset="25%" stopColor="#fd5949" />
-              <stop offset="50%" stopColor="#d6249f" />
-              <stop offset="100%" stopColor="#285AEB" />
-            </linearGradient>
-          </defs>
-          <circle cx="12" cy="12" r="5" fill="none" stroke="white" strokeWidth="2" />
-          <circle cx="17" cy="7" r="1.5" fill="white" />
+        <svg className={className} viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
         </svg>
       );
     }
     
-    // Facebook Icon
+    if (platform === 'twitter') {
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+        </svg>
+      );
+    }
+    
+    if (platform === 'youtube') {
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+          <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.376.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.376-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+        </svg>
+      );
+    }
+    
     if (platform === 'facebook') {
       return (
-        <svg className={svgClass} viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+        <svg className={className} viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
           <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
         </svg>
       );
     }
     
-    // Telegram Icon
     if (platform === 'telegram') {
       return (
-        <svg className={svgClass} viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.139l-1.671 7.894c-.236 1.001-.837 1.248-1.697.775l-4.688-3.454-2.26 2.178c-.249.249-.459.459-.935.459l.336-4.773 8.665-5.515c.387-.247.741-.112.45.141l-7.07 6.389-3.073-.967c-1.071-.336-1.092-1.071.223-1.585l12.18-4.692c.892-.336 1.674.223 1.383 1.383z" />
+        <svg className={className} viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.161c-.18 1.897-.962 6.502-1.359 8.627-.168.9-.5 1.201-.82 1.23-.697.064-1.226-.461-1.901-.903-1.056-.692-1.653-1.123-2.678-1.799-1.185-.781-.417-1.21.258-1.911.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.139-5.062 3.345-.479.329-.913.489-1.302.481-.428-.009-1.252-.241-1.865-.44-.752-.244-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.831-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
         </svg>
       );
     }
     
     // Default icon
     return (
-      <svg className={svgClass} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
       </svg>
     );
@@ -255,11 +293,15 @@ const SocialMediaManager: React.FC = () => {
   const getPlatformBgColor = (platform: string) => {
     switch (platform) {
       case 'instagram':
-        return 'bg-gradient-to-r from-purple-600 via-pink-600 to-yellow-500';
+        return 'bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400';
       case 'facebook':
         return 'bg-blue-600';
       case 'telegram':
         return 'bg-blue-500';
+      case 'twitter':
+        return 'bg-black';
+      case 'youtube':
+        return 'bg-red-600';
       default:
         return 'bg-gray-600';
     }
@@ -341,11 +383,13 @@ const SocialMediaManager: React.FC = () => {
           FIX INSTRUCTIONS:
         </h4>
         <ul className="text-blue-200 text-sm space-y-2">
-          <li>1. Click <strong>"Apply Direct Fix"</strong> button to automatically fix all links</li>
+          <li>1. Click <strong>"Apply Direct Fix"</strong> button to automatically update all links</li>
           <li>2. Or manually edit each link with correct format:</li>
           <li className="ml-4">• Instagram: <code className="bg-black/40 px-2 py-1 rounded">https://instagram.com/animebingofficial</code></li>
           <li className="ml-4">• Telegram: <code className="bg-black/40 px-2 py-1 rounded">https://t.me/animebingofficial</code></li>
           <li className="ml-4">• Facebook: <code className="bg-black/40 px-2 py-1 rounded">https://facebook.com/animebingofficial</code></li>
+          <li className="ml-4">• Twitter: <code className="bg-black/40 px-2 py-1 rounded">https://twitter.com/animebing</code></li>
+          <li className="ml-4">• YouTube: <code className="bg-black/40 px-2 py-1 rounded">https://youtube.com/c/animebing</code></li>
         </ul>
       </div>
 
@@ -437,20 +481,16 @@ const SocialMediaManager: React.FC = () => {
                   value={editForm.url}
                   onChange={(e) => setEditForm({ ...editForm, url: e.target.value })}
                   className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
-                  placeholder={
-                    editingLink.platform === 'instagram' 
-                      ? 'https://instagram.com/animebingofficial'
-                      : editingLink.platform === 'telegram'
-                      ? 'https://t.me/animebingofficial'
-                      : 'https://facebook.com/animebingofficial'
-                  }
+                  placeholder={`https://${editingLink.platform}.com/...`}
                   required
                 />
                 <div className="text-xs text-slate-400 mt-2">
                   <strong>Correct format:</strong><br/>
-                  {editingLink.platform === 'instagram' && 'https://instagram.com/username (NO ?igsh=...)'}<br/>
-                  {editingLink.platform === 'telegram' && 'https://t.me/channelname'}<br/>
+                  {editingLink.platform === 'instagram' && 'https://instagram.com/username (NO ?igsh=...)'}
+                  {editingLink.platform === 'telegram' && 'https://t.me/channelname'}
                   {editingLink.platform === 'facebook' && 'https://facebook.com/pagename'}
+                  {editingLink.platform === 'twitter' && 'https://twitter.com/username'}
+                  {editingLink.platform === 'youtube' && 'https://youtube.com/@channel or /c/channel'}
                 </div>
               </div>
 
@@ -519,7 +559,7 @@ const SocialMediaManager: React.FC = () => {
           <li>1. Click "Apply Direct Fix" button</li>
           <li>2. Open website in another device</li>
           <li>3. Click social media icons in footer</li>
-          <li>4. They should open correct Instagram/TG/FB profiles</li>
+          <li>4. They should open correct profiles</li>
           <li>5. If not working, use MongoDB Compass to directly update database</li>
         </ol>
       </div>

@@ -383,7 +383,7 @@ const Footer: React.FC = () => {
                 <p className="text-purple-300 text-sm font-medium">
                   &copy; {new Date().getFullYear()} animebing.in. All Rights Reserved.
                 </p>
-                <p className="text-green-400 text-xs mt-1">
+                <p className="text-green-0f04v text-xs mt-1">
                   Stream your favorite anime anytime, anywhere
                 </p>
               </div>

@@ -1154,11 +1154,13 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                   <ul className="space-y-2 text-xs text-blue-300">
                     <li className="flex items-start gap-2">
                       <span className="text-blue-400 mt-0.5">•</span>
-                      <span>If the audio of any episode or movie is incorrect, you can fix it by changing the audio language to Hindi,Tamil,Telugu,English,Japanese in MX Player.</span>
+                      <span>1. Wrong Audio Fix:
+Open MX Player → Audio → Change track to Hindi / Tamil / Telugu / English / Japanese.</span>
                     </li>
                     <li className="flex items-start gap-2">
                       <span className="text-blue-400 mt-0.5">•</span>
-                      <span>After the ad is completed, a white page will open. From there, you can download the episode or movie. This is a Google warning page that appears because the video file size is large.</span>
+                      <span>2. Play Downloaded ZIP Episodes:
+Download ZIP → Open File Manager → Select ZIP → Extract All → Open extracted video in MX Player and other media player</span>
                     </li>
                   </ul>
                 </div>
@@ -1381,11 +1383,13 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                       <ul className="space-y-2 text-sm text-blue-300">
                         <li className="flex items-start gap-2">
                           <span className="text-blue-400 mt-0.5">•</span>
-                          <span>If the audio of any episode or movie is incorrect, you can fix it by changing the audio language to Hindi,Tamil,Telugu,English,Japanese in MX Player.</span>
+                          <span>1. Wrong Audio Fix:
+Open MX Player → Audio → Change track to Hindi / Tamil / Telugu / English / Japanese.</span>
                         </li>
                         <li className="flex items-start gap-2">
                           <span className="text-blue-400 mt-0.5">•</span>
-                          <span>After the ad is completed, a white page will open. From there, you can download the episode or movie. This is a Google warning page that appears because the video file size is large.</span>
+                          <span>2. Play Downloaded ZIP Episodes:
+Download ZIP → Open File Manager → Select ZIP → Extract All → Open extracted video in MX Player and other media player</span>
                         </li>
                       </ul>
                     </div>
