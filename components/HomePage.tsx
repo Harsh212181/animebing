@@ -43,10 +43,10 @@ const GLOW_COLORS = [
 ];
 
 // API BASE URL for poll check
-const API_BASE_URL = import.meta.env.MODE === 'production' 
-  ? '' 
-  : 'http://localhost:3000';
-
+const API_BASE_URL = import.meta.env.VITE_API_BASE || 
+  (import.meta.env.MODE === 'production' 
+    ? 'https://animabing.onrender.com/api' 
+    : 'http://localhost:3000');
 const HomePage: React.FC<Props> = ({
   onAnimeSelect,
   searchQuery,
