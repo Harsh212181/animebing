@@ -1159,7 +1159,7 @@ Open MX Player → Audio → Change track to Hindi / Tamil / Telugu / English / 
                     </li>
                     <li className="flex items-start gap-2">
                       <span className="text-blue-400 mt-0.5">•</span>
-                      <span>2. Play Downloaded ZIP Episodes:
+                      <span>2. Downloaded ZIP Episodes File:
 Download ZIP → Open File Manager → Select ZIP → Extract All → Open extracted video in MX Player and other media player</span>
                     </li>
                   </ul>
@@ -1388,7 +1388,7 @@ Open MX Player → Audio → Change track to Hindi / Tamil / Telugu / English / 
                         </li>
                         <li className="flex items-start gap-2">
                           <span className="text-blue-400 mt-0.5">•</span>
-                          <span>2. Play Downloaded ZIP Episodes:
+                          <span>2. Downloaded ZIP Episodes File:
 Download ZIP → Open File Manager → Select ZIP → Extract All → Open extracted video in MX Player and other media player</span>
                         </li>
                       </ul>
