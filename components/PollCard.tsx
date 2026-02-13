@@ -2,10 +2,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle, Clock, AlertCircle } from 'lucide-react';
 
-// ----------------------------------------------------------------------
-// Types
-// ----------------------------------------------------------------------
-
+// ---------- Types ----------
 interface PollOption {
   _id: string;
   title: string;
@@ -45,41 +42,30 @@ interface VoteResponse {
   message?: string;
 }
 
-// ✅ NEW: Props interface with optional callback
 interface PollCardProps {
   onVoteSuccess?: () => void;
 }
 
-// ----------------------------------------------------------------------
-// Configuration – ✅ USES YOUR CLOUDFLARE ENV VAR
-// ----------------------------------------------------------------------
+// ✅ FIXED: API_BASE_URL is now the DOMAIN ONLY (no /api)
+const API_BASE_URL = import.meta.env.VITE_API_BASE || 'https://animabing.onrender.com';
+// ✅ Always add /api before the route
+const POLLS_ENDPOINT = `${API_BASE_URL}/api/poll`;
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE || 'https://animabing.onrender.com/api';
-const POLLS_ENDPOINT = `${API_BASE_URL}/poll`;
-
-// ----------------------------------------------------------------------
-// Helper functions
-// ----------------------------------------------------------------------
-
+// ---------- Helper ----------
 const formatTimeRemaining = (expiresAt: string): string => {
   const total = new Date(expiresAt).getTime() - Date.now();
   if (total <= 0) return 'Expired';
-
   const seconds = Math.floor((total / 1000) % 60);
   const minutes = Math.floor((total / 1000 / 60) % 60);
   const hours = Math.floor((total / (1000 * 60 * 60)) % 24);
   const days = Math.floor(total / (1000 * 60 * 60 * 24));
-
   if (days > 0) return `${days}d ${hours}h remaining`;
   if (hours > 0) return `${hours}h ${minutes}m remaining`;
   if (minutes > 0) return `${minutes}m ${seconds}s remaining`;
   return `${seconds}s remaining`;
 };
 
-// ----------------------------------------------------------------------
-// Main Component – ✅ ACCEPTS PROPS
-// ----------------------------------------------------------------------
-
+// ---------- Component ----------
 const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
   const [poll, setPoll] = useState<Poll | null>(null);
   const [selectedOption, setSelectedOption] = useState<string>('');
@@ -88,9 +74,6 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
   const [error, setError] = useState<string | null>(null);
   const [voteSuccess, setVoteSuccess] = useState(false);
 
-  // --------------------------------------------------------------------
-  // Fetch active poll on mount
-  // --------------------------------------------------------------------
   useEffect(() => {
     fetchActivePoll();
   }, []);
@@ -104,7 +87,6 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
       const data: PollResponse = await res.json();
 
       if (data.success && data.poll) {
-        // Calculate percentages if not already done by backend
         const pollWithPercentages = {
           ...data.poll,
           options: data.poll.options.map((opt) => ({
@@ -116,24 +98,20 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
           })),
         };
         setPoll(pollWithPercentages);
-        // If user already voted, we don't need to preselect anything for voting
         if (pollWithPercentages.userHasVoted) {
           setSelectedOption(pollWithPercentages.userVoteOption || '');
         }
       } else {
-        setPoll(null); // No active poll
+        setPoll(null);
       }
     } catch (err) {
-      console.error('Failed to fetch poll:', err);
+      console.error('❌ Failed to fetch poll:', err);
       setError('Could not load poll. Please try again later.');
     } finally {
       setLoading(false);
     }
   };
 
-  // --------------------------------------------------------------------
-  // Vote handler – ✅ CALLS onVoteSuccess AFTER SUCCESS
-  // --------------------------------------------------------------------
   const handleVote = async () => {
     if (!poll || !selectedOption || isVoting) return;
 
@@ -145,10 +123,7 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
       const res = await fetch(`${POLLS_ENDPOINT}/vote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          pollId: poll._id,
-          optionId: selectedOption,
-        }),
+        body: JSON.stringify({ pollId: poll._id, optionId: selectedOption }),
       });
 
       const data: VoteResponse = await res.json();
@@ -157,33 +132,23 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
         throw new Error(data.message || 'Vote failed');
       }
 
-      // On success, refresh poll to get updated results and userVoted flag
       await fetchActivePoll();
       setVoteSuccess(true);
-      
-      // ✅ Call the callback if provided
-      if (onVoteSuccess) {
-        onVoteSuccess();
-      }
+      if (onVoteSuccess) onVoteSuccess();
     } catch (err: any) {
-      console.error('Vote error:', err);
+      console.error('❌ Vote error:', err);
       setError(err.message || 'Failed to submit vote. Please try again.');
     } finally {
       setIsVoting(false);
     }
   };
 
-  // --------------------------------------------------------------------
-  // Render
-  // --------------------------------------------------------------------
   if (loading) {
     return (
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 animate-pulse">
-        <div className="h-6 bg-gray-800 rounded w-3/4 mb-4"></div>
+        <div className="h-6 bg-gray-800 rounded w-3/4 mb-4" />
         <div className="space-y-3">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-10 bg-gray-800 rounded"></div>
-          ))}
+          {[1, 2, 3, 4].map(i => <div key={i} className="h-10 bg-gray-800 rounded" />)}
         </div>
       </div>
     );
@@ -204,9 +169,7 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
     );
   }
 
-  if (!poll) {
-    return null; // No active poll – hide component entirely
-  }
+  if (!poll) return null;
 
   const isExpired = poll.isExpired || new Date(poll.expiresAt) < new Date();
   const hasVoted = poll.userHasVoted === true;
@@ -218,10 +181,9 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
       animate={{ opacity: 1, y: 0 }}
       className="bg-gradient-to-br from-gray-900 to-gray-950 border border-gray-800 rounded-2xl p-5 shadow-xl"
     >
-      {/* Header */}
       <div className="flex items-start justify-between mb-4">
         <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-          <span className="bg-blue-600 w-1.5 h-6 rounded-full"></span>
+          <span className="bg-blue-600 w-1.5 h-6 rounded-full" />
           Community Poll
         </h3>
         <div className="flex items-center text-xs text-gray-400 bg-gray-800/60 px-3 py-1.5 rounded-full">
@@ -230,16 +192,14 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
         </div>
       </div>
 
-      {/* Question */}
       <h4 className="text-white text-md md:text-lg font-medium mb-4 leading-tight">
         {poll.question}
       </h4>
 
-      {/* Options */}
       <div className="space-y-3 mb-4">
         {poll.options
           .sort((a, b) => a.order - b.order)
-          .map((option) => {
+          .map(option => {
             const isSelected = selectedOption === option._id;
             const isUserVote = hasVoted && option._id === poll.userVoteOption;
             const percentage = option.percentage ?? 0;
@@ -247,7 +207,6 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
             return (
               <div key={option._id}>
                 {showResults ? (
-                  // ---------- RESULT VIEW ----------
                   <div
                     className={`relative overflow-hidden rounded-xl border ${
                       isUserVote
@@ -270,17 +229,11 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
                         ) : (
                           <div className="w-8 h-8 rounded-md bg-gray-700 flex-shrink-0" />
                         )}
-                        <span className="text-sm text-white truncate">
-                          {option.title}
-                        </span>
-                        {isUserVote && (
-                          <CheckCircle className="h-4 w-4 text-blue-400 flex-shrink-0" />
-                        )}
+                        <span className="text-sm text-white truncate">{option.title}</span>
+                        {isUserVote && <CheckCircle className="h-4 w-4 text-blue-400 flex-shrink-0" />}
                       </div>
                       <div className="flex items-center gap-3 flex-shrink-0 ml-2">
-                        <span className="text-sm font-medium text-white">
-                          {option.votes}
-                        </span>
+                        <span className="text-sm font-medium text-white">{option.votes}</span>
                         <span className="text-xs bg-gray-800 text-gray-300 px-2 py-1 rounded-full">
                           {percentage}%
                         </span>
@@ -288,7 +241,6 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
                     </div>
                   </div>
                 ) : (
-                  // ---------- VOTING VIEW ----------
                   <label
                     className={`flex items-center p-3 rounded-xl border cursor-pointer transition-all ${
                       isSelected
@@ -301,7 +253,7 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
                       name="pollOption"
                       value={option._id}
                       checked={isSelected}
-                      onChange={(e) => setSelectedOption(e.target.value)}
+                      onChange={e => setSelectedOption(e.target.value)}
                       className="h-4 w-4 text-blue-600 border-gray-600 focus:ring-blue-500 focus:ring-offset-gray-900"
                     />
                     <div className="flex items-center gap-3 ml-3 flex-1 min-w-0">
@@ -314,9 +266,7 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
                       ) : (
                         <div className="w-8 h-8 rounded-md bg-gray-700 flex-shrink-0" />
                       )}
-                      <span className="text-sm text-white truncate">
-                        {option.title}
-                      </span>
+                      <span className="text-sm text-white truncate">{option.title}</span>
                     </div>
                   </label>
                 )}
@@ -325,7 +275,6 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
           })}
       </div>
 
-      {/* Vote button / Already voted message / Expired message */}
       <AnimatePresence mode="wait">
         {!showResults ? (
           <motion.button
@@ -343,25 +292,9 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
           >
             {isVoting ? (
               <>
-                <svg
-                  className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                  />
+                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
                 Voting...
               </>
@@ -370,30 +303,17 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
             )}
           </motion.button>
         ) : isExpired ? (
-          <motion.div
-            key="expired"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="text-center text-gray-400 text-sm py-2"
-          >
+          <motion.div key="expired" className="text-center text-gray-400 text-sm py-2">
             This poll has ended · {poll.totalVotes} total votes
           </motion.div>
         ) : hasVoted ? (
-          <motion.div
-            key="voted"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="text-center text-green-400 text-sm py-2 flex items-center justify-center gap-1.5"
-          >
+          <motion.div key="voted" className="text-center text-green-400 text-sm py-2 flex items-center justify-center gap-1.5">
             <CheckCircle className="h-4 w-4" />
             You voted · {poll.totalVotes} total votes
           </motion.div>
         ) : null}
       </AnimatePresence>
 
-      {/* Error message inside card */}
       {error && (
         <div className="mt-3 text-xs text-red-400 bg-red-900/20 p-2 rounded-lg flex items-center gap-2">
           <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />

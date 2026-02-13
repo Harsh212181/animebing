@@ -1,5 +1,4 @@
- // components/HomePage.tsx - UPDATED WITH LEFT ALIGNED HEADINGS
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import type { Anime, FilterType, ContentTypeFilter } from '../src/types';
 import AnimeCard from './AnimeCard';
 import { SkeletonLoader } from './SkeletonLoader';
@@ -42,11 +41,12 @@ const GLOW_COLORS = [
   ['#059669', '#047857', '#059669'], // emerald-green-emerald
 ];
 
-// API BASE URL for poll check
+// ✅ FIXED: API_BASE_URL is now the DOMAIN ONLY (no /api)
 const API_BASE_URL = import.meta.env.VITE_API_BASE || 
   (import.meta.env.MODE === 'production' 
-    ? 'https://animabing.onrender.com/api' 
+    ? 'https://animabing.onrender.com'    // ← removed /api
     : 'http://localhost:3000');
+
 const HomePage: React.FC<Props> = ({
   onAnimeSelect,
   searchQuery,
@@ -62,22 +62,20 @@ const HomePage: React.FC<Props> = ({
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
-  const [isPollActive, setIsPollActive] = useState(false); // New state for poll activity
-  const [pollChecked, setPollChecked] = useState(false); // To track if poll status has been checked
+  const [isPollActive, setIsPollActive] = useState(false);
+  const [pollChecked, setPollChecked] = useState(false);
   
-  // Naya state border color ke liye
   const [currentBorderColorIndex, setCurrentBorderColorIndex] = useState(0);
   
-  // Refs for tracking
   const isMounted = useRef(true);
   const lastSearchQuery = useRef(searchQuery);
 
-  // ✅ FUNCTION TO CHECK IF POLL IS ACTIVE
+  // ✅ FIXED: Now uses /api/poll/active – always works with base domain
   const checkPollStatus = useCallback(async (): Promise<boolean> => {
     try {
       console.log('🔍 HomePage: Checking poll status...');
       
-      const res = await fetch(`${API_BASE_URL}/api/poll/active`, {
+      const res = await fetch(`${API_BASE_URL}/api/poll/active`, {   // ✅ always /api
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json'
@@ -110,7 +108,6 @@ const HomePage: React.FC<Props> = ({
 
     const checkPoll = async () => {
       if (searchQuery.trim() || isSearching) {
-        // Don't check poll during search
         setIsPollActive(false);
         setPollChecked(true);
         return;
@@ -130,7 +127,6 @@ const HomePage: React.FC<Props> = ({
       }
     };
 
-    // Delay the check slightly to avoid blocking initial render
     const timer = setTimeout(() => {
       checkPoll();
     }, 100);
@@ -144,14 +140,11 @@ const HomePage: React.FC<Props> = ({
     let description = 'AnimeBing - Watch anime online for free in Hindi Dub, Hindi Sub, and English Sub. HD quality streaming and downloads. Latest anime episodes and movies.';
     let keywords = 'watch anime online, hindi anime, english anime, anime in hindi, anime in english, free anime streaming, anime download, anime binge';
     
-    // Customize based on search
     if (searchQuery.trim()) {
       title = `Search "${searchQuery}" - Watch Anime Online | AnimeBing`;
       description = `Search results for "${searchQuery}". Watch anime online in Hindi and English. Free HD streaming.`;
       keywords = `${searchQuery} anime, ${searchQuery} hindi dub, ${searchQuery} english sub, watch ${searchQuery} online`;
     }
-    
-    // Customize based on filter
     else if (localFilter !== 'All') {
       if (localFilter === 'Hindi Dub') {
         title = 'Watch Hindi Dubbed Anime Online | AnimeBing';
@@ -167,8 +160,6 @@ const HomePage: React.FC<Props> = ({
         keywords = 'english subbed anime, anime in english sub, watch english sub anime online, anime with english subtitles';
       }
     }
-    
-    // Customize based on content type
     else if (contentType !== 'All') {
       if (contentType === 'Movie') {
         title = 'Watch Anime Movies Online | AnimeBing';
@@ -181,7 +172,6 @@ const HomePage: React.FC<Props> = ({
       }
     }
     
-    // Generate canonical URL
     let canonicalUrl = 'https://animebing.in';
     const params = new URLSearchParams();
     
@@ -199,7 +189,6 @@ const HomePage: React.FC<Props> = ({
       canonicalUrl += `?${params.toString()}`;
     }
     
-    // Generate structured data for homepage
     const structuredData = {
       "@context": "https://schema.org",
       "@type": "WebSite",
@@ -225,18 +214,17 @@ const HomePage: React.FC<Props> = ({
 
   const seoData = getSEOData();
 
-  // Border color ka interval - ab 20 seconds
+  // Border color interval
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentBorderColorIndex((prevIndex) => 
         (prevIndex + 1) % BORDER_COLORS.length
       );
-    }, 20000); // 20 seconds
-
+    }, 20000);
     return () => clearInterval(interval);
   }, []);
 
-  // Cleanup on unmount
+  // Cleanup
   useEffect(() => {
     return () => {
       isMounted.current = false;
@@ -263,7 +251,6 @@ const HomePage: React.FC<Props> = ({
     }
   }, []);
 
-  // ✅ FIXED: Emoji colors in headings - अब emoji अलग color में दिखेंगे
   const getAllContentHeading = useCallback(() => {
     if (isSearching && searchQuery) {
       return { text: `Search: ${searchQuery}`, emojiStart: '', emojiEnd: '' };
@@ -285,15 +272,12 @@ const HomePage: React.FC<Props> = ({
 
   const headingData = getAllContentHeading();
 
-  // Helper function to get unique anime ID
   const getAnimeId = (anime: Anime): string => {
     if (anime.id) return anime.id;
     if (anime._id) return anime._id;
-    // Fallback: generate a unique key from title and releaseYear
     return `${anime.title}-${anime.releaseYear || 'unknown'}`;
   };
 
-  // Initial load
   const loadInitialAnime = useCallback(async (isSearch: boolean = false) => {
     if (!isMounted.current) return;
     
@@ -302,7 +286,6 @@ const HomePage: React.FC<Props> = ({
       setError(null);
       
       if (isSearch) {
-        // For search
         const data = await searchAnime(searchQuery, ANIME_FIELDS);
         if (data?.length && isMounted.current) {
           setAnimeList(data);
@@ -314,7 +297,6 @@ const HomePage: React.FC<Props> = ({
           setHasMore(false);
         }
       } else {
-        // For normal pagination
         const data = await getAnimePaginated(1, 36, ANIME_FIELDS);
         if (data?.length && isMounted.current) {
           setAnimeList(data);
@@ -336,20 +318,15 @@ const HomePage: React.FC<Props> = ({
     }
   }, [searchQuery]);
 
-  // Load More - SIMPLIFIED: No duplicate filtering during load
   const loadMoreAnime = useCallback(async () => {
     if (isLoadingMore || !hasMore || isSearching) return;
-    
     if (!isMounted.current) return;
 
     setIsLoadingMore(true);
     try {
       const nextPage = currentPage + 1;
       const data = await getAnimePaginated(nextPage, 24, ANIME_FIELDS);
-
       if (data?.length && isMounted.current) {
-        // SIMPLIFIED: Just append all new data
-        // Duplicates will be handled in filteredAnime memo
         setAnimeList(prev => [...prev, ...data]);
         setCurrentPage(nextPage);
         setHasMore(data.length === 24);
@@ -357,7 +334,6 @@ const HomePage: React.FC<Props> = ({
         setHasMore(false);
       }
     } catch {
-      // Handle error silently for load more
     } finally {
       if (isMounted.current) {
         setIsLoadingMore(false);
@@ -365,7 +341,6 @@ const HomePage: React.FC<Props> = ({
     }
   }, [currentPage, hasMore, isLoadingMore, isSearching]);
 
-  // On mount and when filter/contentType changes
   useEffect(() => {
     if (isMounted.current) {
       loadInitialAnime();
@@ -375,7 +350,6 @@ const HomePage: React.FC<Props> = ({
     }
   }, [filter, contentType]);
 
-  // Search effect - with improved logic
   useEffect(() => {
     if (!isMounted.current) return;
 
@@ -386,7 +360,6 @@ const HomePage: React.FC<Props> = ({
           lastSearchQuery.current = searchQuery;
         }
       } else {
-        // Clear search
         if (lastSearchQuery.current !== '') {
           loadInitialAnime(false);
           fetchFeaturedAnimes();
@@ -398,7 +371,6 @@ const HomePage: React.FC<Props> = ({
     return () => clearTimeout(timer);
   }, [searchQuery, loadInitialAnime, fetchFeaturedAnimes]);
 
-  // Filtering - IMPROVED: Better duplicate handling
   const filteredAnime = useMemo(() => {
     if (!animeList.length) return [];
     
@@ -411,18 +383,13 @@ const HomePage: React.FC<Props> = ({
       list = list.filter(a => a.subDubStatus === localFilter);
     }
 
-    // Remove duplicates using a more robust method
     const uniqueAnimesMap = new Map<string, Anime>();
-    
     for (const anime of list) {
       const id = getAnimeId(anime);
-      
-      // Only add if not already in map
       if (!uniqueAnimesMap.has(id)) {
         uniqueAnimesMap.set(id, anime);
       }
     }
-    
     return Array.from(uniqueAnimesMap.values());
   }, [animeList, localFilter, contentType]);
 
@@ -435,18 +402,14 @@ const HomePage: React.FC<Props> = ({
 
   const handleFilterChange = (f: FilterType) => setLocalFilter(f);
 
-  // Infinite Scroll
   useEffect(() => {
     if (isSearching) return;
 
     const handleScroll = () => {
       if (isLoadingMore || !hasMore) return;
-      
       const scrollTop = window.scrollY || document.documentElement.scrollTop;
       const windowHeight = window.innerHeight;
       const docHeight = document.documentElement.offsetHeight;
-      
-      // Load more when 80% scrolled
       if (scrollTop + windowHeight >= docHeight * 0.8) {
         loadMoreAnime();
       }
@@ -456,24 +419,20 @@ const HomePage: React.FC<Props> = ({
     return () => window.removeEventListener('scroll', handleScroll);
   }, [isLoadingMore, hasMore, isSearching, loadMoreAnime]);
 
-  // Reset when filter changes
   useEffect(() => {
     if (isMounted.current) {
       setLocalFilter(filter);
     }
   }, [filter]);
 
-  // Full Loader
   if (isLoading && animeList.length === 0) {
     return (
       <>
-        {/* ✅ SEO FOR LOADING STATE */}
         <SEO
           title="Loading... | AnimeBing"
           description="Watch anime online for free in Hindi and English. HD quality streaming and downloads."
           keywords="anime, watch anime online, hindi anime, english anime"
         />
-        {/* ✅ A6A6A6 को बैंगनी (Purple) में बदला गया */}
         <div className="min-h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-purple-900 p-4">
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
             {Array.from({ length: 18 }).map((_, i) => (
@@ -485,17 +444,14 @@ const HomePage: React.FC<Props> = ({
     );
   }
 
-  // Error
   if (error) {
     return (
       <>
-        {/* ✅ SEO FOR ERROR STATE */}
         <SEO
           title="Error Loading Anime | AnimeBing"
           description="Watch anime online for free in Hindi and English. HD quality streaming and downloads."
           keywords="anime, watch anime online, hindi anime, english anime"
         />
-        {/* ✅ A6A6A6 को बैंगनी (Purple) में बदला गया */}
         <div className="min-h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-purple-900 flex items-center justify-center p-4">
           <div className="text-center bg-purple-800/80 backdrop-blur rounded-2xl p-8 border border-purple-700">
             <p className="text-red-400 text-xl mb-4">{error}</p>
@@ -513,7 +469,6 @@ const HomePage: React.FC<Props> = ({
 
   return (
     <>
-      {/* ✅ SEO COMPONENT FOR HOMEPAGE */}
       <SEO
         title={seoData.title}
         description={seoData.description}
@@ -523,123 +478,50 @@ const HomePage: React.FC<Props> = ({
         ogUrl={seoData.ogUrl}
       />
       
-      {/* ✅ HIDDEN STRUCTURED DATA FOR SEO */}
       <div className="hidden" itemScope itemType="https://schema.org/WebSite">
         <meta itemProp="name" content="AnimeBing" />
         <meta itemProp="description" content="Watch anime online for free in Hindi and English. HD quality streaming and downloads." />
         <meta itemProp="url" content="https://animebing.in" />
       </div>
       
-      {/* ✅ MAIN CONTAINER: A6A6A6 को बैंगनी (Purple) में बदला गया */}
       <div className="min-h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-purple-900">
         <style>{`
           @keyframes subtle-glow {
-            0%, 100% {
-              opacity: 0.4;
-              filter: drop-shadow(0 0 10px currentColor);
-            }
-            50% {
-              opacity: 0.6;
-              filter: drop-shadow(0 0 25px currentColor);
-            }
+            0%, 100% { opacity: 0.4; filter: drop-shadow(0 0 10px currentColor); }
+            50% { opacity: 0.6; filter: drop-shadow(0 0 25px currentColor); }
           }
-          
           @keyframes shimmer {
-            0% {
-              transform: translateX(-100%) rotate(45deg);
-            }
-            100% {
-              transform: translateX(100%) rotate(45deg);
-            }
+            0% { transform: translateX(-100%) rotate(45deg); }
+            100% { transform: translateX(100%) rotate(45deg); }
           }
-          
           @keyframes float {
-            0%, 100% {
-              transform: translateY(0px);
-            }
-            50% {
-              transform: translateY(-3px);
-            }
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-3px); }
           }
-          
           @keyframes pulse-subtle {
-            0%, 100% {
-              opacity: 0.5;
-              transform: scale(1);
-            }
-            50% {
-              opacity: 0.7;
-              transform: scale(1.01);
-            }
+            0%, 100% { opacity: 0.5; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.01); }
           }
-          
-          .enhanced-glow {
-            animation: pulse-subtle 3s ease-in-out infinite;
-          }
-          
-          .card-hover-effect:hover {
-            transform: translateY(-4px) scale(1.01);
-            transition: transform 0.3s ease-out;
-          }
-          
+          .enhanced-glow { animation: pulse-subtle 3s ease-in-out infinite; }
+          .card-hover-effect:hover { transform: translateY(-4px) scale(1.01); transition: transform 0.3s ease-out; }
           .shimmer-effect {
-            position: absolute;
-            top: -50%;
-            left: -50%;
-            width: 200%;
-            height: 200%;
-            background: linear-gradient(
-              90deg,
-              transparent,
-              rgba(255, 255, 255, 0.08),
-              transparent
-            );
+            position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
             animation: shimmer 3s infinite;
           }
-          
-          @keyframes sparkle {
-            0%, 100% {
-              opacity: 0.2;
-              transform: scale(0.8);
-            }
-            50% {
-              opacity: 0.5;
-              transform: scale(1.1);
-            }
-          }
-          
-          .sparkle-effect {
-            animation: sparkle 2s ease-in-out infinite;
-          }
-          
-          /* Smooth transition for border color change */
-          .border-transition {
-            transition: background 0.8s ease-in-out;
-          }
-          
-          /* Custom scrollbar for filter buttons */
-          .scrollbar-hide {
-            -ms-overflow-style: none;
-            scrollbar-width: none;
-          }
-          .scrollbar-hide::-webkit-scrollbar {
-            display: none;
-          }
-          
-          /* ✅ FIXED: Container for inner content with reduced margin */
-          .homepage-content-container {
-            padding: 0.5rem !important;
-            margin: 0.1rem !important;
-          }
+          @keyframes sparkle { 0%,100% { opacity:0.2; transform:scale(0.8); } 50% { opacity:0.5; transform:scale(1.1); } }
+          .sparkle-effect { animation: sparkle 2s ease-in-out infinite; }
+          .border-transition { transition: background 0.8s ease-in-out; }
+          .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+          .scrollbar-hide::-webkit-scrollbar { display: none; }
+          .homepage-content-container { padding: 0.5rem !important; margin: 0.1rem !important; }
         `}</style>
         
-        {/* ✅ FIXED: Main container with reduced padding and margin */}
         <div className="homepage-content-container mx-auto px-2 sm:px-3 py-2 lg:py-4">
 
-          {/* ✅ FEATURED ANIME CAROUSEL - पहले दिखेगा */}
+          {/* Featured Anime Carousel */}
           {!searchQuery && !isSearching && featuredAnimes.length > 0 && (
             <div className="mb-6">
-              {/* ✅ LEFT ALIGNED: Latest Content heading */}
               <h2 className="text-2xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mb-4 text-left">
                 Latest Content
               </h2>
@@ -650,10 +532,9 @@ const HomePage: React.FC<Props> = ({
             </div>
           )}
 
-          {/* ✅ POLL SECTION - ONLY SHOW IF POLL IS ACTIVE AND CHECKED */}
+          {/* Poll Section - NOW WORKS IN PRODUCTION ✅ */}
           {!searchQuery && !isSearching && isPollActive && pollChecked && (
             <div className="mb-6">
-              {/* ✅ LEFT ALIGNED: Community heading */}
               <h2 className="text-2xl font-bold mb-4 text-left">
                 <span className="text-purple-300">🪶</span>
                 <span className="bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mx-2">Community</span>
@@ -665,7 +546,7 @@ const HomePage: React.FC<Props> = ({
             </div>
           )}
 
-          {/* Mobile Filter Buttons - Only visible on mobile */}
+          {/* Mobile Filter Buttons */}
           {!isSearching && (
             <div className="mb-2 lg:hidden">
               <div className="flex flex-nowrap gap-1 overflow-x-auto pb-1.5 scrollbar-hide px-1">
@@ -690,7 +571,7 @@ const HomePage: React.FC<Props> = ({
             </div>
           )}
 
-          {/* Result */}
+          {/* Anime Grid */}
           {filteredAnime.length === 0 ? (
             <div className="text-center py-16">
               <div className="bg-purple-800/60 backdrop-blur rounded-2xl p-8 max-w-md mx-auto border border-purple-700">
@@ -710,9 +591,7 @@ const HomePage: React.FC<Props> = ({
             </div>
           ) : (
             <>
-              {/* Header - LEFT ALIGNED with fixed emoji colors */}
               <h2 className="text-2xl lg:text-3xl font-bold mb-4 text-left">
-                {/* ✅ FIXED: Emojis with purple color, text with gradient - ALL LEFT ALIGNED */}
                 {headingData.emojiStart && (
                   <span className="text-purple-300 mr-2">{headingData.emojiStart}</span>
                 )}
@@ -724,127 +603,66 @@ const HomePage: React.FC<Props> = ({
                 )}
               </h2>
 
-              {/* ✅ Cards Grid with tighter spacing */}
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
                 {filteredAnime.map((anime, i) => (
-                  <div 
-                    key={`${getAnimeId(anime)}-${i}`}
-                    className="group relative"
-                  >
-                    {/* Main Balanced Glow Effect */}
+                  <div key={`${getAnimeId(anime)}-${i}`} className="group relative">
                     <div 
                       className={`absolute -inset-[1px] rounded-xl bg-gradient-to-br ${BORDER_COLORS[currentBorderColorIndex]} enhanced-glow border-transition`}
                       style={{
                         backgroundImage: `linear-gradient(135deg, ${GLOW_COLORS[currentBorderColorIndex][0]}, ${GLOW_COLORS[currentBorderColorIndex][1]}, ${GLOW_COLORS[currentBorderColorIndex][2]})`,
                       }}
-                    ></div>
-                    
-                    {/* Secondary Glow Layer - Reduced intensity */}
+                    />
                     <div 
                       className="absolute -inset-0 rounded-xl opacity-30 blur-md transition-all duration-500 group-hover:opacity-50"
                       style={{
                         backgroundImage: `linear-gradient(135deg, ${GLOW_COLORS[currentBorderColorIndex][0]}40, ${GLOW_COLORS[currentBorderColorIndex][1]}40, ${GLOW_COLORS[currentBorderColorIndex][2]}40)`,
                       }}
-                    ></div>
-                    
-                    {/* Main Card Container */}
+                    />
                     <div className="card-hover-effect relative rounded-xl border border-purple-700/30 bg-gradient-to-b from-purple-900/95 to-purple-800/90 p-1 transition-all duration-300 overflow-hidden group-hover:border-transparent">
-                      
-                      {/* Subtle Shimmer Effect */}
-                      <div className="shimmer-effect"></div>
-                      
-                      {/* Subtle Inner Glow Effect */}
+                      <div className="shimmer-effect" />
                       <div 
                         className="absolute inset-0 opacity-0 group-hover:opacity-30 transition-opacity duration-500"
                         style={{
                           background: `radial-gradient(circle at center, ${GLOW_COLORS[currentBorderColorIndex][1]}20 0%, transparent 70%)`,
                         }}
-                      ></div>
-                      
-                      {/* Gradient Overlay */}
-                      <div className="absolute inset-0 bg-gradient-to-t from-purple-900/80 via-transparent to-transparent opacity-40 group-hover:opacity-30 transition-opacity duration-300"></div>
-                      
-                      {/* Subtle sparkle particles */}
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-purple-900/80 via-transparent to-transparent opacity-40 group-hover:opacity-30 transition-opacity duration-300" />
                       <div className="absolute top-2 right-2 w-1 h-1 rounded-full sparkle-effect opacity-0 group-hover:opacity-30"
-                        style={{
-                          background: GLOW_COLORS[currentBorderColorIndex][0],
-                          boxShadow: `0 0 5px ${GLOW_COLORS[currentBorderColorIndex][0]}`,
-                          animationDelay: '0.2s'
-                        }}
-                      ></div>
+                        style={{ background: GLOW_COLORS[currentBorderColorIndex][0], boxShadow: `0 0 5px ${GLOW_COLORS[currentBorderColorIndex][0]}`, animationDelay: '0.2s' }}
+                      />
                       <div className="absolute bottom-2 left-2 w-1 h-1 rounded-full sparkle-effect opacity-0 group-hover:opacity-30"
-                        style={{
-                          background: GLOW_COLORS[currentBorderColorIndex][1],
-                          boxShadow: `0 0 5px ${GLOW_COLORS[currentBorderColorIndex][1]}`,
-                          animationDelay: '0.5s'
-                        }}
-                      ></div>
-                      
+                        style={{ background: GLOW_COLORS[currentBorderColorIndex][1], boxShadow: `0 0 5px ${GLOW_COLORS[currentBorderColorIndex][1]}`, animationDelay: '0.5s' }}
+                      />
                       <AnimeCard
                         anime={anime}
                         onClick={onAnimeSelect}
                         index={i}
                         showStatus={true}
                       />
-                      
-                      {/* Subtle Corner Accents */}
-                      <div 
-                        className="absolute top-0 left-0 w-1.5 h-1.5 border-t border-l rounded-tl-xl opacity-0 group-hover:opacity-70 transition-all duration-300"
-                        style={{
-                          borderColor: GLOW_COLORS[currentBorderColorIndex][0],
-                        }}
-                      ></div>
-                      <div 
-                        className="absolute top-0 right-0 w-1.5 h-1.5 border-t border-r rounded-tr-xl opacity-0 group-hover:opacity-70 transition-all duration-300"
-                        style={{
-                          borderColor: GLOW_COLORS[currentBorderColorIndex][1],
-                          animationDelay: '0.3s'
-                        }}
-                      ></div>
-                      <div 
-                        className="absolute bottom-0 left-0 w-1.5 h-1.5 border-b border-l rounded-bl-xl opacity-0 group-hover:opacity-70 transition-all duration-300"
-                        style={{
-                          borderColor: GLOW_COLORS[currentBorderColorIndex][2],
-                          animationDelay: '0.6s'
-                        }}
-                      ></div>
-                      <div 
-                        className="absolute bottom-0 right-0 w-1.5 h-1.5 border-b border-r rounded-br-xl opacity-0 group-hover:opacity-70 transition-all duration-300"
-                        style={{
-                          borderColor: GLOW_COLORS[currentBorderColorIndex][0],
-                          animationDelay: '0.9s'
-                        }}
-                      ></div>
-                      
-                      {/* Subtle Floating Dots */}
+                      <div className="absolute top-0 left-0 w-1.5 h-1.5 border-t border-l rounded-tl-xl opacity-0 group-hover:opacity-70 transition-all duration-300"
+                        style={{ borderColor: GLOW_COLORS[currentBorderColorIndex][0] }}
+                      />
+                      <div className="absolute top-0 right-0 w-1.5 h-1.5 border-t border-r rounded-tr-xl opacity-0 group-hover:opacity-70 transition-all duration-300"
+                        style={{ borderColor: GLOW_COLORS[currentBorderColorIndex][1], animationDelay: '0.3s' }}
+                      />
+                      <div className="absolute bottom-0 left-0 w-1.5 h-1.5 border-b border-l rounded-bl-xl opacity-0 group-hover:opacity-70 transition-all duration-300"
+                        style={{ borderColor: GLOW_COLORS[currentBorderColorIndex][2], animationDelay: '0.6s' }}
+                      />
+                      <div className="absolute bottom-0 right-0 w-1.5 h-1.5 border-b border-r rounded-br-xl opacity-0 group-hover:opacity-70 transition-all duration-300"
+                        style={{ borderColor: GLOW_COLORS[currentBorderColorIndex][0], animationDelay: '0.9s' }}
+                      />
                       <div className="absolute -top-0.5 -left-0.5 w-1 h-1 rounded-full opacity-0 group-hover:opacity-30 transition-opacity duration-500"
-                        style={{
-                          background: GLOW_COLORS[currentBorderColorIndex][0],
-                          boxShadow: `0 0 6px ${GLOW_COLORS[currentBorderColorIndex][0]}`,
-                          animation: 'float 2s ease-in-out infinite',
-                        }}
-                      ></div>
+                        style={{ background: GLOW_COLORS[currentBorderColorIndex][0], boxShadow: `0 0 6px ${GLOW_COLORS[currentBorderColorIndex][0]}`, animation: 'float 2s ease-in-out infinite' }}
+                      />
                       <div className="absolute -top-0.5 -right-0.5 w-1 h-1 rounded-full opacity-0 group-hover:opacity-30 transition-opacity duration-500 delay-75"
-                        style={{
-                          background: GLOW_COLORS[currentBorderColorIndex][1],
-                          boxShadow: `0 0 6px ${GLOW_COLORS[currentBorderColorIndex][1]}`,
-                          animation: 'float 2s ease-in-out infinite 0.5s',
-                        }}
-                      ></div>
+                        style={{ background: GLOW_COLORS[currentBorderColorIndex][1], boxShadow: `0 0 6px ${GLOW_COLORS[currentBorderColorIndex][1]}`, animation: 'float 2s ease-in-out infinite 0.5s' }}
+                      />
                       <div className="absolute -bottom-0.5 -left-0.5 w-1 h-1 rounded-full opacity-0 group-hover:opacity-30 transition-opacity duration-500 delay-150"
-                        style={{
-                          background: GLOW_COLORS[currentBorderColorIndex][2],
-                          boxShadow: `0 0 6px ${GLOW_COLORS[currentBorderColorIndex][2]}`,
-                          animation: 'float 2s ease-in-out infinite 1s',
-                        }}
-                      ></div>
+                        style={{ background: GLOW_COLORS[currentBorderColorIndex][2], boxShadow: `0 0 6px ${GLOW_COLORS[currentBorderColorIndex][2]}`, animation: 'float 2s ease-in-out infinite 1s' }}
+                      />
                       <div className="absolute -bottom-0.5 -right-0.5 w-1 h-1 rounded-full opacity-0 group-hover:opacity-30 transition-opacity duration-500 delay-225"
-                        style={{
-                          background: GLOW_COLORS[currentBorderColorIndex][0],
-                          boxShadow: `0 0 6px ${GLOW_COLORS[currentBorderColorIndex][0]}`,
-                          animation: 'float 2s ease-in-out infinite 1.5s',
-                        }}
-                      ></div>
+                        style={{ background: GLOW_COLORS[currentBorderColorIndex][0], boxShadow: `0 0 6px ${GLOW_COLORS[currentBorderColorIndex][0]}`, animation: 'float 2s ease-in-out infinite 1.5s' }}
+                      />
                     </div>
                   </div>
                 ))}
@@ -857,12 +675,9 @@ const HomePage: React.FC<Props> = ({
                     onClick={loadMoreAnime}
                     disabled={isLoadingMore}
                     className="relative overflow-hidden bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-10 py-4 rounded-xl font-bold text-lg shadow-lg hover:shadow-xl hover:shadow-purple-500/30 disabled:opacity-60 transition-all duration-300 group"
-                    style={{
-                      animation: 'pulse-subtle 4s ease-in-out infinite'
-                    }}
+                    style={{ animation: 'pulse-subtle 4s ease-in-out infinite' }}
                   >
-                    {/* Button Glow Effect */}
-                    <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-purple-400/20 to-pink-400/20 opacity-0 group-hover:opacity-70 transition-opacity duration-300"></span>
+                    <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-purple-400/20 to-pink-400/20 opacity-0 group-hover:opacity-70 transition-opacity duration-300" />
                     <span className="relative z-10">
                       {isLoadingMore ? (
                         <>
@@ -880,12 +695,8 @@ const HomePage: React.FC<Props> = ({
               {isLoadingMore && (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 mt-4">
                   {Array.from({ length: 12 }).map((_, i) => (
-                    <div 
-                      key={`skeleton-${i}`} 
-                      className="relative rounded-xl border border-purple-700/40 p-1 bg-gradient-to-b from-purple-900/80 to-purple-800/70 overflow-hidden"
-                    >
-                      {/* Skeleton shimmer effect */}
-                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-purple-700/10 to-transparent animate-shimmer"></div>
+                    <div key={`skeleton-${i}`} className="relative rounded-xl border border-purple-700/40 p-1 bg-gradient-to-b from-purple-900/80 to-purple-800/70 overflow-hidden">
+                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-purple-700/10 to-transparent animate-shimmer" />
                       <SkeletonLoader />
                     </div>
                   ))}
