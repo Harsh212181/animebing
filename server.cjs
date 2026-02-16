@@ -1,4 +1,4 @@
- // server.cjs - UPDATED WITH PRODUCTION-SAFE TRUST PROXY + PARTNER ROUTES
+ // server.cjs - UPDATED WITH PRODUCTION-SAFE TRUST PROXY + PARTNER ROUTES + DEVICE-BASED POLL VOTING
 const express = require('express');
 const cors = require('cors');
 const connectDB = require('./db.cjs');
@@ -567,7 +567,7 @@ app.use('/api/social', socialRoutes);
 
 // ✅ POLL ROUTES
 app.use('/api/poll', pollRoutes);
-console.log('✅ Poll Routes mounted at /api/poll');
+console.log('✅ Poll Routes mounted at /api/poll (device-based voting)');
 
 // ✅ ANIME ROUTES (MUST BE BEFORE ADMIN PROTECTED ROUTES)
 app.use('/api/anime', animeRoutes);
@@ -735,7 +735,7 @@ app.get('/api/debug/polls', async (req, res) => {
     console.log('Active Polls:', activePolls.length);
     
     allPolls.forEach(poll => {
-      console.log(`- "${poll.question}" [${poll.isActive ? 'Active' : 'Inactive'}] - ${poll.options.length} options - ${poll.totalVotes || 0} votes`);
+      console.log(`- "${poll.question}" [${poll.isActive ? 'Active' : 'Inactive'}] - ${poll.options.length} options - ${poll.totalVotes || 0} votes (voters: ${poll.voters?.length || 0})`);
     });
     
     res.json({
@@ -868,7 +868,7 @@ app.get('/api/health', async (req, res) => {
     
     res.json({ 
       status: 'OK', 
-      message: 'Animabing Server Running - SEO OPTIMIZED + POLL SYSTEM + LIKE/DISLIKE + PARTNER MANAGER',
+      message: 'Animabing Server Running - SEO OPTIMIZED + POLL SYSTEM (DEVICE-BASED) + LIKE/DISLIKE + PARTNER MANAGER',
       timestamp: new Date().toISOString(),
       version: '1.0.0',
       linkSettings: {
@@ -885,9 +885,10 @@ app.get('/api/health', async (req, res) => {
       pollSystem: {
         totalPolls: totalPolls,
         activePolls: activePolls,
+        votingMechanism: 'device-based (UUID stored in localStorage)',
         endpoints: {
-          activePoll: 'GET /api/poll/active',
-          submitVote: 'POST /api/poll/vote',
+          activePoll: 'GET /api/poll/active?deviceId=xxx',
+          submitVote: 'POST /api/poll/vote (with deviceId in body)',
           createPoll: 'POST /api/poll/admin/create (admin)',
           allPolls: 'GET /api/poll/admin/all (admin)'
         }
@@ -919,7 +920,7 @@ app.get('/api/health', async (req, res) => {
         dynamicUrls: 'Enabled',
         structuredData: 'Enabled',
         linkControl: 'Enabled',
-        pollSystem: 'Enabled',
+        pollSystem: 'Enabled (device-based)',
         likeDislike: 'Enabled',
         partnerManager: 'Enabled'
       },
@@ -928,8 +929,9 @@ app.get('/api/health', async (req, res) => {
         cors: 'Enabled',
         rateLimiting: 'Enabled',
         pollLimit: '10 options per poll',
-        trustProxy: process.env.NODE_ENV === 'production' ? 'Enabled (1 hop)' : 'Disabled',
-        ipDetection: 'Automatic from request'
+        trustProxy: process.env.NODE_ENV === 'production' ? 'Enabled (1 hop)' : 'Disabled (development)',
+        ipDetection: 'Automatic from request (for like/dislike)',
+        deviceIdDetection: 'Client-generated UUID (for polls)'
       },
       seoWarning: '✅ Search query URLs REMOVED from sitemap to avoid Google penalties'
     });
@@ -979,22 +981,24 @@ app.get('/api/test-poll-system', async (req, res) => {
     
     res.json({
       success: true,
-      message: 'Poll system test endpoint working',
+      message: 'Poll system test endpoint working (device-based voting)',
       pollStatus: {
         totalPolls: totalPolls,
         hasActivePoll: !!activePoll,
         activePoll: activePoll ? {
           question: activePoll.question,
           options: activePoll.options.length,
-          votes: activePoll.totalVotes || 0
+          votes: activePoll.totalVotes || 0,
+          voters: activePoll.voters?.length || 0
         } : null
       },
       endpoints: {
-        getActivePoll: 'GET /api/poll/active',
-        submitVote: 'POST /api/poll/vote',
+        getActivePoll: 'GET /api/poll/active?deviceId=xxx',
+        submitVote: 'POST /api/poll/vote (with deviceId in body)',
         adminCreate: 'POST /api/poll/admin/create',
         adminAll: 'GET /api/poll/admin/all'
-      }
+      },
+      note: 'Device ID is generated on the client and stored in localStorage. No IP addresses are stored.'
     });
   } catch (error) {
     res.status(500).json({
@@ -1201,15 +1205,15 @@ app.get('/api/emergency/init-poll-system', async (req, res) => {
     
     res.json({
       success: true,
-      message: 'Poll system initialized successfully',
+      message: 'Poll system initialized successfully (device-based voting)',
       samplePoll: {
         question: samplePoll.question,
         options: samplePoll.options.length,
         expiresAt: samplePoll.expiresAt
       },
       endpoints: {
-        getActivePoll: 'GET /api/poll/active',
-        submitVote: 'POST /api/poll/vote',
+        getActivePoll: 'GET /api/poll/active?deviceId=xxx',
+        submitVote: 'POST /api/poll/vote (with deviceId in body)',
         adminCreate: 'POST /api/poll/admin/create',
         adminAll: 'GET /api/poll/admin/all'
       }
@@ -1364,7 +1368,7 @@ app.get('/', (req, res) => {
     </head>
     <body>
       <div class="container">
-        <h1>AnimeBing Server <span class="seo-badge">SEO OPTIMIZED + LINK CONTROL + POLL SYSTEM + LIKE/DISLIKE + PARTNER MANAGER</span></h1>
+        <h1>AnimeBing Server <span class="seo-badge">SEO OPTIMIZED + LINK CONTROL + POLL SYSTEM (DEVICE-BASED) + LIKE/DISLIKE + PARTNER MANAGER</span></h1>
         <p class="status">✅ Backend API is running correctly - SEO Ready for Google</p>
         <p>📺 Frontend: <a href="https://animebing.in" target="_blank">AnimeBing.in</a></p>
         <p>⚙️ Admin Access: Press Ctrl+Shift+Alt on the frontend</p>
@@ -1394,13 +1398,13 @@ app.get('/', (req, res) => {
         </div>
         
         <div class="section">
-          <h3>🗳️ Poll/Voting System <span class="feature-badge">NEW</span>:</h3>
+          <h3>🗳️ Poll/Voting System <span class="feature-badge">DEVICE-BASED</span>:</h3>
           <div class="link-status">
             <p>✅ Poll System Active</p>
             <p>✅ Create polls from admin panel</p>
             <p>✅ Add anime or custom options</p>
             <p>✅ Real-time voting</p>
-            <p>✅ Users can vote on website</p>
+            <p>✅ Users vote with device ID (no IP stored)</p>
             <p><small>Control polls from Admin Dashboard → Poll Manager</small></p>
           </div>
         </div>
@@ -1429,11 +1433,12 @@ app.get('/', (req, res) => {
             <li>Admin SEO Control Panel</li>
             <li>Global Download Link Control ✅</li>
             <li>Like/Dislike System ✅ <span class="feature-badge">FIXED</span></li>
-            <li>Poll/Voting System ✅ <span class="feature-badge">NEW</span></li>
+            <li>Poll/Voting System ✅ <span class="feature-badge">DEVICE-BASED</span></li>
             <li>Partner Manager ✅ <span class="feature-badge">NEW</span></li>
           </ul>
           <p style="color: #4CAF50; margin-top: 10px; font-weight: bold;">
-            ✅ LIKE/DISLIKE SYSTEM FIXED: IP detection, route order, and trust proxy configured
+            ✅ LIKE/DISLIKE SYSTEM FIXED: IP detection, route order, and trust proxy configured<br>
+            ✅ POLL SYSTEM: Device-based voting (UUID stored in localStorage)
           </p>
         </div>
         
@@ -1467,7 +1472,7 @@ app.get('/', (req, res) => {
           SEO Status: Complete - Ready for Google Indexing<br>
           Like/Dislike: ✅ Fixed and Working<br>
           Link Control: Active (5 links globally controllable)<br>
-          Poll System: ✅ Active (Users can vote on website)<br>
+          Poll System: ✅ Active (device-based voting)<br>
           Partner Manager: ✅ Active (Create and manage partners)<br>
           Body Limit: 50MB (Fixed for poll system)<br>
           Trust Proxy: ${process.env.NODE_ENV === 'production' ? '✅ Enabled (1 hop)' : '❌ Disabled (development)'}<br>
@@ -1520,6 +1525,13 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('   - GET /api/anime/:id/statistics - Anime stats');
   console.log('   - GET /api/anime/top100 - Top 100 anime by likes');
   console.log('===============================================');
+  console.log('🗳️ POLL SYSTEM (DEVICE-BASED) ENDPOINTS:');
+  console.log('   - GET /api/poll/active?deviceId=xxx - Get active poll');
+  console.log('   - POST /api/poll/vote - Vote (send pollId, optionId, deviceId)');
+  console.log('   - GET /api/poll/check-vote/:pollId?deviceId=xxx - Check if voted');
+  console.log('   - GET /api/poll/admin/all - Admin: all polls');
+  console.log('   - POST /api/poll/admin/create - Admin: create poll');
+  console.log('===============================================');
   console.log('🤝 PARTNER MANAGER ENDPOINTS:');
   console.log('   - GET /api/partners - List all partners');
   console.log('   - POST /api/partners - Create partner');
@@ -1531,13 +1543,15 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('🔍 DEBUG ENDPOINTS:');
   console.log('   - GET /api/debug/vote-system - Debug vote system');
   console.log('   - GET /api/test-vote-system - Test vote system');
+  console.log('   - GET /api/debug/polls - Debug poll system');
+  console.log('   - GET /api/test-poll-system - Test poll system');
   console.log('   - GET /api/partners - Test partners API');
   console.log('===============================================');
   console.log('💡 NEXT STEPS:');
   console.log('   1. Go to frontend (http://localhost:5173)');
-  console.log('   2. Navigate to any anime detail page');
-  console.log('   3. Like/Dislike buttons should now work');
-  console.log('   4. Check /api/test-vote-system for testing');
+  console.log('   2. Navigate to any anime detail page to test like/dislike');
+  console.log('   3. Poll card will appear if there is an active poll');
+  console.log('   4. Check Admin Dashboard → Poll Manager to create polls');
   console.log('   5. Go to Admin Dashboard → Partner Manager to manage partners');
   console.log('===============================================');
   console.log(`🛡️  TRUST PROXY STATUS: ${process.env.NODE_ENV === 'production' ? 'ENABLED (1 hop)' : 'DISABLED (development safe)'}`);

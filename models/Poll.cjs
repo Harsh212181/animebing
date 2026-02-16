@@ -1,4 +1,5 @@
- // models/Poll.cjs - COMPLETE UPDATED VERSION WITH VOTE TRACKING
+ // models/Poll.cjs - UPDATED WITH DEVICE TYPE TRACKING
+
 const mongoose = require('mongoose');
 
 const pollOptionSchema = new mongoose.Schema({
@@ -53,11 +54,16 @@ const pollSchema = new mongoose.Schema({
     type: Number, 
     default: 0 
   },
-  // NEW: Voters tracking array
+  // Voters tracking array – stores deviceId and deviceType
   voters: [{
-    ip: {
+    deviceId: {                // Unique device identifier
       type: String,
       required: true
+    },
+    deviceType: {              // NEW: device type (mobile, tablet, desktop)
+      type: String,
+      enum: ['mobile', 'tablet', 'desktop', 'unknown'],
+      default: 'unknown'
     },
     votedAt: {
       type: Date,
@@ -89,11 +95,11 @@ pollSchema.pre('save', function(next) {
   next();
 });
 
-// UPDATED: Add vote method with IP tracking
-pollSchema.methods.addVote = async function(optionId, userIp) {
+// UPDATED: Add vote method with deviceId and deviceType tracking
+pollSchema.methods.addVote = async function(optionId, deviceId, deviceType = 'unknown') {
   try {
-    // Check if user already voted
-    const hasVoted = this.voters.some(voter => voter.ip === userIp);
+    // Check if device already voted
+    const hasVoted = this.voters.some(voter => voter.deviceId === deviceId);
     
     if (hasVoted) {
       throw new Error('You have already voted in this poll');
@@ -119,9 +125,10 @@ pollSchema.methods.addVote = async function(optionId, userIp) {
     option.votes += 1;
     this.totalVotes += 1;
     
-    // Record voter information
+    // Record voter information with deviceId and deviceType
     this.voters.push({
-      ip: userIp,
+      deviceId: deviceId,
+      deviceType: deviceType,   // Store device type
       votedAt: now,
       optionId: optionId
     });
@@ -138,14 +145,14 @@ pollSchema.methods.addVote = async function(optionId, userIp) {
   }
 };
 
-// NEW: Method to check if user has voted
-pollSchema.methods.hasUserVoted = function(userIp) {
-  return this.voters.some(voter => voter.ip === userIp);
+// Method to check if device has voted
+pollSchema.methods.hasDeviceVoted = function(deviceId) {
+  return this.voters.some(voter => voter.deviceId === deviceId);
 };
 
-// NEW: Method to get user's vote option
-pollSchema.methods.getUserVote = function(userIp) {
-  const voter = this.voters.find(v => v.ip === userIp);
+// Method to get device's vote option
+pollSchema.methods.getDeviceVote = function(deviceId) {
+  const voter = this.voters.find(v => v.deviceId === deviceId);
   return voter ? voter.optionId : null;
 };
 
@@ -186,6 +193,7 @@ pollSchema.statics.autoDeactivateExpired = async function() {
 pollSchema.index({ expiresAt: 1 });
 pollSchema.index({ isActive: 1, expiresAt: 1 });
 pollSchema.index({ createdAt: -1 });
-pollSchema.index({ 'voters.ip': 1 }); // NEW: Index for voter IP lookup
+pollSchema.index({ 'voters.deviceId': 1 });        // Index for deviceId lookup
+pollSchema.index({ 'voters.deviceType': 1 });       // Index for deviceType breakdown (optional)
 
 module.exports = mongoose.model('Poll', pollSchema);

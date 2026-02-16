@@ -1,4 +1,5 @@
- // routes/pollRoutes.cjs - COMPLETE UPDATED VERSION WITH IP TRACKING
+ // routes/pollRoutes.cjs - UPDATED WITH DEVICE TYPE SUPPORT
+
 const express = require('express');
 const router = express.Router();
 const Poll = require('../models/Poll.cjs');
@@ -10,15 +11,6 @@ router.use((req, res, next) => {
   res.setHeader('Content-Type', 'application/json');
   next();
 });
-
-// Get client IP address
-const getClientIp = (req) => {
-  return req.headers['x-forwarded-for']?.split(',')[0] || 
-         req.connection.remoteAddress || 
-         req.socket.remoteAddress || 
-         req.ip ||
-         '127.0.0.1';
-};
 
 /* =========================
    AUTO-DEACTIVATE EXPIRED POLLS MIDDLEWARE
@@ -38,11 +30,12 @@ router.use(async (req, res, next) => {
 ========================= */
 
 /**
- * ✅ GET Active Poll (User) - UPDATED WITH IP CHECK
+ * ✅ GET Active Poll (User) – uses deviceId from query param
  */
 router.get('/active', async (req, res) => {
   try {
-    const clientIp = getClientIp(req);
+    const deviceId = req.query.deviceId;
+
     const poll = await Poll.findOne({ 
       isActive: true,
       expiresAt: { $gt: new Date() }
@@ -60,15 +53,20 @@ router.get('/active', async (req, res) => {
     const pollObj = poll.toObject();
     pollObj._id = pollObj._id.toString();
     
-    // Check if user has already voted
-    const hasVoted = poll.voters.some(voter => voter.ip === clientIp);
-    pollObj.userHasVoted = hasVoted;
+    // Check if this device has already voted (only if deviceId provided)
+    let hasVoted = false;
+    let userVoteOption = null;
     
-    // Get user's vote if they have voted
-    if (hasVoted) {
-      const voter = poll.voters.find(v => v.ip === clientIp);
-      pollObj.userVoteOption = voter ? voter.optionId.toString() : null;
+    if (deviceId) {
+      hasVoted = poll.hasDeviceVoted(deviceId);
+      if (hasVoted) {
+        const voter = poll.voters.find(v => v.deviceId === deviceId);
+        userVoteOption = voter ? voter.optionId.toString() : null;
+      }
     }
+    
+    pollObj.userHasVoted = hasVoted;
+    pollObj.userVoteOption = userVoteOption;
     
     if (pollObj.options) {
       pollObj.options = pollObj.options.map(option => ({
@@ -95,17 +93,16 @@ router.get('/active', async (req, res) => {
 });
 
 /**
- * ✅ POST Vote - UPDATED WITH IP TRACKING
+ * ✅ POST Vote – now accepts deviceType from frontend
  */
 router.post('/vote', async (req, res) => {
   try {
-    const { pollId, optionId } = req.body;
-    const clientIp = getClientIp(req); // Get user IP
+    const { pollId, optionId, deviceId, deviceType } = req.body;
 
-    if (!pollId || !optionId) {
+    if (!pollId || !optionId || !deviceId) {
       return res.status(400).json({
         success: false,
-        message: 'pollId and optionId required',
+        message: 'pollId, optionId, and deviceId are required',
       });
     }
 
@@ -122,8 +119,8 @@ router.post('/vote', async (req, res) => {
       });
     }
 
-    // Check if user has already voted
-    const hasVoted = poll.voters.some(voter => voter.ip === clientIp);
+    // Check if this device has already voted
+    const hasVoted = poll.hasDeviceVoted(deviceId);
     if (hasVoted) {
       return res.status(400).json({
         success: false,
@@ -132,8 +129,8 @@ router.post('/vote', async (req, res) => {
       });
     }
 
-    // Pass IP to addVote method
-    const result = await poll.addVote(optionId, clientIp);
+    // Pass deviceId and deviceType to addVote method (deviceType defaults to 'unknown')
+    const result = await poll.addVote(optionId, deviceId, deviceType || 'unknown');
 
     res.json({
       success: true,
@@ -168,12 +165,21 @@ router.post('/vote', async (req, res) => {
 });
 
 /**
- * ✅ GET Check if user has voted
+ * ✅ GET Check if device has voted – uses deviceId from query
  */
 router.get('/check-vote/:pollId', async (req, res) => {
   try {
     const { pollId } = req.params;
-    const clientIp = getClientIp(req);
+    const deviceId = req.query.deviceId;
+    
+    if (!deviceId) {
+      return res.json({
+        success: true,
+        hasVoted: false,
+        voteOption: null,
+        message: 'No deviceId provided'
+      });
+    }
     
     const poll = await Poll.findById(pollId);
     if (!poll) {
@@ -184,9 +190,8 @@ router.get('/check-vote/:pollId', async (req, res) => {
       });
     }
     
-    const hasVoted = poll.voters.some(voter => voter.ip === clientIp);
-    const voter = hasVoted ? poll.voters.find(v => v.ip === clientIp) : null;
-    const voteOption = voter ? voter.optionId.toString() : null;
+    const hasVoted = poll.hasDeviceVoted(deviceId);
+    const voteOption = hasVoted ? poll.getDeviceVote(deviceId).toString() : null;
     
     res.json({
       success: true,
@@ -204,7 +209,7 @@ router.get('/check-vote/:pollId', async (req, res) => {
 ========================= */
 
 /**
- * ✅ ADMIN – Create Poll - UPDATED WITH VOTERS INIT
+ * ✅ ADMIN – Create Poll
  */
 router.post('/admin/create', async (req, res) => {
   try {
@@ -265,7 +270,7 @@ router.post('/admin/create', async (req, res) => {
       expiresAt: expiryDate,
       isActive: true,
       totalVotes: 0,
-      voters: [], // Initialize empty voters array
+      voters: [],
       createdAt: new Date()
     });
 
@@ -288,7 +293,7 @@ router.post('/admin/create', async (req, res) => {
 });
 
 /**
- * ✅ ADMIN – Get All Polls - UPDATED WITH VOTERS COUNT
+ * ✅ ADMIN – Get All Polls
  */
 router.get('/admin/all', async (req, res) => {
   try {
@@ -337,7 +342,7 @@ router.get('/admin/all', async (req, res) => {
 });
 
 /**
- * ✅ ADMIN – Get Single Poll by ID
+ * ✅ ADMIN – Get Single Poll by ID (includes voters with deviceType)
  */
 router.get('/admin/:id', async (req, res) => {
   try {
@@ -367,6 +372,9 @@ router.get('/admin/:id', async (req, res) => {
           Math.round((option.votes / pollObj.totalVotes) * 100) : 0
       }));
     }
+
+    // Ensure voters array includes deviceType (already in schema)
+    // Optionally format deviceType for frontend (but frontend handles formatting)
 
     res.json({
       success: true,
@@ -575,7 +583,7 @@ router.delete('/admin/cleanup/expired', async (req, res) => {
 });
 
 /**
- * ✅ GET Poll Results - UPDATED
+ * ✅ GET Poll Results
  */
 router.get('/:id/results', async (req, res) => {
   try {
@@ -620,16 +628,14 @@ router.get('/:id/results', async (req, res) => {
  * ✅ TEST
  */
 router.get('/test', (req, res) => {
-  const clientIp = getClientIp(req);
   res.json({
     success: true,
-    message: 'Poll API working 🚀',
+    message: 'Poll API working 🚀 (device-based voting with device type)',
     timestamp: new Date().toISOString(),
-    yourIp: clientIp,
     endpoints: {
-      activePoll: 'GET /active',
-      vote: 'POST /vote',
-      checkVote: 'GET /check-vote/:pollId',
+      activePoll: 'GET /active?deviceId=xxx',
+      vote: 'POST /vote (with deviceId and deviceType in body)',
+      checkVote: 'GET /check-vote/:pollId?deviceId=xxx',
       createPoll: 'POST /admin/create',
       updatePoll: 'PUT /admin/:id',
       allPolls: 'GET /admin/all',

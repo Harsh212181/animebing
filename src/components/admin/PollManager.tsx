@@ -1,13 +1,39 @@
- // src/components/admin/PollManager.tsx - COMPLETE UPDATED VERSION WITH FIXED EXPORT FUNCTION
+ // src/components/admin/PollManager.tsx - UPDATED WITH DEVICE TYPE BREAKDOWN
+
 import React, { useState, useEffect } from 'react';
 import { Poll, CreatePollData, Anime } from '../../types';
 import { toast } from 'react-hot-toast';
-import { Search, X, Plus, Trash2, Eye, EyeOff, Calendar, Clock, Link, Edit2, Save, ChevronDown, ChevronUp, RefreshCw, AlertCircle, CheckCircle, Pencil, Copy, Download, BarChart3, Users, FileText } from 'lucide-react';
+import {
+  Search, X, Plus, Trash2, Eye, EyeOff, Calendar, Clock, Link,
+  Edit2, Save, ChevronDown, ChevronUp, RefreshCw, AlertCircle,
+  CheckCircle, Pencil, Copy, Download, BarChart3, Users, FileText,
+  Smartphone, Tablet, Monitor
+} from 'lucide-react';
 
 interface PollManagerProps {
   token: string;
   apiBase: string;
 }
+
+// Helper to format device type
+const formatDeviceType = (type?: string): string => {
+  if (!type) return 'Unknown';
+  const map: Record<string, string> = {
+    mobile: 'Phone',
+    tablet: 'Tablet',
+    desktop: 'PC',
+  };
+  return map[type.toLowerCase()] || type;
+};
+
+// Helper to get device icon
+const getDeviceIcon = (type?: string) => {
+  const t = type?.toLowerCase();
+  if (t === 'mobile') return <Smartphone size={14} className="text-blue-400" />;
+  if (t === 'tablet') return <Tablet size={14} className="text-purple-400" />;
+  if (t === 'desktop') return <Monitor size={14} className="text-green-400" />;
+  return <Monitor size={14} className="text-gray-400" />;
+};
 
 const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
   const [polls, setPolls] = useState<Poll[]>([]);
@@ -738,6 +764,50 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
     window.URL.revokeObjectURL(url);
     
     toast.success('Poll results exported successfully');
+  };
+
+  /* =========================
+     EXPORT VOTERS LIST (WITH DEVICE TYPE)
+  ========================= */
+
+  const exportVotersList = (poll: Poll) => {
+    if (!poll.voters || poll.voters.length === 0) {
+      toast.error('No voters to export');
+      return;
+    }
+
+    const csvContent = [
+      ['Poll ID', poll._id],
+      ['Question', poll.question],
+      [''],
+      ['#', 'Device Type', 'Voted At', 'Voted For']
+    ];
+
+    poll.voters.forEach((voter: any, index: number) => {
+      const votedOption = poll.options?.find(opt => 
+        opt._id === voter.optionId || opt.animeId === voter.optionId
+      );
+      csvContent.push([
+        (index + 1).toString(),
+        formatDeviceType(voter.deviceType),
+        voter.votedAt ? new Date(voter.votedAt).toLocaleString() : 'Unknown',
+        votedOption ? votedOption.title : 'Unknown Option'
+      ]);
+    });
+
+    const csvString = csvContent.map(row => 
+      row.map(cell => `"${cell}"`).join(',')
+    ).join('\n');
+    
+    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `poll-voters-${poll._id}-${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+    
+    toast.success('Voters list exported successfully');
   };
 
   /* =========================
@@ -1579,6 +1649,30 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
             </div>
             
             <div className="p-6">
+              {/* Device Type Summary */}
+              {selectedPoll.voters && selectedPoll.voters.length > 0 && (
+                <div className="mb-6 grid grid-cols-3 gap-4">
+                  {['mobile', 'tablet', 'desktop'].map(type => {
+                    const count = selectedPoll.voters.filter((v: any) => 
+                      (v.deviceType || '').toLowerCase() === type
+                    ).length;
+                    const percentage = selectedPoll.voters.length 
+                      ? ((count / selectedPoll.voters.length) * 100).toFixed(1)
+                      : '0';
+                    return (
+                      <div key={type} className="bg-gray-900 p-4 rounded-lg">
+                        <div className="flex items-center gap-2 text-gray-400 mb-1">
+                          {getDeviceIcon(type)}
+                          <span>{formatDeviceType(type)}</span>
+                        </div>
+                        <p className="text-2xl font-bold text-white">{count}</p>
+                        <p className="text-sm text-gray-400">{percentage}%</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
               <div className="mb-6 grid grid-cols-2 gap-4">
                 <div className="bg-gray-900 p-4 rounded-lg">
                   <p className="text-gray-400 text-sm">Total Voters</p>
@@ -1594,8 +1688,8 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
                 <div className="space-y-3">
                   <div className="grid grid-cols-12 gap-4 p-3 bg-gray-900 rounded-lg font-medium text-gray-300 text-sm">
                     <div className="col-span-1">#</div>
-                    <div className="col-span-4">IP Address</div>
-                    <div className="col-span-3">Voted At</div>
+                    <div className="col-span-3">Device Type</div>
+                    <div className="col-span-4">Voted At</div>
                     <div className="col-span-4">Voted For</div>
                   </div>
                   {selectedPoll.voters.map((voter: any, index: number) => {
@@ -1606,10 +1700,11 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
                     return (
                       <div key={index} className="grid grid-cols-12 gap-4 p-3 bg-gray-900/50 hover:bg-gray-900 rounded-lg items-center">
                         <div className="col-span-1 text-gray-400">{index + 1}</div>
-                        <div className="col-span-4 font-mono text-sm text-gray-300 truncate">
-                          {voter.ip || 'Unknown'}
+                        <div className="col-span-3 flex items-center gap-2 text-gray-300">
+                          {getDeviceIcon(voter.deviceType)}
+                          <span className="truncate">{formatDeviceType(voter.deviceType)}</span>
                         </div>
-                        <div className="col-span-3 text-gray-400 text-sm">
+                        <div className="col-span-4 text-gray-400 text-sm">
                           {voter.votedAt ? new Date(voter.votedAt).toLocaleString() : 'Unknown'}
                         </div>
                         <div className="col-span-4 text-gray-300 truncate">
@@ -1632,8 +1727,9 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
               
               <div className="pt-6 border-t border-gray-700 flex items-center justify-between">
                 <button
-                  onClick={() => exportPollResults(selectedPoll)}
-                  className="flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 rounded-lg text-white font-medium transition"
+                  onClick={() => exportVotersList(selectedPoll)}
+                  disabled={!selectedPoll.voters || selectedPoll.voters.length === 0}
+                  className="flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-white font-medium transition"
                 >
                   <FileText size={16} />
                   Export Voters List

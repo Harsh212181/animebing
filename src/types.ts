@@ -1,4 +1,4 @@
- // src/types.ts – COMPLETE UPDATED VERSION WITH LIKE/DISLIKE SYSTEM + PARTNER MANAGER
+ // src/types.ts – COMPLETE UPDATED VERSION WITH DEVICE-BASED POLL VOTING
 /* =========================
    DOWNLOAD / EPISODE / CHAPTER
 ========================= */
@@ -245,9 +245,13 @@ export interface PollOption {
   anime?: Anime;
 }
 
-// Voter information for tracking
+// Device type for poll voting
+export type DeviceType = 'mobile' | 'tablet' | 'desktop' | 'unknown';
+
+// Voter information for tracking – now uses deviceId and deviceType
 export interface VoterInfo {
-  ip: string;
+  deviceId: string;        // ✅ Changed from ip to deviceId
+  deviceType: DeviceType;  // ✅ NEW: device type (phone, tablet, PC)
   votedAt: string;
   optionId: string;
 }
@@ -260,11 +264,11 @@ export interface Poll {
   isActive: boolean;
   totalVotes: number;
   
-  // ✅ NEW: Voters tracking
+  // ✅ Voters tracking
   votersCount?: number;              // Number of unique voters
   voters?: VoterInfo[];             // Array of voter information (admin only)
   
-  // ✅ NEW: User voting status (frontend only)
+  // ✅ User voting status (frontend only)
   userHasVoted?: boolean;           // Whether current user has voted
   userVoteOption?: string;          // Option ID that user voted for
   
@@ -277,7 +281,7 @@ export interface Poll {
   hasExpired?: boolean;
   daysRemaining?: number;
   
-  /* ✅ ADDED: frontend calculated expiry status */
+  /* ✅ frontend calculated expiry status */
   isExpired?: boolean;
 }
 
@@ -291,8 +295,8 @@ export interface PollVoteResponse {
   optionVotes: number;
   percentage?: number;
   message?: string;
-  userHasVoted?: boolean;      // ✅ ADDED: User voting status
-  userVoteOption?: string;     // ✅ ADDED: User's vote option
+  userHasVoted?: boolean;      // User voting status
+  userVoteOption?: string;     // User's vote option
 }
 
 export interface PollApiResponse {
