@@ -1,10 +1,10 @@
- // services/animeService.ts - UPDATED WITH TOP 100 FUNCTION & LIKE/DISLIKE SUPPORT
+ // services/animeService.ts - UPDATED WITH FIXED FEATURED FETCHING
 import type { Anime, Episode, Chapter } from '../src/types';
 
 // ✅ FIX: Local development के लिए PORT 5173 है, server PORT 3000 पर है
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000/api';
 
-// ✅ CACHE IMPLEMENTATION
+// ✅ CACHE IMPLEMENTATION (used for other functions)
 const cache = new Map();
 const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
 
@@ -374,22 +374,18 @@ export const getAnimeById = async (id: string, fields?: string): Promise<Anime |
 // ================== FEATURED ANIME ==================
 
 /**
- * ✅ ADDED: FEATURED ANIME FUNCTION (FIXES THE MISSING FUNCTION)
+ * ✅ FIXED: FEATURED ANIME FUNCTION – NO CACHE, ALWAYS FRESH
+ * Now bypasses both service cache and browser cache
  */
 export const getFeaturedAnime = async (): Promise<Anime[]> => {
-  const cacheKey = 'featured-anime';
-  
-  // Check cache first
-  const cached = cache.get(cacheKey);
-  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-    console.log('🎯 Cache hit for featured anime');
-    return cached.data;
-  }
-
   try {
-    console.log('📡 Fetching featured anime from API...');
+    console.log('📡 Fetching featured anime from API (no cache)...');
     
-    const response = await fetch(`${API_BASE}/anime/featured`);
+    // Add timestamp to bypass browser cache
+    const timestamp = Date.now();
+    const url = `${API_BASE}/anime/featured?_=${timestamp}`;
+    
+    const response = await fetch(url);
     
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     
@@ -401,17 +397,11 @@ export const getFeaturedAnime = async (): Promise<Anime[]> => {
         ...anime,
         id: anime._id || anime.id,
         lastUpdated: anime.updatedAt ? new Date(anime.updatedAt).getTime() : Date.now(),
-        slug: anime.slug, // Ensure slug is included
+        slug: anime.slug,
         likes: anime.likes || 0,
         dislikes: anime.dislikes || 0
       }));
     }
-
-    // Store in cache
-    cache.set(cacheKey, {
-      data: featuredData,
-      timestamp: Date.now()
-    });
 
     console.log(`✅ Loaded ${featuredData.length} featured anime`);
     return featuredData;
@@ -419,6 +409,14 @@ export const getFeaturedAnime = async (): Promise<Anime[]> => {
     console.error('❌ Error in getFeaturedAnime:', error);
     return [];
   }
+};
+
+/**
+ * ✅ NEW: Clear featured cache (if you ever add caching back)
+ */
+export const clearFeaturedCache = () => {
+  // No cache used now, but keep for future
+  console.log('🗑️ Featured cache cleared (no-op)');
 };
 
 // ================== PAGINATION & SEARCH ==================

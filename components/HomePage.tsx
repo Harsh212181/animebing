@@ -39,14 +39,13 @@ const GLOW_COLORS = [
   ['#059669', '#047857', '#059669'],
 ];
 
-// ✅ FIXED: Same pattern as PollCard – API_BASE_URL includes /api
+// API base – make sure it includes /api
 const API_BASE_URL = import.meta.env.VITE_API_BASE || 
   (import.meta.env.MODE === 'production' 
     ? 'https://animabing.onrender.com/api' 
-    : 'http://localhost:3000/api');   // ← now includes /api
+    : 'http://localhost:3000/api');
 
-// ✅ Poll endpoint – consistent with PollCard
-const POLL_API_URL = `${API_BASE_URL}/poll`;
+const POLL_API_URL = `${API_BASE_URL}/poll`; // adjust if your poll route is /polls
 
 const HomePage: React.FC<Props> = ({
   onAnimeSelect,
@@ -71,7 +70,7 @@ const HomePage: React.FC<Props> = ({
   const isMounted = useRef(true);
   const lastSearchQuery = useRef(searchQuery);
 
-  // ✅ FIXED: Uses POLL_API_URL = API_BASE_URL/poll
+  // ---------- POLL CHECK ----------
   const checkPollStatus = useCallback(async (): Promise<boolean> => {
     try {
       console.log('🔍 HomePage: Checking poll status...');
@@ -89,8 +88,8 @@ const HomePage: React.FC<Props> = ({
         return false;
       }
       
-      const contentType = res.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
+      const contentTypeHeader = res.headers.get('content-type');
+      if (!contentTypeHeader || !contentTypeHeader.includes('application/json')) {
         return false;
       }
       
@@ -137,6 +136,34 @@ const HomePage: React.FC<Props> = ({
     return () => clearTimeout(timer);
   }, [searchQuery, isSearching, checkPollStatus]);
 
+  // ---------- FOCUS REFRESH (fixes featured not updating) ----------
+  useEffect(() => {
+    const handleFocus = () => {
+      console.log('🔄 Tab focused – refreshing featured and anime list');
+      if (!searchQuery) {
+        fetchFeaturedAnimes();
+        loadInitialAnime(false);
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [searchQuery]); // re-run if searchQuery changes to avoid unnecessary refetch when searching
+
+  // ---------- BORDER COLOR ANIMATION ----------
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentBorderColorIndex((prevIndex) => 
+        (prevIndex + 1) % BORDER_COLORS.length
+      );
+    }, 20000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    return () => { isMounted.current = false; };
+  }, []);
+
+  // ---------- SEO ----------
   const getSEOData = () => {
     let title = 'Watch Anime Online in Hindi & English | AnimeBing';
     let description = 'AnimeBing - Watch anime online for free in Hindi Dub, Hindi Sub, and English Sub. HD quality streaming and downloads. Latest anime episodes and movies.';
@@ -199,19 +226,7 @@ const HomePage: React.FC<Props> = ({
 
   const seoData = getSEOData();
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentBorderColorIndex((prevIndex) => 
-        (prevIndex + 1) % BORDER_COLORS.length
-      );
-    }, 20000);
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    return () => { isMounted.current = false; };
-  }, []);
-
+  // ---------- FETCH FEATURED ----------
   const fetchFeaturedAnimes = useCallback(async () => {
     try {
       const data = await getFeaturedAnime();
@@ -219,6 +234,7 @@ const HomePage: React.FC<Props> = ({
         const limited = data.slice(0, 24);
         setFeaturedAnimes(limited);
         localStorage.setItem('featuredAnimes', JSON.stringify(limited));
+        console.log(`✅ HomePage: Set ${limited.length} featured anime`);
       }
     } catch {
       const stored = localStorage.getItem('featuredAnimes');
@@ -231,6 +247,7 @@ const HomePage: React.FC<Props> = ({
     }
   }, []);
 
+  // ---------- HEADING HELPERS ----------
   const getAllContentHeading = useCallback(() => {
     if (isSearching && searchQuery) return { text: `Search: ${searchQuery}`, emojiStart: '', emojiEnd: '' };
     if (contentType !== 'All') return { text: `All ${contentType}`, emojiStart: '', emojiEnd: '' };
@@ -250,6 +267,7 @@ const HomePage: React.FC<Props> = ({
     return `${anime.title}-${anime.releaseYear || 'unknown'}`;
   };
 
+  // ---------- LOAD ANIME LIST ----------
   const loadInitialAnime = useCallback(async (isSearch: boolean = false) => {
     if (!isMounted.current) return;
     
@@ -264,6 +282,7 @@ const HomePage: React.FC<Props> = ({
           setHasMore(false);
           setCurrentPage(1);
           setIsSearching(true);
+          console.log(`🔍 Search results: ${data.length} items`);
         } else {
           setAnimeList([]);
           setHasMore(false);
@@ -275,6 +294,7 @@ const HomePage: React.FC<Props> = ({
           setHasMore(data.length === 36);
           setCurrentPage(1);
           setIsSearching(false);
+          console.log(`📚 Loaded ${data.length} anime (page 1)`);
         } else {
           setError('No anime found');
         }
@@ -309,13 +329,17 @@ const HomePage: React.FC<Props> = ({
     }
   }, [currentPage, hasMore, isLoadingMore, isSearching]);
 
+  // ---------- INITIAL LOAD & FILTER CHANGE ----------
   useEffect(() => {
     if (isMounted.current) {
       loadInitialAnime();
       if (!searchQuery) fetchFeaturedAnimes();
     }
-  }, [filter, contentType]);
+  }, [filter, contentType]); // eslint-disable-line react-hooks/exhaustive-deps
+  // We intentionally omit loadInitialAnime and fetchFeaturedAnimes to avoid loops,
+  // but those functions are stable due to useCallback.
 
+  // ---------- SEARCH DEBOUNCE ----------
   useEffect(() => {
     if (!isMounted.current) return;
 
@@ -337,6 +361,7 @@ const HomePage: React.FC<Props> = ({
     return () => clearTimeout(timer);
   }, [searchQuery, loadInitialAnime, fetchFeaturedAnimes]);
 
+  // ---------- FILTERED & DEDUPED ANIME ----------
   const filteredAnime = useMemo(() => {
     if (!animeList.length) return [];
     
@@ -344,14 +369,28 @@ const HomePage: React.FC<Props> = ({
     if (contentType !== 'All') list = list.filter(a => a.contentType === contentType);
     if (localFilter !== 'All') list = list.filter(a => a.subDubStatus === localFilter);
 
+    // Deduplicate by ID
     const uniqueAnimesMap = new Map<string, Anime>();
     for (const anime of list) {
       const id = getAnimeId(anime);
       if (!uniqueAnimesMap.has(id)) uniqueAnimesMap.set(id, anime);
     }
-    return Array.from(uniqueAnimesMap.values());
+    const uniqueList = Array.from(uniqueAnimesMap.values());
+    
+    // Log if there's a discrepancy
+    if (list.length !== uniqueList.length) {
+      console.warn(`⚠️ Duplicates removed: ${list.length} -> ${uniqueList.length}`);
+    }
+    
+    return uniqueList;
   }, [animeList, localFilter, contentType]);
 
+  // Debug: log lengths when they change
+  useEffect(() => {
+    console.log(`📊 animeList: ${animeList.length}, filteredAnime: ${filteredAnime.length}`);
+  }, [animeList.length, filteredAnime.length]);
+
+  // ---------- FILTER BUTTONS ----------
   const filterButtons = [
     { key: 'All' as FilterType, label: 'All' },
     { key: 'Hindi Dub' as FilterType, label: 'Hindi Dub' },
@@ -361,6 +400,7 @@ const HomePage: React.FC<Props> = ({
 
   const handleFilterChange = (f: FilterType) => setLocalFilter(f);
 
+  // ---------- INFINITE SCROLL ----------
   useEffect(() => {
     if (isSearching) return;
 
@@ -376,10 +416,12 @@ const HomePage: React.FC<Props> = ({
     return () => window.removeEventListener('scroll', handleScroll);
   }, [isLoadingMore, hasMore, isSearching, loadMoreAnime]);
 
+  // Sync localFilter with prop
   useEffect(() => {
     if (isMounted.current) setLocalFilter(filter);
   }, [filter]);
 
+  // ---------- RENDER ----------
   if (isLoading && animeList.length === 0) {
     return (
       <>
@@ -429,6 +471,7 @@ const HomePage: React.FC<Props> = ({
         `}</style>
         
         <div className="homepage-content-container mx-auto px-2 sm:px-3 py-2 lg:py-4">
+          {/* Featured Carousel */}
           {!searchQuery && !isSearching && featuredAnimes.length > 0 && (
             <div className="mb-6">
               <h2 className="text-2xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mb-4 text-left">Latest Content</h2>
@@ -436,6 +479,7 @@ const HomePage: React.FC<Props> = ({
             </div>
           )}
 
+          {/* Poll */}
           {!searchQuery && !isSearching && isPollActive && pollChecked && (
             <div className="mb-6">
               <h2 className="text-2xl font-bold mb-4 text-left">
@@ -447,6 +491,7 @@ const HomePage: React.FC<Props> = ({
             </div>
           )}
 
+          {/* Mobile filter buttons */}
           {!isSearching && (
             <div className="mb-2 lg:hidden">
               <div className="flex flex-nowrap gap-1 overflow-x-auto pb-1.5 scrollbar-hide px-1">
@@ -460,6 +505,7 @@ const HomePage: React.FC<Props> = ({
             </div>
           )}
 
+          {/* Anime Grid */}
           {filteredAnime.length === 0 ? (
             <div className="text-center py-16">
               <div className="bg-purple-800/60 backdrop-blur rounded-2xl p-8 max-w-md mx-auto border border-purple-700">
@@ -503,6 +549,7 @@ const HomePage: React.FC<Props> = ({
                 ))}
               </div>
 
+              {/* Load More Button */}
               {hasMore && !isSearching && !searchQuery && (
                 <div className="text-center mt-8">
                   <button onClick={loadMoreAnime} disabled={isLoadingMore} className="relative overflow-hidden bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-10 py-4 rounded-xl font-bold text-lg shadow-lg hover:shadow-xl hover:shadow-purple-500/30 disabled:opacity-60 transition-all duration-300 group" style={{ animation: 'pulse-subtle 4s ease-in-out infinite' }}>
@@ -512,6 +559,7 @@ const HomePage: React.FC<Props> = ({
                 </div>
               )}
 
+              {/* Loading Skeletons for More */}
               {isLoadingMore && (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 mt-4">
                   {Array.from({ length: 12 }).map((_, i) => (
