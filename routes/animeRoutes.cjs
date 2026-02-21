@@ -19,7 +19,7 @@ router.get('/featured', async (req, res) => {
     })
     .select('title thumbnail releaseYear subDubStatus contentType updatedAt createdAt bannerImage rating slug seoTitle likes dislikes monthlyLikes weeklyLikes')
     .sort({ featuredOrder: -1, createdAt: -1 })
-    .limit(10)
+    .limit(24)
     .lean();
 
     res.set({

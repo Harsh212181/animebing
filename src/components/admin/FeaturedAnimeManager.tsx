@@ -1,4 +1,4 @@
- // src/components/admin/FeaturedAnimeManager.tsx – FULLY UPDATED, IMAGE FIXED, THEME MATCHED
+ // src/components/admin/FeaturedAnimeManager.tsx – FINAL VERSION (Auth Token + Cache‑Busting)
 import React, { useState, useEffect } from 'react';
 import { Anime } from '../../types';
 
@@ -33,8 +33,12 @@ const getOptimizedImageUrl = (url: string, width: number, height: number): strin
   return cleanUrl;
 };
 
+// Helper to get admin authentication token (adjust key if needed)
+const getAdminToken = (): string | null => {
+  return localStorage.getItem('adminToken') || localStorage.getItem('token');
+};
+
 const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
-  // ---------- ALL LOGIC UNCHANGED ----------
   const [allAnimes, setAllAnimes] = useState<Anime[]>([]);
   const [featuredAnimes, setFeaturedAnimes] = useState<Anime[]>([]);
   const [loading, setLoading] = useState(true);
@@ -165,7 +169,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
         id: '3',
         _id: '3',
         title: 'Attack on Titan',
-        thumbnail: 'https://images.unsplash.com/photo-1639322537228-f710d846310a?w=400&h=600&fit=crop', // FIXED: w=400&h=600
+        thumbnail: 'https://images.unsplash.com/photo-1639322537228-f710d846310a?w=400&h=600&fit=crop',
         releaseYear: 2013,
         subDubStatus: 'English Sub',
         contentType: 'Anime',
@@ -208,6 +212,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
     ];
   };
 
+  // ✅ UPDATED: Added cache‑busting timestamp to avoid 10‑minute browser caching
   const fetchFeaturedAnimes = async (): Promise<void> => {
     try {
       console.log('Fetching featured animes...');
@@ -223,7 +228,11 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
       
       for (const endpoint of endpoints) {
         try {
-          const response = await fetch(endpoint);
+          // Build URL with cache‑busting timestamp
+          const url = new URL(endpoint, window.location.origin);
+          url.searchParams.set('_', Date.now().toString());
+          
+          const response = await fetch(url.toString());
           if (!response.ok) continue;
           
           const result = await response.json();
@@ -272,6 +281,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
     return anime._id || anime.id || '';
   };
 
+  // ✅ UPDATED: Added Authorization header with admin token
   const addToFeatured = async (anime: Anime): Promise<void> => {
     try {
       const animeId = getAnimeId(anime);
@@ -298,18 +308,26 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
       
       console.log(`✅ Added "${anime.title}" to featured. Total: ${updatedFeatured.length}`);
       
+      // Get admin token
+      const token = getAdminToken();
+      if (!token) {
+        console.warn('No admin token found – changes will only be saved locally.');
+      }
+
       try {
         const response = await fetch(`https://animabing.onrender.com/api/anime/${animeId}/featured`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            ...(token && { 'Authorization': `Bearer ${token}` })
           }
         });
 
         if (response.ok) {
           console.log('✅ Added to featured via API');
         } else {
-          console.log('⚠️ API call failed, but stored locally');
+          const errorData = await response.json().catch(() => ({}));
+          console.log(`⚠️ API call failed (${response.status}): ${errorData.error || 'unknown error'}`);
         }
       } catch (apiError) {
         console.log('⚠️ API call failed, but stored locally');
@@ -320,6 +338,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
     }
   };
 
+  // ✅ UPDATED: Added Authorization header
   const removeFromFeatured = async (animeId: string): Promise<void> => {
     try {
       const updated = featuredAnimes.filter(anime => 
@@ -331,9 +350,17 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
       
       console.log(`✅ Removed anime from featured. Remaining: ${updated.length}`);
       
+      const token = getAdminToken();
+      if (!token) {
+        console.warn('No admin token found – changes will only be saved locally.');
+      }
+
       try {
         const response = await fetch(`https://animabing.onrender.com/api/anime/${animeId}/featured`, {
           method: 'DELETE',
+          headers: {
+            ...(token && { 'Authorization': `Bearer ${token}` })
+          }
         });
 
         if (response.ok) {
@@ -350,6 +377,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
     }
   };
 
+  // ✅ UPDATED: Added Authorization header
   const reorderFeatured = (fromIndex: number, toIndex: number): void => {
     const updated = [...featuredAnimes];
     const [moved] = updated.splice(fromIndex, 1);
@@ -363,25 +391,27 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
     setFeaturedAnimes(withUpdatedOrder);
     localStorage.setItem('featuredAnimes', JSON.stringify(withUpdatedOrder));
     
-    try {
-      fetch('https://animabing.onrender.com/api/anime/featured/order', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          order: withUpdatedOrder.map(anime => getAnimeId(anime)) 
-        }),
-      }).then(response => {
+    const token = getAdminToken();
+    fetch('https://animabing.onrender.com/api/anime/featured/order', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { 'Authorization': `Bearer ${token}` })
+      },
+      body: JSON.stringify({ 
+        order: withUpdatedOrder.map(anime => getAnimeId(anime)) 
+      }),
+    })
+      .then(response => {
         if (response.ok) {
           console.log('✅ Featured order updated via API');
         } else {
           console.log('⚠️ Order update API failed, but stored locally');
         }
+      })
+      .catch(error => {
+        console.log('⚠️ Order update API failed, but stored locally');
       });
-    } catch (error) {
-      console.log('⚠️ Order update API failed, but stored locally');
-    }
   };
 
   const filteredAnimes = allAnimes.filter(anime => {
@@ -421,7 +451,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
     setSearchTerm('');
   };
 
-  // ---------- END OF LOGIC – JSX WITH IMAGE FIXES ----------
+  // ---------- JSX (unchanged) ----------
 
   if (loading) {
     return (
@@ -453,7 +483,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
         </div>
       </div>
 
-      {/* Stats Dashboard – purple glass cards with amber/orange accents */}
+      {/* Stats Dashboard */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-purple-900/40 backdrop-blur-sm border border-purple-700/40 rounded-xl p-5 flex items-center gap-4">
           <div className="p-3 bg-amber-500/20 rounded-lg">
@@ -506,7 +536,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
         </div>
       </div>
 
-      {/* Current Featured Section – compact cards (h-40) with optimized images */}
+      {/* Current Featured Section */}
       <div className="space-y-4">
         <div className="flex items-center gap-3">
           <span className="w-1.5 h-7 bg-gradient-to-b from-amber-400 to-orange-400 rounded-full"></span>
@@ -535,7 +565,6 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
             {featuredAnimes.map((anime, index) => {
-              // Featured card image dimensions: height 40 (160px), width auto (approx 107px for 2:3)
               const imgWidth = 150;
               const imgHeight = 225;
               const optimizedSrc = getOptimizedImageUrl(anime.thumbnail, imgWidth, imgHeight);
@@ -545,14 +574,12 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
                   key={getAnimeId(anime)}
                   className="group bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-purple-900/40 backdrop-blur-sm border border-purple-700/40 rounded-xl overflow-hidden hover:border-amber-500/50 transition-all hover:shadow-lg hover:shadow-amber-500/10"
                 >
-                  {/* Rank Badge */}
                   <div className="absolute top-2 left-2 z-10">
                     <div className="px-2 py-0.5 bg-gradient-to-r from-amber-600 to-orange-600 rounded-full text-[10px] font-bold shadow-lg">
                       #{index + 1}
                     </div>
                   </div>
 
-                  {/* Image – compact height h-40, with optimized source */}
                   <div className="relative h-40 overflow-hidden">
                     <img
                       src={optimizedSrc}
@@ -562,13 +589,11 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
                       width={imgWidth}
                       height={imgHeight}
                       onError={(e) => {
-                        // Fallback to original URL with fixed dimensions
                         e.currentTarget.src = getOptimizedImageUrl(anime.thumbnail || '', 150, 225);
                       }}
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-transparent"></div>
 
-                    {/* Action Buttons – compact */}
                     <div className="absolute top-2 right-2 flex gap-1">
                       {index > 0 && (
                         <button
@@ -598,7 +623,6 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
                     </div>
                   </div>
 
-                  {/* Content – compact padding */}
                   <div className="p-3">
                     <h3 className="font-semibold text-white text-sm truncate">{anime.title}</h3>
                     <div className="flex items-center justify-between mt-1 text-[10px]">
@@ -626,7 +650,6 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
           <h2 className="text-xl font-bold text-white/90">Add Anime to Featured</h2>
         </div>
 
-        {/* Search & Controls */}
         <div className="flex flex-col md:flex-row gap-4">
           <div className="flex-1 relative group">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -679,7 +702,6 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
           </div>
         </div>
 
-        {/* Quick Stats */}
         <div className="flex flex-wrap gap-3 text-xs">
           <div className="px-3 py-1.5 bg-purple-800/30 rounded-lg text-white/70 flex items-center gap-2">
             <span className="w-2 h-2 bg-amber-400 rounded-full"></span>
@@ -695,11 +717,9 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
           </div>
         </div>
 
-        {/* Available Anime Grid – compact cards (h-36) with optimized images */}
         {filteredAnimes.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4">
             {filteredAnimes.map(anime => {
-              // Available card image dimensions: height 36 (144px), width auto (96px for 2:3)
               const imgWidth = 120;
               const imgHeight = 180;
               const optimizedSrc = getOptimizedImageUrl(anime.thumbnail, imgWidth, imgHeight);

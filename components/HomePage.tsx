@@ -216,7 +216,7 @@ const HomePage: React.FC<Props> = ({
     try {
       const data = await getFeaturedAnime();
       if (data?.length && isMounted.current) {
-        const limited = data.slice(0, 10);
+        const limited = data.slice(0, 24);
         setFeaturedAnimes(limited);
         localStorage.setItem('featuredAnimes', JSON.stringify(limited));
       }
