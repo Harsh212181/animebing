@@ -1,4 +1,4 @@
- // src/components/admin/AdminDashboard.tsx - UPDATED WITH PARTNER MANAGER IN TOP BAR + SCROLL TO TOP
+ // src/components/admin/AdminDashboard.tsx - UPDATED WITH AUTO SUNDAY MODE + SCROLL TO TOP
 import React, { useState, useEffect } from 'react';
 import AnimeListTable from './AnimeListTable';
 import AddAnimeForm from './AddAnimeForm';
@@ -117,6 +117,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     link5: true
   });
   
+  // ✅ AUTO SUNDAY MODE STATES
+  const [autoMode, setAutoMode] = useState(false);
+  const [autoLoading, setAutoLoading] = useState(false);
+
   const token = localStorage.getItem('adminToken');
 
   useEffect(() => {
@@ -131,6 +135,66 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     loadInitialData();
     fetchLinkSettings();
   }, [token]);
+
+  // ✅ AUTO SUNDAY MODE: hourly check when autoMode is on
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout;
+    if (autoMode) {
+      // Check every hour (3600000 ms)
+      intervalId = setInterval(async () => {
+        const today = new Date().getDay();
+        if (today === 0) { // 0 = Sunday
+          await applySundayRule();
+        }
+      }, 3600000);
+    }
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [autoMode]);
+
+  // ✅ Apply Sunday rule: link5 ON, link1-4 OFF
+  const applySundayRule = async () => {
+    setAutoLoading(true);
+    try {
+      const target = {
+        link1: false,
+        link2: false,
+        link3: false,
+        link4: false,
+        link5: true
+      };
+      // Only toggle links that need to change
+      const toggles = [];
+      if (linkSettings.link1 !== target.link1) toggles.push(1);
+      if (linkSettings.link2 !== target.link2) toggles.push(2);
+      if (linkSettings.link3 !== target.link3) toggles.push(3);
+      if (linkSettings.link4 !== target.link4) toggles.push(4);
+      if (linkSettings.link5 !== target.link5) toggles.push(5);
+      
+      for (const linkNum of toggles) {
+        await toggleLink(linkNum); // toggleLink updates state and API
+      }
+    } catch (error) {
+      console.error('Failed to apply Sunday rule:', error);
+      alert('Failed to apply automatic Sunday rule. Please try manual.');
+    } finally {
+      setAutoLoading(false);
+    }
+  };
+
+  // ✅ Toggle auto mode on/off
+  const toggleAutoMode = async () => {
+    const newMode = !autoMode;
+    setAutoMode(newMode);
+    if (newMode) {
+      // Immediately apply if today is Sunday
+      const today = new Date().getDay();
+      if (today === 0) {
+        await applySundayRule();
+      }
+    }
+  };
 
   const loadInitialData = async () => {
     setLoading(true);
@@ -525,18 +589,39 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                   Toggle links to show/hide from all download pages
                 </p>
               </div>
-              <button
-                onClick={fetchLinkSettings}
-                disabled={linkSettingsLoading}
-                className="text-xs bg-gradient-to-r from-purple-600/60 to-purple-700/60 hover:from-purple-500 hover:to-purple-600 text-purple-200 px-3 py-2 rounded-lg transition disabled:opacity-50 flex items-center gap-2"
-              >
-                {linkSettingsLoading ? (
-                  <>
-                    <div className="animate-spin h-3 w-3 border-2 border-purple-300 border-t-transparent rounded-full"></div>
-                    Loading...
-                  </>
-                ) : '↻ Refresh Status'}
-              </button>
+              <div className="flex items-center gap-2">
+                {/* ✅ AUTO SUNDAY MODE BUTTON */}
+                <button
+                  onClick={toggleAutoMode}
+                  disabled={linkSettingsLoading || autoLoading}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                    autoMode
+                      ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white shadow-lg shadow-green-500/30'
+                      : 'bg-purple-700/40 text-purple-300 hover:bg-purple-600/60 border border-purple-500/30'
+                  }`}
+                >
+                  {autoLoading ? (
+                    <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                  ) : autoMode ? (
+                    '🔴 Auto Sunday ON'
+                  ) : (
+                    '⚪ Auto Sunday OFF'
+                  )}
+                </button>
+
+                <button
+                  onClick={fetchLinkSettings}
+                  disabled={linkSettingsLoading}
+                  className="text-xs bg-gradient-to-r from-purple-600/60 to-purple-700/60 hover:from-purple-500 hover:to-purple-600 text-purple-200 px-3 py-2 rounded-lg transition disabled:opacity-50 flex items-center gap-2"
+                >
+                  {linkSettingsLoading ? (
+                    <>
+                      <div className="animate-spin h-3 w-3 border-2 border-purple-300 border-t-transparent rounded-full"></div>
+                      Loading...
+                    </>
+                  ) : '↻ Refresh Status'}
+                </button>
+              </div>
             </div>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
@@ -550,7 +635,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                   <div key={num} className="text-center group">
                     <button
                       onClick={() => toggleLink(num)}
-                      disabled={isLoading}
+                      disabled={isLoading || autoMode} // ✅ Disable when autoMode is ON
                       className={`w-full py-4 rounded-xl font-bold transition-all duration-300 relative overflow-hidden ${
                         isActive
                           ? `bg-gradient-to-b ${linkColor} text-white shadow-xl hover:shadow-2xl hover:scale-[1.02] border-2 border-white/30`

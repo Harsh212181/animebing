@@ -1154,13 +1154,15 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                   <ul className="space-y-2 text-xs text-blue-300">
                     <li className="flex items-start gap-2">
                       <span className="text-blue-400 mt-0.5">•</span>
-                      <span>1. Wrong Audio Fix:
-Open MX Player → Audio → Change track to Hindi / Tamil / Telugu / English / Japanese.</span>
+                      <span>1. Download at least 1 and at most 4 ZIP files or movies at a time. This helps keep your download speed fast. If you download more than 4 files at once, the speed will slow down. Once these files finish downloading, you can start downloading more.</span>
                     </li>
                     <li className="flex items-start gap-2">
                       <span className="text-blue-400 mt-0.5">•</span>
-                      <span>2. Downloaded ZIP Episodes File:
-Download ZIP → Open File Manager → Select ZIP → Extract All → Open extracted video in MX Player and other media player</span>
+                      <span>2. if Wrong Audio you can Fix: Open MX Player → click Audio → Change track to Hindi / Tamil / Telugu / English / Japanese.</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-blue-400 mt-0.5">•</span>
+                      <span>3. Downloaded ZIP Episodes File: Download ZIP → Open File Manager → Select ZIP → Extract All → Open extracted video in MX Player and other media player</span>
                     </li>
                   </ul>
                 </div>
@@ -1383,13 +1385,15 @@ Download ZIP → Open File Manager → Select ZIP → Extract All → Open extra
                       <ul className="space-y-2 text-sm text-blue-300">
                         <li className="flex items-start gap-2">
                           <span className="text-blue-400 mt-0.5">•</span>
-                          <span>1. Wrong Audio Fix:
-Open MX Player → Audio → Change track to Hindi / Tamil / Telugu / English / Japanese.</span>
+                          <span>1. Download at least 1 and at most 4 ZIP files or movies at a time. This helps keep your download speed fast. If you download more than 4 files at once, the speed will slow down. Once these files finish downloading, you can start downloading more.</span>
                         </li>
                         <li className="flex items-start gap-2">
                           <span className="text-blue-400 mt-0.5">•</span>
-                          <span>2. Downloaded ZIP Episodes File:
-Download ZIP → Open File Manager → Select ZIP → Extract All → Open extracted video in MX Player and other media player</span>
+                          <span>2. if Wrong Audio you can Fix: Open MX Player → click Audio → Change track to Hindi / Tamil / Telugu / English / Japanese.</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="text-blue-400 mt-0.5">•</span>
+                          <span>3. Downloaded ZIP Episodes File: Download ZIP → Open File Manager → Select ZIP → Extract All → Open extracted video in MX Player and other media player</span>
                         </li>
                       </ul>
                     </div>

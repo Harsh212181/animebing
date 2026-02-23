@@ -45,7 +45,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE ||
     ? 'https://animabing.onrender.com/api' 
     : 'http://localhost:3000/api');
 
-const POLL_API_URL = `${API_BASE_URL}/poll`; // adjust if your poll route is /polls
+const POLL_API_URL = `${API_BASE_URL}/poll`;
 
 const HomePage: React.FC<Props> = ({
   onAnimeSelect,
@@ -147,7 +147,7 @@ const HomePage: React.FC<Props> = ({
     };
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
-  }, [searchQuery]); // re-run if searchQuery changes to avoid unnecessary refetch when searching
+  }, [searchQuery]);
 
   // ---------- BORDER COLOR ANIMATION ----------
   useEffect(() => {
@@ -336,8 +336,6 @@ const HomePage: React.FC<Props> = ({
       if (!searchQuery) fetchFeaturedAnimes();
     }
   }, [filter, contentType]); // eslint-disable-line react-hooks/exhaustive-deps
-  // We intentionally omit loadInitialAnime and fetchFeaturedAnimes to avoid loops,
-  // but those functions are stable due to useCallback.
 
   // ---------- SEARCH DEBOUNCE ----------
   useEffect(() => {
@@ -377,7 +375,6 @@ const HomePage: React.FC<Props> = ({
     }
     const uniqueList = Array.from(uniqueAnimesMap.values());
     
-    // Log if there's a discrepancy
     if (list.length !== uniqueList.length) {
       console.warn(`⚠️ Duplicates removed: ${list.length} -> ${uniqueList.length}`);
     }
@@ -471,6 +468,28 @@ const HomePage: React.FC<Props> = ({
         `}</style>
         
         <div className="homepage-content-container mx-auto px-2 sm:px-3 py-2 lg:py-4">
+          {/* Sunday Special Banner – appears only when not searching (now at the top) */}
+          {!searchQuery && !isSearching && (
+            <div className="mb-6 transform hover:scale-[1.02] transition-transform duration-300">
+              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-purple-600 via-pink-500 to-orange-500 p-1 shadow-2xl">
+                <div className="absolute inset-0 bg-gradient-to-r from-yellow-300/20 via-transparent to-purple-300/20 animate-shimmer" />
+                <div className="relative rounded-xl bg-gradient-to-br from-purple-900/90 to-purple-800/90 px-4 sm:px-6 py-3 sm:py-4 backdrop-blur-sm border border-white/20">
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <span className="text-3xl sm:text-4xl animate-bounce">🎉</span>
+                    <div>
+                      <h3 className="text-lg sm:text-xl lg:text-2xl font-extrabold bg-gradient-to-r from-yellow-300 to-pink-300 bg-clip-text text-transparent">
+                        Sunday Special!
+                      </h3>
+                      <p className="text-xs sm:text-sm lg:text-base text-white">
+                        Download all anime & movies <span className="font-bold text-yellow-300">without any ads</span> – only on Sundays! Enjoy unlimited bing watch.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Featured Carousel */}
           {!searchQuery && !isSearching && featuredAnimes.length > 0 && (
             <div className="mb-6">

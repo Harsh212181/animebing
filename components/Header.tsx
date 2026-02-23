@@ -453,7 +453,7 @@ const Header: React.FC<HeaderProps> = ({
           fixed top-0 left-0 right-0 z-40 transition-all duration-300 glow-green
           ${isScrolled 
             ? 'bg-purple-900/95 backdrop-blur-xl shadow-lg shadow-black/20 py-2' 
-            : 'bg-gradient-to-br from-purple-900 via-purple-800 to-purple-900 backdrop-blur-xl py-3'
+            : 'bg-gradient-to-br from-purple-900 via-purple-800 to-purple-900 backdrop-blur-xl py-1'
           }
         `}
         style={{
