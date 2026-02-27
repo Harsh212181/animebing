@@ -1,4 +1,4 @@
- // models/Anime.cjs - UPDATED WITH PARTNER ID AND CURRENT EPISODE
+// models/Anime.cjs - UPDATED WITH PARTNER ID, CURRENT EPISODE, AND STABLE SLUG (SEO FIX)
 const mongoose = require('mongoose');
 
 // Schema for storing user votes
@@ -248,20 +248,14 @@ animeSchema.methods.updateTimeBasedCounts = function() {
   return this.save();
 };
 
-// MIDDLEWARE: Auto-generate slug, update lastContentAdded, set default SEO
-animeSchema.pre('save', function(next) {
-  // Generate slug if not present or title changed
-  if (!this.slug || this.isModified('title')) {
-    this.slug = this.title
-      .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .trim();
-    
-    if (this.slug) {
-      this.slug = `${this.slug}-${Date.now().toString(36)}`;
-    }
+// ✅ FIXED: Slug is now generated only ONCE (on creation) and NEVER changes on updates
+// This prevents broken URLs and duplicate canonical issues for SEO/sitemap
+animeSchema.pre('save', async function(next) {
+  // Only generate slug for new documents (or if slug is missing and we explicitly want to create it)
+  if (this.isNew && !this.slug) {
+    // Use the static generateSlug method to ensure uniqueness
+    const generatedSlug = await this.constructor.generateSlug(this.title);
+    this.slug = generatedSlug;
   }
   
   // Update lastContentAdded if episodes were modified (via virtual population, not direct)
@@ -322,7 +316,7 @@ animeSchema.statics.updateLastContent = async function(animeId) {
   });
 };
 
-// STATIC METHOD: Generate unique slug
+// STATIC METHOD: Generate unique slug (used during creation only)
 animeSchema.statics.generateSlug = async function(title) {
   let slug = title
     .toLowerCase()

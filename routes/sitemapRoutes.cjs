@@ -1,99 +1,162 @@
-// routes/sitemapRoutes.cjs
-const express = require('express');
+ const express = require("express");
 const router = express.Router();
-const Anime = require('../models/Anime.cjs');
 
-/**
- * ✅ DYNAMIC SITEMAP FOR ANIME PAGES
- * This generates XML with all anime detail pages
- */
-router.get('/sitemap/anime', async (req, res) => {
+const Anime = require("../models/Anime.cjs");
+const Episode = require("../models/Episode.cjs");
+
+/* ================================================================
+   📌 STATIC SITEMAP (sitemap-static.xml)
+================================================================ */
+router.get("/sitemap-static.xml", (req, res) => {
+  const today = new Date().toISOString().split("T")[0];
+
+  const staticPages = [
+    "",
+    "contact",
+    "privacy-policy",
+    "terms-and-conditions",
+    "dmca",
+    "top-100",
+  ];
+
+  let xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+`;
+
+  staticPages.forEach((p) => {
+    xml += `
+  <url>
+    <loc>https://animebing.in/${p}</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+`;
+  });
+
+  xml += `</urlset>`;
+
+  res.set("Content-Type", "application/xml");
+  res.send(xml);
+});
+
+/* ================================================================
+   📌 ANIME SITEMAP (sitemap-anime.xml)
+================================================================ */
+router.get("/sitemap-anime.xml", async (req, res) => {
   try {
-    console.log('📊 Generating dynamic sitemap for anime pages...');
-    
-    // Get all anime with slug and update date
     const animeList = await Anime.find({})
-      .select('slug updatedAt title thumbnail')
-      .sort({ updatedAt: -1 })
+      .select("slug updatedAt title thumbnail")
       .lean();
-    
-    let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
-    xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"\n';
-    xml += '        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n';
-    
-    // Add each anime to sitemap
-    animeList.forEach(anime => {
-      const lastmod = anime.updatedAt 
-        ? new Date(anime.updatedAt).toISOString().split('T')[0]
-        : '2024-01-15';
-      
-      const animeSlug = anime.slug || anime._id.toString();
-      const animeUrl = `https://animebing.in/detail/${animeSlug}`;
-      
-      xml += `  <url>\n`;
-      xml += `    <loc>${animeUrl}</loc>\n`;
-      xml += `    <lastmod>${lastmod}</lastmod>\n`;
-      xml += `    <changefreq>weekly</changefreq>\n`;
-      xml += `    <priority>0.6</priority>\n`;
-      
-      // Add image if available
+
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+`;
+
+    animeList.forEach((anime) => {
+      const slug = anime.slug;
+      const lastmod = new Date(anime.updatedAt).toISOString().split("T")[0];
+
+      xml += `
+  <url>
+    <loc>https://animebing.in/anime/${slug}</loc>
+    <lastmod>${lastmod}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+`;
       if (anime.thumbnail) {
-        xml += `    <image:image>\n`;
-        xml += `      <image:loc>${anime.thumbnail}</image:loc>\n`;
-        xml += `      <image:title>${anime.title || 'Anime Image'}</image:title>\n`;
-        xml += `      <image:caption>${anime.title || 'Anime Image'}</image:caption>\n`;
-        xml += `    </image:image>\n`;
+        xml += `
+    <image:image>
+      <image:loc>${anime.thumbnail}</image:loc>
+      <image:title>${anime.title}</image:title>
+    </image:image>
+`;
       }
-      
-      xml += `  </url>\n`;
+
+      xml += `  </url>`;
     });
-    
-    xml += '</urlset>';
-    
-    // Set proper headers for XML
-    res.set({
-      'Content-Type': 'application/xml',
-      'Cache-Control': 'public, max-age=3600' // Cache for 1 hour
-    });
-    
-    console.log(`✅ Generated sitemap with ${animeList.length} anime pages`);
+
+    xml += `</urlset>`;
+
+    res.set("Content-Type", "application/xml");
     res.send(xml);
-    
   } catch (err) {
-    console.error('❌ Sitemap generation error:', err);
-    res.status(500).send('Internal Server Error');
+    console.error("❌ Anime sitemap error:", err);
+    res.status(500).send("Internal Server Error");
   }
 });
 
-/**
- * ✅ SITEMAP INDEX (Optional)
- * If you have multiple sitemaps
- */
-router.get('/sitemap.xml', async (req, res) => {
+/* ================================================================
+   📌 EPISODE SITEMAP (sitemap-episodes.xml)
+================================================================ */
+router.get("/sitemap-episodes.xml", async (req, res) => {
   try {
-    let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
-    xml += '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n';
-    
-    // Main sitemap
-    xml += '  <sitemap>\n';
-    xml += '    <loc>https://animebing.in/sitemap-static.xml</loc>\n';
-    xml += '    <lastmod>2024-01-15</lastmod>\n';
-    xml += '  </sitemap>\n';
-    
-    // Anime sitemap (dynamic)
-    xml += '  <sitemap>\n';
-    xml += '    <loc>https://animebing.in/api/sitemap/anime</loc>\n';
-    xml += '    <lastmod>2024-01-15</lastmod>\n';
-    xml += '  </sitemap>\n';
-    
-    xml += '</sitemapindex>';
-    
-    res.set('Content-Type', 'application/xml');
+    const episodes = await Episode.find({})
+      .select("animeId episodeNumber updatedAt")
+      .populate("animeId", "slug")
+      .lean();
+
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+`;
+
+    episodes.forEach((ep) => {
+      if (!ep.animeId || !ep.animeId.slug) return;
+
+      const url = `https://animebing.in/anime/${ep.animeId.slug}/episode/${ep.episodeNumber}`;
+      const lastmod = new Date(ep.updatedAt).toISOString().split("T")[0];
+
+      xml += `
+  <url>
+    <loc>${url}</loc>
+    <lastmod>${lastmod}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+`;
+    });
+
+    xml += `</urlset>`;
+
+    res.set("Content-Type", "application/xml");
     res.send(xml);
   } catch (err) {
-    console.error('Sitemap index error:', err);
-    res.status(500).send('Internal Server Error');
+    console.error("❌ Episode sitemap error:", err);
+    res.status(500).send("Internal Server Error");
   }
+});
+
+/* ================================================================
+   📌 MASTER SITEMAP INDEX (sitemap.xml)
+================================================================ */
+router.get("/sitemap.xml", (req, res) => {
+  const today = new Date().toISOString().split("T")[0];
+
+  const xml = `
+<?xml version="1.0" encoding="UTF-8"?>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+
+  <sitemap>
+    <loc>https://animebing.in/sitemap-static.xml</loc>
+    <lastmod>${today}</lastmod>
+  </sitemap>
+
+  <sitemap>
+    <loc>https://animebing.in/sitemap-anime.xml</loc>
+    <lastmod>${today}</lastmod>
+  </sitemap>
+
+  <sitemap>
+    <loc>https://animebing.in/sitemap-episodes.xml</loc>
+    <lastmod>${today}</lastmod>
+  </sitemap>
+
+</sitemapindex>
+`;
+
+  res.set("Content-Type", "application/xml");
+  res.send(xml);
 });
 
 module.exports = router;
