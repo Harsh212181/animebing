@@ -1,4 +1,4 @@
- // services/animeService.ts - UPDATED WITH FIXED FEATURED FETCHING
+ // services/animeService.ts - UPDATED WITH FIXED FEATURED FETCHING AND ALL-ANIME PAGINATION
 import type { Anime, Episode, Chapter } from '../src/types';
 
 // ✅ FIX: Local development के लिए PORT 5173 है, server PORT 3000 पर है
@@ -525,10 +525,44 @@ export const searchAnime = async (query: string, fields?: string): Promise<Anime
 };
 
 /**
- * ✅ UPDATED: Get all anime with fields parameter
+ * ✅ UPDATED: Get ALL anime by fetching every page (Option 2)
+ * This ensures you get every anime regardless of total count
  */
 export const getAllAnime = async (fields?: string): Promise<Anime[]> => {
-  return getAnimePaginated(1, 50, fields); // First page with more items
+  const pageLimit = 50;           // Items per page (adjust if your API uses a different default)
+  let currentPage = 1;
+  let allAnime: Anime[] = [];
+  let keepFetching = true;
+
+  // Optional: clear cache to force fresh data (uncomment if needed)
+  // clearAnimeCache();
+
+  while (keepFetching) {
+    console.log(`📡 Fetching page ${currentPage} for getAllAnime...`);
+    
+    // Fetch one page
+    const pageData = await getAnimePaginated(currentPage, pageLimit, fields);
+    
+    // If we got data, add it to the collection
+    if (pageData.length > 0) {
+      allAnime = [...allAnime, ...pageData];
+      
+      // Stop if we received less than the page limit (means last page)
+      if (pageData.length < pageLimit) {
+        keepFetching = false;
+        console.log(`✅ Reached last page (${currentPage}) with ${pageData.length} items. Total: ${allAnime.length}`);
+      } else {
+        currentPage++;
+      }
+    } else {
+      // No data returned – stop
+      keepFetching = false;
+      console.log(`⚠️ Page ${currentPage} returned no data. Stopping.`);
+    }
+  }
+
+  console.log(`✅ getAllAnime completed. Total anime fetched: ${allAnime.length}`);
+  return allAnime;
 };
 
 // ================== POLL FUNCTIONS ==================

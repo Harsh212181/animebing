@@ -1,4 +1,4 @@
-  // src/components/admin/AdminDashboard.tsx - UPDATED WITH AUTO SUNDAY MODE + SCROLL TO TOP + EPISODE STATUS MANAGER
+ // src/components/admin/AdminDashboard.tsx - UPDATED WITH AUTO SUNDAY MODE + SCROLL TO TOP + EPISODE STATUS MANAGER (ONLY TOP BAR BUTTON)
 import React, { useState, useEffect } from 'react';
 import AnimeListTable from './AnimeListTable';
 import AddAnimeForm from './AddAnimeForm';
@@ -368,7 +368,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
-  // ✅ UPDATED TABS: Added Episode Status Manager
+  // ✅ TABS: Removed Episode Status (now only in top bar)
   const tabs = [
     { id: 'list', label: 'Content List', icon: '🤖', color: 'from-purple-600 to-purple-700' },
     { id: 'add', label: 'Add Content', icon: '🐦‍🔥', color: 'from-emerald-600 to-green-600' },
@@ -376,9 +376,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     { id: 'featured', label: 'Featured Anime', icon: '🎈', color: 'from-amber-600 to-orange-600' },
     { id: 'reports', label: 'User Reports', icon: '🍂', color: 'from-rose-600 to-pink-600' },
     { id: 'social', label: 'Social Media', icon: '☣️', color: 'from-violet-600 to-purple-600' },
-    { id: 'polls', label: 'Poll Manager', icon: '🕶️', color: 'from-indigo-600 to-blue-600' },
-    // ✅ NEW TAB: Episode Status Manager
-    { id: 'episode-status', label: 'Episode Status', icon: '📊', color: 'from-blue-600 to-indigo-600' },
+    { id: 'polls', label: 'Poll Manager', icon: '🕶️', color: 'from-indigo-600 to-blue-600' }
   ];
 
   const ActiveComponent = () => {
@@ -390,9 +388,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       case 'reports': return <ReportsManager />;
       case 'social': return <SocialMediaManager />;
       case 'polls': return <PollManager token={token || ''} apiBase={API_BASE} />;
-      // ✅ NEW CASE: Episode Status Manager
+      // ✅ Episode Status Manager (accessed via top bar only)
       case 'episode-status': return <EpisodeStatusManager />;
-      // ✅ Partner Manager still renders when activeTab === 'partners' (from top bar)
+      // ✅ Partner Manager (accessed via top bar only)
       case 'partners': return <PartnerManager token={token || ''} apiBase={API_BASE} />;
       default: return <AnimeListTable />;
     }
@@ -519,9 +517,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             </div>
           </div>
           
-          {/* ✅ Button group: Partner Manager → Refresh → Logout */}
+          {/* ✅ Button group: Partner Manager → Episode Status → Refresh → Logout */}
           <div className="flex items-center gap-3">
-            {/* ✅ NEW: Partner Manager Button (now in top bar, left of refresh) */}
+            {/* Partner Manager Button */}
             <button
               onClick={() => setActiveTab('partners')}
               className={`flex items-center gap-2 px-5 py-2 rounded-lg transition-all duration-300 font-semibold text-sm shadow-lg ${
@@ -533,6 +531,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               <span className="text-lg">🎉</span>
               <span>Partner Manager</span>
               {activeTab === 'partners' && (
+                <div className="ml-2 w-2 h-2 bg-white rounded-full animate-pulse"></div>
+              )}
+            </button>
+
+            {/* ✅ Episode Status Button (only here, not in tabs) */}
+            <button
+              onClick={() => setActiveTab('episode-status')}
+              className={`flex items-center gap-2 px-5 py-2 rounded-lg transition-all duration-300 font-semibold text-sm shadow-lg ${
+                activeTab === 'episode-status'
+                  ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white border-2 border-white/20 shadow-blue-500/30'
+                  : 'bg-purple-800/40 text-purple-300 hover:bg-purple-700/60 hover:text-white border border-purple-600/40'
+              }`}
+            >
+              <span className="text-lg">🪼</span>
+              <span>Episode Status</span>
+              {activeTab === 'episode-status' && (
                 <div className="ml-2 w-2 h-2 bg-white rounded-full animate-pulse"></div>
               )}
             </button>
@@ -555,7 +569,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           </div>
         </div>
 
-        {/* Navigation Tabs - All except Partner Manager (now includes Episode Status) */}
+        {/* Navigation Tabs - All main tabs (Partner Manager and Episode Status are in top bar) */}
         <div className="mb-6">
           <div className="flex flex-wrap gap-1.5">
             {tabs.map(tab => (
@@ -813,9 +827,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           <div className="mb-6">
             <h2 className="text-2xl font-bold text-purple-300 mb-2 flex items-center gap-3">
               <span className="text-3xl">
-                {tabs.find(t => t.id === activeTab)?.icon || '🎉'}
+                {tabs.find(t => t.id === activeTab)?.icon || 
+                 (activeTab === 'episode-status' ? '🪼' : 
+                  activeTab === 'partners' ? '🎉' : '🎉')}
               </span>
-              {tabs.find(t => t.id === activeTab)?.label || 'Partner Manager'} Management
+              {tabs.find(t => t.id === activeTab)?.label || 
+               (activeTab === 'episode-status' ? 'Episode Status' : 
+                activeTab === 'partners' ? 'Partner Manager' : '')} Management
             </h2>
             <p className="text-purple-400/70 text-sm">
               Manage and control your content from this panel

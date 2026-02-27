@@ -1,4 +1,4 @@
- // src/components/FeaturedAnimeCarousel.tsx - FIXED IMAGE QUALITY
+ // src/components/FeaturedAnimeCarousel.tsx - EPISODE BADGE IN BANNER INFO AREA
 "use client"
 
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
@@ -119,7 +119,6 @@ const FeaturedAnimeCarousel: React.FC<Props> = ({ featuredAnimes, onAnimeSelect 
               <div className="relative h-[200px]">
                 {/* Background with gradient overlay */}
                 <div className="absolute inset-0">
-                  {/* ✅ FIXED IMAGE URL WITH BETTER QUALITY */}
                   <img
                     src={optimizeImageUrl(currentAnime.thumbnail, 800, 400)}
                     srcSet={`
@@ -143,7 +142,6 @@ const FeaturedAnimeCarousel: React.FC<Props> = ({ featuredAnimes, onAnimeSelect 
                     {/* Thumbnail with better shadow */}
                     <div className="relative w-28 flex-shrink-0">
                       <div className="relative aspect-[2/3] rounded-lg overflow-hidden shadow-2xl shadow-purple-900/50 ring-2 ring-purple-500/30">
-                        {/* ✅ FIXED: Same optimization as HomePage */}
                         <img
                           src={optimizeImageUrl(currentAnime.thumbnail, 180, 270)}
                           srcSet={generateSrcSet(currentAnime.thumbnail, 180, 270)}
@@ -152,6 +150,7 @@ const FeaturedAnimeCarousel: React.FC<Props> = ({ featuredAnimes, onAnimeSelect 
                           className="w-full h-full object-cover"
                           loading="lazy"
                         />
+                        {/* EPISODE BADGE REMOVED FROM THUMBNAIL */}
                       </div>
                     </div>
 
@@ -163,7 +162,7 @@ const FeaturedAnimeCarousel: React.FC<Props> = ({ featuredAnimes, onAnimeSelect 
                           {currentAnime.title}
                         </h2>
 
-                        {/* Badges */}
+                        {/* Badges - including episode badge */}
                         <div className="flex flex-wrap gap-1.5">
                           {currentAnime.status && (
                             <span
@@ -184,6 +183,12 @@ const FeaturedAnimeCarousel: React.FC<Props> = ({ featuredAnimes, onAnimeSelect 
                           {currentAnime.releaseYear && (
                             <span className="px-2 py-0.5 rounded text-xs font-semibold bg-slate-800/60 text-slate-300 border border-slate-700">
                               {currentAnime.releaseYear}
+                            </span>
+                          )}
+                          {/* ✅ EPISODE BADGE (in info area) */}
+                          {currentAnime.currentEpisode && currentAnime.currentEpisode > 0 && (
+                            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-gradient-to-r from-red-600 to-orange-600 text-white border border-red-500/30">
+                              EP {currentAnime.currentEpisode}
                             </span>
                           )}
                         </div>
@@ -248,7 +253,6 @@ const FeaturedAnimeCarousel: React.FC<Props> = ({ featuredAnimes, onAnimeSelect 
               <div className="relative h-[330px]">
                 {/* Background with cleaner overlay */}
                 <div className="absolute inset-0">
-                  {/* ✅ FIXED: High quality banner image */}
                   <img
                     src={optimizeImageUrl(currentAnime.thumbnail, 1400, 400)}
                     srcSet={`
@@ -259,7 +263,7 @@ const FeaturedAnimeCarousel: React.FC<Props> = ({ featuredAnimes, onAnimeSelect 
                     sizes="100vw"
                     alt={currentAnime.title}
                     className="w-full h-full object-cover"
-                    loading="eager" // ✅ Banner image gets priority
+                    loading="eager"
                   />
                   {/* Clean Gradient Overlay */}
                   <div className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/85 to-transparent"></div>
@@ -277,7 +281,6 @@ const FeaturedAnimeCarousel: React.FC<Props> = ({ featuredAnimes, onAnimeSelect 
                       {/* Container with SMALLER width - w-48 (was w-56) */}
                       <div className="relative w-48">
                         <div className="relative rounded-xl overflow-hidden shadow-2xl shadow-purple-900/30 ring-2 ring-purple-500/30 aspect-[2/3]">
-                          {/* ✅ FIXED: Same dimensions as HomePage */}
                           <img
                             src={optimizeImageUrl(currentAnime.thumbnail, 192, 288)}
                             srcSet={generateSrcSet(currentAnime.thumbnail, 192, 288)}
@@ -286,6 +289,7 @@ const FeaturedAnimeCarousel: React.FC<Props> = ({ featuredAnimes, onAnimeSelect 
                             className="w-full h-full object-cover"
                             loading="lazy"
                           />
+                          {/* EPISODE BADGE REMOVED FROM THUMBNAIL */}
                         </div>
                       </div>
                     </div>
@@ -301,7 +305,7 @@ const FeaturedAnimeCarousel: React.FC<Props> = ({ featuredAnimes, onAnimeSelect 
                           </h2>
                         </div>
 
-                        {/* Badges */}
+                        {/* Badges - including episode badge */}
                         <div className="flex flex-wrap gap-1.5">
                           {currentAnime.status && (
                             <span
@@ -322,6 +326,12 @@ const FeaturedAnimeCarousel: React.FC<Props> = ({ featuredAnimes, onAnimeSelect 
                           {currentAnime.subDubStatus && (
                             <span className="px-2.5 py-1 rounded text-xs font-bold bg-gradient-to-r from-purple-600 to-purple-700 text-white border border-purple-500">
                               {currentAnime.subDubStatus}
+                            </span>
+                          )}
+                          {/* ✅ EPISODE BADGE (in info area) */}
+                          {currentAnime.currentEpisode && currentAnime.currentEpisode > 0 && (
+                            <span className="px-2.5 py-1 rounded text-xs font-bold bg-gradient-to-r from-red-600 to-orange-600 text-white border border-red-500/30">
+                              EP {currentAnime.currentEpisode}
                             </span>
                           )}
                         </div>
@@ -454,7 +464,6 @@ const FeaturedAnimeCarousel: React.FC<Props> = ({ featuredAnimes, onAnimeSelect 
             className="featured-swiper rounded-lg"
           >
             {carouselAnimes.map((anime, index) => {
-              // ✅ FIXED: Same optimization as HomePage
               const optimizedThumbnail = optimizeImageUrl(anime.thumbnail, 193, 289);
               const thumbnailSrcSet = generateSrcSet(anime.thumbnail, 193, 289);
 
@@ -473,7 +482,6 @@ const FeaturedAnimeCarousel: React.FC<Props> = ({ featuredAnimes, onAnimeSelect 
                     }}
                   >
                     <div className="relative overflow-hidden rounded-lg aspect-[2/3] bg-gradient-to-br from-slate-800 to-slate-900">
-                      {/* ✅ FIXED: Added srcSet and proper sizes */}
                       <img
                         src={optimizedThumbnail}
                         srcSet={thumbnailSrcSet}
@@ -483,12 +491,21 @@ const FeaturedAnimeCarousel: React.FC<Props> = ({ featuredAnimes, onAnimeSelect 
                         loading="lazy"
                       />
                       
-                      {/* Status Badge */}
+                      {/* Status Badge (Top Left) */}
                       <div className="absolute top-0.5 left-2 z-10">
                         <span className="bg-gradient-to-r from-purple-600 to-purple-700 text-white text-[10px] font-medium px-2 py-0.5 rounded-md shadow-lg whitespace-nowrap">
                           {anime.contentType || 'Anime'}
                         </span>
                       </div>
+
+                      {/* ✅ EPISODE STATUS BADGE (Top Right) - KEPT ON IMAGE FOR CAROUSEL */}
+                      {anime.currentEpisode && anime.currentEpisode > 0 && (
+                        <div className="absolute top-0.5 right-2 z-20">
+                          <span className="bg-gradient-to-r from-red-600 to-orange-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-md shadow-lg border border-white/20">
+                            EP {anime.currentEpisode}
+                          </span>
+                        </div>
+                      )}
                       
                       {/* Gradient Overlay */}
                       <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent transition-colors duration-300 group-hover:from-black/97 flex flex-col justify-end p-2 sm:p-3 md:p-4">
