@@ -17,7 +17,7 @@ router.get('/featured', async (req, res) => {
     const featuredAnime = await Anime.find({ 
       featured: true 
     })
-    .select('title thumbnail releaseYear subDubStatus contentType updatedAt createdAt bannerImage rating slug seoTitle likes dislikes monthlyLikes weeklyLikes')
+    .select('title thumbnail releaseYear subDubStatus contentType updatedAt createdAt bannerImage rating slug seoTitle likes dislikes monthlyLikes weeklyLikes currentEpisode')
     .sort({ featuredOrder: -1, createdAt: -1 })
     .limit(24)
     .lean();
@@ -351,7 +351,7 @@ router.get('/', async (req, res) => {
     }
 
     const anime = await Anime.find()
-      .select('title thumbnail releaseYear subDubStatus contentType updatedAt createdAt slug likes dislikes rating monthlyLikes weeklyLikes totalVotes')
+      .select('title thumbnail releaseYear subDubStatus contentType updatedAt createdAt slug likes dislikes rating monthlyLikes weeklyLikes totalVotes currentEpisode')
       .sort({ [sortField]: sortOrder })
       .skip(skip)
       .limit(limit)
@@ -403,7 +403,7 @@ router.get('/search', async (req, res) => {
     };
 
     const found = await Anime.find(searchQuery)
-      .select('title thumbnail releaseYear subDubStatus contentType updatedAt createdAt slug seoTitle seoDescription likes dislikes rating monthlyLikes weeklyLikes')
+      .select('title thumbnail releaseYear subDubStatus contentType updatedAt createdAt slug seoTitle seoDescription likes dislikes rating monthlyLikes weeklyLikes currentEpisode')
       .sort({ likes: -1, updatedAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -480,7 +480,7 @@ router.get('/filter/seo', async (req, res) => {
     }
     
     const anime = await Anime.find(filter)
-      .select('title thumbnail releaseYear subDubStatus contentType slug seoTitle seoDescription likes dislikes rating views monthlyLikes weeklyLikes')
+      .select('title thumbnail releaseYear subDubStatus contentType slug seoTitle seoDescription likes dislikes rating views monthlyLikes weeklyLikes currentEpisode')
       .sort({ [sortField]: -1 })
       .limit(50)
       .lean();

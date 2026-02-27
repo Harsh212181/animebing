@@ -1,4 +1,4 @@
- // src/components/admin/AdminDashboard.tsx - UPDATED WITH AUTO SUNDAY MODE + SCROLL TO TOP
+  // src/components/admin/AdminDashboard.tsx - UPDATED WITH AUTO SUNDAY MODE + SCROLL TO TOP + EPISODE STATUS MANAGER
 import React, { useState, useEffect } from 'react';
 import AnimeListTable from './AnimeListTable';
 import AddAnimeForm from './AddAnimeForm';
@@ -8,6 +8,7 @@ import ReportsManager from './ReportsManager';
 import SocialMediaManager from './SocialMediaManager';
 import PollManager from './PollManager'; // ✅ POLL MANAGER IMPORT
 import PartnerManager from './PartnerManager'; // ✅ PARTNER MANAGER IMPORT
+import EpisodeStatusManager from './EpisodeStatusManager'; // ✅ NEW EPISODE STATUS MANAGER
 import Spinner from '../Spinner';
 import axios from 'axios';
 
@@ -367,7 +368,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
-  // ✅ REMOVED Partner Manager from tabs – now placed in top bar
+  // ✅ UPDATED TABS: Added Episode Status Manager
   const tabs = [
     { id: 'list', label: 'Content List', icon: '🤖', color: 'from-purple-600 to-purple-700' },
     { id: 'add', label: 'Add Content', icon: '🐦‍🔥', color: 'from-emerald-600 to-green-600' },
@@ -376,7 +377,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     { id: 'reports', label: 'User Reports', icon: '🍂', color: 'from-rose-600 to-pink-600' },
     { id: 'social', label: 'Social Media', icon: '☣️', color: 'from-violet-600 to-purple-600' },
     { id: 'polls', label: 'Poll Manager', icon: '🕶️', color: 'from-indigo-600 to-blue-600' },
-    // ✅ Partner Manager moved to top bar
+    // ✅ NEW TAB: Episode Status Manager
+    { id: 'episode-status', label: 'Episode Status', icon: '📊', color: 'from-blue-600 to-indigo-600' },
   ];
 
   const ActiveComponent = () => {
@@ -388,7 +390,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       case 'reports': return <ReportsManager />;
       case 'social': return <SocialMediaManager />;
       case 'polls': return <PollManager token={token || ''} apiBase={API_BASE} />;
-      // ✅ Partner Manager still renders when activeTab === 'partners'
+      // ✅ NEW CASE: Episode Status Manager
+      case 'episode-status': return <EpisodeStatusManager />;
+      // ✅ Partner Manager still renders when activeTab === 'partners' (from top bar)
       case 'partners': return <PartnerManager token={token || ''} apiBase={API_BASE} />;
       default: return <AnimeListTable />;
     }
@@ -551,7 +555,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           </div>
         </div>
 
-        {/* Navigation Tabs - All except Partner Manager */}
+        {/* Navigation Tabs - All except Partner Manager (now includes Episode Status) */}
         <div className="mb-6">
           <div className="flex flex-wrap gap-1.5">
             {tabs.map(tab => (

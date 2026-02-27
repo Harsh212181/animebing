@@ -1,4 +1,4 @@
- // models/Anime.cjs - UPDATED WITH PARTNER ID
+ // models/Anime.cjs - UPDATED WITH PARTNER ID AND CURRENT EPISODE
 const mongoose = require('mongoose');
 
 // Schema for storing user votes
@@ -76,6 +76,12 @@ const animeSchema = new mongoose.Schema({
   totalEpisodes: {
     type: Number,
     default: 0
+  },
+  // ✅ NEW FIELD: current released episode number (manual control)
+  currentEpisode: {
+    type: Number,
+    default: 0,
+    min: 0
   },
   views: {
     type: Number,

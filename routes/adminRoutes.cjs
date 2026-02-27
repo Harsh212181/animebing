@@ -1,4 +1,4 @@
-  // routes/adminRoutes.cjs - AD FREE VERSION
+ // routes/adminRoutes.cjs - AD FREE VERSION (UPDATED WITH EPISODE STATUS MANAGER)
 const express = require('express');
 const router = express.Router();
 const Anime = require('../models/Anime.cjs');
@@ -79,6 +79,68 @@ router.delete('/delete-anime', async (req, res) => {
     await Report.deleteMany({ animeId: id });
     res.json({ success: true, message: 'Deleted successfully!' });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ EPISODE STATUS MANAGEMENT (NEW ROUTES)
+
+// PATCH: Manually update episode status (totalEpisodes and/or currentEpisode)
+router.patch('/anime/:id/episode-status', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { totalEpisodes, currentEpisode } = req.body;
+
+    const updateData = {};
+    if (totalEpisodes !== undefined) updateData.totalEpisodes = totalEpisodes;
+    if (currentEpisode !== undefined) updateData.currentEpisode = currentEpisode;
+
+    const updatedAnime = await Anime.findByIdAndUpdate(
+      id,
+      updateData,
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedAnime) {
+      return res.status(404).json({ error: 'Anime not found' });
+    }
+
+    res.json({
+      success: true,
+      message: 'Episode status updated successfully!',
+      anime: updatedAnime
+    });
+  } catch (err) {
+    console.error('Update episode status error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST: Auto-sync currentEpisode with actual episode count
+router.post('/anime/:id/sync-episode-count', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Count episodes for this anime
+    const episodeCount = await Episode.countDocuments({ animeId: id });
+
+    const updatedAnime = await Anime.findByIdAndUpdate(
+      id,
+      { currentEpisode: episodeCount },
+      { new: true }
+    );
+
+    if (!updatedAnime) {
+      return res.status(404).json({ error: 'Anime not found' });
+    }
+
+    res.json({
+      success: true,
+      message: `Current episode synced to ${episodeCount}`,
+      anime: updatedAnime
+    });
+  } catch (err) {
+    console.error('Sync episode count error:', err);
     res.status(500).json({ error: err.message });
   }
 });

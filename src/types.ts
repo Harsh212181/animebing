@@ -1,4 +1,4 @@
- // src/types.ts – COMPLETE UPDATED VERSION WITH DEVICE-BASED POLL VOTING
+// src/types.ts – COMPLETE UPDATED VERSION WITH DEVICE-BASED POLL VOTING
 /* =========================
    DOWNLOAD / EPISODE / CHAPTER
 ========================= */
@@ -108,6 +108,8 @@ export interface Anime {
   views?: number;
   episodeCount?: number;
   totalEpisodes?: number;
+  // ✅ NEW: Current released episode (for episode badge)
+  currentEpisode?: number;
   lastContentAdded?: Date | string;
 
   /* ✅ NEW: Partner association (Partner Manager) */

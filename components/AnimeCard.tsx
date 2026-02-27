@@ -1,4 +1,4 @@
- // components/AnimeCard.tsx - UPDATED VERSION WITH COMPACT PROP FIX
+ // src/components/AnimeCard.tsx - UPDATED VERSION WITH EPISODE STATUS BADGE SAME SIZE AS STATUS BADGE
 import React from 'react';
 import type { Anime } from '../src/types';
 import { PlayIcon } from './icons/PlayIcon';
@@ -8,7 +8,7 @@ interface AnimeCardProps {
   onClick: (anime: Anime) => void;
   index: number;
   showStatus?: boolean;
-  compact?: boolean; // Added compact prop
+  compact?: boolean;
 }
 
 // Helper function to optimize Cloudinary image URLs
@@ -16,7 +16,6 @@ const optimizeImageUrl = (url: string, width: number, height: number): string =>
   if (!url || !url.includes('cloudinary.com')) return url;
   
   try {
-    // Remove existing transformations and add optimized ones
     const baseUrl = url.split('/upload/')[0];
     const rest = url.split('/upload/')[1];
     const imagePath = rest.split('/').slice(1).join('/');
@@ -52,7 +51,7 @@ const AnimeCard: React.FC<AnimeCardProps> = ({
   onClick, 
   index, 
   showStatus = false, 
-  compact = false // Default value for compact
+  compact = false
 }) => {
   // Define display dimensions - adjust for compact mode
   const displayWidth = compact ? 150 : 193;
@@ -81,7 +80,6 @@ const AnimeCard: React.FC<AnimeCardProps> = ({
       }}
       aria-label={`View details for ${anime.title}`}
     >
-      
       {/* Image Container */}
       <div className="w-full h-full relative">
         <img
@@ -97,15 +95,23 @@ const AnimeCard: React.FC<AnimeCardProps> = ({
             : "(max-width: 640px) 48vw, (max-width: 768px) 32vw, (max-width: 1024px) 24vw, (max-width: 1280px) 20vw, 193px"
           }
           onError={(e) => {
-            // Fallback to original if optimization fails
             e.currentTarget.src = anime.thumbnail;
             console.warn('Failed to load optimized image, using original');
           }}
         />
 
-        {/* Status Badge - Show only if not compact */}
+        {/* Episode Status Badge (Top Right) - Now same size as status badge */}
+        {anime.currentEpisode > 0 && (
+          <div className="absolute top-0.5 right-1 z-10">
+            <span className="bg-gradient-to-r from-red-600 to-orange-600 text-white text-[11px] font-medium px-2 py-0.5 rounded-md shadow-md">
+              EP {anime.currentEpisode}
+            </span>
+          </div>
+        )}
+
+        {/* Status Badge (Top Left) - Show only if not compact */}
         {showStatus && !compact && (
-          <div className="absolute top-0 left-2 z-10">
+          <div className="absolute top-0.5 left-1 z-10">
             <span className="bg-purple-600 text-white text-[11px] font-medium px-2 py-0.5 rounded-md shadow-md whitespace-nowrap">
               {anime.contentType || 'Anime'}
             </span>
@@ -116,10 +122,7 @@ const AnimeCard: React.FC<AnimeCardProps> = ({
         <div className={`absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent transition-colors duration-300 group-hover:from-black/95 flex flex-col justify-end ${
           compact ? 'p-2 sm:p-2' : 'p-2 sm:p-3 md:p-4'
         }`}>
-
-          {/* Card Text */}
           <div className="transform transition-transform duration-300 group-hover:-translate-y-1">
-            
             {/* Title */}
             <h3 className={`text-white font-bold line-clamp-2 mb-1 ${
               compact 
@@ -138,7 +141,6 @@ const AnimeCard: React.FC<AnimeCardProps> = ({
                 </span>
               </div>
             )}
-
           </div>
         </div>
 
@@ -150,7 +152,6 @@ const AnimeCard: React.FC<AnimeCardProps> = ({
             </div>
           </div>
         )}
-
       </div>
     </div>
   );
