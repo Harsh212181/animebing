@@ -3,17 +3,14 @@
 
   <sitemap>
     <loc>https://animebing.in/sitemap-static.xml</loc>
-    <lastmod>2026-02-27T12:00:00+00:00</lastmod>
   </sitemap>
 
   <sitemap>
-    <loc>https://animebing.in/sitemap-anime.xml</loc>
-    <lastmod>2026-02-27T12:00:00+00:00</lastmod>
+    <loc>https://animebing.in/sitemap/anime.xml</loc>
   </sitemap>
 
   <sitemap>
-    <loc>https://animebing.in/sitemap-episodes.xml</loc>
-    <lastmod>2026-02-27T12:00:00+00:00</lastmod>
+    <loc>https://animebing.in/sitemap/episodes.xml</loc>
   </sitemap>
 
 </sitemapindex>

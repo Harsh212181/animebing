@@ -27,6 +27,9 @@ const linkSettingsRoutes = require('./routes/linkSettingsRoutes.cjs');
 // ✅ NEW: PARTNER ROUTES (Partner Manager)
 const partnerRoutes = require('./routes/partnerRoutes.cjs');
 
+// ✅ FIX: IMPORT SITEMAP ROUTES (MISSING BEFORE)
+const sitemapRoutes = require('./routes/sitemapRoutes.cjs');
+
 const app = express();
 
 // ✅ CRITICAL FIX: TRUST PROXY ONLY IN PRODUCTION (safe for express-rate-limit)
@@ -61,133 +64,12 @@ app.use((req, res, next) => {
   next();
 });
 
-// ✅ DYNAMIC SITEMAP GENERATOR - SEO OPTIMIZED
-app.get('/sitemap.xml', async (req, res) => {
-  try {
-    console.log('🗺️ Generating SEO optimized sitemap.xml...');
-    
-    const Anime = require('./models/Anime.cjs');
-    
-    // Get all anime with SEO fields
-    const allAnime = await Anime.find({})
-      .select('slug seoTitle thumbnail updatedAt contentType subDubStatus releaseYear')
-      .lean();
-    
-    // Start building XML
-    let xml = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
-        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"
-        xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">\n`;
-    
-    const currentDate = new Date().toISOString().split('T')[0];
-    
-    // ✅ STATIC PAGES ONLY (SEO SAFE)
-    const staticPages = [
-      { url: 'https://animebing.in', priority: '1.0', changefreq: 'daily' },
-      { url: 'https://animebing.in/anime', priority: '0.9', changefreq: 'daily' },
-      { url: 'https://animebing.in/anime?filter=Hindi%20Dub', priority: '0.8', changefreq: 'weekly' },
-      { url: 'https://animebing.in/anime?filter=Hindi%20Sub', priority: '0.8', changefreq: 'weekly' },
-      { url: 'https://animebing.in/anime?filter=English%20Sub', priority: '0.8', changefreq: 'weekly' },
-      { url: 'https://animebing.in/privacy', priority: '0.5', changefreq: 'monthly' },
-      { url: 'https://animebing.in/terms', priority: '0.5', changefreq: 'monthly' },
-      { url: 'https://animebing.in/dmca', priority: '0.5', changefreq: 'monthly' },
-      { url: 'https://animebing.in/contact', priority: '0.5', changefreq: 'monthly' },
-      { url: 'https://animebing.in/polls', priority: '0.6', changefreq: 'weekly' } // ✅ Polls page added
-    ];
-    
-    // Add static pages
-    staticPages.forEach(page => {
-      xml += `  <url>
-    <loc>${page.url}</loc>
-    <lastmod>${currentDate}</lastmod>
-    <changefreq>${page.changefreq}</changefreq>
-    <priority>${page.priority}</priority>
-  </url>\n`;
-    });
-    
-    // ✅ CATEGORY PAGES (SEO FRIENDLY)
-    const categoryPages = [
-      { url: 'https://animebing.in/anime?contentType=Movie', priority: '0.7', changefreq: 'weekly' },
-      { url: 'https://animebing.in/anime?contentType=Manga', priority: '0.7', changefreq: 'weekly' }
-    ];
-    
-    categoryPages.forEach(page => {
-      xml += `  <url>
-    <loc>${page.url}</loc>
-    <lastmod>${currentDate}</lastmod>
-    <changefreq>${page.changefreq}</changefreq>
-    <priority>${page.priority}</priority>
-  </url>\n`;
-    });
-    
-    // ✅ DYNAMIC ANIME PAGES (MOST IMPORTANT)
-    console.log(`📺 Adding ${allAnime.length} anime to sitemap...`);
-    
-    allAnime.forEach(anime => {
-      if (anime.slug || anime._id) {
-        const lastmod = anime.updatedAt ? 
-          new Date(anime.updatedAt).toISOString().split('T')[0] : 
-          currentDate;
-        
-        const animeSlug = anime.slug || anime._id.toString();
-        const animeUrl = `https://animebing.in/detail/${animeSlug}`;
-        
-        xml += `  <url>
-    <loc>${animeUrl}</loc>
-    <lastmod>${lastmod}</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>\n`;
-        
-        // Add image if available
-        if (anime.thumbnail) {
-          xml += `    <image:image>
-      <image:loc>${anime.thumbnail}</image:loc>
-      <image:title><![CDATA[${anime.seoTitle || anime.title}]]></image:title>
-    </image:image>\n`;
-        }
-        
-        // Add video info if it's a movie
-        if (anime.contentType === 'Movie') {
-          xml += `    <video:video>
-      <video:title><![CDATA[${anime.title}]]></video:title>
-      <video:description><![CDATA[Watch ${anime.title} online in ${anime.subDubStatus || 'HD quality'}]]></video:description>
-      <video:thumbnail_loc>${anime.thumbnail || ''}</video:thumbnail_loc>
-      <video:release_date>${anime.releaseYear || currentDate.split('-')[0]}-01-01</video:release_date>
-    </video:video>\n`;
-        }
-        
-        xml += `  </url>\n`;
-      }
-    });
-    
-    xml += '</urlset>';
-    
-    // Set headers and send response
-    res.header('Content-Type', 'application/xml');
-    res.header('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
-    res.send(xml);
-    
-    console.log(`✅ SEO Safe Sitemap generated with ${allAnime.length + staticPages.length + categoryPages.length} URLs`);
-    console.log(`⚠️ IMPORTANT: Search query URLs REMOVED to avoid Google penalties`);
-    
-  } catch (error) {
-    console.error('❌ Error generating sitemap:', error);
-    
-    // Fallback to minimal sitemap if dynamic fails
-    const fallbackSitemap = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url>
-    <loc>https://animebing.in</loc>
-    <lastmod>${new Date().toISOString().split('T')[0]}</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>1.0</priority>
-  </url>
-</urlset>`;
-    
-    res.header('Content-Type', 'application/xml');
-    res.send(fallbackSitemap);
-  }
-});
+// ✅ FIX: MOUNT SITEMAP ROUTES AT ROOT
+// This makes /sitemap.xml (index), /sitemap-static.xml, /sitemap-anime.xml, /sitemap-episodes.xml available
+app.use('/', sitemapRoutes);
+
+// ✅ REMOVED THE OLD /sitemap.xml ROUTE (it conflicted and was incomplete)
+// The sitemap index from sitemapRoutes.cjs now handles everything properly.
 
 // ✅ ROBOTS.TXT (For SEO)
 app.get('/robots.txt', (req, res) => {
@@ -272,7 +154,7 @@ app.get('/rss.xml', async (req, res) => {
   }
 });
 
-// ✅ FIXED ADMIN CREATION FUNCTION
+// ✅ FIXED ADMIN CREATION FUNCTION (unchanged)
 const createAdmin = async () => {
   try {
     const Admin = require('./models/Admin.cjs');
@@ -325,7 +207,7 @@ const createAdmin = async () => {
 };
 createAdmin();
 
-// ✅ EMERGENCY ADMIN RESET ROUTE
+// ✅ EMERGENCY ADMIN RESET ROUTE (unchanged)
 app.get('/api/admin/emergency-reset', async (req, res) => {
   try {
     const Admin = require('./models/Admin.cjs');
@@ -369,7 +251,7 @@ app.get('/api/admin/emergency-reset', async (req, res) => {
   }
 });
 
-// ✅ ADMIN DEBUG ROUTE
+// ✅ ADMIN DEBUG ROUTE (unchanged)
 app.get('/api/admin/debug', async (req, res) => {
   try {
     const Admin = require('./models/Admin.cjs');
@@ -406,7 +288,7 @@ app.get('/api/admin/debug', async (req, res) => {
   }
 });
 
-// ✅ EMERGENCY ADMIN CREATION ROUTE
+// ✅ EMERGENCY ADMIN CREATION ROUTE (unchanged)
 app.get('/api/admin/create-default-admin', async (req, res) => {
   try {
     const Admin = require('./models/Admin.cjs');
@@ -449,7 +331,7 @@ app.get('/api/admin/create-default-admin', async (req, res) => {
   }
 });
 
-// ✅ FIXED ADMIN LOGIN ROUTE
+// ✅ FIXED ADMIN LOGIN ROUTE (unchanged)
 app.post('/api/admin/login', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -525,7 +407,7 @@ app.post('/api/admin/login', async (req, res) => {
   }
 });
 
-// ✅ App downloads API
+// ✅ App downloads API (unchanged)
 app.get('/api/app-downloads', async (req, res) => {
   try {
     const AppDownload = require('./models/AppDownload.cjs');
@@ -537,7 +419,7 @@ app.get('/api/app-downloads', async (req, res) => {
   }
 });
 
-// ✅ EPISODES BY ANIME ID ROUTE - ADDED
+// ✅ EPISODES BY ANIME ID ROUTE - ADDED (unchanged)
 app.get('/api/episodes/:animeId', async (req, res) => {
   try {
     const { animeId } = req.params;
@@ -690,7 +572,7 @@ app.get('/api/debug/link-settings', async (req, res) => {
   }
 });
 
-// ✅ SOCIAL MEDIA DEBUG ROUTE
+// ✅ SOCIAL MEDIA DEBUG ROUTE (unchanged)
 app.get('/api/debug/social', async (req, res) => {
   try {
     const SocialMedia = require('./models/SocialMedia.cjs');
@@ -722,7 +604,7 @@ app.get('/api/debug/social', async (req, res) => {
   }
 });
 
-// ✅ POLL SYSTEM DEBUG ROUTE
+// ✅ POLL SYSTEM DEBUG ROUTE (unchanged)
 app.get('/api/debug/polls', async (req, res) => {
   try {
     const Poll = require('./models/Poll.cjs');
@@ -754,7 +636,7 @@ app.get('/api/debug/polls', async (req, res) => {
   }
 });
 
-// ✅ NEW: LIKE/DISLIKE SYSTEM DEBUG ROUTE
+// ✅ NEW: LIKE/DISLIKE SYSTEM DEBUG ROUTE (unchanged)
 app.get('/api/debug/vote-system', async (req, res) => {
   try {
     const Anime = require('./models/Anime.cjs');
@@ -809,7 +691,7 @@ app.get('/api/debug/vote-system', async (req, res) => {
   }
 });
 
-// ✅ TEST LIKE/DISLIKE API
+// ✅ TEST LIKE/DISLIKE API (unchanged)
 app.get('/api/test-vote-system', async (req, res) => {
   try {
     const Anime = require('./models/Anime.cjs');
@@ -852,7 +734,7 @@ app.get('/api/test-vote-system', async (req, res) => {
   }
 });
 
-// ✅ HEALTH CHECK WITH SEO INFO
+// ✅ HEALTH CHECK WITH SEO INFO (unchanged)
 app.get('/api/health', async (req, res) => {
   try {
     const LinkSettings = require('./models/LinkSettings.cjs');
@@ -944,7 +826,7 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-// ✅ TEST ENDPOINT FOR LINK SETTINGS
+// ✅ TEST ENDPOINT FOR LINK SETTINGS (unchanged)
 app.get('/api/test-link-settings', async (req, res) => {
   try {
     const LinkSettings = require('./models/LinkSettings.cjs');
@@ -971,7 +853,7 @@ app.get('/api/test-link-settings', async (req, res) => {
   }
 });
 
-// ✅ TEST ENDPOINT FOR POLL SYSTEM
+// ✅ TEST ENDPOINT FOR POLL SYSTEM (unchanged)
 app.get('/api/test-poll-system', async (req, res) => {
   try {
     const Poll = require('./models/Poll.cjs');
@@ -1009,7 +891,7 @@ app.get('/api/test-poll-system', async (req, res) => {
   }
 });
 
-// ✅ EMERGENCY: SET ALL ANIME AS FEATURED ROUTE
+// ✅ EMERGENCY: SET ALL ANIME AS FEATURED ROUTE (unchanged)
 app.get('/api/emergency/set-all-featured', async (req, res) => {
   try {
     const Anime = require('./models/Anime.cjs');
@@ -1046,7 +928,7 @@ app.get('/api/emergency/set-all-featured', async (req, res) => {
   }
 });
 
-// ✅ EMERGENCY: RESET SOCIAL MEDIA LINKS
+// ✅ EMERGENCY: RESET SOCIAL MEDIA LINKS (unchanged)
 app.get('/api/emergency/reset-social', async (req, res) => {
   try {
     const SocialMedia = require('./models/SocialMedia.cjs');
@@ -1077,7 +959,7 @@ app.get('/api/emergency/reset-social', async (req, res) => {
   }
 });
 
-// ✅ EMERGENCY: FIX SOCIAL MEDIA LINKS WITH CORRECT URLS (NEW ROUTE)
+// ✅ EMERGENCY: FIX SOCIAL MEDIA LINKS WITH CORRECT URLS (NEW ROUTE) (unchanged)
 app.get('/api/emergency/fix-social-urls', async (req, res) => {
   try {
     const SocialMedia = require('./models/SocialMedia.cjs');
@@ -1136,7 +1018,7 @@ app.get('/api/emergency/fix-social-urls', async (req, res) => {
   }
 });
 
-// ✅ EMERGENCY: INITIALIZE LINK SETTINGS
+// ✅ EMERGENCY: INITIALIZE LINK SETTINGS (unchanged)
 app.get('/api/emergency/init-link-settings', async (req, res) => {
   try {
     const LinkSettings = require('./models/LinkSettings.cjs');
@@ -1172,7 +1054,7 @@ app.get('/api/emergency/init-link-settings', async (req, res) => {
   }
 });
 
-// ✅ EMERGENCY: INITIALIZE POLL SYSTEM
+// ✅ EMERGENCY: INITIALIZE POLL SYSTEM (unchanged)
 app.get('/api/emergency/init-poll-system', async (req, res) => {
   try {
     const Poll = require('./models/Poll.cjs');
