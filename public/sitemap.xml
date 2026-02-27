@@ -5,12 +5,4 @@
     <loc>https://animebing.in/sitemap-static.xml</loc>
   </sitemap>
 
-  <sitemap>
-    <loc>https://animebing.in/sitemap/anime.xml</loc>
-  </sitemap>
-
-  <sitemap>
-    <loc>https://animebing.in/sitemap/episodes.xml</loc>
-  </sitemap>
-
 </sitemapindex>
