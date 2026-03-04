@@ -1,4 +1,4 @@
- const express = require("express");
+const express = require("express");
 const router = express.Router();
 
 const Anime = require("../models/Anime.cjs");
@@ -6,48 +6,57 @@ const Episode = require("../models/Episode.cjs");
 
 /* ================================================================
    📌 STATIC SITEMAP (sitemap-static.xml)
-================================================================ */
+   ================================================================ */
 router.get("/sitemap-static.xml", (req, res) => {
   const today = new Date().toISOString().split("T")[0];
 
+  // ✅ STATIC PAGES - SIRF WOHI JO EXIST KARTE HAIN
   const staticPages = [
-    "",
-    "contact",
-    "privacy-policy",
-    "terms-and-conditions",
-    "dmca",
-    "top-100",
+    "",              // home page
+    "top-100",       // top 100 page
+    "privacy",       // privacy policy
+    "terms",         // terms & conditions
+    "dmca",          // dmca page
+    "contact"        // contact page
   ];
 
   let xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 `;
 
-  staticPages.forEach((p) => {
+  staticPages.forEach((page) => {
+    const loc = page === "" 
+      ? "https://animebing.in/" 
+      : `https://animebing.in/${page}`;
+    
     xml += `
   <url>
-    <loc>https://animebing.in/${p}</loc>
+    <loc>${loc}</loc>
     <lastmod>${today}</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
-  </url>
-`;
+    <changefreq>${page === "" ? "daily" : "monthly"}</changefreq>
+    <priority>${page === "" ? "1.0" : "0.8"}</priority>
+  </url>`;
   });
 
-  xml += `</urlset>`;
+  xml += `
+</urlset>`;
 
   res.set("Content-Type", "application/xml");
   res.send(xml);
 });
 
 /* ================================================================
-   📌 ANIME SITEMAP (sitemap-anime.xml)
-================================================================ */
+   📌 ANIME SITEMAP (sitemap-anime.xml) - ✅ FIXED URL PATTERN
+   ================================================================ */
 router.get("/sitemap-anime.xml", async (req, res) => {
   try {
     const animeList = await Anime.find({})
       .select("slug updatedAt title thumbnail")
       .lean();
+
+    if (!animeList || animeList.length === 0) {
+      return res.status(404).send("No anime found");
+    }
 
     let xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
@@ -56,28 +65,32 @@ router.get("/sitemap-anime.xml", async (req, res) => {
 
     animeList.forEach((anime) => {
       const slug = anime.slug;
-      const lastmod = new Date(anime.updatedAt).toISOString().split("T")[0];
+      const lastmod = anime.updatedAt 
+        ? new Date(anime.updatedAt).toISOString().split("T")[0] 
+        : today;
 
+      // ✅ FIXED: URL pattern ab /detail/ use karega, /anime/ nahi
       xml += `
   <url>
-    <loc>https://animebing.in/anime/${slug}</loc>
+    <loc>https://animebing.in/detail/${slug}</loc>
     <lastmod>${lastmod}</lastmod>
     <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
-`;
+    <priority>0.9</priority>`;
+
       if (anime.thumbnail) {
         xml += `
     <image:image>
       <image:loc>${anime.thumbnail}</image:loc>
       <image:title>${anime.title}</image:title>
-    </image:image>
-`;
+    </image:image>`;
       }
 
-      xml += `  </url>`;
+      xml += `
+  </url>`;
     });
 
-    xml += `</urlset>`;
+    xml += `
+</urlset>`;
 
     res.set("Content-Type", "application/xml");
     res.send(xml);
@@ -88,14 +101,18 @@ router.get("/sitemap-anime.xml", async (req, res) => {
 });
 
 /* ================================================================
-   📌 EPISODE SITEMAP (sitemap-episodes.xml)
-================================================================ */
+   📌 EPISODE SITEMAP (sitemap-episodes.xml) - ✅ FIXED URL PATTERN
+   ================================================================ */
 router.get("/sitemap-episodes.xml", async (req, res) => {
   try {
     const episodes = await Episode.find({})
       .select("animeId episodeNumber updatedAt")
       .populate("animeId", "slug")
       .lean();
+
+    if (!episodes || episodes.length === 0) {
+      return res.status(404).send("No episodes found");
+    }
 
     let xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -104,8 +121,11 @@ router.get("/sitemap-episodes.xml", async (req, res) => {
     episodes.forEach((ep) => {
       if (!ep.animeId || !ep.animeId.slug) return;
 
-      const url = `https://animebing.in/anime/${ep.animeId.slug}/episode/${ep.episodeNumber}`;
-      const lastmod = new Date(ep.updatedAt).toISOString().split("T")[0];
+      // ✅ FIXED: Episode URL pattern bhi /detail/ use karega
+      const url = `https://animebing.in/detail/${ep.animeId.slug}/episode/${ep.episodeNumber}`;
+      const lastmod = ep.updatedAt 
+        ? new Date(ep.updatedAt).toISOString().split("T")[0] 
+        : new Date().toISOString().split("T")[0];
 
       xml += `
   <url>
@@ -113,11 +133,11 @@ router.get("/sitemap-episodes.xml", async (req, res) => {
     <lastmod>${lastmod}</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
-  </url>
-`;
+  </url>`;
     });
 
-    xml += `</urlset>`;
+    xml += `
+</urlset>`;
 
     res.set("Content-Type", "application/xml");
     res.send(xml);
@@ -129,12 +149,11 @@ router.get("/sitemap-episodes.xml", async (req, res) => {
 
 /* ================================================================
    📌 MASTER SITEMAP INDEX (sitemap.xml)
-================================================================ */
+   ================================================================ */
 router.get("/sitemap.xml", (req, res) => {
   const today = new Date().toISOString().split("T")[0];
 
-  const xml = `
-<?xml version="1.0" encoding="UTF-8"?>
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 
   <sitemap>
@@ -152,8 +171,7 @@ router.get("/sitemap.xml", (req, res) => {
     <lastmod>${today}</lastmod>
   </sitemap>
 
-</sitemapindex>
-`;
+</sitemapindex>`;
 
   res.set("Content-Type", "application/xml");
   res.send(xml);

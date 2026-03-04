@@ -1,35 +1,47 @@
-  <!DOCTYPE html>
+ <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>Animabing - Watch Anime Online</title>
+  <!-- ✅ SEO: Title aur Description -->
+  <title>AnimeBing - Watch Anime Online in Hindi & English</title>
+  <meta name="description" content="Watch anime online in Hindi and English for free. HD streaming and downloads. Latest episodes and movies on AnimeBing." />
+  <meta name="keywords" content="anime, watch anime online, hindi anime, english anime, free anime streaming, anime dub, anime sub" />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://animebing.in/" />
+
+  <!-- ✅ Open Graph / Facebook -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://animebing.in/" />
+  <meta property="og:title" content="AnimeBing - Watch Anime Online in Hindi & English" />
+  <meta property="og:description" content="Watch anime online in Hindi and English for free. HD streaming and downloads. Latest episodes and movies." />
+  <meta property="og:image" content="https://animebing.in/logo.png" />
+  <meta property="og:site_name" content="AnimeBing" />
+
+  <!-- ✅ Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="AnimeBing - Watch Anime Online in Hindi & English" />
+  <meta name="twitter:description" content="Watch anime online in Hindi and English for free. HD streaming and downloads." />
+  <meta name="twitter:image" content="https://animebing.in/logo.png" />
 
   <!-- Favicon -->
-  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
 
   <!-- Preconnect for Faster API + Ads -->
-  <link rel="preconnect" href="https://animabing.onrender.com">
-  <link rel="preconnect" href="https://pagead2.googlesyndication.com">
-  <link rel="preconnect" href="https://www.googletagservices.com">
-
-  <!-- Preload Main JS Bundle -->
-  <link rel="preload" href="/assets/index-ElsLAoiF.js" as="script">
+  <link rel="preconnect" href="https://animabing.onrender.com" />
+  <link rel="preconnect" href="https://pagead2.googlesyndication.com" />
+  <link rel="preconnect" href="https://www.googletagservices.com" />
 
   <!-- Google Font Optimized -->
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link
     href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap"
     rel="stylesheet"
   />
 
-  <!-- Removed Tailwind CDN (now compiled by Vite) -->
-  <!-- <script src="https://cdn.tailwindcss.com"></script> -->
-
-  <meta name="theme-color" content="#8B5CF6">
-  <meta property="og:image" content="/logo.png">
+  <meta name="theme-color" content="#8B5CF6" />
 
   <style>
     /* Root min height */
@@ -63,11 +75,9 @@
   color: #fff;
   overflow-x: hidden;
 ">
-
   <div id="root"></div>
 
-  <!-- Load App -->
-  <script type="module" src="/index.tsx"></script>
-
+  <!-- ⚠️ IMPORTANT: Ye script tag HATAA diya hai – Vite automatically inject karega. -->
+  <!-- Agar production build kar rahe ho to ye line nahi honi chahiye. -->
 </body>
 </html>
