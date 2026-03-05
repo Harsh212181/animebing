@@ -376,7 +376,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     { id: 'featured', label: 'Featured Anime', icon: '🎈', color: 'from-amber-600 to-orange-600' },
     { id: 'reports', label: 'User Reports', icon: '🍂', color: 'from-rose-600 to-pink-600' },
     { id: 'social', label: 'Social Media', icon: '☣️', color: 'from-violet-600 to-purple-600' },
-    { id: 'polls', label: 'Poll Manager', icon: '🕶️', color: 'from-indigo-600 to-blue-600' }
+    { id: 'polls', label: 'Poll Manager', icon: '👻', color: 'from-indigo-600 to-blue-600' }
   ];
 
   const ActiveComponent = () => {

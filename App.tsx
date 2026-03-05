@@ -1,4 +1,4 @@
- // App.tsx - UPDATED WITH TOP 100 ROUTE
+ // App.tsx - UPDATED WITH MERGED EARN MONEY PAGE FOR BOTH ROUTES
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import type { Anime, FilterType, ContentType, ContentTypeFilter } from './src/types';
@@ -22,6 +22,11 @@ import AnimeDetailWrapper from './components/AnimeDetailWrapper';
 
 // ✅ NEW IMPORT: Top100Page
 import Top100Page from './components/Top100Page';
+
+// ✅ IMPORT: EarnMoney (merged page - contains both simple earn + promotion plan)
+import EarnMoney from './components/EarnMoney';
+
+// ❌ PromotionPlan import removed – now merged into EarnMoney
 
 // ✅ 404 ERROR PAGE COMPONENT
 const ErrorPage: React.FC = () => {
@@ -580,6 +585,20 @@ const MainApp: React.FC = () => {
               <Route path="/contact" element={
                 <div className="rounded-lg overflow-hidden glow-green-border">
                   <Contact />
+                </div>
+              } />
+
+              {/* ✅ NEW: Earn Money Page (merged with Promotion Plan) */}
+              <Route path="/earn-money" element={
+                <div className="rounded-lg overflow-hidden glow-green-border">
+                  <EarnMoney />
+                </div>
+              } />
+
+              {/* ✅ Promotion Plan now shows the same merged EarnMoney page */}
+              <Route path="/promotion-plan" element={
+                <div className="rounded-lg overflow-hidden glow-green-border">
+                  <EarnMoney />
                 </div>
               } />
               

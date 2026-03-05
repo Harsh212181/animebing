@@ -47,6 +47,13 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE ||
 
 const POLL_API_URL = `${API_BASE_URL}/poll`;
 
+// Helper to get a unique anime ID (defined outside to avoid recreation)
+const getAnimeId = (anime: Anime): string => {
+  if (anime.id) return anime.id;
+  if (anime._id) return anime._id;
+  return `${anime.title}-${anime.releaseYear || 'unknown'}`;
+};
+
 const HomePage: React.FC<Props> = ({
   onAnimeSelect,
   searchQuery,
@@ -261,13 +268,7 @@ const HomePage: React.FC<Props> = ({
 
   const headingData = getAllContentHeading();
 
-  const getAnimeId = (anime: Anime): string => {
-    if (anime.id) return anime.id;
-    if (anime._id) return anime._id;
-    return `${anime.title}-${anime.releaseYear || 'unknown'}`;
-  };
-
-  // ---------- LOAD ANIME LIST ----------
+  // ---------- LOAD ANIME LIST (with deduplication) ----------
   const loadInitialAnime = useCallback(async (isSearch: boolean = false) => {
     if (!isMounted.current) return;
     
@@ -278,11 +279,18 @@ const HomePage: React.FC<Props> = ({
       if (isSearch) {
         const data = await searchAnime(searchQuery, ANIME_FIELDS);
         if (data?.length && isMounted.current) {
-          setAnimeList(data);
+          // Deduplicate search results
+          const uniqueData = Array.from(
+            new Map(data.map(item => [getAnimeId(item), item])).values()
+          );
+          if (uniqueData.length !== data.length) {
+            console.warn(`🔍 Duplicates removed in search: ${data.length} -> ${uniqueData.length}`);
+          }
+          setAnimeList(uniqueData);
           setHasMore(false);
           setCurrentPage(1);
           setIsSearching(true);
-          console.log(`🔍 Search results: ${data.length} items`);
+          console.log(`🔍 Search results: ${uniqueData.length} items`);
         } else {
           setAnimeList([]);
           setHasMore(false);
@@ -290,11 +298,18 @@ const HomePage: React.FC<Props> = ({
       } else {
         const data = await getAnimePaginated(1, 36, ANIME_FIELDS);
         if (data?.length && isMounted.current) {
-          setAnimeList(data);
-          setHasMore(data.length === 36);
+          // Deduplicate initial load
+          const uniqueData = Array.from(
+            new Map(data.map(item => [getAnimeId(item), item])).values()
+          );
+          if (uniqueData.length !== data.length) {
+            console.warn(`📚 Duplicates removed in initial load: ${data.length} -> ${uniqueData.length}`);
+          }
+          setAnimeList(uniqueData);
+          setHasMore(uniqueData.length === 36);
           setCurrentPage(1);
           setIsSearching(false);
-          console.log(`📚 Loaded ${data.length} anime (page 1)`);
+          console.log(`📚 Loaded ${uniqueData.length} anime (page 1)`);
         } else {
           setError('No anime found');
         }
@@ -316,18 +331,38 @@ const HomePage: React.FC<Props> = ({
     try {
       const nextPage = currentPage + 1;
       const data = await getAnimePaginated(nextPage, 24, ANIME_FIELDS);
+      
       if (data?.length && isMounted.current) {
-        setAnimeList(prev => [...prev, ...data]);
+        // Get IDs of currently displayed anime
+        const currentIds = new Set(animeList.map(a => getAnimeId(a)));
+
+        // Filter out duplicates
+        const newUniqueData = data.filter(a => !currentIds.has(getAnimeId(a)));
+
+        if (newUniqueData.length === 0) {
+          // All items on this page are duplicates – assume no more unique content
+          console.warn(`⚠️ All items on page ${nextPage} were duplicates. Stopping further loads.`);
+          setHasMore(false);
+          return;
+        }
+
+        if (newUniqueData.length !== data.length) {
+          console.warn(`⚠️ Duplicates removed in page ${nextPage}: ${data.length} -> ${newUniqueData.length}`);
+        }
+
+        setAnimeList(prev => [...prev, ...newUniqueData]);
         setCurrentPage(nextPage);
+        // Keep hasMore based on original page size (backend may still have more)
         setHasMore(data.length === 24);
       } else {
         setHasMore(false);
       }
-    } catch {
+    } catch (err) {
+      console.error('Error loading more anime:', err);
     } finally {
       if (isMounted.current) setIsLoadingMore(false);
     }
-  }, [currentPage, hasMore, isLoadingMore, isSearching]);
+  }, [currentPage, hasMore, isLoadingMore, isSearching, animeList]);
 
   // ---------- INITIAL LOAD & FILTER CHANGE ----------
   useEffect(() => {
@@ -367,7 +402,7 @@ const HomePage: React.FC<Props> = ({
     if (contentType !== 'All') list = list.filter(a => a.contentType === contentType);
     if (localFilter !== 'All') list = list.filter(a => a.subDubStatus === localFilter);
 
-    // Deduplicate by ID
+    // Although animeList is already deduplicated, we apply a final pass for safety.
     const uniqueAnimesMap = new Map<string, Anime>();
     for (const anime of list) {
       const id = getAnimeId(anime);
@@ -376,7 +411,7 @@ const HomePage: React.FC<Props> = ({
     const uniqueList = Array.from(uniqueAnimesMap.values());
     
     if (list.length !== uniqueList.length) {
-      console.warn(`⚠️ Duplicates removed: ${list.length} -> ${uniqueList.length}`);
+      console.warn(`⚠️ Final duplicates removed: ${list.length} -> ${uniqueList.length}`);
     }
     
     return uniqueList;
