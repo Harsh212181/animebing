@@ -1,4 +1,4 @@
- // server.cjs - UPDATED WITH CATCH-ALL FOR REACT ROUTING
+ // server.cjs - UPDATED WITH CATCH-ALL FOR REACT ROUTING (FIXED ROUTE PATTERN)
 const express = require('express');
 const path = require('path'); // ✅ ADDED: path module for file paths
 const cors = require('cors');
@@ -1387,10 +1387,8 @@ app.get('/', (req, res) => {
 });
 
 // ============================================
-// ✅ CATCH-ALL ROUTE FOR REACT APP - CLIENT-SIDE ROUTING
-// ============================================
-// Ye sabse neeche hona chahiye, taaki pehle API routes match ho jayein
-app.get('*', (req, res) => {
+// ✅ CATCH-ALL ROUTE FOR REACT APP - FIXED VERSION // Ye sabse neeche hona chahiye, taaki pehle API routes match ho jayein
+app.get(/(.*)/, (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
@@ -1449,6 +1447,6 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('===============================================');
   console.log(`🛡️  TRUST PROXY STATUS: ${process.env.NODE_ENV === 'production' ? 'ENABLED (1 hop)' : 'DISABLED (development safe)'}`);
   console.log('===============================================');
-  console.log('✅ CATCH-ALL ROUTE ENABLED: All non-API routes will serve React app');
+  console.log('✅ CATCH-ALL ROUTE ENABLED (REGEX PATTERN): All non-API routes will serve React app');
   console.log('===============================================');
 });
