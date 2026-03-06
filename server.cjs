@@ -1,5 +1,6 @@
- // server.cjs - UPDATED WITH PRODUCTION-SAFE TRUST PROXY + PARTNER ROUTES + DEVICE-BASED POLL VOTING
+ // server.cjs - UPDATED WITH CATCH-ALL FOR REACT ROUTING
 const express = require('express');
+const path = require('path'); // ✅ ADDED: path module for file paths
 const cors = require('cors');
 const connectDB = require('./db.cjs');
 require('dotenv').config();
@@ -43,7 +44,9 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' })); // 50MB तक की data allow करें
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+// ✅ SERVE STATIC FILES
 app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, 'dist'))); // ✅ ADDED: Serve React build files
 
 // Database Connection
 connectDB();
@@ -1383,6 +1386,14 @@ app.get('/', (req, res) => {
   `);
 });
 
+// ============================================
+// ✅ CATCH-ALL ROUTE FOR REACT APP - CLIENT-SIDE ROUTING
+// ============================================
+// Ye sabse neeche hona chahiye, taaki pehle API routes match ho jayein
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
 // ✅ START SERVER
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
@@ -1437,5 +1448,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('   5. Go to Admin Dashboard → Partner Manager to manage partners');
   console.log('===============================================');
   console.log(`🛡️  TRUST PROXY STATUS: ${process.env.NODE_ENV === 'production' ? 'ENABLED (1 hop)' : 'DISABLED (development safe)'}`);
+  console.log('===============================================');
+  console.log('✅ CATCH-ALL ROUTE ENABLED: All non-API routes will serve React app');
   console.log('===============================================');
 });
