@@ -1,4 +1,4 @@
- // App.tsx - UPDATED WITH WELCOME PAGE REDIRECT
+ // App.tsx - UPDATED WITH WELCOME PAGE REDIRECT & FIXED ADMIN SHORTCUT
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import type { Anime, FilterType, ContentType, ContentTypeFilter } from './src/types';
@@ -135,7 +135,6 @@ const MainApp: React.FC = () => {
   const [contentType, setContentType] = useState<ContentTypeFilter>('All');
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [isAppLoading, setIsAppLoading] = useState(true);
-  const [showAdminButton, setShowAdminButton] = useState(false);
   
   // ✅ SECRET CODE STATES
   const [typedText, setTypedText] = useState('');
@@ -227,88 +226,72 @@ const MainApp: React.FC = () => {
     initializeApp();
   }, []);
 
-  // ✅ SECRET CODE KEYBOARD LISTENER - TYPE "2007harsh" FOR DIRECT ADMIN
-  // ✅ CONSOLE LOGS REMOVED - NO TEXT WILL SHOW IN CONSOLE WHEN TYPING
+  // ✅ SECRET CODE KEYBOARD LISTENER - TYPE "2007harsh" OR PRESS Ctrl+Shift+Alt FOR DIRECT ADMIN
   useEffect(() => {
+    // Helper to show the green success notification
+    const showAdminNotification = () => {
+      const notification = document.createElement('div');
+      notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: linear-gradient(135deg, #8b5cf6, #3b82f6);
+        color: white;
+        padding: 15px 20px;
+        border-radius: 10px;
+        font-weight: bold;
+        z-index: 99999;
+        box-shadow: 0 5px 15px rgba(139, 92, 246, 0.3);
+        animation: fadeInOut 3s ease-in-out;
+        font-size: 16px;
+      `;
+      notification.innerHTML = '✅ Admin Access Granted!';
+      document.body.appendChild(notification);
+      setTimeout(() => notification.remove(), 3000);
+    };
+
     const handleKeyPress = (e: KeyboardEvent) => {
-      // Check if typing in input/textarea, then ignore
+      // Ignore if typing in an input or textarea
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
         return;
       }
 
-      // Secret code typing logic
+      // Secret code "2007harsh" (typed without modifiers)
       if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
         const newTypedText = (typedText + e.key).toLowerCase();
         setTypedText(newTypedText);
         setShowCodeHint(true);
-        
-        // ✅ NO CONSOLE LOG HERE - TYPING WON'T SHOW IN CONSOLE
-        
-        // Check for secret code "2007harsh"
+
         if (newTypedText.includes('2007harsh')) {
-          // ✅ NO CONSOLE LOG HERE EITHER
           e.preventDefault();
-          
           setAdminView('login');
           setTypedText('');
           setShowCodeHint(false);
-          
-          // Show success notification
-          const notification = document.createElement('div');
-          notification.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: linear-gradient(135deg, #8b5cf6, #3b82f6);
-            color: white;
-            padding: 15px 20px;
-            border-radius: 10px;
-            font-weight: bold;
-            z-index: 99999;
-            box-shadow: 0 5px 15px rgba(139, 92, 246, 0.3);
-            animation: fadeInOut 3s ease-in-out;
-            font-size: 16px;
-          `;
-          notification.innerHTML = '✅ Admin Access Granted!';
-          document.body.appendChild(notification);
-          
-          setTimeout(() => {
-            if (notification.parentNode) {
-              notification.parentNode.removeChild(notification);
-            }
-          }, 3000);
+          showAdminNotification();
         }
-        
+
         // Reset typing after 3 seconds of inactivity
-        if (typingTimeoutRef.current) {
-          clearTimeout(typingTimeoutRef.current);
-        }
-        
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
         typingTimeoutRef.current = setTimeout(() => {
           setTypedText('');
           setShowCodeHint(false);
         }, 3000);
       }
-      
-      // Keep old shortcut as backup (optional)
-      if (e.ctrlKey && e.altKey && e.shiftKey) {
+
+      // DIRECT SHORTCUT: Ctrl + Shift + Alt
+      if (e.ctrlKey && e.shiftKey && e.altKey) {
         e.preventDefault();
-        setShowAdminButton(prev => !prev);
+        setAdminView('login');
+        showAdminNotification();
       }
     };
 
     window.addEventListener('keydown', handleKeyPress);
-    
     return () => {
       window.removeEventListener('keydown', handleKeyPress);
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
-      }
-      // Cleanup search debounce
-      if (searchDebounceRef.current) {
-        clearTimeout(searchDebounceRef.current);
-      }
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     };
   }, [typedText]);
 
@@ -317,7 +300,6 @@ const MainApp: React.FC = () => {
     localStorage.setItem('adminUsername', username);
     setIsAdminAuthenticated(true);
     setAdminView('dashboard');
-    setShowAdminButton(false);
   };
 
   const handleAdminLogout = () => {
@@ -327,7 +309,6 @@ const MainApp: React.FC = () => {
     setAdminView(null);
     // Home page par redirect karein
     window.location.href = window.location.origin + '/';
-    setShowAdminButton(false);
   };
 
   const handleAnimeSelect = (anime: Anime) => {
@@ -695,25 +676,6 @@ const MainApp: React.FC = () => {
                 ></div>
               </div>
             </div>
-          </div>
-        )}
-        
-        {/* Old button (optional - keep or remove) */}
-        {showAdminButton && (
-          <div className="fixed bottom-4 left-4 z-50 animate-fade-in">
-            <button
-              onClick={() => setAdminView('login')}
-              className="bg-gradient-to-r from-purple-600 to-green-600 hover:from-purple-500 hover:to-green-500 text-white font-semibold py-2 px-4 rounded-lg shadow-lg transition-all transform hover:scale-105 flex items-center gap-2 border border-green-400/50 hover:border-green-400"
-              style={{
-                boxShadow: '0 0 15px rgba(115, 245, 138, 0.3)'
-              }}
-            >
-              <span>⚙️</span>
-              Admin Access
-            </button>
-            <p className="text-xs text-purple-400 mt-1 bg-black/50 p-1 rounded border border-green-500/20">
-              Press Ctrl+Shift+Alt to hide
-            </p>
           </div>
         )}
       </ScrollToTop>
