@@ -1,4 +1,4 @@
- // App.tsx - UPDATED WITH MERGED EARN MONEY PAGE FOR BOTH ROUTES
+ // App.tsx - UPDATED WITH WELCOME PAGE REDIRECT
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import type { Anime, FilterType, ContentType, ContentTypeFilter } from './src/types';
@@ -25,6 +25,9 @@ import Top100Page from './components/Top100Page';
 
 // ✅ IMPORT: EarnMoney (merged page - contains both simple earn + promotion plan)
 import EarnMoney from './components/EarnMoney';
+
+// ✅ NEW IMPORT: WelcomePage for referral redirects
+import WelcomePage from './components/WelcomePage';
 
 // ❌ PromotionPlan import removed – now merged into EarnMoney
 
@@ -602,10 +605,10 @@ const MainApp: React.FC = () => {
                 </div>
               } />
               
-              {/* ✅ NEW: Welcome Page for Referral Redirects */}
+              {/* ✅ NEW: Welcome Page for Referral Redirects - NOW REDIRECTS TO HOME */}
               <Route path="/welcome" element={
                 <div className="rounded-lg overflow-hidden glow-green-border">
-                  <EarnMoney />
+                  <WelcomePage />
                 </div>
               } />
               
