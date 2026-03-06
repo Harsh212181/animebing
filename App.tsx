@@ -602,6 +602,13 @@ const MainApp: React.FC = () => {
                 </div>
               } />
               
+              {/* ✅ NEW: Welcome Page for Referral Redirects */}
+              <Route path="/welcome" element={
+                <div className="rounded-lg overflow-hidden glow-green-border">
+                  <EarnMoney />
+                </div>
+              } />
+              
               {/* ✅ 404 ERROR PAGE FOR NON-EXISTENT ROUTES */}
               <Route path="*" element={
                 <div className="rounded-lg overflow-hidden glow-green-border">
