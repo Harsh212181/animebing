@@ -1,4 +1,4 @@
- // server.cjs - UPDATED WITH BOT HANDLING FOR META TAGS + DEBUG LOGS + FALLBACK
+ // server.cjs - UPDATED WITH BOT HANDLING FOR META TAGS + DEBUG LOGS + FALLBACK + CACHE CONTROL HEADERS
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
@@ -8,7 +8,7 @@ require('dotenv').config();
 const Analytics = require('./models/Analytics.cjs');
 const { generalLimiter, authLimiter, adminLimiter, apiLimiter } = require('./middleware/rateLimit.cjs');
 
-// ✅ NEW: BOT DETECTION AND META SERVICES
+// ✅ BOT DETECTION AND META SERVICES
 const isBot = require('./middleware/botDetect.cjs');
 const { getAnimeMeta, getEpisodeMeta } = require('./services/metaService.cjs');
 const generateMetaHTML = require('./utils/generateMetaHTML.cjs');
@@ -23,17 +23,9 @@ const socialRoutes = require('./routes/socialRoutes.cjs');
 const appDownloadRoutes = require('./routes/appDownloadRoutes.cjs');
 const adminRoutes = require('./routes/adminRoutes.cjs');
 const contactRoutes = require('./routes/contactRoutes.cjs');
-
-// ✅ POLL ROUTES ADDED HERE
 const pollRoutes = require('./routes/pollRoutes.cjs');
-
-// ✅ IMPORTANT: Add this line
 const linkSettingsRoutes = require('./routes/linkSettingsRoutes.cjs');
-
-// ✅ NEW: PARTNER ROUTES (Partner Manager)
 const partnerRoutes = require('./routes/partnerRoutes.cjs');
-
-// ✅ FIX: IMPORT SITEMAP ROUTES (MISSING BEFORE)
 const sitemapRoutes = require('./routes/sitemapRoutes.cjs');
 
 const app = express();
@@ -41,17 +33,13 @@ const app = express();
 // ✅ CRITICAL FIX: TRUST PROXY ONLY IN PRODUCTION (safe for express-rate-limit)
 if (process.env.NODE_ENV === 'production') {
   app.set('trust proxy', 1);  // trust first proxy
-} // else: no trust proxy in development → no ERR_ERL_PERMISSIVE_TRUST_PROXY
+}
 
 app.use(cors());
 
-// ✅ FIX: INCREASE BODY LIMIT FOR IMAGE URLS AND POLL DATA
-app.use(express.json({ limit: '50mb' })); // 50MB तक की data allow करें
+// ✅ INCREASE BODY LIMIT FOR IMAGE URLS AND POLL DATA
+app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
-
-// ✅ SERVE STATIC FILES (public folder) - पहले भी रख सकते हैं, लेकिन bot routes से पहले static files serve करना सुरक्षित नहीं है। 
-// हम bot routes को static files से पहले रखेंगे।
-// app.use(express.static('public'));   // इस लाइन को हटा दिया, क्योंकि हम /public को बाद में serve करेंगे
 
 // ============================================
 // ✅ BOT HANDLING FOR DETAIL AND EPISODE PAGES
@@ -60,7 +48,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.get('/detail/:slug', async (req, res, next) => {
   const userAgent = req.headers['user-agent'];
   console.log(`🔍 DETAIL ROUTE HIT: slug=${req.params.slug}, isBot=${isBot(userAgent)}, UA=${userAgent?.substring(0, 50)}`);
-  
+
   if (isBot(userAgent)) {
     try {
       const meta = await getAnimeMeta(req.params.slug);
@@ -68,10 +56,12 @@ app.get('/detail/:slug', async (req, res, next) => {
       if (meta) {
         const html = generateMetaHTML(meta);
         console.log(`📄 Generated HTML length: ${html.length}`);
+        // Prevent CDN/proxy from caching this response
+        res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.set('X-Bot-Handler', 'true');
         return res.send(html);
       } else {
         console.log('⚠️ No meta found for slug, serving fallback');
-        // Fallback meta page
         const fallbackMeta = {
           title: req.params.slug.replace(/-/g, ' ') + ' - AnimeBing',
           description: 'Watch this anime online in HD quality. Free streaming and downloads.',
@@ -80,11 +70,12 @@ app.get('/detail/:slug', async (req, res, next) => {
           type: 'website'
         };
         const html = generateMetaHTML(fallbackMeta);
+        res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.set('X-Bot-Handler', 'fallback');
         return res.send(html);
       }
     } catch (err) {
       console.error('❌ Error in bot route:', err);
-      // Fallback meta page on error
       const fallbackMeta = {
         title: 'Anime Details - AnimeBing',
         description: 'Watch anime online in HD quality. Free streaming and downloads.',
@@ -93,23 +84,27 @@ app.get('/detail/:slug', async (req, res, next) => {
         type: 'website'
       };
       const html = generateMetaHTML(fallbackMeta);
+      res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.set('X-Bot-Handler', 'error-fallback');
       return res.send(html);
     }
   }
   console.log('➡️ Not a bot, passing to next middleware');
-  next(); // agar bot nahi hai to aage badho
+  next();
 });
 
 app.get('/episode/:animeSlug/:episodeNumber', async (req, res, next) => {
   const userAgent = req.headers['user-agent'];
   console.log(`🔍 EPISODE ROUTE HIT: animeSlug=${req.params.animeSlug}, ep=${req.params.episodeNumber}, isBot=${isBot(userAgent)}`);
-  
+
   if (isBot(userAgent)) {
     try {
       const meta = await getEpisodeMeta(req.params.animeSlug, req.params.episodeNumber);
       console.log('📦 getEpisodeMeta result:', meta ? 'found' : 'null');
       if (meta) {
         const html = generateMetaHTML(meta);
+        res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.set('X-Bot-Handler', 'true');
         return res.send(html);
       } else {
         console.log('⚠️ No meta found for episode, serving fallback');
@@ -121,6 +116,8 @@ app.get('/episode/:animeSlug/:episodeNumber', async (req, res, next) => {
           type: 'video.episode'
         };
         const html = generateMetaHTML(fallbackMeta);
+        res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.set('X-Bot-Handler', 'fallback');
         return res.send(html);
       }
     } catch (err) {
@@ -133,6 +130,8 @@ app.get('/episode/:animeSlug/:episodeNumber', async (req, res, next) => {
         type: 'video.episode'
       };
       const html = generateMetaHTML(fallbackMeta);
+      res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.set('X-Bot-Handler', 'error-fallback');
       return res.send(html);
     }
   }
@@ -163,7 +162,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// ✅ FIX: MOUNT SITEMAP ROUTES AT ROOT
+// ✅ MOUNT SITEMAP ROUTES AT ROOT
 app.use('/', sitemapRoutes);
 
 // ✅ ROBOTS.TXT (For SEO)
