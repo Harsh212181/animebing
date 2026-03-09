@@ -1,21 +1,39 @@
-// src/components/SEO.tsx - UPDATED VERSION
+ // src/components/SEO.tsx - UPDATED VERSION (with image/url/type aliases)
 import { Helmet } from 'react-helmet-async';
 
 interface SEOProps {
+  // Core props
   title: string;
   description: string;
   keywords?: string;
   canonicalUrl?: string;
+  
+  // Open Graph specific (optional)
   ogTitle?: string;
   ogDescription?: string;
   ogImage?: string;
   ogUrl?: string;
+  
+  // Twitter specific
   twitterCard?: string;
+  
+  // Structured data
   structuredData?: any;
+  
+  // Control
   noIndex?: boolean;
+  
+  // Content type
   contentType?: 'website' | 'article' | 'video.tv_show' | 'video.movie';
+  
+  // Article timestamps
   publishedTime?: string;
   modifiedTime?: string;
+  
+  // ✅ Aliases for convenience (to match common usage)
+  image?: string;      // will be used as ogImage if ogImage not provided
+  url?: string;        // will be used as ogUrl if ogUrl not provided
+  type?: 'website' | 'article' | 'video.tv_show' | 'video.movie'; // will be used as contentType
 }
 
 const SEO: React.FC<SEOProps> = ({
@@ -25,14 +43,18 @@ const SEO: React.FC<SEOProps> = ({
   canonicalUrl,
   ogTitle,
   ogDescription,
-  ogImage = 'https://animebing.in/AnimeBinglogo.jpg',
+  ogImage,
   ogUrl,
   twitterCard = 'summary_large_image',
   structuredData,
   noIndex = false,
-  contentType = 'website',
+  contentType,
   publishedTime,
   modifiedTime,
+  // Aliases
+  image,
+  url,
+  type,
 }) => {
   const siteTitle = 'AnimeBing - Watch Anime in Hindi & English Online Free';
   const fullTitle = title ? `${title} | ${siteTitle}` : siteTitle;
@@ -40,6 +62,11 @@ const SEO: React.FC<SEOProps> = ({
   
   // Default image if not provided
   const defaultImage = `${siteUrl}/AnimeBinglogo.jpg`;
+  
+  // ✅ Resolve final values using aliases if needed
+  const finalOgImage = ogImage || image || defaultImage;
+  const finalOgUrl = ogUrl || url || window.location.href;
+  const finalContentType = contentType || type || 'website';
   
   return (
     <Helmet>
@@ -52,14 +79,14 @@ const SEO: React.FC<SEOProps> = ({
       <link rel="canonical" href={canonicalUrl || window.location.href} />
       
       {/* Open Graph / Facebook */}
-      <meta property="og:type" content={contentType} />
+      <meta property="og:type" content={finalContentType} />
       <meta property="og:title" content={ogTitle || fullTitle} />
       <meta property="og:description" content={ogDescription || description.substring(0, 155)} />
-      <meta property="og:image" content={ogImage || defaultImage} />
+      <meta property="og:image" content={finalOgImage} />
       <meta property="og:image:width" content="1200" />
       <meta property="og:image:height" content="630" />
       <meta property="og:image:alt" content={ogTitle || fullTitle} />
-      <meta property="og:url" content={ogUrl || window.location.href} />
+      <meta property="og:url" content={finalOgUrl} />
       <meta property="og:site_name" content="AnimeBing" />
       <meta property="og:locale" content="en_US" />
       
@@ -71,7 +98,7 @@ const SEO: React.FC<SEOProps> = ({
       <meta name="twitter:card" content={twitterCard} />
       <meta name="twitter:title" content={ogTitle || fullTitle} />
       <meta name="twitter:description" content={ogDescription || description.substring(0, 155)} />
-      <meta name="twitter:image" content={ogImage || defaultImage} />
+      <meta name="twitter:image" content={finalOgImage} />
       <meta name="twitter:site" content="@animebing" />
       <meta name="twitter:creator" content="@animebing" />
       

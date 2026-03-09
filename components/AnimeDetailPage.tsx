@@ -1,4 +1,4 @@
- // components/AnimeDetailPage.tsx - UPDATED WITH LIKE/DISLIKE & SHARE SYSTEM
+ // components/AnimeDetailPage.tsx - UPDATED WITH LIKE/DISLIKE & SHARE SYSTEM & SEO FIX + EPISODE COUNT IN TITLE
 import React, { useState, useEffect, useCallback } from 'react';
 import type { Anime, Episode, Chapter } from '../src/types';
 import { DownloadIcon } from './icons/DownloadIcon';
@@ -621,49 +621,46 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
   // Use fullAnime if available, else fallback to anime
   const displayAnime = fullAnime || anime;
   
-  // ✅ GENERATE SEO DATA
+  // ✅ UPDATED: GENERATE SEO DATA WITH EPISODE COUNT IN TITLE
   const getSEOData = () => {
     if (!displayAnime) {
       return {
         title: 'Anime Details | AnimeBing',
         description: 'Watch anime online in Hindi and English. Download anime episodes for free.',
         keywords: 'anime, watch anime online, hindi anime, english anime, anime download, anime streaming',
+        ogImage: 'https://animebing.in/AnimeBinglogo.jpg',
+        ogUrl: window.location.href,
       };
     }
 
+    // ✅ Build title with episode count / movie indicator
+    let titleWithSuffix = displayAnime.title;
+    if (displayAnime.contentType === 'Movie') {
+      titleWithSuffix += ' (Movie)';
+    } else if (displayAnime.contentType === 'Manga') {
+      titleWithSuffix += ' Manga';
+    } else {
+      // TV Series / Anime
+      const epCount = displayAnime.currentEpisode || displayAnime.totalEpisodes;
+      if (epCount) {
+        titleWithSuffix += ` EP ${epCount}`;
+      }
+    }
+
     const seoTitle = displayAnime.seoTitle || 
-      `Watch ${displayAnime.title} Online ${displayAnime.subDubStatus ? `in ${displayAnime.subDubStatus}` : ''} | AnimeBing`;
+      `${titleWithSuffix} | AnimeBing`;
     
     const seoDescription = displayAnime.seoDescription || 
       `Watch ${displayAnime.title} online ${displayAnime.subDubStatus ? `in ${displayAnime.subDubStatus}` : ''}. ${
         displayAnime.contentType === 'Movie' ? 'Full movie available' : 'All episodes available'
       } in HD quality. Free streaming and downloads on AnimeBing.`;
     
-    const keywords = displayAnime.seoKeywords || generateAnimeKeywords(displayAnime);
-    
-    let canonicalSlug;
-    if (displayAnime.slug) {
-      canonicalSlug = displayAnime.slug;
-    } else if (displayAnime.title) {
-      canonicalSlug = displayAnime.title.toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/(^-|-$)/g, '');
-    } else {
-      canonicalSlug = 'anime-details';
-    }
-    
-    const canonicalUrl = `https://animebing.in/detail/${canonicalSlug}`;
-    
-    const structuredData = generateAnimeStructuredData(displayAnime);
-    
     return {
       title: seoTitle,
       description: seoDescription,
-      keywords,
-      canonicalUrl,
-      structuredData,
-      ogImage: displayAnime.thumbnail,
-      ogUrl: window.location.href
+      keywords: displayAnime.seoKeywords || generateAnimeKeywords(displayAnime),
+      ogImage: displayAnime.thumbnail || 'https://animebing.in/AnimeBinglogo.jpg',
+      ogUrl: window.location.href,
     };
   };
 
@@ -902,15 +899,13 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
 
   return (
     <>
-      {/* ✅ SEO COMPONENT ADDED HERE */}
+      {/* ✅ SEO COMPONENT FIXED - ONLY PASS EXPECTED PROPS */}
       <SEO
         title={seoData.title}
         description={seoData.description}
-        keywords={seoData.keywords}
-        canonicalUrl={seoData.canonicalUrl}
-        structuredData={seoData.structuredData}
-        ogImage={seoData.ogImage}
-        ogUrl={seoData.ogUrl}
+        image={seoData.ogImage}
+        url={seoData.ogUrl}
+        type="video.tv_show"
       />
       
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
