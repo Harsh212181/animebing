@@ -1,22 +1,36 @@
-// middleware/botDetect.cjs
+ // middleware/botDetect.cjs
+
 const botUserAgents = [
   'googlebot',
-  'twitterbot',
-  'facebookexternalhit',
-  'linkedinbot',
-  'slackbot',
-  'telegrambot',
-  'discordbot',
-  'whatsapp',
-  'applebot',
   'bingbot',
   'yandexbot',
   'baiduspider',
-  'duckduckbot'
+  'duckduckbot',
+
+  'facebookexternalhit',
+  'facebot',
+
+  'twitterbot',
+
+  'linkedinbot',
+
+  'telegrambot',
+
+  'whatsapp',
+
+  'discordbot',
+
+  'slackbot',
+
+  'applebot',
+
+  'embedly',
+  'pinterest',
+  'vkshare',
+  'quora link preview'
 ];
 
-function isBot(userAgent) {
-  if (!userAgent) return false;
+function isBot(userAgent = '') {
   const ua = userAgent.toLowerCase();
   return botUserAgents.some(bot => ua.includes(bot));
 }
