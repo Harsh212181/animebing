@@ -1,4 +1,4 @@
- // server.cjs - UPDATED WITH BOT HANDLING FOR META TAGS
+ // server.cjs - UPDATED WITH BOT HANDLING FOR META TAGS + DEBUG LOGS + FALLBACK
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
@@ -49,47 +49,100 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' })); // 50MB तक की data allow करें
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// ✅ SERVE STATIC FILES (public folder)
-app.use(express.static('public'));
+// ✅ SERVE STATIC FILES (public folder) - पहले भी रख सकते हैं, लेकिन bot routes से पहले static files serve करना सुरक्षित नहीं है। 
+// हम bot routes को static files से पहले रखेंगे।
+// app.use(express.static('public'));   // इस लाइन को हटा दिया, क्योंकि हम /public को बाद में serve करेंगे
 
 // ============================================
 // ✅ BOT HANDLING FOR DETAIL AND EPISODE PAGES
 // ============================================
-// Ye routes static files se PEHLE hone chahiye taaki bot request yahin catch ho
+// Ye routes static files से पहले होने चाहिए
 app.get('/detail/:slug', async (req, res, next) => {
   const userAgent = req.headers['user-agent'];
+  console.log(`🔍 DETAIL ROUTE HIT: slug=${req.params.slug}, isBot=${isBot(userAgent)}, UA=${userAgent?.substring(0, 50)}`);
+  
   if (isBot(userAgent)) {
     try {
       const meta = await getAnimeMeta(req.params.slug);
+      console.log('📦 getAnimeMeta result:', meta ? 'found' : 'null');
       if (meta) {
         const html = generateMetaHTML(meta);
+        console.log(`📄 Generated HTML length: ${html.length}`);
+        return res.send(html);
+      } else {
+        console.log('⚠️ No meta found for slug, serving fallback');
+        // Fallback meta page
+        const fallbackMeta = {
+          title: req.params.slug.replace(/-/g, ' ') + ' - AnimeBing',
+          description: 'Watch this anime online in HD quality. Free streaming and downloads.',
+          image: 'https://animebing.in/AnimeBinglogo.jpg',
+          url: `https://animebing.in/detail/${req.params.slug}`,
+          type: 'website'
+        };
+        const html = generateMetaHTML(fallbackMeta);
         return res.send(html);
       }
     } catch (err) {
-      console.error('Error generating meta for bot:', err);
+      console.error('❌ Error in bot route:', err);
+      // Fallback meta page on error
+      const fallbackMeta = {
+        title: 'Anime Details - AnimeBing',
+        description: 'Watch anime online in HD quality. Free streaming and downloads.',
+        image: 'https://animebing.in/AnimeBinglogo.jpg',
+        url: `https://animebing.in/detail/${req.params.slug}`,
+        type: 'website'
+      };
+      const html = generateMetaHTML(fallbackMeta);
+      return res.send(html);
     }
   }
-  next(); // agar bot nahi hai ya data nahi mila to aage badho (static files ya SPA)
+  console.log('➡️ Not a bot, passing to next middleware');
+  next(); // agar bot nahi hai to aage badho
 });
 
 app.get('/episode/:animeSlug/:episodeNumber', async (req, res, next) => {
   const userAgent = req.headers['user-agent'];
+  console.log(`🔍 EPISODE ROUTE HIT: animeSlug=${req.params.animeSlug}, ep=${req.params.episodeNumber}, isBot=${isBot(userAgent)}`);
+  
   if (isBot(userAgent)) {
     try {
       const meta = await getEpisodeMeta(req.params.animeSlug, req.params.episodeNumber);
+      console.log('📦 getEpisodeMeta result:', meta ? 'found' : 'null');
       if (meta) {
         const html = generateMetaHTML(meta);
         return res.send(html);
+      } else {
+        console.log('⚠️ No meta found for episode, serving fallback');
+        const fallbackMeta = {
+          title: `Episode ${req.params.episodeNumber} - AnimeBing`,
+          description: 'Watch this episode online in HD quality.',
+          image: 'https://animebing.in/AnimeBinglogo.jpg',
+          url: `https://animebing.in/episode/${req.params.animeSlug}/${req.params.episodeNumber}`,
+          type: 'video.episode'
+        };
+        const html = generateMetaHTML(fallbackMeta);
+        return res.send(html);
       }
     } catch (err) {
-      console.error('Error generating meta for bot:', err);
+      console.error('❌ Error in episode bot route:', err);
+      const fallbackMeta = {
+        title: 'Episode Details - AnimeBing',
+        description: 'Watch anime episodes online.',
+        image: 'https://animebing.in/AnimeBinglogo.jpg',
+        url: `https://animebing.in/episode/${req.params.animeSlug}/${req.params.episodeNumber}`,
+        type: 'video.episode'
+      };
+      const html = generateMetaHTML(fallbackMeta);
+      return res.send(html);
     }
   }
+  console.log('➡️ Not a bot, passing to next middleware');
   next();
 });
 
-// ✅ Static files serve (React build) - ye ab bot routes ke baad aayega
-app.use(express.static(path.join(__dirname, 'dist')));
+// ✅ अब static files serve करें (public और dist)
+app.use(express.static('public'));          // public folder (logo, etc.)
+app.use(express.static(path.join(__dirname, 'dist'))); // React build
 
 // Database Connection
 connectDB();
