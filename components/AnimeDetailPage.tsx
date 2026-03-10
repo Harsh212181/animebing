@@ -1,4 +1,4 @@
- // components/AnimeDetailPage.tsx - FINAL FIXED VERSION (with proper canonical URL)
+ // components/AnimeDetailPage.tsx - FINAL FIXED VERSION (with proper canonical URL and SEO loading)
 import React, { useState, useEffect, useCallback } from 'react';
 import type { Anime, Episode, Chapter } from '../src/types';
 import { DownloadIcon } from './icons/DownloadIcon';
@@ -250,7 +250,8 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
 
   // ✅ STATE FOR FULL ANIME DETAILS
   const [fullAnime, setFullAnime] = useState<Anime | null>(null);
-  const [animeLoading, setAnimeLoading] = useState(false);
+  // ✅ CRITICAL FIX: Start with loading true so skeleton shows until data is ready
+  const [animeLoading, setAnimeLoading] = useState(true);
   const [downloadingItem, setDownloadingItem] = useState<string | null>(null);
 
   // ✅ STATE FOR GLOBAL LINK SETTINGS (CRITICAL FEATURE)
@@ -575,11 +576,13 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     const fetchFullAnimeDetails = async () => {
       if (!anime) return;
 
+      // If the passed anime already has full data, use it immediately
       if (anime.description && anime.genreList && anime.genreList.length > 0) {
         setFullAnime(anime);
         // Initialize likes/dislikes from anime data if available
         if (anime.likes !== undefined) setLikes(anime.likes);
         if (anime.dislikes !== undefined) setDislikes(anime.dislikes);
+        setAnimeLoading(false);
         return;
       }
 
@@ -590,6 +593,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
         if (!animeIdentifier) {
           console.warn('No identifier found for anime:', anime);
           setFullAnime(anime);
+          setAnimeLoading(false);
           return;
         }
 
@@ -667,6 +671,9 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
 
   // Get SEO data
   const seoData = getSEOData();
+  
+  // ✅ ADDED: Log SEO data to verify in console
+  console.log('🔍 SEO Data for', displayAnime?.title, seoData);
   
   // Optimize thumbnail URLs for different displays
   const mobileThumbnail = displayAnime?.thumbnail 
