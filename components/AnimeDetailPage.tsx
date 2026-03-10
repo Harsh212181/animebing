@@ -422,20 +422,17 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     }
   };
 
-  // ✅ FIXED: FETCH GLOBAL LINK SETTINGS - WITH CORS FIX
+  // ✅ FIXED: FETCH GLOBAL LINK SETTINGS - USING API_BASE TO AVOID RELATIVE URL ISSUE IN PRODUCTION
   const fetchLinkSettings = async () => {
     try {
       setLinkSettingsLoading(true);
       console.log('🔗 Fetching global link settings...');
       
-      // ✅ USE FULL URL FOR LOCAL DEVELOPMENT
-      const apiUrl = window.location.hostname === 'localhost' 
-        ? 'http://localhost:3000/api/link-settings'
-        : '/api/link-settings';
+      // ✅ USE ABSOLUTE URL VIA API_BASE
+      const url = `${API_BASE}/link-settings`;
+      console.log('🌐 API URL:', url);
       
-      console.log('🌐 API URL:', apiUrl);
-      
-      const response = await fetch(apiUrl, {
+      const response = await fetch(url, {
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json'
