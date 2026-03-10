@@ -1,4 +1,4 @@
- // components/AnimeDetailPage.tsx - UPDATED WITH LIKE/DISLIKE & SHARE SYSTEM & SEO FIX + EPISODE COUNT IN TITLE
+ // components/AnimeDetailPage.tsx - FINAL FIXED VERSION (with proper canonical URL)
 import React, { useState, useEffect, useCallback } from 'react';
 import type { Anime, Episode, Chapter } from '../src/types';
 import { DownloadIcon } from './icons/DownloadIcon';
@@ -621,7 +621,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
   // Use fullAnime if available, else fallback to anime
   const displayAnime = fullAnime || anime;
   
-  // ✅ UPDATED: GENERATE SEO DATA WITH EPISODE COUNT IN TITLE
+  // ✅ FIXED: GENERATE SEO DATA WITH PROPER CANONICAL URL
   const getSEOData = () => {
     if (!displayAnime) {
       return {
@@ -629,18 +629,18 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
         description: 'Watch anime online in Hindi and English. Download anime episodes for free.',
         keywords: 'anime, watch anime online, hindi anime, english anime, anime download, anime streaming',
         ogImage: 'https://animebing.in/AnimeBinglogo.jpg',
-        ogUrl: window.location.href,
+        ogUrl: 'https://animebing.in/',
+        canonicalUrl: 'https://animebing.in/', // ✅ Fixed canonical for error state
       };
     }
 
-    // ✅ Build title with episode count / movie indicator
+    // Build title with episode count / movie indicator
     let titleWithSuffix = displayAnime.title;
     if (displayAnime.contentType === 'Movie') {
       titleWithSuffix += ' (Movie)';
     } else if (displayAnime.contentType === 'Manga') {
       titleWithSuffix += ' Manga';
     } else {
-      // TV Series / Anime
       const epCount = displayAnime.currentEpisode || displayAnime.totalEpisodes;
       if (epCount) {
         titleWithSuffix += ` EP ${epCount}`;
@@ -655,12 +655,16 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
         displayAnime.contentType === 'Movie' ? 'Full movie available' : 'All episodes available'
       } in HD quality. Free streaming and downloads on AnimeBing.`;
     
+    // ✅ FIXED: Generate clean canonical URL without any parameters
+    const cleanCanonicalUrl = `https://animebing.in/detail/${displayAnime.slug || displayAnime.id}`;
+    
     return {
       title: seoTitle,
       description: seoDescription,
       keywords: displayAnime.seoKeywords || generateAnimeKeywords(displayAnime),
       ogImage: displayAnime.thumbnail || 'https://animebing.in/AnimeBinglogo.jpg',
-      ogUrl: window.location.href,
+      ogUrl: cleanCanonicalUrl, // ✅ Use clean URL for OG
+      canonicalUrl: cleanCanonicalUrl, // ✅ CRITICAL: Pass canonical URL
     };
   };
 
@@ -899,12 +903,14 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
 
   return (
     <>
-      {/* ✅ SEO COMPONENT FIXED - ONLY PASS EXPECTED PROPS */}
+      {/* ✅ FIXED: SEO COMPONENT WITH ALL REQUIRED PROPS */}
       <SEO
         title={seoData.title}
         description={seoData.description}
+        keywords={seoData.keywords}
         image={seoData.ogImage}
         url={seoData.ogUrl}
+        canonicalUrl={seoData.canonicalUrl}  // ✅ CRITICAL: Ab canonicalUrl pass ho raha hai
         type="video.tv_show"
       />
       
