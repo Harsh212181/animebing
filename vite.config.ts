@@ -1,4 +1,4 @@
-import path from 'path';
+ import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
@@ -9,7 +9,7 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5173,
       host: true,
-      // ✅ FIX: PROPER PROXY CONFIGURATION
+      // ✅ PROXY CONFIGURATION
       proxy: {
         '/api': {
           target: 'http://localhost:3000',
@@ -50,7 +50,7 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.VITE_API_URL': JSON.stringify(env.VITE_API_URL),
       'import.meta.env.VITE_SITE_URL': JSON.stringify(env.VITE_SITE_URL),
       'import.meta.env.MODE': JSON.stringify(mode),
-      // ✅ FIX: USE RELATIVE PATH FOR PROXY
+      // ✅ RELATIVE PATH FOR PROXY
       __VITE_API_BASE__: JSON.stringify(env.VITE_API_BASE || '/api'),
     },
     resolve: {
@@ -61,8 +61,9 @@ export default defineConfig(({ mode }) => {
       },
     },
     build: {
-      minify: 'terser',
-      sourcemap: false,
+      // ✅ DEBUGGING MODE: minify off, sourcemap on, console logs on
+      minify: false,                         // Disable minification for debugging
+      sourcemap: true,                        // Enable sourcemaps
       rollupOptions: {
         output: {
           manualChunks: {
@@ -72,8 +73,8 @@ export default defineConfig(({ mode }) => {
       },
       terserOptions: {
         compress: {
-          drop_console: mode === 'production',
-          drop_debugger: true,
+          drop_console: false,                 // Keep console logs
+          drop_debugger: false,                 // Keep debugger statements
         },
       },
     },
