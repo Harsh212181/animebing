@@ -1,4 +1,4 @@
-const express = require("express");
+ const express = require("express");
 const router = express.Router();
 
 const Anime = require("../models/Anime.cjs");
@@ -10,14 +10,14 @@ const Episode = require("../models/Episode.cjs");
 router.get("/sitemap-static.xml", (req, res) => {
   const today = new Date().toISOString().split("T")[0];
 
-  // ✅ STATIC PAGES - SIRF WOHI JO EXIST KARTE HAIN
+  // ✅ STATIC PAGES - SIRF WOHI JO ACTUALLY EXIST KARTE HAIN
   const staticPages = [
     "",              // home page
-    "top-100",       // top 100 page
+    "top-100",       // ✅ EXISTS - verified
     "privacy",       // privacy policy
     "terms",         // terms & conditions
     "dmca",          // dmca page
-    "contact"        // contact page
+    "contact",       // contact page
   ];
 
   let xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -46,16 +46,19 @@ router.get("/sitemap-static.xml", (req, res) => {
 });
 
 /* ================================================================
-   📌 ANIME SITEMAP (sitemap-anime.xml) - ✅ FIXED URL PATTERN
+   📌 ANIME SITEMAP (sitemap-anime.xml)
    ================================================================ */
 router.get("/sitemap-anime.xml", async (req, res) => {
   try {
+    const today = new Date().toISOString().split("T")[0];
+    
     const animeList = await Anime.find({})
       .select("slug updatedAt title thumbnail")
       .lean();
 
     if (!animeList || animeList.length === 0) {
-      return res.status(404).send("No anime found");
+      return res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>`);
     }
 
     let xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -69,7 +72,6 @@ router.get("/sitemap-anime.xml", async (req, res) => {
         ? new Date(anime.updatedAt).toISOString().split("T")[0] 
         : today;
 
-      // ✅ FIXED: URL pattern ab /detail/ use karega, /anime/ nahi
       xml += `
   <url>
     <loc>https://animebing.in/detail/${slug}</loc>
@@ -101,17 +103,24 @@ router.get("/sitemap-anime.xml", async (req, res) => {
 });
 
 /* ================================================================
-   📌 EPISODE SITEMAP (sitemap-episodes.xml) - ✅ FIXED URL PATTERN
+   📌 EPISODE SITEMAP (sitemap-episodes.xml)
    ================================================================ */
 router.get("/sitemap-episodes.xml", async (req, res) => {
   try {
+    const today = new Date().toISOString().split("T")[0];
+    
     const episodes = await Episode.find({})
       .select("animeId episodeNumber updatedAt")
-      .populate("animeId", "slug")
+      .populate({
+        path: "animeId",
+        select: "slug",
+        model: "Anime"
+      })
       .lean();
 
     if (!episodes || episodes.length === 0) {
-      return res.status(404).send("No episodes found");
+      return res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>`);
     }
 
     let xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -119,13 +128,14 @@ router.get("/sitemap-episodes.xml", async (req, res) => {
 `;
 
     episodes.forEach((ep) => {
-      if (!ep.animeId || !ep.animeId.slug) return;
+      if (!ep.animeId || !ep.animeId.slug) {
+        return;
+      }
 
-      // ✅ FIXED: Episode URL pattern bhi /detail/ use karega
       const url = `https://animebing.in/detail/${ep.animeId.slug}/episode/${ep.episodeNumber}`;
       const lastmod = ep.updatedAt 
         ? new Date(ep.updatedAt).toISOString().split("T")[0] 
-        : new Date().toISOString().split("T")[0];
+        : today;
 
       xml += `
   <url>

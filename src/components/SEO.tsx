@@ -1,4 +1,4 @@
- // src/components/SEO.tsx - UPDATED VERSION (with image/url/type aliases)
+ // src/components/SEO.tsx - FINAL FIXED VERSION
 import { Helmet } from 'react-helmet-async';
 
 interface SEOProps {
@@ -6,7 +6,7 @@ interface SEOProps {
   title: string;
   description: string;
   keywords?: string;
-  canonicalUrl?: string;
+  canonicalUrl?: string;      // ✅ Always pass this for every page!
   
   // Open Graph specific (optional)
   ogTitle?: string;
@@ -30,7 +30,7 @@ interface SEOProps {
   publishedTime?: string;
   modifiedTime?: string;
   
-  // ✅ Aliases for convenience (to match common usage)
+  // Aliases for convenience
   image?: string;      // will be used as ogImage if ogImage not provided
   url?: string;        // will be used as ogUrl if ogUrl not provided
   type?: 'website' | 'article' | 'video.tv_show' | 'video.movie'; // will be used as contentType
@@ -40,7 +40,7 @@ const SEO: React.FC<SEOProps> = ({
   title,
   description,
   keywords = 'anime, hindi anime, english anime, anime dub, anime sub, watch anime online, anime streaming, anime in hindi, anime in english, download anime, free anime',
-  canonicalUrl,
+  canonicalUrl,                     // ✅ Sabse IMPORTANT prop
   ogTitle,
   ogDescription,
   ogImage,
@@ -63,10 +63,15 @@ const SEO: React.FC<SEOProps> = ({
   // Default image if not provided
   const defaultImage = `${siteUrl}/AnimeBinglogo.jpg`;
   
-  // ✅ Resolve final values using aliases if needed
+  // Resolve final values using aliases if needed
   const finalOgImage = ogImage || image || defaultImage;
-  const finalOgUrl = ogUrl || url || window.location.href;
+  const finalOgUrl = ogUrl || url || siteUrl;  // ✅ Never use window.location.href for OG URL either
   const finalContentType = contentType || type || 'website';
+  
+  // ✅ FIXED: Canonical URL - Sirf canonicalUrl prop use karo
+  // Agar canonicalUrl prop nahi diya to site URL use karo
+  // Kabhi bhi window.location.href mat use karo!
+  const finalCanonicalUrl = canonicalUrl || siteUrl;
   
   return (
     <Helmet>
@@ -75,8 +80,8 @@ const SEO: React.FC<SEOProps> = ({
       <meta name="description" content={description.substring(0, 155)} />
       <meta name="keywords" content={keywords} />
       
-      {/* Canonical URL - ALWAYS use absolute URL */}
-      <link rel="canonical" href={canonicalUrl || window.location.href} />
+      {/* ✅ FIXED: Canonical URL - Always fixed, never current URL */}
+      <link rel="canonical" href={finalCanonicalUrl} />
       
       {/* Open Graph / Facebook */}
       <meta property="og:type" content={finalContentType} />
@@ -155,7 +160,7 @@ const SEO: React.FC<SEOProps> = ({
 
 export default SEO;
 
-// Enhanced Structured Data Functions
+// ✅ Enhanced Structured Data Functions (same as before)
 export const generateAnimeStructuredData = (anime: any) => {
   const animeUrl = `https://animebing.in/detail/${anime.slug || anime.id}`;
   
@@ -193,12 +198,10 @@ export const generateAnimeStructuredData = (anime: any) => {
       "@type": "WatchAction",
       "target": animeUrl
     },
-    // For TVSeries
     ...(anime.contentType !== 'Movie' && {
       "numberOfEpisodes": anime.episodeCount || 12,
       "numberOfSeasons": anime.seasonCount || 1
     }),
-    // For Movie
     ...(anime.contentType === 'Movie' && {
       "duration": "PT2H30M",
       "countryOfOrigin": "JP"
