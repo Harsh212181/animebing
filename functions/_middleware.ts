@@ -1,7 +1,17 @@
  export async function onRequest(context) {
-  console.log('🚀 SEO function triggered for:', context.request.url);
   const { request, next } = context;
   const url = new URL(request.url);
+
+  // ========== TEST ENDPOINT ==========
+  // Visit https://animebing.in/function-test to check if the function is running
+  if (url.pathname === '/function-test') {
+    return new Response('✅ Function is working!', {
+      headers: { 'Content-Type': 'text/plain' }
+    });
+  }
+  // ===================================
+
+  console.log('🚀 SEO function triggered for:', context.request.url);
 
   // Only handle detail pages
   if (!url.pathname.startsWith('/detail/')) {
