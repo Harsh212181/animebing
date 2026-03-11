@@ -1,4 +1,5 @@
  // server.cjs - UPDATED WITH BOT HANDLING FOR META TAGS + DEBUG LOGS + FALLBACK + CACHE CONTROL HEADERS
+// ✅ EPISODE ROUTE REMOVED AS PER YOUR INSTRUCTION (only detail page SEO)
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
@@ -10,7 +11,7 @@ const { generalLimiter, authLimiter, adminLimiter, apiLimiter } = require('./mid
 
 // ✅ BOT DETECTION AND META SERVICES
 const isBot = require('./middleware/botDetect.cjs');
-const { getAnimeMeta, getEpisodeMeta } = require('./services/metaService.cjs');
+const { getAnimeMeta } = require('./services/metaService.cjs'); // episode meta import removed
 const generateMetaHTML = require('./utils/generateMetaHTML.cjs');
 
 // ✅ IMPORT MIDDLEWARE AND ROUTES
@@ -42,9 +43,8 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // ============================================
-// ✅ BOT HANDLING FOR DETAIL AND EPISODE PAGES
+// ✅ BOT HANDLING FOR DETAIL PAGE ONLY (as requested)
 // ============================================
-// Ye routes static files से पहले होने चाहिए
 app.get('/detail/:slug', async (req, res, next) => {
   const userAgent = req.headers['user-agent'];
   console.log(`🔍 DETAIL ROUTE HIT: slug=${req.params.slug}, isBot=${isBot(userAgent)}, UA=${userAgent?.substring(0, 50)}`);
@@ -93,51 +93,7 @@ app.get('/detail/:slug', async (req, res, next) => {
   next();
 });
 
-app.get('/episode/:animeSlug/:episodeNumber', async (req, res, next) => {
-  const userAgent = req.headers['user-agent'];
-  console.log(`🔍 EPISODE ROUTE HIT: animeSlug=${req.params.animeSlug}, ep=${req.params.episodeNumber}, isBot=${isBot(userAgent)}`);
-
-  if (isBot(userAgent)) {
-    try {
-      const meta = await getEpisodeMeta(req.params.animeSlug, req.params.episodeNumber);
-      console.log('📦 getEpisodeMeta result:', meta ? 'found' : 'null');
-      if (meta) {
-        const html = generateMetaHTML(meta);
-        res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-        res.set('X-Bot-Handler', 'true');
-        return res.send(html);
-      } else {
-        console.log('⚠️ No meta found for episode, serving fallback');
-        const fallbackMeta = {
-          title: `Episode ${req.params.episodeNumber} - AnimeBing`,
-          description: 'Watch this episode online in HD quality.',
-          image: 'https://animebing.in/AnimeBinglogo.jpg',
-          url: `https://animebing.in/episode/${req.params.animeSlug}/${req.params.episodeNumber}`,
-          type: 'video.episode'
-        };
-        const html = generateMetaHTML(fallbackMeta);
-        res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-        res.set('X-Bot-Handler', 'fallback');
-        return res.send(html);
-      }
-    } catch (err) {
-      console.error('❌ Error in episode bot route:', err);
-      const fallbackMeta = {
-        title: 'Episode Details - AnimeBing',
-        description: 'Watch anime episodes online.',
-        image: 'https://animebing.in/AnimeBinglogo.jpg',
-        url: `https://animebing.in/episode/${req.params.animeSlug}/${req.params.episodeNumber}`,
-        type: 'video.episode'
-      };
-      const html = generateMetaHTML(fallbackMeta);
-      res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-      res.set('X-Bot-Handler', 'error-fallback');
-      return res.send(html);
-    }
-  }
-  console.log('➡️ Not a bot, passing to next middleware');
-  next();
-});
+// ✅ EPISODE ROUTE REMOVED AS PER YOUR INSTRUCTION
 
 // ✅ अब static files serve करें (public और dist)
 app.use(express.static('public'));          // public folder (logo, etc.)
@@ -899,7 +855,7 @@ app.get('/api/health', async (req, res) => {
         pollSystem: 'Enabled (device-based)',
         likeDislike: 'Enabled',
         partnerManager: 'Enabled',
-        botMetaTags: 'Enabled for detail and episode pages' // ✅ NEW
+        botMetaTags: 'Enabled for detail pages' // ✅ UPDATED: only detail
       },
       serverConfig: {
         bodyLimit: '50MB',
@@ -1345,7 +1301,7 @@ app.get('/', (req, res) => {
     </head>
     <body>
       <div class="container">
-        <h1>AnimeBing Server <span class="seo-badge">SEO OPTIMIZED + LINK CONTROL + POLL SYSTEM (DEVICE-BASED) + LIKE/DISLIKE + PARTNER MANAGER + BOT META TAGS</span></h1>
+        <h1>AnimeBing Server <span class="seo-badge">SEO OPTIMIZED + LINK CONTROL + POLL SYSTEM (DEVICE-BASED) + LIKE/DISLIKE + PARTNER MANAGER + BOT META TAGS (DETAIL ONLY)</span></h1>
         <p class="status">✅ Backend API is running correctly - SEO Ready for Google</p>
         <p>📺 Frontend: <a href="https://animebing.in" target="_blank">AnimeBing.in</a></p>
         <p>⚙️ Admin Access: Press Ctrl+Shift+Alt on the frontend</p>
@@ -1398,13 +1354,13 @@ app.get('/', (req, res) => {
         </div>
         
         <div class="section">
-          <h3>🤖 Bot Meta Tags <span class="feature-badge">NEW</span>:</h3>
+          <h3>🤖 Bot Meta Tags <span class="feature-badge">DETAIL ONLY</span>:</h3>
           <div class="link-status">
-            <p>✅ Open Graph tags for /detail/:slug and /episode/:animeSlug/:episodeNumber</p>
+            <p>✅ Open Graph tags for /detail/:slug (as per your requirement)</p>
             <p>✅ Twitter Cards enabled</p>
             <p>✅ Dynamic title, description, image</p>
             <p>✅ Works with Facebook, WhatsApp, Telegram, etc.</p>
-            <p><small>Now your links will show rich previews when shared!</small></p>
+            <p><small>Now your detail links will show rich previews when shared!</small></p>
           </div>
         </div>
         
@@ -1423,12 +1379,12 @@ app.get('/', (req, res) => {
             <li>Like/Dislike System ✅ <span class="feature-badge">FIXED</span></li>
             <li>Poll/Voting System ✅ <span class="feature-badge">DEVICE-BASED</span></li>
             <li>Partner Manager ✅ <span class="feature-badge">NEW</span></li>
-            <li><strong>Bot Meta Tags ✅ <span class="feature-badge">NEW</span></strong></li>
+            <li><strong>Bot Meta Tags (Detail only) ✅ <span class="feature-badge">AS REQUESTED</span></strong></li>
           </ul>
           <p style="color: #4CAF50; margin-top: 10px; font-weight: bold;">
             ✅ LIKE/DISLIKE SYSTEM FIXED: IP detection, route order, and trust proxy configured<br>
             ✅ POLL SYSTEM: Device-based voting (UUID stored in localStorage)<br>
-            ✅ BOT META TAGS: Now active for all detail and episode pages
+            ✅ BOT META TAGS: Now active for detail pages only (episode route removed)
           </p>
         </div>
         
@@ -1464,7 +1420,7 @@ app.get('/', (req, res) => {
           Link Control: Active (5 links globally controllable)<br>
           Poll System: ✅ Active (device-based voting)<br>
           Partner Manager: ✅ Active (Create and manage partners)<br>
-          <strong>Bot Meta Tags: ✅ Active (rich previews enabled)</strong><br>
+          <strong>Bot Meta Tags: ✅ Active for detail pages only (episode route removed)</strong><br>
           Body Limit: 50MB (Fixed for poll system)<br>
           Trust Proxy: ${process.env.NODE_ENV === 'production' ? '✅ Enabled (1 hop)' : '❌ Disabled (development)'}<br>
           Sitemap Status: ✅ SEO Safe (No search query URLs)<br>
@@ -1538,8 +1494,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('   - DELETE /api/partners/:id/anime/:animeId - Remove anime');
   console.log('===============================================');
   console.log('🤖 BOT META TAGS ENABLED FOR:');
-  console.log('   - GET /detail/:slug');
-  console.log('   - GET /episode/:animeSlug/:episodeNumber');
+  console.log('   - GET /detail/:slug (episode route removed as per instruction)');
   console.log('===============================================');
   console.log('🔍 DEBUG ENDPOINTS:');
   console.log('   - GET /api/debug/vote-system - Debug vote system');
@@ -1554,7 +1509,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('   3. Poll card will appear if there is an active poll');
   console.log('   4. Check Admin Dashboard → Poll Manager to create polls');
   console.log('   5. Go to Admin Dashboard → Partner Manager to manage partners');
-  console.log('   6. Share any detail/episode link on WhatsApp/Facebook to see rich previews!');
+  console.log('   6. Share any detail link on WhatsApp/Facebook to see rich previews!');
   console.log('===============================================');
   console.log(`🛡️  TRUST PROXY STATUS: ${process.env.NODE_ENV === 'production' ? 'ENABLED (1 hop)' : 'DISABLED (development safe)'}`);
   console.log('===============================================');
