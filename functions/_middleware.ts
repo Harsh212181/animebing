@@ -1,4 +1,4 @@
-export async function onRequest(context) {
+ export async function onRequest(context) {
   console.log('🚀 SEO function triggered for:', context.request.url);
   const { request, next } = context;
   const url = new URL(request.url);
@@ -28,12 +28,18 @@ export async function onRequest(context) {
       console.error('❌ API request failed with status:', apiResponse.status);
       const errorText = await apiResponse.text();
       console.error('Response body:', errorText.substring(0, 200));
-      return new Response(html, { headers: { 'Content-Type': 'text/html' } }); // fallback
+      // Return original HTML with index header
+      return new Response(html, {
+        headers: {
+          'Content-Type': 'text/html',
+          'X-Robots-Tag': 'index'
+        }
+      });
     }
 
     const animeData = await apiResponse.json();
     console.log('✅ API response received:', animeData.success ? 'success' : 'failure');
-    console.log('Full API data:', JSON.stringify(animeData, null, 2)); // Log full data
+    console.log('Full API data:', JSON.stringify(animeData, null, 2));
 
     if (animeData.success && animeData.data) {
       const anime = animeData.data;
@@ -48,10 +54,8 @@ export async function onRequest(context) {
       const seoKeywords = anime.seoKeywords || '';
       const canonicalUrl = `https://animebing.in/detail/${anime.slug || slug}`;
 
-      // Replace meta tags (with logs to confirm replacement)
+      // Replace meta tags
       console.log('🔧 Replacing <title>...');
-      const originalTitleMatch = html.match(/<title>.*?<\/title>/);
-      console.log('Original title:', originalTitleMatch ? originalTitleMatch[0] : 'not found');
       html = html.replace(/<title>.*?<\/title>/, `<title>${seoTitle}</title>`);
 
       console.log('🔧 Replacing description...');
@@ -86,11 +90,16 @@ export async function onRequest(context) {
       console.log('⚠️ API returned success false or no data');
     }
 
+    // Return modified HTML with index header
     return new Response(html, {
-      headers: { 'Content-Type': 'text/html' }
+      headers: {
+        'Content-Type': 'text/html',
+        'X-Robots-Tag': 'index'
+      }
     });
   } catch (error) {
     console.error('❌ Worker error:', error);
-    return next(); // fallback
+    // In case of unexpected error, pass through to original page
+    return next();
   }
 }
