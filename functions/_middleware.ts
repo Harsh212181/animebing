@@ -32,7 +32,7 @@
       return new Response(html, {
         headers: {
           'Content-Type': 'text/html',
-          'X-Robots-Tag': 'index'
+          'X-Robots-Tag': 'index'   // ✅ ensure index for bots
         }
       });
     }
@@ -94,12 +94,13 @@
     return new Response(html, {
       headers: {
         'Content-Type': 'text/html',
-        'X-Robots-Tag': 'index'
+        'X-Robots-Tag': 'index'   // ✅ ensure index for bots
       }
     });
   } catch (error) {
     console.error('❌ Worker error:', error);
     // In case of unexpected error, pass through to original page
+    // (the _headers file will still add X-Robots-Tag: index)
     return next();
   }
 }
