@@ -1,9 +1,53 @@
  // src/components/admin/SearchableDropdown.tsx
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import type { Anime } from '../../types';
 import axios from 'axios';
 
-// ✅ Default to empty string – let the environment or parent decide
+// Generic option type that at least has _id and title
+export interface BaseOption {
+  _id: string;
+  title: string;
+  [key: string]: any;
+}
+
+// Props for local mode (options provided)
+interface LocalModeProps<T extends BaseOption> {
+  options: T[];
+  value: T | null;
+  onChange: (option: T | null) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  autoFocus?: boolean;
+  // async mode not used
+  fetchUrl?: never;
+  apiBase?: never;
+  token?: never;
+  onSelect?: never;
+}
+
+// Props for async mode (fetchUrl provided)
+interface AsyncModeProps {
+  onSelect: (item: BaseOption) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  fetchUrl: string;
+  apiBase?: string;
+  token?: string;
+  autoFocus?: boolean;
+  // local mode not used
+  options?: never;
+  value?: never;
+  onChange?: never;
+}
+
+type SearchableDropdownProps<T extends BaseOption = BaseOption> = 
+  | LocalModeProps<T>
+  | AsyncModeProps;
+
+// Helper to check if in async mode
+const isAsyncMode = (props: SearchableDropdownProps): props is AsyncModeProps => {
+  return 'onSelect' in props;
+};
+
 const DEFAULT_API_BASE = import.meta.env.VITE_API_BASE || '';
 const getToken = () => localStorage.getItem('adminToken') || '';
 
@@ -15,54 +59,29 @@ const debounce = (fn: Function, delay: number) => {
   };
 };
 
-interface AsyncSearchProps {
-  onSelect?: (item: Anime) => void;
-  placeholder?: string;
-  disabled?: boolean;
-  fetchUrl?: string;
-  apiBase?: string;
-  token?: string;
-  autoFocus?: boolean;
-}
+function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps<T>) {
+  const asyncMode = isAsyncMode(props);
 
-interface LocalListProps {
-  animes?: Anime[];
-  selectedAnime?: Anime | null;
-  onAnimeSelect?: (anime: Anime | null) => void;
-  loading?: boolean;
-}
-
-type SearchableDropdownProps = LocalListProps & AsyncSearchProps;
-
-const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
-  animes,
-  selectedAnime,
-  onAnimeSelect,
-  loading: localLoading,
-  onSelect,
-  placeholder = 'Type to search...',
-  disabled = false,
-  fetchUrl = '/api/anime/unassigned',  // fallback only – should be overridden
-  apiBase,
-  token,
-  autoFocus = false,
-}) => {
-  const isAsyncMode = !!onSelect;
-
+  // Common state
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const [asyncResults, setAsyncResults] = useState<Anime[]>([]);
+  // Local mode state
+  const localSelected = !asyncMode ? props.value : null;
+
+  // Async mode state
+  const [asyncResults, setAsyncResults] = useState<BaseOption[]>([]);
   const [asyncLoading, setAsyncLoading] = useState(false);
   const [asyncError, setAsyncError] = useState<string | null>(null);
-  const [selectedAsyncAnime, setSelectedAsyncAnime] = useState<Anime | null>(null);
+  const [selectedAsync, setSelectedAsync] = useState<BaseOption | null>(null);
 
-  const filteredAnimes = isAsyncMode
-    ? asyncResults
-    : animes?.filter(anime =>
-        anime.title.toLowerCase().includes(searchTerm.toLowerCase())
-      ) || [];
+  // Filtered options for local mode – guard against undefined options
+  const filteredOptions = !asyncMode
+    ? (props.options || []).filter(opt =>
+        opt.title.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    : [];
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -74,6 +93,7 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Async search
   const fetchAsyncResults = useCallback(
     debounce(async (query: string) => {
       if (!query.trim()) {
@@ -84,15 +104,12 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
       setAsyncLoading(true);
       setAsyncError(null);
       try {
-        const base = apiBase || DEFAULT_API_BASE;
-        const authToken = token || getToken();
-
-        // ✅ Cleanly join base and fetchUrl – avoid double slashes
-        const url = new URL(fetchUrl, base || window.location.origin).toString();
-
+        const base = asyncMode ? props.apiBase || DEFAULT_API_BASE : '';
+        const authToken = asyncMode ? props.token || getToken() : '';
+        const url = new URL(props.fetchUrl, base || window.location.origin).toString();
         const response = await axios.get(url, {
-          params: { search: query },   // ✅ always send ?search=...
-          headers: { Authorization: `Bearer ${authToken}` },
+          params: { search: query },
+          headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
         });
         setAsyncResults(response.data);
       } catch (err: any) {
@@ -103,50 +120,59 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
         setAsyncLoading(false);
       }
     }, 500),
-    [apiBase, token, fetchUrl]
+    [asyncMode ? props.fetchUrl : null, asyncMode ? props.apiBase : null, asyncMode ? props.token : null]
   );
 
   useEffect(() => {
-    if (isAsyncMode) {
+    if (asyncMode) {
       fetchAsyncResults(searchTerm);
     }
-  }, [searchTerm, isAsyncMode, fetchAsyncResults]);
+  }, [searchTerm, asyncMode, fetchAsyncResults]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(e.target.value);
     setIsOpen(true);
-    if (!isAsyncMode && onAnimeSelect) {
-      onAnimeSelect(null);
+    if (!asyncMode && props.onChange) {
+      // Clear selection when typing
+      props.onChange(null);
     }
   };
 
-  const handleSelect = (item: Anime) => {
-    if (isAsyncMode) {
-      setSelectedAsyncAnime(item);
-      setSearchTerm(item.title);
-      onSelect?.(item);
+  const handleSelect = (option: BaseOption) => {
+    if (asyncMode) {
+      setSelectedAsync(option);
+      setSearchTerm(option.title);
+      props.onSelect(option);
       setIsOpen(false);
     } else {
-      onAnimeSelect?.(item);
-      setSearchTerm(item.title);
+      props.onChange(option as T);
+      setSearchTerm(option.title);
       setIsOpen(false);
     }
   };
 
   const clearSelection = () => {
-    if (isAsyncMode) {
-      setSelectedAsyncAnime(null);
+    if (asyncMode) {
+      setSelectedAsync(null);
       setSearchTerm('');
-      onSelect?.(null as any);
+      // No onSelect with null – we can't unselect in async mode? But we'll allow
+      // but async mode typically expects a selection. We'll just clear.
     } else {
-      onAnimeSelect?.(null);
+      props.onChange(null);
       setSearchTerm('');
     }
     setIsOpen(false);
   };
 
-  const currentSelectedAnime = isAsyncMode ? selectedAsyncAnime : selectedAnime;
-  const isLoading = isAsyncMode ? asyncLoading : localLoading || false;
+  const currentSelected = asyncMode ? selectedAsync : localSelected;
+  const isLoading = asyncMode ? asyncLoading : false;
+  const optionsToShow = asyncMode ? asyncResults : filteredOptions;
+
+  const placeholderText = asyncMode
+    ? props.placeholder || 'Type to search...'
+    : props.placeholder || 'Search...';
+
+  const disabled = asyncMode ? props.disabled : props.disabled;
 
   return (
     <div className="relative w-full max-w-md" ref={dropdownRef}>
@@ -156,12 +182,12 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
           value={searchTerm}
           onChange={handleInputChange}
           onFocus={() => setIsOpen(true)}
-          placeholder={isAsyncMode ? placeholder : 'Type to search anime...'}
+          placeholder={placeholderText}
           disabled={disabled}
-          autoFocus={autoFocus}
+          autoFocus={asyncMode ? props.autoFocus : props.autoFocus}
           className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors pr-10 disabled:opacity-50 disabled:cursor-not-allowed"
         />
-        {currentSelectedAnime && (
+        {currentSelected && (
           <button
             onClick={clearSelection}
             className="absolute right-2 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-white transition-colors"
@@ -181,40 +207,51 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
             </div>
           ) : asyncError ? (
             <div className="p-4 text-center text-red-400">{asyncError}</div>
-          ) : filteredAnimes.length === 0 ? (
+          ) : optionsToShow.length === 0 ? (
             <div className="p-4 text-center text-slate-400">
               {searchTerm ? 'No results found' : 'Type to search'}
             </div>
           ) : (
-            filteredAnimes.map(anime => (
+            optionsToShow.map(option => (
               <button
-                key={anime._id || anime.id}
-                onClick={() => handleSelect(anime)}
+                key={option._id}
+                onClick={() => handleSelect(option)}
                 className={`w-full text-left px-4 py-3 hover:bg-slate-700 transition-colors ${
-                  currentSelectedAnime?._id === anime._id || currentSelectedAnime?.id === anime.id
+                  currentSelected?._id === option._id
                     ? 'bg-purple-600 text-white'
                     : 'text-slate-300'
                 }`}
                 type="button"
               >
-                <div className="font-medium">{anime.title}</div>
-                <div className="text-sm text-slate-400">
-                  {anime.episodes?.length || 0} episodes • {anime.status || 'N/A'}
-                </div>
+                <div className="font-medium">{option.title}</div>
+                {/* Optionally show extra info if present */}
+                {option.episodes && (
+                  <div className="text-sm text-slate-400">
+                    {option.episodes.length} episodes
+                  </div>
+                )}
+                {option.status && (
+                  <div className="text-sm text-slate-400">{option.status}</div>
+                )}
               </button>
             ))
           )}
         </div>
       )}
 
-      {currentSelectedAnime && !isOpen && (
+      {currentSelected && !isOpen && (
         <div className="mt-2 p-3 bg-slate-700/50 rounded-lg border border-slate-600">
           <div className="flex justify-between items-start">
             <div>
-              <h4 className="font-semibold text-white">{currentSelectedAnime.title}</h4>
-              <p className="text-slate-300 text-sm">
-                {currentSelectedAnime.episodes?.length || 0} episodes • {currentSelectedAnime.status || 'N/A'}
-              </p>
+              <h4 className="font-semibold text-white">{currentSelected.title}</h4>
+              {currentSelected.episodes && (
+                <p className="text-slate-300 text-sm">
+                  {currentSelected.episodes.length} episodes
+                </p>
+              )}
+              {currentSelected.status && (
+                <p className="text-slate-300 text-sm">{currentSelected.status}</p>
+              )}
             </div>
             <button
               onClick={clearSelection}
@@ -228,6 +265,6 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = ({
       )}
     </div>
   );
-};
+}
 
 export default SearchableDropdown;

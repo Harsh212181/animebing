@@ -1,4 +1,4 @@
- // App.tsx - UPDATED WITH WELCOME PAGE REDIRECT & FIXED ADMIN SHORTCUT
+ // App.tsx - UPDATED WITH DOWNLOAD LINK PAGE ROUTE
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import type { Anime, FilterType, ContentType, ContentTypeFilter } from './src/types';
@@ -28,6 +28,9 @@ import EarnMoney from './components/EarnMoney';
 
 // ✅ NEW IMPORT: WelcomePage for referral redirects
 import WelcomePage from './components/WelcomePage';
+
+// ✅ NEW IMPORT: DownloadLinkPage for grouped download pages
+import DownloadLinkPage from './components/DownloadLinkPage';
 
 // ❌ PromotionPlan import removed – now merged into EarnMoney
 
@@ -547,6 +550,13 @@ const MainApp: React.FC = () => {
               <Route path="/download-redirect" element={
                 <div className="rounded-lg overflow-hidden">
                   <DownloadRedirectPage />
+                </div>
+              } />
+              
+              {/* ✅ NEW: Download Link Page Route for grouped episodes */}
+              <Route path="/download/:slug" element={
+                <div className="rounded-lg overflow-hidden">
+                  <DownloadLinkPage />
                 </div>
               } />
               

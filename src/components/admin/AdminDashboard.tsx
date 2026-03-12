@@ -1,4 +1,4 @@
- // src/components/admin/AdminDashboard.tsx - UPDATED WITH AUTO SUNDAY MODE + SCROLL TO TOP + EPISODE STATUS MANAGER (ONLY TOP BAR BUTTON)
+ // src/components/admin/AdminDashboard.tsx - UPDATED WITH AUTO SUNDAY MODE + SCROLL TO TOP + EPISODE STATUS MANAGER + DOWNLOAD PAGES MANAGER
 import React, { useState, useEffect } from 'react';
 import AnimeListTable from './AnimeListTable';
 import AddAnimeForm from './AddAnimeForm';
@@ -8,7 +8,8 @@ import ReportsManager from './ReportsManager';
 import SocialMediaManager from './SocialMediaManager';
 import PollManager from './PollManager'; // ✅ POLL MANAGER IMPORT
 import PartnerManager from './PartnerManager'; // ✅ PARTNER MANAGER IMPORT
-import EpisodeStatusManager from './EpisodeStatusManager'; // ✅ NEW EPISODE STATUS MANAGER
+import EpisodeStatusManager from './EpisodeStatusManager'; // ✅ EPISODE STATUS MANAGER
+import DownloadPageManager from './DownloadPageManager'; // ✅ NEW DOWNLOAD PAGES MANAGER
 import Spinner from '../Spinner';
 import axios from 'axios';
 
@@ -392,6 +393,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       case 'episode-status': return <EpisodeStatusManager />;
       // ✅ Partner Manager (accessed via top bar only)
       case 'partners': return <PartnerManager token={token || ''} apiBase={API_BASE} />;
+      // ✅ NEW: Download Pages Manager (accessed via top bar only)
+      case 'downloadPages': return <DownloadPageManager />;
       default: return <AnimeListTable />;
     }
   };
@@ -517,7 +520,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             </div>
           </div>
           
-          {/* ✅ Button group: Partner Manager → Episode Status → Refresh → Logout */}
+          {/* ✅ Button group: Partner Manager → Download Pages → Episode Status → Refresh → Logout */}
           <div className="flex items-center gap-3">
             {/* Partner Manager Button */}
             <button
@@ -535,7 +538,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               )}
             </button>
 
-            {/* ✅ Episode Status Button (only here, not in tabs) */}
+            {/* ✅ NEW: Download Pages Button */}
+            <button
+              onClick={() => setActiveTab('downloadPages')}
+              className={`flex items-center gap-2 px-5 py-2 rounded-lg transition-all duration-300 font-semibold text-sm shadow-lg ${
+                activeTab === 'downloadPages'
+                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white border-2 border-white/20 shadow-amber-500/30'
+                  : 'bg-purple-800/40 text-purple-300 hover:bg-purple-700/60 hover:text-white border border-purple-600/40'
+              }`}
+            >
+              <span className="text-lg">📥</span>
+              <span>Download Pages</span>
+              {activeTab === 'downloadPages' && (
+                <div className="ml-2 w-2 h-2 bg-white rounded-full animate-pulse"></div>
+              )}
+            </button>
+
+            {/* Episode Status Button */}
             <button
               onClick={() => setActiveTab('episode-status')}
               className={`flex items-center gap-2 px-5 py-2 rounded-lg transition-all duration-300 font-semibold text-sm shadow-lg ${
@@ -569,7 +588,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           </div>
         </div>
 
-        {/* Navigation Tabs - All main tabs (Partner Manager and Episode Status are in top bar) */}
+        {/* Navigation Tabs - All main tabs (Partner Manager, Download Pages, Episode Status are in top bar) */}
         <div className="mb-6">
           <div className="flex flex-wrap gap-1.5">
             {tabs.map(tab => (
@@ -829,11 +848,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               <span className="text-3xl">
                 {tabs.find(t => t.id === activeTab)?.icon || 
                  (activeTab === 'episode-status' ? '🪼' : 
-                  activeTab === 'partners' ? '🎉' : '🎉')}
+                  activeTab === 'partners' ? '🎉' :
+                  activeTab === 'downloadPages' ? '📥' : '🎉')}
               </span>
               {tabs.find(t => t.id === activeTab)?.label || 
                (activeTab === 'episode-status' ? 'Episode Status' : 
-                activeTab === 'partners' ? 'Partner Manager' : '')} Management
+                activeTab === 'partners' ? 'Partner Manager' :
+                activeTab === 'downloadPages' ? 'Download Pages' : '')} Management
             </h2>
             <p className="text-purple-400/70 text-sm">
               Manage and control your content from this panel

@@ -1,6 +1,7 @@
- // components/AnimeDetailPage.tsx - FINAL FIXED VERSION (with proper canonical URL and SEO loading)
-import React, { useState, useEffect, useCallback } from 'react';
-import type { Anime, Episode, Chapter } from '../src/types';
+ // components/AnimeDetailPage.tsx - FINAL FIXED VERSION + DOWNLOAD PAGES (DEV ONLY)
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Link } from 'react-router-dom'; // ✅ ADDED for internal navigation
+import type { Anime, Episode, Chapter, DownloadPage } from '../src/types'; // ✅ ADDED DownloadPage
 import { DownloadIcon } from './icons/DownloadIcon';
 import ReportButton from './ReportButton';
 import Spinner from './Spinner';
@@ -277,6 +278,9 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
   // ✅ STATE FOR SHARE FUNCTIONALITY
   const [isSharing, setIsSharing] = useState(false);
 
+  // ✅ NEW STATE FOR DOWNLOAD PAGES
+  const [downloadPages, setDownloadPages] = useState<DownloadPage[]>([]);
+
   // Check content types
   const isManga = anime?.contentType === 'Manga';
   const isMovie = anime?.contentType === 'Movie';
@@ -299,6 +303,35 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     if (isMovie) return 'Movie will be added soon!';
     return 'Episodes will be added soon!';
   };
+
+  // ✅ CRITICAL FIX: displayAnime MUST be defined before any useEffect that uses it
+  const displayAnime = fullAnime || anime;
+
+  // ✅ FETCH DOWNLOAD PAGES FOR THIS ANIME
+  useEffect(() => {
+    const fetchDownloadPages = async () => {
+      if (!displayAnime?._id) return;
+      try {
+        const res = await fetch(`${API_BASE}/download-pages/anime/${displayAnime._id}`);
+        if (res.ok) {
+          const data = await res.json();
+          setDownloadPages(data);
+        }
+      } catch (err) {
+        console.error('Failed to fetch download pages:', err);
+      }
+    };
+    fetchDownloadPages();
+  }, [displayAnime?._id, API_BASE]); // ✅ Correct dependencies
+
+  // ✅ MAP EPISODE NUMBER TO DOWNLOAD PAGE
+  const episodeToPageMap = useMemo(() => {
+    const map = new Map<number, DownloadPage>();
+    downloadPages.forEach(page => {
+      page.links.forEach(link => map.set(link.episode, page));
+    });
+    return map;
+  }, [downloadPages]);
 
   // ✅ FETCH LIKE/DISLIKE DATA - UPDATED TO NOT USE IP PARAMETER
   const fetchVoteData = async () => {
@@ -619,9 +652,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     fetchFullAnimeDetails();
   }, [anime]);
 
-  // Use fullAnime if available, else fallback to anime
-  const displayAnime = fullAnime || anime;
-  
   // ✅ FIXED: GENERATE SEO DATA WITH PROPER CANONICAL URL
   const getSEOData = () => {
     if (!displayAnime) {
@@ -1135,6 +1165,16 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                                 className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white p-2 rounded-lg shadow-lg hover:shadow-blue-500/20 transition-all duration-200 flex items-center justify-center"
                                 showText={false}
                               />
+                              {/* ✅ NEW: Download Page button (only in development, not for manga) */}
+                              {!isManga && import.meta.env.DEV && episodeToPageMap.has(itemData.episodeNumber) && (
+                                <Link
+                                  to={`/download/${episodeToPageMap.get(itemData.episodeNumber)!.slug}`}
+                                  className="bg-purple-600 hover:bg-purple-700 text-white p-2 rounded-lg text-xs font-medium ml-1 flex items-center justify-center"
+                                  title={episodeToPageMap.get(itemData.episodeNumber)!.title}
+                                >
+                                  <span className="text-xs">📄</span>
+                                </Link>
+                              )}
                               <ReportButton
                                 animeId={anime.id || anime._id}
                                 episodeId={itemData._id}
@@ -1365,6 +1405,16 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                                   className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white px-4 py-2 rounded-lg transition-all duration-300 font-medium flex items-center gap-2 hover:scale-105 active:scale-95"
                                   showText={true}
                                 />
+                                {/* ✅ NEW: Download Page button (only in development, not for manga) */}
+                                {!isManga && import.meta.env.DEV && episodeToPageMap.has(itemData.episodeNumber) && (
+                                  <Link
+                                    to={`/download/${episodeToPageMap.get(itemData.episodeNumber)!.slug}`}
+                                    className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition-all duration-300 hover:scale-105 flex items-center gap-1"
+                                  >
+                                    <span className="text-sm">📄</span>
+                                    {episodeToPageMap.get(itemData.episodeNumber)!.title}
+                                  </Link>
+                                )}
                                 <div className="scale-90">
                                   <ReportButton
                                     animeId={anime.id || anime._id}

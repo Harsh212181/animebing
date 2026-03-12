@@ -1,4 +1,4 @@
- // src/components/admin/EpisodesManager.tsx - COMPLETELY FIXED VERSION
+ // src/components/admin/EpisodesManager.tsx - UPDATED VERSION
 import React, { useState, useEffect } from 'react';
 import type { Anime, Episode, Chapter } from '../../types';
 import axios from 'axios';
@@ -22,8 +22,12 @@ const DEFAULT_LINK_NAMES = [
   'Link 5'
 ];
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'https://animabing.onrender.com/api';
-const token = localStorage.getItem('adminToken') || '';
+const API_BASE =
+  window.location.hostname === 'localhost'
+    ? 'http://localhost:3000/api'
+    : 'https://animabing.onrender.com/api';
+
+const getToken = () => localStorage.getItem('adminToken') || '';
 
 const EpisodesManager: React.FC = () => {
   const [animes, setAnimes] = useState<Anime[]>([]);
@@ -34,7 +38,7 @@ const EpisodesManager: React.FC = () => {
     number: 1,
     title: '',
     session: 1,
-    mainLink: '', // ✅ New field for main link
+    mainLink: '',
     downloadLinks: [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }] as DownloadLink[]
   });
   const [loading, setLoading] = useState(true);
@@ -46,7 +50,7 @@ const EpisodesManager: React.FC = () => {
     number: 1,
     title: '',
     session: 1,
-    mainLink: '', // ✅ New field for main link
+    mainLink: '',
     downloadLinks: [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }] as DownloadLink[]
   });
 
@@ -67,49 +71,10 @@ const EpisodesManager: React.FC = () => {
     fetchAnimes();
   }, []);
 
-  // ✅ REFRESH FUNCTION
-  const handleRefresh = async () => {
-    setAnimesLoading(true);
-    try {
-      // 1. Refresh anime list
-      const { data } = await axios.get(`${API_BASE}/admin/protected/anime-list`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      const updatedAnimes = data.map((a: any) => ({
-        ...a,
-        id: a._id || a.id
-      }));
-      
-      setAnimes(updatedAnimes);
-      
-      // 2. If selected anime exists, refresh episodes/chapters
-      if (selectedAnime) {
-        const updatedSelectedAnime = updatedAnimes.find((a: Anime) => a.id === selectedAnime.id);
-        
-        if (updatedSelectedAnime) {
-          setSelectedAnime(updatedSelectedAnime);
-          await fetchContent(updatedSelectedAnime.id);
-        } else {
-          setSelectedAnime(null);
-          setEpisodes([]);
-          setChapters([]);
-          alert('Previously selected content was removed from the list.');
-        }
-      }
-      
-      alert('Content refreshed successfully!');
-    } catch (err: any) {
-      console.error('❌ Refresh error:', err.response?.data || err.message);
-      alert('Failed to refresh content');
-    } finally {
-      setAnimesLoading(false);
-    }
-  };
-
   const fetchAnimes = async () => {
     setAnimesLoading(true);
     try {
+      const token = getToken();
       const { data } = await axios.get(`${API_BASE}/admin/protected/anime-list`, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -125,80 +90,91 @@ const EpisodesManager: React.FC = () => {
     }
   };
 
+  const handleRefresh = async () => {
+    setAnimesLoading(true);
+    try {
+      const token = getToken();
+      const { data } = await axios.get(`${API_BASE}/admin/protected/anime-list`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const updatedAnimes = data.map((a: any) => ({
+        ...a,
+        id: a._id || a.id
+      }));
+      setAnimes(updatedAnimes);
+
+      if (selectedAnime) {
+        const updatedSelectedAnime = updatedAnimes.find((a: Anime) => a.id === selectedAnime.id);
+        if (updatedSelectedAnime) {
+          setSelectedAnime(updatedSelectedAnime);
+          await fetchContent(updatedSelectedAnime.id);
+        } else {
+          setSelectedAnime(null);
+          setEpisodes([]);
+          setChapters([]);
+          alert('Previously selected content was removed from the list.');
+        }
+      }
+      alert('Content refreshed successfully!');
+    } catch (err: any) {
+      console.error('❌ Refresh error:', err.response?.data || err.message);
+      alert('Failed to refresh content');
+    } finally {
+      setAnimesLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (selectedAnime) {
       fetchContent(selectedAnime.id);
     } else {
       setEpisodes([]);
       setChapters([]);
-      setEditingItemId(null); // Reset editing state
+      setEditingItemId(null);
     }
   }, [selectedAnime]);
 
-  // ✅ CRITICAL FIX: Enhanced data transformation function
-  const transformEpisodeData = (data: any): Episode => {
-    // Create a new object with guaranteed mainLink field
-    return {
-      ...data,
-      mainLink: data.mainLink || (data.downloadLinks && data.downloadLinks.length > 0 ? data.downloadLinks[0].url : '')
-    };
-  };
+  const transformEpisodeData = (data: any): Episode => ({
+    ...data,
+    mainLink: data.mainLink || (data.downloadLinks && data.downloadLinks.length > 0 ? data.downloadLinks[0].url : '')
+  });
 
-  const transformChapterData = (data: any): Chapter => {
-    // Create a new object with guaranteed mainLink field
-    return {
-      ...data,
-      mainLink: data.mainLink || (data.downloadLinks && data.downloadLinks.length > 0 ? data.downloadLinks[0].url : '')
-    };
-  };
+  const transformChapterData = (data: any): Chapter => ({
+    ...data,
+    mainLink: data.mainLink || (data.downloadLinks && data.downloadLinks.length > 0 ? data.downloadLinks[0].url : '')
+  });
 
   const fetchContent = async (contentId: string) => {
     setLoading(true);
-    setEditingItemId(null); // Reset editing state on content change
+    setEditingItemId(null);
     try {
+      const token = getToken();
       if (isManga) {
-        const { data } = await axios.get(`${API_BASE}/chapters/${contentId}`);
-        console.log('📥 Chapters API Response FULL DATA:', JSON.stringify(data, null, 2));
-        
-        // ✅ CRITICAL FIX: Transform all chapters to ensure mainLink exists
-        const transformedChapters = data.map(transformChapterData);
-        console.log('✅ Transformed chapters:', transformedChapters);
-        
-        setChapters(transformedChapters);
-        const lastChapter = transformedChapters.filter((ch: Chapter) => (ch.session || 1) === selectedSession);
+        const { data } = await axios.get(`${API_BASE}/chapters/${contentId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const transformed = data.map(transformChapterData);
+        setChapters(transformed);
+        const lastItem = transformed.filter((ch: Chapter) => (ch.session || 1) === selectedSession);
         setNewItem(prev => ({
           ...prev,
-          number: lastChapter.length > 0 ? Math.max(...lastChapter.map((ch: Chapter) => ch.chapterNumber)) + 1 : 1,
+          number: lastItem.length > 0 ? Math.max(...lastItem.map((ch: Chapter) => ch.chapterNumber)) + 1 : 1,
           session: selectedSession,
-          mainLink: '', // Reset main link
+          mainLink: '',
           downloadLinks: [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }]
         }));
       } else {
-        const { data } = await axios.get(`${API_BASE}/episodes/${contentId}`);
-        console.log('📥 Episodes API Response FULL DATA:', JSON.stringify(data, null, 2));
-        
-        // ✅ CRITICAL FIX: Transform all episodes to ensure mainLink exists
-        const transformedEpisodes = data.map(transformEpisodeData);
-        console.log('✅ Transformed episodes:', transformedEpisodes);
-        
-        // ✅ Debug first episode
-        if (transformedEpisodes.length > 0) {
-          const firstEp = transformedEpisodes[0];
-          console.log('🔍 First episode AFTER transformation:', {
-            title: firstEp.title,
-            mainLink: firstEp.mainLink,
-            hasMainLink: firstEp.hasOwnProperty('mainLink'),
-            type: typeof firstEp.mainLink
-          });
-        }
-        
-        setEpisodes(transformedEpisodes);
-        const lastEpisode = transformedEpisodes.filter((ep: Episode) => (ep.session || 1) === selectedSession);
+        const { data } = await axios.get(`${API_BASE}/episodes/${contentId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const transformed = data.map(transformEpisodeData);
+        setEpisodes(transformed);
+        const lastItem = transformed.filter((ep: Episode) => (ep.session || 1) === selectedSession);
         setNewItem(prev => ({
           ...prev,
-          number: lastEpisode.length > 0 ? Math.max(...lastEpisode.map((ep: Episode) => ep.episodeNumber)) + 1 : 1,
+          number: lastItem.length > 0 ? Math.max(...lastItem.map((ep: Episode) => ep.episodeNumber)) + 1 : 1,
           session: selectedSession,
-          mainLink: '', // Reset main link
+          mainLink: '',
           downloadLinks: [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }]
         }));
       }
@@ -210,155 +186,105 @@ const EpisodesManager: React.FC = () => {
     }
   };
 
-  // Handle Edit Item
   const handleEditItem = (item: Episode | Chapter) => {
     if (editingItemId === (item as any)._id) {
-      // If clicking on already editing item, cancel edit
       setEditingItemId(null);
     } else {
       setEditingItemId((item as any)._id);
-      
-      // ✅ Get downloadLinks and mainLink from item - FIXED
       const itemData = item as any;
       const downloadLinks: DownloadLink[] = itemData.downloadLinks || [];
-      
-      // ✅ CRITICAL FIX: Always use mainLink from item data
-      let mainLink = itemData.mainLink || '';
-      
-      console.log('🪶 Editing item DETAILED:', {
-        title: item.title,
-        mainLink: mainLink,
-        hasMainLink: itemData.hasOwnProperty('mainLink'),
-        itemData: itemData
-      });
-      
-      // If no download links, add one default with default name
-      const linksToSet = downloadLinks.length > 0 
-        ? downloadLinks 
-        : [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }];
-      
+      const mainLink = itemData.mainLink || '';
       setEditForm({
         number: isManga ? (item as Chapter).chapterNumber : (item as Episode).episodeNumber,
         title: item.title || '',
         session: item.session || 1,
-        mainLink: mainLink, // Set main link from item
-        downloadLinks: linksToSet
+        mainLink: mainLink,
+        downloadLinks: downloadLinks.length > 0 ? downloadLinks : [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }]
       });
     }
   };
 
-  // Cancel Edit
-  const handleCancelEdit = () => {
-    setEditingItemId(null);
-  };
+  const handleCancelEdit = () => setEditingItemId(null);
 
-  // Get next available number
   const getNextAvailableNumber = () => {
     if (filteredItems.length === 0) return 1;
     const numbers = filteredItems.map(item => isManga ? (item as Chapter).chapterNumber : (item as Episode).episodeNumber);
     return Math.max(...numbers) + 1;
   };
 
-  // ✅ Add a new download link (for add form)
   const handleAddDownloadLink = () => {
     if (newItem.downloadLinks.length >= 5) {
       alert('Maximum 5 download links allowed');
       return;
     }
-    
     setNewItem(prev => ({
       ...prev,
       downloadLinks: [
         ...prev.downloadLinks,
-        { 
-          name: DEFAULT_LINK_NAMES[prev.downloadLinks.length] || `Download Link ${prev.downloadLinks.length + 1}`, 
-          url: '', 
-          quality: '', 
-          type: 'direct' 
-        }
+        { name: DEFAULT_LINK_NAMES[prev.downloadLinks.length] || `Link ${prev.downloadLinks.length + 1}`, url: '', quality: '', type: 'direct' }
       ]
     }));
   };
 
-  // ✅ Add a new download link (for edit form)
   const handleEditAddDownloadLink = () => {
     if (editForm.downloadLinks.length >= 5) {
       alert('Maximum 5 download links allowed');
       return;
     }
-    
     setEditForm(prev => ({
       ...prev,
       downloadLinks: [
         ...prev.downloadLinks,
-        { 
-          name: DEFAULT_LINK_NAMES[prev.downloadLinks.length] || `Download Link ${prev.downloadLinks.length + 1}`, 
-          url: '', 
-          quality: '', 
-          type: 'direct' 
-        }
+        { name: DEFAULT_LINK_NAMES[prev.downloadLinks.length] || `Link ${prev.downloadLinks.length + 1}`, url: '', quality: '', type: 'direct' }
       ]
     }));
   };
 
-  // ✅ Remove a download link (for add form)
   const handleRemoveDownloadLink = (index: number) => {
     if (newItem.downloadLinks.length <= 1) {
       alert('At least one download link is required');
       return;
     }
-    
     setNewItem(prev => ({
       ...prev,
       downloadLinks: prev.downloadLinks.filter((_, i) => i !== index)
     }));
   };
 
-  // ✅ Remove a download link (for edit form)
   const handleEditRemoveDownloadLink = (index: number) => {
     if (editForm.downloadLinks.length <= 1) {
       alert('At least one download link is required');
       return;
     }
-    
     setEditForm(prev => ({
       ...prev,
       downloadLinks: prev.downloadLinks.filter((_, i) => i !== index)
     }));
   };
 
-  // ✅ Update download link (for add form)
   const handleUpdateDownloadLink = (index: number, field: keyof DownloadLink, value: string) => {
     setNewItem(prev => ({
       ...prev,
-      downloadLinks: prev.downloadLinks.map((link, i) => 
-        i === index ? { ...link, [field]: value } : link
-      )
+      downloadLinks: prev.downloadLinks.map((link, i) => i === index ? { ...link, [field]: value } : link)
     }));
   };
 
-  // ✅ Update download link (for edit form)
   const handleEditUpdateDownloadLink = (index: number, field: keyof DownloadLink, value: string) => {
     setEditForm(prev => ({
       ...prev,
-      downloadLinks: prev.downloadLinks.map((link, i) => 
-        i === index ? { ...link, [field]: value } : link
-      )
+      downloadLinks: prev.downloadLinks.map((link, i) => i === index ? { ...link, [field]: value } : link)
     }));
   };
 
-  // ✅ Validate download links (for add form)
   const validateDownloadLinks = (links: DownloadLink[]): boolean => {
     if (links.length === 0) {
       alert('At least one download link is required');
       return false;
     }
-    
     if (links.length > 5) {
       alert('Maximum 5 download links allowed');
       return false;
     }
-    
     for (let i = 0; i < links.length; i++) {
       const link = links[i];
       if (!link.name.trim()) {
@@ -374,37 +300,28 @@ const EpisodesManager: React.FC = () => {
         return false;
       }
     }
-    
     return true;
   };
 
-  // ✅ CRITICAL FIX: Enhanced Add New Item Function
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedAnime) {
       alert('Please select content first');
       return;
     }
-
-    // ✅ Validate download links
-    if (!validateDownloadLinks(newItem.downloadLinks)) {
-      return;
-    }
+    if (!validateDownloadLinks(newItem.downloadLinks)) return;
 
     setAddingItem(true);
     try {
+      const token = getToken();
       const endpoint = isManga ? '/chapters' : '/episodes';
-      
-      // ✅ CRITICAL: Ensure mainLink is always sent
-      const mainLinkToSend = newItem.mainLink || '';
-      
       const requestBody = isManga
         ? {
             mangaId: selectedAnime.id,
             chapterNumber: newItem.number,
             title: newItem.title || `Chapter ${newItem.number}`,
             session: newItem.session,
-            mainLink: mainLinkToSend, // ✅ Always send mainLink (even if empty)
+            mainLink: newItem.mainLink,
             downloadLinks: newItem.downloadLinks
           }
         : {
@@ -412,13 +329,10 @@ const EpisodesManager: React.FC = () => {
             episodeNumber: newItem.number,
             title: newItem.title || `Episode ${newItem.number}`,
             session: newItem.session,
-            mainLink: mainLinkToSend, // ✅ Always send mainLink (even if empty)
+            mainLink: newItem.mainLink,
             downloadLinks: newItem.downloadLinks
           };
 
-      console.log('📤 Sending POST request with mainLink:', requestBody.mainLink);
-      console.log('📤 Full request body:', requestBody);
-      
       const response = await axios.post(`${API_BASE}${endpoint}`, requestBody, {
         headers: {
           'Content-Type': 'application/json',
@@ -426,29 +340,22 @@ const EpisodesManager: React.FC = () => {
         }
       });
 
-      console.log('✅ POST Response:', response.data);
-      
       alert(`${isManga ? 'Chapter' : 'Episode'} added successfully!`);
-      
-      // ✅ Transform and add to state
+
       if (isManga) {
-        const transformedChapter = transformChapterData(response.data.episode || response.data);
-        setChapters(prev => [...prev, transformedChapter]);
+        setChapters(prev => [...prev, transformChapterData(response.data.episode || response.data)]);
       } else {
-        const transformedEpisode = transformEpisodeData(response.data.episode || response.data);
-        setEpisodes(prev => [...prev, transformedEpisode]);
+        setEpisodes(prev => [...prev, transformEpisodeData(response.data.episode || response.data)]);
       }
-      
-      // Reset form with default name
+
       const nextNumber = getNextAvailableNumber();
       setNewItem({
         number: nextNumber,
         title: '',
         session: selectedSession,
-        mainLink: '', // Reset main link
+        mainLink: '',
         downloadLinks: [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }]
       });
-      
     } catch (err: any) {
       console.error('❌ Add error:', err.response?.data || err.message);
       alert(`Failed to add ${isManga ? 'chapter' : 'episode'}: ${err.response?.data?.error || err.message}`);
@@ -457,28 +364,20 @@ const EpisodesManager: React.FC = () => {
     }
   };
 
-  // ✅ CRITICAL FIX: Enhanced Update Item Function
   const handleUpdateItem = async () => {
     if (!editingItemId || !selectedAnime) return;
-
-    // ✅ Validate download links
-    if (!validateDownloadLinks(editForm.downloadLinks)) {
-      return;
-    }
+    if (!validateDownloadLinks(editForm.downloadLinks)) return;
 
     try {
+      const token = getToken();
       const endpoint = isManga ? '/chapters' : '/episodes';
-      
-      // ✅ CRITICAL: Ensure mainLink is always sent
-      const mainLinkToSend = editForm.mainLink || '';
-      
       const requestBody = isManga
         ? {
             mangaId: selectedAnime.id,
             chapterNumber: editForm.number,
             title: editForm.title || `Chapter ${editForm.number}`,
             session: editForm.session,
-            mainLink: mainLinkToSend, // ✅ Always send mainLink (even if empty)
+            mainLink: editForm.mainLink,
             downloadLinks: editForm.downloadLinks
           }
         : {
@@ -486,28 +385,20 @@ const EpisodesManager: React.FC = () => {
             episodeNumber: editForm.number,
             title: editForm.title || `Episode ${editForm.number}`,
             session: editForm.session,
-            mainLink: mainLinkToSend, // ✅ Always send mainLink (even if empty)
+            mainLink: editForm.mainLink,
             downloadLinks: editForm.downloadLinks
           };
 
-      console.log('📤 Sending PATCH request with mainLink:', requestBody.mainLink);
-      console.log('📤 Full request body:', requestBody);
-      
-      const response = await axios.patch(`${API_BASE}${endpoint}`, requestBody, {
+      await axios.patch(`${API_BASE}${endpoint}`, requestBody, {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         }
       });
 
-      console.log('✅ PATCH Response:', response.data);
-      
       alert(`${isManga ? 'Chapter' : 'Episode'} updated successfully!`);
       setEditingItemId(null);
-      
-      // ✅ Refresh content
-      fetchContent(selectedAnime.id);
-      
+      await fetchContent(selectedAnime.id);
     } catch (err: any) {
       console.error('❌ Update error:', err.response?.data || err.message);
       alert(`Failed to update ${isManga ? 'chapter' : 'episode'}: ${err.response?.data?.error || err.message}`);
@@ -518,6 +409,7 @@ const EpisodesManager: React.FC = () => {
     if (!confirm(`Are you sure you want to delete ${isManga ? 'chapter' : 'episode'} ${itemNumber}?`)) return;
 
     try {
+      const token = getToken();
       const endpoint = isManga ? '/chapters' : '/episodes';
       await axios.delete(`${API_BASE}${endpoint}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -529,21 +421,14 @@ const EpisodesManager: React.FC = () => {
       });
 
       alert(`${isManga ? 'Chapter' : 'Episode'} deleted successfully!`);
-      if (selectedAnime) {
-        fetchContent(selectedAnime.id);
-      }
+      if (selectedAnime) await fetchContent(selectedAnime.id);
     } catch (err: any) {
       console.error('❌ Delete error:', err.response?.data || err.message);
       alert(err.response?.data?.error || `Failed to delete ${isManga ? 'chapter' : 'episode'}`);
     }
   };
 
-  // ✅ Function to open main link in new tab
-  const openMainLink = (link: string) => {
-    if (link) {
-      window.open(link, '_blank', 'noopener,noreferrer');
-    }
-  };
+  const openMainLink = (link: string) => link && window.open(link, '_blank', 'noopener,noreferrer');
 
   return (
     <div className="space-y-6">
@@ -554,14 +439,7 @@ const EpisodesManager: React.FC = () => {
           disabled={animesLoading}
           className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm transition flex items-center gap-2"
         >
-          {animesLoading ? (
-            <>
-              <Spinner size="sm" />
-              Refreshing...
-            </>
-          ) : (
-            '🔄 Refresh Content'
-          )}
+          {animesLoading ? <><Spinner size="sm" /> Refreshing...</> : '🔄 Refresh Content'}
         </button>
       </div>
 
@@ -570,11 +448,12 @@ const EpisodesManager: React.FC = () => {
         <label className="block text-sm font-medium text-slate-300 mb-3">
           Select {isManga ? 'Manga' : 'Anime/Movie'} *
         </label>
-        <SearchableDropdown
-          animes={animes}
-          selectedAnime={selectedAnime}
-          onAnimeSelect={setSelectedAnime}
-          loading={animesLoading}
+        {/* ✅ Fixed: Added explicit generic <Anime> to resolve type error */}
+        <SearchableDropdown<Anime>
+          options={animes}
+          value={selectedAnime}
+          onChange={setSelectedAnime}
+          placeholder="Search anime..."
         />
       </div>
 
@@ -605,7 +484,7 @@ const EpisodesManager: React.FC = () => {
                 onClick={() => {
                   setSelectedSession(session);
                   setNewItem(prev => ({ ...prev, session }));
-                  setEditingItemId(null); // Cancel edit when changing session
+                  setEditingItemId(null);
                 }}
                 className={`px-4 py-2 rounded-lg transition-colors ${
                   selectedSession === session
@@ -621,7 +500,7 @@ const EpisodesManager: React.FC = () => {
                 const newSession = Math.max(...getAvailableSessions(), 0) + 1;
                 setSelectedSession(newSession);
                 setNewItem(prev => ({ ...prev, session: newSession, number: 1 }));
-                setEditingItemId(null); // Cancel edit when adding new session
+                setEditingItemId(null);
               }}
               className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg transition-colors"
             >
@@ -646,16 +525,12 @@ const EpisodesManager: React.FC = () => {
               <input
                 type="number"
                 value={newItem.number}
-                onChange={(e) => setNewItem({
-                  ...newItem,
-                  number: Math.max(1, parseInt(e.target.value) || 1)
-                })}
+                onChange={(e) => setNewItem({ ...newItem, number: Math.max(1, parseInt(e.target.value) || 1) })}
                 className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
                 min="1"
                 required
               />
             </div>
-
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
                 Session *
@@ -663,10 +538,7 @@ const EpisodesManager: React.FC = () => {
               <input
                 type="number"
                 value={newItem.session}
-                onChange={(e) => setNewItem({
-                  ...newItem,
-                  session: Math.max(1, parseInt(e.target.value) || 1)
-                })}
+                onChange={(e) => setNewItem({ ...newItem, session: Math.max(1, parseInt(e.target.value) || 1) })}
                 className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
                 min="1"
                 required
@@ -674,133 +546,78 @@ const EpisodesManager: React.FC = () => {
             </div>
           </div>
 
-          {/* ✅ MAIN LINK SECTION - FOR ADMIN ONLY */}
+          {/* Main Link (Admin only) */}
           <div className="bg-slate-800/70 p-4 rounded-lg border-l-4 border-yellow-500">
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-yellow-300">
-                🔗 Main Link (Admin Only - Optional)
-              </label>
+              <label className="block text-sm font-medium text-yellow-300">🔗 Main Link (Admin Only - Optional)</label>
               <span className="text-xs text-yellow-400 bg-yellow-900/30 px-2 py-1 rounded">Internal Use</span>
             </div>
-            <p className="text-slate-400 text-xs mb-3">
-              This is for admin reference only. It won't be shown to users. Use it to store the original source link or internal notes.
-            </p>
+            <p className="text-slate-400 text-xs mb-3">This is for admin reference only. It won't be shown to users.</p>
             <div className="flex gap-2">
               <input
                 type="text"
                 value={newItem.mainLink}
                 onChange={(e) => setNewItem({ ...newItem, mainLink: e.target.value })}
                 placeholder="https://example.com/original-source.mp4"
-                className="flex-1 bg-slate-900 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-yellow-500 focus:border-yellow-500"
+                className="flex-1 bg-slate-900 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm"
               />
               <button
                 type="button"
                 onClick={() => openMainLink(newItem.mainLink)}
                 disabled={!newItem.mainLink}
-                className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-2 rounded text-sm transition-colors flex items-center gap-1"
-                title="Open in new tab"
+                className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-3 py-2 rounded text-sm flex items-center gap-1"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                </svg>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 Open
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  if (newItem.mainLink) {
-                    navigator.clipboard.writeText(newItem.mainLink);
-                    alert('Main link copied to clipboard!');
-                  }
-                }}
+                onClick={() => newItem.mainLink && navigator.clipboard.writeText(newItem.mainLink) && alert('Copied!')}
                 disabled={!newItem.mainLink}
-                className="bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-2 rounded text-sm transition-colors flex items-center gap-1"
-                title="Copy to clipboard"
+                className="bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 text-white px-3 py-2 rounded text-sm flex items-center gap-1"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
                 Copy
               </button>
             </div>
           </div>
 
-          {/* DOWNLOAD LINKS SECTION - FOR ADD FORM */}
+          {/* Download Links */}
           <div>
             <div className="flex justify-between items-center mb-2">
-              <label className="block text-sm font-medium text-slate-300">
-                User Download Links (Required) *
-              </label>
-              <button
-                type="button"
-                onClick={handleAddDownloadLink}
-                disabled={newItem.downloadLinks.length >= 5}
-                className="text-xs bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-2 py-1 rounded"
-              >
+              <label className="block text-sm font-medium text-slate-300">User Download Links (Required) *</label>
+              <button type="button" onClick={handleAddDownloadLink} disabled={newItem.downloadLinks.length >= 5} className="text-xs bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-2 py-1 rounded">
                 + Add Link (Max 5)
               </button>
             </div>
-            
             <div className="space-y-3">
-              {newItem.downloadLinks.map((link, index) => (
-                <div key={index} className="bg-slate-800/70 p-3 rounded-lg border border-slate-700">
+              {newItem.downloadLinks.map((link, idx) => (
+                <div key={idx} className="bg-slate-800/70 p-3 rounded-lg border border-slate-700">
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-slate-300 font-medium">{link.name}</span>
                     {newItem.downloadLinks.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveDownloadLink(index)}
-                        className="text-xs bg-red-600 hover:bg-red-500 text-white px-2 py-1 rounded"
-                      >
+                      <button type="button" onClick={() => handleRemoveDownloadLink(idx)} className="text-xs bg-red-600 hover:bg-red-500 text-white px-2 py-1 rounded">
                         Remove
                       </button>
                     )}
                   </div>
-                  
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs text-slate-400 mb-1">Link Name *</label>
-                      <input
-                        type="text"
-                        value={link.name}
-                        onChange={(e) => handleUpdateDownloadLink(index, 'name', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm"
-                        placeholder="e.g., Cuty.io, Shrinkme, etc."
-                        required
-                      />
+                      <label className="text-xs text-slate-400">Link Name *</label>
+                      <input type="text" value={link.name} onChange={(e) => handleUpdateDownloadLink(idx, 'name', e.target.value)} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-2 py-1 text-sm" required />
                     </div>
-                    
                     <div>
-                      <label className="block text-xs text-slate-400 mb-1">Quality (Optional)</label>
-                      <input
-                        type="text"
-                        value={link.quality || ''}
-                        onChange={(e) => handleUpdateDownloadLink(index, 'quality', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm"
-                        placeholder="e.g., 720p, HD, 1080p"
-                      />
+                      <label className="text-xs text-slate-400">Quality</label>
+                      <input type="text" value={link.quality || ''} onChange={(e) => handleUpdateDownloadLink(idx, 'quality', e.target.value)} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-2 py-1 text-sm" />
                     </div>
                   </div>
-                  
                   <div className="mt-3">
-                    <label className="block text-xs text-slate-400 mb-1">Download URL *</label>
-                    <input
-                      type="url"
-                      value={link.url}
-                      onChange={(e) => handleUpdateDownloadLink(index, 'url', e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm"
-                      placeholder="https://example.com/download/video.mp4"
-                      required
-                    />
+                    <label className="text-xs text-slate-400">Download URL *</label>
+                    <input type="url" value={link.url} onChange={(e) => handleUpdateDownloadLink(idx, 'url', e.target.value)} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-2 py-1 text-sm" required />
                   </div>
-                  
                   <div className="mt-3">
-                    <label className="block text-xs text-slate-400 mb-1">Type (Optional)</label>
-                    <select
-                      value={link.type || 'direct'}
-                      onChange={(e) => handleUpdateDownloadLink(index, 'type', e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm"
-                    >
+                    <label className="text-xs text-slate-400">Type</label>
+                    <select value={link.type || 'direct'} onChange={(e) => handleUpdateDownloadLink(idx, 'type', e.target.value)} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-2 py-1 text-sm">
                       <option value="direct">Direct Download</option>
                       <option value="server">Server Download</option>
                       <option value="google_drive">Google Drive</option>
@@ -811,39 +628,26 @@ const EpisodesManager: React.FC = () => {
                 </div>
               ))}
             </div>
-            
-            <p className="text-slate-400 text-xs mt-2">
-              💡 These download links will be shown to users. You can add up to 5 links. At least one link with name and URL is required.
-            </p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              {isManga ? 'Chapter' : 'Episode'} Title
-            </label>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Title (optional)</label>
             <input
               type="text"
               value={newItem.title}
               onChange={(e) => setNewItem({ ...newItem, title: e.target.value })}
-              placeholder={`Optional - defaults to '${isManga ? 'Chapter' : 'Episode'} X'`}
-              className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
+              placeholder={`Defaults to '${isManga ? 'Chapter' : 'Episode'} X'`}
+              className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2"
             />
           </div>
 
           <div className="flex gap-3">
             <button
               type="submit"
-              disabled={addingItem || !selectedAnime}
+              disabled={addingItem}
               className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-semibold py-2 px-6 rounded-lg transition-colors flex items-center gap-2"
             >
-              {addingItem ? (
-                <>
-                  <Spinner size="sm" />
-                  Adding {isManga ? 'Chapter' : 'Episode'}...
-                </>
-              ) : (
-                `Add ${isManga ? 'Chapter' : 'Episode'}`
-              )}
+              {addingItem ? <><Spinner size="sm" /> Adding...</> : `Add ${isManga ? 'Chapter' : 'Episode'}`}
             </button>
           </div>
         </form>
@@ -861,13 +665,9 @@ const EpisodesManager: React.FC = () => {
           </div>
 
           {loading ? (
-            <div className="flex justify-center py-8">
-              <Spinner size="md" text={`Loading ${isManga ? 'chapters' : 'episodes'}...`} />
-            </div>
+            <div className="flex justify-center py-8"><Spinner size="md" text={`Loading...`} /></div>
           ) : filteredItems.length === 0 ? (
-            <div className="text-center py-8 text-slate-400">
-              No {isManga ? 'chapters' : 'episodes'} added yet for Session {selectedSession}.
-            </div>
+            <div className="text-center py-8 text-slate-400">No {isManga ? 'chapters' : 'episodes'} added yet for Session {selectedSession}.</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full bg-slate-700/30 rounded-lg overflow-hidden">
@@ -877,346 +677,121 @@ const EpisodesManager: React.FC = () => {
                     <th className="p-3 text-left text-slate-300 font-medium">Session</th>
                     <th className="p-3 text-left text-slate-300 font-medium">Title</th>
                     <th className="p-3 text-left text-slate-300 font-medium">Main Link (Admin)</th>
-                    <th className="p-3 text-left text-slate-300 font-medium">User Download Links</th>
+                    <th className="p-3 text-left text-slate-300 font-medium">User Links</th>
                     <th className="p-3 text-left text-slate-300 font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700">
-                  {filteredItems.map((item: any, index: number) => {
-                    const downloadLinks: DownloadLink[] = item.downloadLinks || [];
-                    const mainLink = item.mainLink || '';
+                  {filteredItems.map((item: any, idx) => {
                     const isEditing = editingItemId === item._id;
-                    
                     return (
                       <React.Fragment key={item._id}>
                         <tr className={`hover:bg-slate-600/30 transition-colors ${isEditing ? 'bg-slate-700/50' : ''}`}>
-                          <td className="p-3 font-mono text-slate-300">
-                            {isManga ? item.chapterNumber : item.episodeNumber}
-                          </td>
-                          <td className="p-3">
-                            <span className="text-blue-400 bg-blue-600/20 px-2 py-1 rounded text-xs">
-                              S{item.session || 1}
-                            </span>
-                          </td>
+                          <td className="p-3 font-mono">{isManga ? item.chapterNumber : item.episodeNumber}</td>
+                          <td className="p-3"><span className="text-blue-400 bg-blue-600/20 px-2 py-1 rounded text-xs">S{item.session || 1}</span></td>
                           <td className="p-3 text-white">{item.title}</td>
                           <td className="p-3">
-                            {mainLink && mainLink.trim() !== '' ? (
+                            {item.mainLink ? (
                               <div className="space-y-2">
-                                <div className="text-xs">
-                                  <span className="text-yellow-400 bg-yellow-900/20 px-2 py-1 rounded mr-2">Admin</span>
-                                  <span 
-                                    className="text-yellow-300 truncate block max-w-xs cursor-help" 
-                                    title={mainLink}
-                                    onClick={() => {
-                                      navigator.clipboard.writeText(mainLink);
-                                      alert('Main link copied to clipboard!');
-                                    }}
-                                  >
-                                    {mainLink.length > 30 ? mainLink.substring(0, 30) + '...' : mainLink}
-                                  </span>
+                                <div className="text-xs text-yellow-300 truncate max-w-xs cursor-pointer" title={item.mainLink} onClick={() => navigator.clipboard.writeText(item.mainLink)}>
+                                  {item.mainLink.substring(0, 30)}...
                                 </div>
                                 <div className="flex gap-1">
-                                  <button
-                                    onClick={() => window.open(mainLink, '_blank', 'noopener,noreferrer')}
-                                    className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded flex items-center gap-1"
-                                    title="Open in new tab"
-                                  >
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                    </svg>
-                                    Open
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      navigator.clipboard.writeText(mainLink);
-                                      alert('Main link copied to clipboard!');
-                                    }}
-                                    className="text-xs bg-yellow-600 hover:bg-yellow-500 text-white px-2 py-1 rounded flex items-center gap-1"
-                                    title="Copy to clipboard"
-                                  >
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                    </svg>
-                                    Copy
-                                  </button>
+                                  <button onClick={() => openMainLink(item.mainLink)} className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded">Open</button>
+                                  <button onClick={() => navigator.clipboard.writeText(item.mainLink) && alert('Copied!')} className="text-xs bg-yellow-600 hover:bg-yellow-500 text-white px-2 py-1 rounded">Copy</button>
                                 </div>
                               </div>
-                            ) : (
-                              <span className="text-slate-500 text-xs italic">No main link</span>
-                            )}
+                            ) : <span className="text-slate-500 text-xs italic">None</span>}
                           </td>
                           <td className="p-3">
-                            {downloadLinks.length > 0 ? (
+                            {item.downloadLinks?.length ? (
                               <div className="space-y-1">
-                                {downloadLinks.slice(0, 2).map((link, idx) => (
-                                  <div key={idx} className="text-xs">
-                                    <span className="text-blue-400 font-medium">{link.name}:</span>
-                                    <a 
-                                      href={link.url} 
-                                      target="_blank" 
-                                      rel="noopener noreferrer"
-                                      className="text-blue-400 hover:text-blue-300 ml-1 truncate block max-w-xs"
-                                      title={link.url}
-                                    >
-                                      {link.url.substring(0, 40)}...
-                                    </a>
-                                  </div>
+                                {item.downloadLinks.slice(0,2).map((l: any, i: number) => (
+                                  <div key={i} className="text-xs"><span className="text-blue-400">{l.name}:</span> <a href={l.url} target="_blank" rel="noopener" className="text-blue-400 hover:text-blue-300 truncate block max-w-xs">{l.url.substring(0,30)}...</a></div>
                                 ))}
-                                {downloadLinks.length > 2 && (
-                                  <div className="text-green-400 text-xs">
-                                    + {downloadLinks.length - 2} more link{downloadLinks.length - 2 > 1 ? 's' : ''}
-                                  </div>
-                                )}
+                                {item.downloadLinks.length > 2 && <div className="text-green-400 text-xs">+{item.downloadLinks.length-2} more</div>}
                               </div>
-                            ) : (
-                              <span className="text-slate-500 text-sm">No download links</span>
-                            )}
+                            ) : <span className="text-slate-500 text-sm">None</span>}
                           </td>
                           <td className="p-3">
                             <div className="flex gap-2">
-                              <button
-                                onClick={() => handleEditItem(item)}
-                                className={`px-3 py-1 rounded text-sm transition-colors ${
-                                  isEditing 
-                                    ? 'bg-yellow-600 hover:bg-yellow-500 text-white' 
-                                    : 'bg-blue-600 hover:bg-blue-500 text-white'
-                                }`}
-                                title={isEditing ? "Cancel Edit" : "Edit"}
-                              >
-                                {isEditing ? '❌ Cancel Edit' : '🪶 Edit'}
+                              <button onClick={() => handleEditItem(item)} className={`px-3 py-1 rounded text-sm transition-colors ${isEditing ? 'bg-yellow-600 hover:bg-yellow-500' : 'bg-blue-600 hover:bg-blue-500'} text-white`}>
+                                {isEditing ? '❌ Cancel' : '🪶 Edit'}
                               </button>
                               {!isEditing && (
-                                <button
-                                  onClick={() => handleDeleteItem(item._id, isManga ? item.chapterNumber : item.episodeNumber, item.session || 1)}
-                                  className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-sm transition-colors"
-                                  title="Delete"
-                                >
-                                  🗑️ Delete
-                                </button>
+                                <button onClick={() => handleDeleteItem(item._id, isManga ? item.chapterNumber : item.episodeNumber, item.session || 1)} className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-sm">🗑️ Delete</button>
                               )}
                             </div>
                           </td>
                         </tr>
-                        
-                        {/* EDIT FORM ROW - Appears below the episode/chapter */}
                         {isEditing && (
                           <tr className="bg-slate-800/70 border-b border-slate-700">
                             <td colSpan={6} className="p-4">
                               <div className="border-l-4 border-yellow-500 pl-4 py-3">
                                 <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                                  <svg className="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                  </svg>
+                                  <svg className="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                                   Edit {isManga ? 'Chapter' : 'Episode'} #{editForm.number}
                                 </h4>
-                                
                                 <div className="space-y-4">
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  <div className="grid grid-cols-2 gap-4">
                                     <div>
-                                      <label className="block text-sm font-medium text-slate-300 mb-1">
-                                        {isManga ? 'Chapter' : 'Episode'} Number *
-                                      </label>
-                                      <input
-                                        type="number"
-                                        value={editForm.number}
-                                        onChange={(e) => setEditForm({
-                                          ...editForm,
-                                          number: Math.max(1, parseInt(e.target.value) || 1)
-                                        })}
-                                        className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm"
-                                        min="1"
-                                        required
-                                      />
+                                      <label className="text-sm text-slate-300">Number *</label>
+                                      <input type="number" value={editForm.number} onChange={(e) => setEditForm({...editForm, number: Math.max(1, parseInt(e.target.value)||1)})} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-3 py-2 text-sm" />
                                     </div>
-
                                     <div>
-                                      <label className="block text-sm font-medium text-slate-300 mb-1">
-                                        Session *
-                                      </label>
-                                      <input
-                                        type="number"
-                                        value={editForm.session}
-                                        onChange={(e) => setEditForm({
-                                          ...editForm,
-                                          session: Math.max(1, parseInt(e.target.value) || 1)
-                                        })}
-                                        className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm"
-                                        min="1"
-                                        required
-                                      />
+                                      <label className="text-sm text-slate-300">Session *</label>
+                                      <input type="number" value={editForm.session} onChange={(e) => setEditForm({...editForm, session: Math.max(1, parseInt(e.target.value)||1)})} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-3 py-2 text-sm" />
                                     </div>
                                   </div>
-
-                                  {/* ✅ MAIN LINK SECTION - FOR EDIT FORM */}
+                                  {/* Main Link edit */}
                                   <div className="bg-slate-800/70 p-4 rounded-lg border-l-4 border-yellow-500">
-                                    <div className="flex items-center justify-between mb-2">
-                                      <label className="block text-sm font-medium text-yellow-300">
-                                        🔗 Main Link (Admin Only - Optional)
-                                      </label>
-                                      <span className="text-xs text-yellow-400 bg-yellow-900/30 px-2 py-1 rounded">Internal Use</span>
-                                    </div>
-                                    <p className="text-slate-400 text-xs mb-3">
-                                      This is for admin reference only. It won't be shown to users.
-                                    </p>
-                                    <div className="flex gap-2">
-                                      <input
-                                        type="text"
-                                        value={editForm.mainLink}
-                                        onChange={(e) => setEditForm({ ...editForm, mainLink: e.target.value })}
-                                        placeholder="https://example.com/original-source.mp4"
-                                        className="flex-1 bg-slate-900 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-yellow-500 focus:border-yellow-500"
-                                      />
-                                      <button
-                                        type="button"
-                                        onClick={() => openMainLink(editForm.mainLink)}
-                                        disabled={!editForm.mainLink}
-                                        className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-2 rounded text-sm transition-colors flex items-center gap-1"
-                                        title="Open in new tab"
-                                      >
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                        </svg>
-                                        Open
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          if (editForm.mainLink) {
-                                            navigator.clipboard.writeText(editForm.mainLink);
-                                            alert('Main link copied to clipboard!');
-                                          }
-                                        }}
-                                        disabled={!editForm.mainLink}
-                                        className="bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-2 rounded text-sm transition-colors flex items-center gap-1"
-                                        title="Copy to clipboard"
-                                      >
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                        </svg>
-                                        Copy
-                                      </button>
-                                    </div>
+                                    <label className="block text-sm font-medium text-yellow-300">Main Link (Admin)</label>
+                                    <input type="text" value={editForm.mainLink} onChange={(e) => setEditForm({...editForm, mainLink: e.target.value})} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-3 py-2 text-sm mt-2" />
                                   </div>
-
-                                  {/* DOWNLOAD LINKS SECTION - FOR EDIT FORM */}
+                                  {/* Download Links edit */}
                                   <div>
-                                    <div className="flex justify-between items-center mb-2">
-                                      <label className="block text-sm font-medium text-slate-300">
-                                        User Download Links (Required) *
-                                      </label>
-                                      <button
-                                        type="button"
-                                        onClick={handleEditAddDownloadLink}
-                                        disabled={editForm.downloadLinks.length >= 5}
-                                        className="text-xs bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-2 py-1 rounded"
-                                      >
-                                        + Add Link (Max 5)
-                                      </button>
+                                    <div className="flex justify-between items-center">
+                                      <label className="text-sm text-slate-300">User Download Links</label>
+                                      <button type="button" onClick={handleEditAddDownloadLink} disabled={editForm.downloadLinks.length>=5} className="text-xs bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-2 py-1 rounded">+ Add</button>
                                     </div>
-                                    
-                                    <div className="space-y-3">
-                                      {editForm.downloadLinks.map((link, index) => (
-                                        <div key={index} className="bg-slate-900/70 p-3 rounded-lg border border-slate-600">
-                                          <div className="flex justify-between items-center mb-2">
-                                            <span className="text-slate-300 font-medium">{link.name}</span>
-                                            {editForm.downloadLinks.length > 1 && (
-                                              <button
-                                                type="button"
-                                                onClick={() => handleEditRemoveDownloadLink(index)}
-                                                className="text-xs bg-red-600 hover:bg-red-500 text-white px-2 py-1 rounded"
-                                              >
-                                                Remove
-                                              </button>
-                                            )}
+                                    <div className="space-y-3 mt-2">
+                                      {editForm.downloadLinks.map((link, idx) => (
+                                        <div key={idx} className="bg-slate-900/70 p-3 rounded border border-slate-600">
+                                          <div className="flex justify-between mb-2">
+                                            <span className="text-slate-300">{link.name}</span>
+                                            {editForm.downloadLinks.length>1 && <button type="button" onClick={() => handleEditRemoveDownloadLink(idx)} className="text-xs bg-red-600 hover:bg-red-500 text-white px-2 py-1 rounded">Remove</button>}
                                           </div>
-                                          
-                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                          <div className="grid grid-cols-2 gap-3">
                                             <div>
-                                              <label className="block text-xs text-slate-400 mb-1">Link Name *</label>
-                                              <input
-                                                type="text"
-                                                value={link.name}
-                                                onChange={(e) => handleEditUpdateDownloadLink(index, 'name', e.target.value)}
-                                                className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm"
-                                                placeholder="e.g., Cuty.io, Shrinkme, etc."
-                                                required
-                                              />
+                                              <label className="text-xs text-slate-400">Name</label>
+                                              <input type="text" value={link.name} onChange={(e) => handleEditUpdateDownloadLink(idx, 'name', e.target.value)} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-2 py-1 text-sm" />
                                             </div>
-                                            
                                             <div>
-                                              <label className="block text-xs text-slate-400 mb-1">Quality (Optional)</label>
-                                              <input
-                                                type="text"
-                                                value={link.quality || ''}
-                                                onChange={(e) => handleEditUpdateDownloadLink(index, 'quality', e.target.value)}
-                                                className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm"
-                                                placeholder="e.g., 720p, HD, 1080p"
-                                              />
+                                              <label className="text-xs text-slate-400">Quality</label>
+                                              <input type="text" value={link.quality||''} onChange={(e) => handleEditUpdateDownloadLink(idx, 'quality', e.target.value)} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-2 py-1 text-sm" />
                                             </div>
                                           </div>
-                                          
-                                          <div className="mt-3">
-                                            <label className="block text-xs text-slate-400 mb-1">Download URL *</label>
-                                            <input
-                                              type="url"
-                                              value={link.url}
-                                              onChange={(e) => handleEditUpdateDownloadLink(index, 'url', e.target.value)}
-                                              className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm"
-                                              placeholder="https://example.com/download/video.mp4"
-                                              required
-                                            />
+                                          <div className="mt-2">
+                                            <label className="text-xs text-slate-400">URL</label>
+                                            <input type="url" value={link.url} onChange={(e) => handleEditUpdateDownloadLink(idx, 'url', e.target.value)} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-2 py-1 text-sm" />
                                           </div>
-                                          
-                                          <div className="mt-3">
-                                            <label className="block text-xs text-slate-400 mb-1">Type (Optional)</label>
-                                            <select
-                                              value={link.type || 'direct'}
-                                              onChange={(e) => handleEditUpdateDownloadLink(index, 'type', e.target.value)}
-                                              className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm"
-                                            >
-                                              <option value="direct">Direct Download</option>
-                                              <option value="server">Server Download</option>
-                                              <option value="google_drive">Google Drive</option>
-                                              <option value="mega">Mega.nz</option>
-                                              <option value="other">Other</option>
+                                          <div className="mt-2">
+                                            <label className="text-xs text-slate-400">Type</label>
+                                            <select value={link.type||'direct'} onChange={(e) => handleEditUpdateDownloadLink(idx, 'type', e.target.value)} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-2 py-1 text-sm">
+                                              <option>direct</option><option>server</option><option>google_drive</option><option>mega</option><option>other</option>
                                             </select>
                                           </div>
                                         </div>
                                       ))}
                                     </div>
                                   </div>
-
                                   <div>
-                                    <label className="block text-sm font-medium text-slate-300 mb-1">
-                                      {isManga ? 'Chapter' : 'Episode'} Title
-                                    </label>
-                                    <input
-                                      type="text"
-                                      value={editForm.title}
-                                      onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-                                      placeholder={`Optional - defaults to '${isManga ? 'Chapter' : 'Episode'} X'`}
-                                      className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm"
-                                    />
+                                    <label className="text-sm text-slate-300">Title</label>
+                                    <input type="text" value={editForm.title} onChange={(e) => setEditForm({...editForm, title: e.target.value})} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-3 py-2 text-sm" />
                                   </div>
-
-                                  <div className="flex gap-3 pt-2">
-                                    <button
-                                      type="button"
-                                      onClick={handleUpdateItem}
-                                      className="bg-green-600 hover:bg-green-500 text-white font-medium py-2 px-4 rounded text-sm transition-colors flex items-center gap-2"
-                                    >
-                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                      </svg>
-                                      Save Changes
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={handleCancelEdit}
-                                      className="bg-slate-600 hover:bg-slate-500 text-white font-medium py-2 px-4 rounded text-sm transition-colors"
-                                    >
-                                      Cancel
-                                    </button>
+                                  <div className="flex gap-3">
+                                    <button type="button" onClick={handleUpdateItem} className="bg-green-600 hover:bg-green-500 text-white font-medium py-2 px-4 rounded text-sm">Save Changes</button>
+                                    <button type="button" onClick={handleCancelEdit} className="bg-slate-600 hover:bg-slate-500 text-white font-medium py-2 px-4 rounded text-sm">Cancel</button>
                                   </div>
                                 </div>
                               </div>

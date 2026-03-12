@@ -89,7 +89,7 @@ const AnimeDetailWrapper: React.FC = () => {
     navigate(-1);
   };
 
-  // ✅ ADDED: Function to handle anime selection from "More Like This" section
+  // ✅ Function to handle anime selection from "More Like This" section
   const handleAnimeSelect = (selectedAnime: Anime) => {
     // Get the slug or generate one
     const slug = selectedAnime.slug || 
@@ -105,19 +105,6 @@ const AnimeDetailWrapper: React.FC = () => {
     
     // Scroll to top
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  // ✅ ADDED: Function to handle like/dislike updates
-  const handleVoteUpdate = (updatedLikes: number, updatedDislikes: number) => {
-    if (anime) {
-      setAnime({
-        ...anime,
-        likes: updatedLikes,
-        dislikes: updatedDislikes
-      });
-      
-      console.log(`🔄 Updated votes - Likes: ${updatedLikes}, Dislikes: ${updatedDislikes}`);
-    }
   };
 
   // Show loading skeleton
@@ -163,12 +150,12 @@ const AnimeDetailWrapper: React.FC = () => {
     );
   }
 
-  // ✅ UPDATED: Pass handleAnimeSelect to AnimeDetailPage
+  // ✅ Pass handleAnimeSelect to AnimeDetailPage
   return (
     <AnimeDetailPage
       anime={anime}
       onBack={handleBack}
-      onAnimeSelect={handleAnimeSelect} // ✅ ADDED THIS PROP
+      onAnimeSelect={handleAnimeSelect}
       isLoading={loading}
     />
   );

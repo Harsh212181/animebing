@@ -28,6 +28,8 @@ const pollRoutes = require('./routes/pollRoutes.cjs');
 const linkSettingsRoutes = require('./routes/linkSettingsRoutes.cjs');
 const partnerRoutes = require('./routes/partnerRoutes.cjs');
 const sitemapRoutes = require('./routes/sitemapRoutes.cjs');
+// ✅ NEW DOWNLOAD PAGE ROUTES
+const downloadPageRoutes = require('./routes/downloadPageRoutes.cjs');
 
 const app = express();
 
@@ -520,6 +522,10 @@ app.use('/api/admin/protected', adminAuth, adminRoutes);
 app.use('/api/partners', partnerRoutes);
 console.log('✅ Partner Routes mounted at /api/partners');
 
+// ✅ NEW: DOWNLOAD PAGE ROUTES - Admin Protected internally
+app.use('/api/download-pages', downloadPageRoutes);
+console.log('✅ Download Page Routes mounted at /api/download-pages');
+
 // ============================================
 // ✅ DEBUG ROUTES (KEEP FOR TROUBLESHOOTING)
 // ============================================
@@ -800,7 +806,7 @@ app.get('/api/health', async (req, res) => {
     
     res.json({ 
       status: 'OK', 
-      message: 'Animabing Server Running - SEO OPTIMIZED + POLL SYSTEM (DEVICE-BASED) + LIKE/DISLIKE + PARTNER MANAGER',
+      message: 'Animabing Server Running - SEO OPTIMIZED + POLL SYSTEM (DEVICE-BASED) + LIKE/DISLIKE + PARTNER MANAGER + DOWNLOAD PAGES',
       timestamp: new Date().toISOString(),
       version: '1.0.0',
       linkSettings: {
@@ -845,17 +851,30 @@ app.get('/api/health', async (req, res) => {
           removeAnime: 'DELETE /api/partners/:id/anime/:animeId'
         }
       },
+      downloadPages: {
+        endpoints: {
+          getBySlug: 'GET /api/download-pages/:slug',
+          getByAnime: 'GET /api/download-pages/anime/:animeId',
+          create: 'POST /api/download-pages (admin)',
+          update: 'PUT /api/download-pages/:id (admin)',
+          delete: 'DELETE /api/download-pages/:id (admin)'
+        }
+      },
       seoFeatures: {
         sitemap: 'https://animebing.in/sitemap.xml',
         robots: 'https://animebing.in/robots.txt',
         rssFeed: 'https://animebing.in/rss.xml',
         dynamicUrls: 'Enabled',
         structuredData: 'Enabled',
+        metaTags: 'Enabled on all pages',
+        openGraph: 'Enabled',
+        twitterCards: 'Enabled',
+        botMetaTags: 'Enabled for detail pages only',
         linkControl: 'Enabled',
         pollSystem: 'Enabled (device-based)',
         likeDislike: 'Enabled',
         partnerManager: 'Enabled',
-        botMetaTags: 'Enabled for detail pages' // ✅ UPDATED: only detail
+        downloadPages: 'Enabled'
       },
       serverConfig: {
         bodyLimit: '50MB',
@@ -1301,7 +1320,7 @@ app.get('/', (req, res) => {
     </head>
     <body>
       <div class="container">
-        <h1>AnimeBing Server <span class="seo-badge">SEO OPTIMIZED + LINK CONTROL + POLL SYSTEM (DEVICE-BASED) + LIKE/DISLIKE + PARTNER MANAGER + BOT META TAGS (DETAIL ONLY)</span></h1>
+        <h1>AnimeBing Server <span class="seo-badge">SEO OPTIMIZED + LINK CONTROL + POLL SYSTEM (DEVICE-BASED) + LIKE/DISLIKE + PARTNER MANAGER + BOT META TAGS (DETAIL ONLY) + DOWNLOAD PAGES</span></h1>
         <p class="status">✅ Backend API is running correctly - SEO Ready for Google</p>
         <p>📺 Frontend: <a href="https://animebing.in" target="_blank">AnimeBing.in</a></p>
         <p>⚙️ Admin Access: Press Ctrl+Shift+Alt on the frontend</p>
@@ -1354,6 +1373,18 @@ app.get('/', (req, res) => {
         </div>
         
         <div class="section">
+          <h3>📥 Download Pages <span class="feature-badge">NEW</span>:</h3>
+          <div class="link-status">
+            <p>✅ Create pages with 1-10 download links</p>
+            <p>✅ Unique slug per page</p>
+            <p>✅ Customizable button title</p>
+            <p>✅ Admin management</p>
+            <p>✅ Display on anime detail pages (dev only initially)</p>
+            <p><small>Manage from Admin Dashboard → Download Pages</small></p>
+          </div>
+        </div>
+        
+        <div class="section">
           <h3>🤖 Bot Meta Tags <span class="feature-badge">DETAIL ONLY</span>:</h3>
           <div class="link-status">
             <p>✅ Open Graph tags for /detail/:slug (as per your requirement)</p>
@@ -1379,11 +1410,13 @@ app.get('/', (req, res) => {
             <li>Like/Dislike System ✅ <span class="feature-badge">FIXED</span></li>
             <li>Poll/Voting System ✅ <span class="feature-badge">DEVICE-BASED</span></li>
             <li>Partner Manager ✅ <span class="feature-badge">NEW</span></li>
+            <li><strong>Download Pages ✅ <span class="feature-badge">NEW</span></strong></li>
             <li><strong>Bot Meta Tags (Detail only) ✅ <span class="feature-badge">AS REQUESTED</span></strong></li>
           </ul>
           <p style="color: #4CAF50; margin-top: 10px; font-weight: bold;">
             ✅ LIKE/DISLIKE SYSTEM FIXED: IP detection, route order, and trust proxy configured<br>
             ✅ POLL SYSTEM: Device-based voting (UUID stored in localStorage)<br>
+            ✅ DOWNLOAD PAGES: Now available for grouping episodes<br>
             ✅ BOT META TAGS: Now active for detail pages only (episode route removed)
           </p>
         </div>
@@ -1420,6 +1453,7 @@ app.get('/', (req, res) => {
           Link Control: Active (5 links globally controllable)<br>
           Poll System: ✅ Active (device-based voting)<br>
           Partner Manager: ✅ Active (Create and manage partners)<br>
+          Download Pages: ✅ Active (Group episodes into pages)<br>
           <strong>Bot Meta Tags: ✅ Active for detail pages only (episode route removed)</strong><br>
           Body Limit: 50MB (Fixed for poll system)<br>
           Trust Proxy: ${process.env.NODE_ENV === 'production' ? '✅ Enabled (1 hop)' : '❌ Disabled (development)'}<br>
@@ -1493,6 +1527,13 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('   - POST /api/partners/:id/anime - Assign anime');
   console.log('   - DELETE /api/partners/:id/anime/:animeId - Remove anime');
   console.log('===============================================');
+  console.log('📥 DOWNLOAD PAGES ENDPOINTS:');
+  console.log('   - GET /api/download-pages/:slug - Public page by slug');
+  console.log('   - GET /api/download-pages/anime/:animeId - Public pages for anime');
+  console.log('   - POST /api/download-pages - Admin: create page');
+  console.log('   - PUT /api/download-pages/:id - Admin: update page');
+  console.log('   - DELETE /api/download-pages/:id - Admin: delete page');
+  console.log('===============================================');
   console.log('🤖 BOT META TAGS ENABLED FOR:');
   console.log('   - GET /detail/:slug (episode route removed as per instruction)');
   console.log('===============================================');
@@ -1509,7 +1550,8 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('   3. Poll card will appear if there is an active poll');
   console.log('   4. Check Admin Dashboard → Poll Manager to create polls');
   console.log('   5. Go to Admin Dashboard → Partner Manager to manage partners');
-  console.log('   6. Share any detail link on WhatsApp/Facebook to see rich previews!');
+  console.log('   6. Go to Admin Dashboard → Download Pages to create episode groups');
+  console.log('   7. Share any detail link on WhatsApp/Facebook to see rich previews!');
   console.log('===============================================');
   console.log(`🛡️  TRUST PROXY STATUS: ${process.env.NODE_ENV === 'production' ? 'ENABLED (1 hop)' : 'DISABLED (development safe)'}`);
   console.log('===============================================');

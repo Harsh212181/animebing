@@ -444,3 +444,25 @@ export interface AnimeAssignmentResponse {
   anime?: Anime;             // Updated anime document
   message?: string;
 }
+// ============================================
+// DOWNLOAD PAGES TYPES
+// ============================================
+
+export interface DownloadLink {
+  episode: number;
+  url: string;
+  quality?: string;
+  language?: string;
+}
+
+export interface DownloadPage {
+  _id: string;
+  animeId: {
+    _id: string;
+    title: string;
+  };
+  slug: string;
+  title: string;
+  links: DownloadLink[];
+  createdAt: string;
+}
