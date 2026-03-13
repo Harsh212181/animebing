@@ -16,19 +16,6 @@ const DownloadLinkPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Referrer check: allow only if coming from our website
-  useEffect(() => {
-    const referrer = document.referrer;
-    const currentOrigin = window.location.origin;
-    
-    // If referrer is empty (direct access) or doesn't start with our origin, redirect to home
-    // Allow localhost for development
-    if (window.location.hostname !== 'localhost' && (!referrer || !referrer.startsWith(currentOrigin))) {
-      navigate('/');
-      return;
-    }
-  }, [navigate]);
-
   useEffect(() => {
     fetch(`${API_BASE}/download-pages/${slug}`)
       .then(res => res.json())
