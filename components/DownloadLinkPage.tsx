@@ -3,6 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Spinner from './Spinner';
 import { DownloadPage } from '../src/types';
 
+// Use dynamic API base for local development and production
+const API_BASE =
+  window.location.hostname === 'localhost'
+    ? 'http://localhost:3000/api'
+    : 'https://animabing.onrender.com/api';
+
 const DownloadLinkPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
@@ -24,7 +30,7 @@ const DownloadLinkPage: React.FC = () => {
   }, [navigate]);
 
   useEffect(() => {
-    fetch(`/api/download-pages/${slug}`)
+    fetch(`${API_BASE}/download-pages/${slug}`)
       .then(res => res.json())
       .then(data => {
         if (data.error) throw new Error(data.error);
