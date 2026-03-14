@@ -1,13 +1,104 @@
  import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { FaArrowLeft, FaDownload, FaPlay, FaFilm, FaTv } from 'react-icons/fa';
 import Spinner from './Spinner';
-import { DownloadPage } from '../src/types';
+import VideoPlayer from './VideoPlayer';
+import { DownloadPage, Anime } from '../src/types';
 
-// Use dynamic API base for local development and production
 const API_BASE =
   window.location.hostname === 'localhost'
     ? 'http://localhost:3000/api'
     : 'https://animabing.onrender.com/api';
+
+type TabType = 'download' | 'watch';
+
+// Helper functions (unchanged)
+const getLanguageFlag = (lang: string): string => {
+  const flags: Record<string, string> = {
+    English: '🇬🇧',
+    Japanese: '🇯🇵',
+    Hindi: '🇮🇳',
+    Spanish: '🇪🇸',
+    French: '🇫🇷',
+    German: '🇩🇪',
+    Korean: '🇰🇷',
+    Chinese: '🇨🇳',
+  };
+  return flags[lang] || '🏳️';
+};
+
+const qualityColor = (quality: string): string => {
+  const q = quality.toLowerCase();
+  if (q.includes('1080') || q.includes('full')) return 'from-green-600 to-emerald-600';
+  if (q.includes('720')) return 'from-blue-600 to-indigo-600';
+  if (q.includes('480')) return 'from-yellow-600 to-amber-600';
+  return 'from-purple-600 to-pink-600';
+};
+
+const optimizeImageUrl = (url: string | undefined, width: number, height: number): string => {
+  if (!url || !url.includes('cloudinary.com')) return url || 'https://via.placeholder.com/80x112/1e293b/64748b?text=No+Image';
+  try {
+    if (url.includes(`w_${width},h_${height},c_fill`)) return url;
+    const baseUrl = url.split('/upload/')[0];
+    const rest = url.split('/upload/')[1];
+    const imagePath = rest.split('/').slice(1).join('/');
+    return `${baseUrl}/upload/f_webp,q_auto:good,w_${width},h_${height},c_fill/${imagePath}`;
+  } catch (error) {
+    console.error('Error optimizing image URL:', error);
+    return url;
+  }
+};
+
+const generateSrcSet = (url: string | undefined, baseWidth: number, baseHeight: number): string => {
+  if (!url || !url.includes('cloudinary.com')) return '';
+  try {
+    const baseUrl = url.split('/upload/')[0];
+    const rest = url.split('/upload/')[1];
+    const imagePath = rest.split('/').slice(1).join('/');
+    return `
+      ${baseUrl}/upload/f_webp,q_auto:good,w_${baseWidth},h_${baseHeight},c_fill/${imagePath} ${baseWidth}w,
+      ${baseUrl}/upload/f_webp,q_auto:good,w_${baseWidth * 2},h_${baseHeight * 2},c_fill/${imagePath} ${baseWidth * 2}w
+    `;
+  } catch (error) {
+    console.error('Error generating srcset:', error);
+    return '';
+  }
+};
+
+// Icons (unchanged)
+const HeartIcon = ({ className = "w-5 h-5", filled = false }: { className?: string, filled?: boolean }) => (
+  <svg 
+    className={className} 
+    fill={filled ? "currentColor" : "none"} 
+    stroke="currentColor" 
+    viewBox="0 0 24 24" 
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <path 
+      strokeLinecap="round" 
+      strokeLinejoin="round" 
+      strokeWidth="2" 
+      d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" 
+    />
+  </svg>
+);
+
+const HandThumbDownIcon = ({ className = "w-5 h-5", filled = false }: { className?: string, filled?: boolean }) => (
+  <svg 
+    className={className} 
+    fill={filled ? "currentColor" : "none"} 
+    stroke="currentColor" 
+    viewBox="0 0 24 24" 
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <path 
+      strokeLinecap="round" 
+      strokeLinejoin="round" 
+      strokeWidth="2" 
+      d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.736 3h4.018a2 2 0 01.485.06l3.76.94m-7 10v5a2 2 0 002 2h.096c.5 0 .905-.405.905-.904 0-.715.211-1.413.608-2.008L17 13V4m-7 10h2m5-10h2a2 2 0 012 2v6a2 2 0 01-2 2h-2.5" 
+    />
+  </svg>
+);
 
 const DownloadLinkPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -15,51 +106,600 @@ const DownloadLinkPage: React.FC = () => {
   const [page, setPage] = useState<DownloadPage | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [activeTab, setActiveTab] = useState<TabType>('download');
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+
+  // Always an object (Anime) or null – never a string
+  const [animeDetails, setAnimeDetails] = useState<Anime | null>(null);
+  const [animeLoading, setAnimeLoading] = useState(false);
+
+  const [likes, setLikes] = useState<number>(0);
+  const [dislikes, setDislikes] = useState<number>(0);
+  const [userVote, setUserVote] = useState<'like' | 'dislike' | null>(null);
+  const [isVoting, setIsVoting] = useState(false);
 
   useEffect(() => {
-    fetch(`${API_BASE}/download-pages/${slug}`)
-      .then(res => res.json())
-      .then(data => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(`${API_BASE}/download-pages/${slug}`);
+        const data = await res.json();
         if (data.error) throw new Error(data.error);
         setPage(data);
-      })
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false));
+
+        // Handle animeId: could be a populated object or a string ID
+        const animeIdField = data.animeId;
+        if (animeIdField && typeof animeIdField === 'object') {
+          // Already populated – check if it has essential fields
+          if (animeIdField.thumbnail && animeIdField.genreList) {
+            setAnimeDetails(animeIdField);
+          } else {
+            // Partial object – fetch full details using its _id
+            const id = animeIdField._id;
+            if (id) {
+              setAnimeLoading(true);
+              try {
+                const animeRes = await fetch(`${API_BASE}/anime/${id}`);
+                const animeData = await animeRes.json();
+                if (animeData.success) {
+                  setAnimeDetails(animeData.data);
+                }
+              } catch (err) {
+                console.error('Failed to fetch full anime details', err);
+              } finally {
+                setAnimeLoading(false);
+              }
+            }
+          }
+        } else if (typeof animeIdField === 'string') {
+          // It's just an ID – fetch full details
+          setAnimeLoading(true);
+          try {
+            const animeRes = await fetch(`${API_BASE}/anime/${animeIdField}`);
+            const animeData = await animeRes.json();
+            if (animeData.success) {
+              setAnimeDetails(animeData.data);
+            }
+          } catch (err) {
+            console.error('Failed to fetch anime details', err);
+          } finally {
+            setAnimeLoading(false);
+          }
+        }
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
   }, [slug]);
 
-  if (loading) return <Spinner />;
-  if (error) return <div className="text-red-500 text-center p-8">{error}</div>;
-  if (!page) return <div className="text-center p-8">Page not found</div>;
+  useEffect(() => {
+    const fetchVoteData = async () => {
+      const animeId = animeDetails?._id;
+      if (!animeId) return;
+      try {
+        const res = await fetch(`${API_BASE}/anime/${animeId}/vote-status`);
+        const data = await res.json();
+        if (data.success) {
+          setLikes(data.data.likes || 0);
+          setDislikes(data.data.dislikes || 0);
+          setUserVote(data.data.userVote);
+        }
+      } catch (error) {
+        console.error('Error fetching vote data:', error);
+      }
+    };
+    fetchVoteData();
+  }, [animeDetails]);
+
+  const handleVote = async (voteType: 'like' | 'dislike') => {
+    const animeId = animeDetails?._id;
+    if (!animeId || isVoting) return;
+    setIsVoting(true);
+    try {
+      const res = await fetch(`${API_BASE}/anime/${animeId}/vote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ voteType })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setLikes(data.data.likes);
+        setDislikes(data.data.dislikes);
+        setUserVote(data.data.userVote);
+      } else {
+        alert(`Vote failed: ${data.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Vote error:', error);
+      alert('Error submitting vote');
+    } finally {
+      setIsVoting(false);
+    }
+  };
+
+  const togglePlayer = (idx: number) => {
+    setSelectedIndex(selectedIndex === idx ? null : idx);
+  };
+
+  const isLoading = loading || animeLoading;
+
+  // Loading skeleton with improved design
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900/20 to-black py-8 px-4">
+        <div className="w-full max-w-7xl mx-auto animate-pulse">
+          <div className="h-8 w-64 bg-gray-700/50 rounded-lg mb-4"></div>
+          <div className="h-4 w-48 bg-gray-700/50 rounded mb-8"></div>
+          <div className="flex space-x-4 mb-6">
+            <div className="h-10 w-24 bg-gray-700/50 rounded-lg"></div>
+            <div className="h-10 w-24 bg-gray-700/50 rounded-lg"></div>
+          </div>
+          <div className="space-y-3">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-5 h-24 border border-gray-700"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !page) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900/20 to-black flex items-center justify-center">
+        <div className="bg-red-500/10 backdrop-blur-sm border border-red-500/30 rounded-xl p-8 text-center max-w-md shadow-2xl">
+          <p className="text-red-400 text-lg font-medium">{error || 'Page not found'}</p>
+          <button
+            onClick={() => navigate(-1)}
+            className="mt-6 px-6 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-lg text-white font-medium transition-all transform hover:scale-105"
+          >
+            Go Back
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const isMovie = page.animeId?.contentType === 'Movie';
+  const downloadLinks = page.links.filter(link => link.type !== 'watch');
+  const watchLinks = page.links.filter(link => link.type === 'watch');
+
+  // Safe access with fallbacks
+  const title = animeDetails?.title || 'Unknown Title';
+  const thumbnail = animeDetails?.thumbnail;
+  const releaseYear = animeDetails?.releaseYear || 'N/A';
+  const status = animeDetails?.status || 'Unknown';
+  const contentType = animeDetails?.contentType || 'Anime';
+  const subDubStatus = animeDetails?.subDubStatus || '';
+  const genreList = animeDetails?.genreList || [];
+  const description = animeDetails?.description || 'No description available.';
+
+  // Optimized thumbnails
+  const mobileThumbnail = thumbnail 
+    ? optimizeImageUrl(thumbnail, 80, 112)
+    : 'https://via.placeholder.com/80x112/1e293b/64748b?text=No+Image';
+  const mobileThumbnailSrcSet = thumbnail ? generateSrcSet(thumbnail, 80, 112) : '';
+  const desktopThumbnail = thumbnail 
+    ? optimizeImageUrl(thumbnail, 320, 448)
+    : 'https://via.placeholder.com/320x448/1e293b/64748b?text=No+Image';
+  const desktopThumbnailSrcSet = thumbnail ? generateSrcSet(thumbnail, 320, 448) : '';
+
+  // Vote buttons component (improved styling)
+  const VoteButtons = ({ isMobile = false }: { isMobile?: boolean }) => {
+    const buttonSize = isMobile ? 'h-4 w-4' : 'h-5 w-5';
+    const textSize = isMobile ? 'text-xs' : 'text-sm';
+    const padding = isMobile ? 'px-3 py-1.5' : 'px-4 py-2';
+    
+    return (
+      <div className="flex items-center gap-3 mt-4">
+        <button
+          onClick={() => handleVote('like')}
+          disabled={isVoting}
+          className={`${padding} ${textSize} rounded-lg font-medium transition-all duration-200 flex items-center gap-1.5 shadow-lg ${
+            userVote === 'like'
+              ? 'bg-gradient-to-r from-pink-600 to-rose-600 text-white shadow-pink-600/30 hover:shadow-pink-600/50'
+              : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-600 hover:border-pink-500/50'
+          } ${isVoting ? 'opacity-50 cursor-not-allowed' : ''} transform hover:scale-105`}
+          title={userVote === 'like' ? 'Remove like' : 'Like this anime'}
+        >
+          {userVote === 'like' ? (
+            <HeartIcon className={buttonSize} filled={true} />
+          ) : (
+            <HeartIcon className={buttonSize} filled={false} />
+          )}
+          <span className="font-bold">{likes}</span>
+        </button>
+        
+        <button
+          onClick={() => handleVote('dislike')}
+          disabled={isVoting}
+          className={`${padding} ${textSize} rounded-lg font-medium transition-all duration-200 flex items-center gap-1.5 shadow-lg ${
+            userVote === 'dislike'
+              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-blue-600/30 hover:shadow-blue-600/50'
+              : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-600 hover:border-blue-500/50'
+          } ${isVoting ? 'opacity-50 cursor-not-allowed' : ''} transform hover:scale-105`}
+          title={userVote === 'dislike' ? 'Remove dislike' : 'Dislike this anime'}
+        >
+          {userVote === 'dislike' ? (
+            <HandThumbDownIcon className={buttonSize} filled={true} />
+          ) : (
+            <HandThumbDownIcon className={buttonSize} filled={false} />
+          )}
+          <span className="font-bold">{dislikes}</span>
+        </button>
+      </div>
+    );
+  };
 
   return (
-    <div className="download-page container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold text-purple-600 mb-2">
-        Download {page.animeId.title}
-      </h1>
-      <p className="text-gray-300 mb-6">{page.title}</p>
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900/20 to-black py-8 px-4">
+      <div className="w-full max-w-7xl mx-auto">
+        {/* Back button with improved styling */}
+        <button
+          onClick={() => navigate(-1)}
+          className="group mb-6 flex items-center text-gray-400 hover:text-purple-400 transition-all duration-200"
+        >
+          <FaArrowLeft className="mr-2 group-hover:-translate-x-1 transition-transform" />
+          <span className="font-medium">Back</span>
+        </button>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {page.links.map((link, idx) => (
-          <div key={idx} className="bg-gray-800 rounded-lg p-4 hover:bg-gray-700 transition">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-lg font-semibold">Episode {link.episode}</span>
-              {link.quality && (
-                <span className="bg-purple-600 text-xs px-2 py-1 rounded">{link.quality}</span>
-              )}
+        {/* ===== ANIME DETAIL CARD (Mobile) ===== */}
+        <div className="lg:hidden mb-6">
+          <div className="bg-slate-800/40 backdrop-blur-md rounded-2xl p-5 border border-slate-700/50 shadow-2xl">
+            <div className="flex flex-col">
+              <div className="flex gap-4">
+                <div className="flex-shrink-0">
+                  <div className="relative group">
+                    <img
+                      src={mobileThumbnail}
+                      srcSet={mobileThumbnailSrcSet}
+                      alt={title}
+                      className="w-20 h-28 object-cover rounded-xl shadow-lg group-hover:scale-105 transition-transform duration-300"
+                      loading="lazy"
+                      width="80"
+                      height="112"
+                      sizes="80px"
+                      onError={(e) => {
+                        e.currentTarget.src = 'https://via.placeholder.com/80x112/1e293b/64748b?text=No+Image';
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h1 className={`font-bold text-white mb-2 break-words ${
+                    title.length > 40 ? 'text-sm leading-tight' : 'text-lg'
+                  }`}>
+                    {title}
+                  </h1>
+                  
+                  <div className="flex flex-wrap gap-1.5 mt-1">
+                    <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap shadow-lg">
+                      {releaseYear}
+                    </span>
+                    <span
+                      className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap shadow-lg ${
+                        status === 'Ongoing'
+                          ? 'bg-gradient-to-r from-yellow-500 to-orange-600 text-white'
+                          : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white'
+                      }`}
+                    >
+                      {status}
+                    </span>
+                    <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap shadow-lg">
+                      {contentType}
+                    </span>
+                    {!isMovie && subDubStatus && (
+                      <div className="flex flex-wrap gap-1">
+                        {subDubStatus
+                          .split(',')
+                          .map(s => s.trim().toLowerCase())
+                          .includes('hindi dub') && (
+                          <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-2.5 py-1 rounded-full text-xs font-bold shadow-lg">
+                            Hindi Dub
+                          </span>
+                        )}
+                        {subDubStatus
+                          .split(',')
+                          .map(s => s.trim().toLowerCase())
+                          .includes('hindi sub') && (
+                          <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-2.5 py-1 rounded-full text-xs font-bold shadow-lg">
+                            Hindi Sub
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              
+              <div className="space-y-3 mt-3">
+                <div className="flex flex-wrap gap-2">
+                  <div className="text-xs text-slate-400">
+                    <span className="font-semibold text-slate-300">Year:</span> {releaseYear}
+                  </div>
+                  <div className="text-xs text-slate-400">
+                    <span className="font-semibold text-slate-300">Status:</span> {status}
+                  </div>
+                  <div className="text-xs text-slate-400">
+                    <span className="font-semibold text-slate-300">Type:</span> {contentType}
+                  </div>
+                </div>
+                
+                <div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {genreList.map((genre, index) => (
+                      <span
+                        key={index}
+                        className="bg-gradient-to-r from-purple-600/80 to-pink-600/80 hover:from-purple-600 hover:to-pink-600 text-white px-3 py-1 rounded-full text-xs font-medium transition-all duration-300 whitespace-nowrap backdrop-blur-sm border border-purple-400/20"
+                      >
+                        {genre}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <VoteButtons isMobile={true} />
+              </div>
+
+              <div className="mt-4">
+                <h3 className="text-sm font-semibold text-slate-300 mb-2">Description</h3>
+                <p className="text-slate-400 text-xs leading-relaxed">
+                  {description}
+                </p>
+              </div>
             </div>
-            {link.language && (
-              <p className="text-sm text-gray-400 mb-3">Language: {link.language}</p>
-            )}
-            <a
-              href={link.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block w-full bg-purple-600 hover:bg-purple-700 text-center py-2 rounded font-medium"
-            >
-              Download
-            </a>
           </div>
-        ))}
+        </div>
+
+        {/* ===== ANIME DETAIL CARD (PC) ===== */}
+        <div className="hidden lg:block mb-8">
+          <div className="bg-slate-800/40 backdrop-blur-md rounded-3xl p-8 border border-slate-700/50 shadow-2xl">
+            <div className="flex flex-col lg:flex-row gap-8">
+              <div className="flex-shrink-0 mx-auto lg:mx-0">
+                <div className="relative group">
+                  <img
+                    src={desktopThumbnail}
+                    srcSet={desktopThumbnailSrcSet}
+                    alt={title}
+                    className="w-full max-w-xs lg:w-72 h-auto lg:h-[26rem] object-cover rounded-2xl shadow-2xl group-hover:scale-105 transition-transform duration-500"
+                    loading="lazy"
+                    width="320"
+                    height="448"
+                    sizes="(max-width: 1024px) 80px, 320px"
+                    onError={(e) => {
+                      e.currentTarget.src = 'https://via.placeholder.com/320x448/1e293b/64748b?text=No+Image';
+                    }}
+                  />
+                </div>
+              </div>
+              <div className="flex-1 space-y-6">
+                <div>
+                  <h1 className={`font-bold bg-gradient-to-r from-white via-purple-100 to-pink-100 bg-clip-text text-transparent mb-3 ${
+                    title.length > 60 ? 'text-2xl lg:text-3xl' : 'text-3xl lg:text-4xl'
+                  }`}>
+                    {title}
+                  </h1>
+                  
+                  <p className="text-slate-300 leading-relaxed text-lg">
+                    {description}
+                  </p>
+                </div>
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg">
+                      {releaseYear}
+                    </span>
+                    <span
+                      className={`px-5 py-2.5 rounded-xl font-bold shadow-lg ${
+                        status === 'Ongoing'
+                          ? 'bg-gradient-to-r from-yellow-500 to-orange-600 text-white'
+                          : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white'
+                      }`}
+                    >
+                      {status}
+                    </span>
+                    <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg">
+                      {contentType}
+                    </span>
+                    {!isMovie && subDubStatus && (
+                      <div className="flex flex-wrap gap-2">
+                        {subDubStatus
+                          .split(',')
+                          .map(s => s.trim().toLowerCase())
+                          .includes('hindi dub') && (
+                          <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg">
+                            Hindi Dub
+                          </span>
+                        )}
+                        {subDubStatus
+                          .split(',')
+                          .map(s => s.trim().toLowerCase())
+                          .includes('hindi sub') && (
+                          <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg">
+                            Hindi Sub
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <span className="text-slate-400 text-sm font-medium mr-3">Genres</span>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {genreList.map((genre, index) => (
+                        <span
+                          key={index}
+                          className="bg-gradient-to-r from-purple-600/80 to-pink-600/80 hover:from-purple-600 hover:to-pink-600 text-white px-5 py-2 rounded-xl text-sm font-medium transition-all duration-300 hover:scale-105 cursor-pointer backdrop-blur-sm border border-purple-400/20 shadow-lg"
+                        >
+                          {genre}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                
+                <VoteButtons />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Header with page title */}
+        <div className="mb-4">
+          <div className="flex items-center mt-2 text-gray-400">
+            {isMovie ? (
+              <FaFilm className="mr-2 text-purple-500" />
+            ) : (
+              <FaTv className="mr-2 text-purple-500" />
+            )}
+            <span className="text-lg font-medium bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+              {page.title}
+            </span>
+          </div>
+        </div>
+
+        {/* Tabs with icons - improved styling */}
+        <div className="flex border-b border-gray-800 mb-6">
+          <button
+            onClick={() => setActiveTab('download')}
+            className={`flex items-center px-6 py-3 font-medium text-sm sm:text-base transition-all relative ${
+              activeTab === 'download'
+                ? 'text-purple-400'
+                : 'text-gray-500 hover:text-gray-300'
+            }`}
+          >
+            <FaDownload className={`mr-2 ${activeTab === 'download' ? 'text-purple-400' : ''}`} />
+            Download
+            <span className="ml-2 bg-gray-800 text-xs px-2 py-0.5 rounded-full">
+              {downloadLinks.length}
+            </span>
+            {activeTab === 'download' && (
+              <span className="absolute bottom-0 left-0 w-full h-0.5 bg-gradient-to-r from-purple-600 to-pink-600 rounded-t-full"></span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('watch')}
+            className={`flex items-center px-6 py-3 font-medium text-sm sm:text-base transition-all relative ${
+              activeTab === 'watch'
+                ? 'text-purple-400'
+                : 'text-gray-500 hover:text-gray-300'
+            }`}
+          >
+            <FaPlay className={`mr-2 ${activeTab === 'watch' ? 'text-purple-400' : ''}`} />
+            Watch
+            <span className="ml-2 bg-gray-800 text-xs px-2 py-0.5 rounded-full">
+              {watchLinks.length}
+            </span>
+            {activeTab === 'watch' && (
+              <span className="absolute bottom-0 left-0 w-full h-0.5 bg-gradient-to-r from-purple-600 to-pink-600 rounded-t-full"></span>
+            )}
+          </button>
+        </div>
+
+        {/* Download / Watch links */}
+        {activeTab === 'download' && (
+          <div className="space-y-3">
+            {downloadLinks.length === 0 ? (
+              <p className="text-center text-gray-500 py-8">No download links available.</p>
+            ) : (
+              downloadLinks.map((link, idx) => (
+                <LinkCard
+                  key={idx}
+                  link={link}
+                  isMovie={isMovie}
+                  onAction={() => window.open(link.url, '_blank')}
+                  actionIcon={<FaDownload />}
+                  actionLabel="Download"
+                />
+              ))
+            )}
+          </div>
+        )}
+
+        {activeTab === 'watch' && (
+          <div className="space-y-3">
+            {watchLinks.length === 0 ? (
+              <p className="text-center text-gray-500 py-8">No watch links available.</p>
+            ) : (
+              watchLinks.map((link, idx) => (
+                <React.Fragment key={idx}>
+                  <LinkCard
+                    link={link}
+                    isMovie={isMovie}
+                    onAction={() => togglePlayer(idx)}
+                    actionIcon={selectedIndex === idx ? undefined : <FaPlay />}
+                    actionLabel={selectedIndex === idx ? 'Close Player' : 'Watch Now'}
+                    isActive={selectedIndex === idx}
+                  />
+                  {selectedIndex === idx && (
+                    <div className="mt-2 rounded-xl overflow-hidden shadow-2xl border border-purple-500/30 animate-fadeIn">
+                      <VideoPlayer src={link.url} />
+                    </div>
+                  )}
+                </React.Fragment>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// LinkCard component with enhanced design
+const LinkCard: React.FC<{
+  link: DownloadPage['links'][0];
+  isMovie: boolean;
+  onAction: () => void;
+  actionIcon?: React.ReactNode;
+  actionLabel: string;
+  isActive?: boolean;
+}> = ({ link, isMovie, onAction, actionIcon, actionLabel, isActive }) => {
+  const quality = link.quality || 'HD';
+  const qualityGradient = qualityColor(quality);
+
+  return (
+    <div
+      className={`group relative bg-slate-800/40 backdrop-blur-sm rounded-xl p-5 border transition-all duration-300 ${
+        isActive
+          ? 'border-purple-500 shadow-2xl shadow-purple-500/30'
+          : 'border-slate-700/50 hover:border-purple-500/50 hover:shadow-xl hover:shadow-purple-500/20 hover:scale-[1.02]'
+      }`}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex-1">
+          <div className="flex items-center gap-3 mb-2">
+            <span className="text-lg font-semibold text-white">
+              {isMovie ? 'Movie' : `Episode ${link.episode}`}
+            </span>
+            {link.quality && (
+              <span className={`bg-gradient-to-r ${qualityGradient} text-white text-xs px-3 py-1 rounded-full font-medium shadow-lg`}>
+                {link.quality}
+              </span>
+            )}
+          </div>
+          {link.language && (
+            <p className="text-sm text-gray-400 flex items-center">
+              <span className="mr-1 text-lg">{getLanguageFlag(link.language)}</span>
+              {link.language}
+            </p>
+          )}
+        </div>
+
+        <button
+          onClick={onAction}
+          className={`flex items-center px-5 py-2 rounded-lg font-medium transition-all transform ${
+            isActive
+              ? 'bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white shadow-lg shadow-red-600/30'
+              : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-lg shadow-purple-600/30 hover:shadow-purple-600/50 hover:scale-105'
+          }`}
+        >
+          {actionIcon && <span className="mr-2">{actionIcon}</span>}
+          {actionLabel}
+        </button>
       </div>
     </div>
   );

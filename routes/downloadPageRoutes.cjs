@@ -1,13 +1,14 @@
- // routes/downloadPageRoutes.cjs - ADD GET ALL PAGES ROUTE
+ // routes/downloadPageRoutes.cjs
 const express = require('express');
 const router = express.Router();
 const DownloadPage = require('../models/DownloadPage.cjs');
 const adminAuth = require('../middleware/adminAuth.cjs');
 
-// ✅ Public: get a page by slug
+// ✅ Public: get a page by slug – now includes contentType
 router.get('/:slug', async (req, res) => {
   try {
-    const page = await DownloadPage.findOne({ slug: req.params.slug }).populate('animeId', 'title');
+    const page = await DownloadPage.findOne({ slug: req.params.slug })
+      .populate('animeId', 'title contentType');   // ✅ added contentType
     if (!page) return res.status(404).json({ error: 'Page not found' });
     res.json(page);
   } catch (err) {

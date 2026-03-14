@@ -1,10 +1,11 @@
-const mongoose = require('mongoose');
+ const mongoose = require('mongoose');
 
 const downloadLinkSchema = new mongoose.Schema({
   episode: { type: Number, required: true },
   url: { type: String, required: true },
-  quality: String,          // optional
-  language: String          // optional
+  quality: String,          // e.g., "1080p", "720p"
+  language: String,         // e.g., "English", "Japanese"
+  type: { type: String, enum: ['download', 'watch'], default: 'download' } // NEW: link type
 });
 
 const downloadPageSchema = new mongoose.Schema({

@@ -1,5 +1,5 @@
  import React, { useState, useEffect } from 'react';
-import { DownloadPage, DownloadLink } from '../../types';
+import { DownloadPage, DownloadPageLink } from '../../types';
 import SearchableDropdown from './SearchableDropdown';
 import Spinner from '../Spinner';
 
@@ -22,7 +22,7 @@ interface FormPage {
   animeId: string;
   slug: string;
   title: string;
-  links: DownloadLink[];
+  links: DownloadPageLink[];
 }
 
 const DownloadPageManager: React.FC = () => {
@@ -90,10 +90,13 @@ const DownloadPageManager: React.FC = () => {
 
   const convertToFormPage = (page: DownloadPage): FormPage => ({
     _id: page._id,
-    animeId: page.animeId._id,
+    animeId: typeof page.animeId === 'string' ? page.animeId : page.animeId._id,
     slug: page.slug,
     title: page.title,
-    links: page.links
+    links: page.links.map(link => ({
+      ...link,
+      type: (link as any).type || 'download'
+    }))
   });
 
   const handleSave = async () => {
@@ -106,7 +109,7 @@ const DownloadPageManager: React.FC = () => {
       return;
     }
     if (!editingPage.links || editingPage.links.length === 0) {
-      alert('Please add at least one download link');
+      alert('Please add at least one link');
       return;
     }
 
@@ -154,10 +157,17 @@ const DownloadPageManager: React.FC = () => {
     }
   };
 
-  const addLink = () => {
+  // Add a new download link
+  const addDownloadLink = () => {
     setEditingPage((prev: FormPage | null): FormPage | null => {
       if (!prev) return null;
-      const newLink = { episode: 1, url: '' } as DownloadLink;
+      const newLink: DownloadPageLink = {
+        episode: 1,
+        url: '',
+        type: 'download',
+        quality: '',
+        language: ''
+      };
       return {
         ...prev,
         links: [...prev.links, newLink]
@@ -165,7 +175,25 @@ const DownloadPageManager: React.FC = () => {
     });
   };
 
-  const updateLink = (index: number, field: keyof DownloadLink, value: any) => {
+  // Add a new watch link
+  const addWatchLink = () => {
+    setEditingPage((prev: FormPage | null): FormPage | null => {
+      if (!prev) return null;
+      const newLink: DownloadPageLink = {
+        episode: 1,
+        url: '',
+        type: 'watch',
+        quality: '',
+        language: ''
+      };
+      return {
+        ...prev,
+        links: [...prev.links, newLink]
+      };
+    });
+  };
+
+  const updateLink = (index: number, field: keyof DownloadPageLink, value: any) => {
     setEditingPage((prev: FormPage | null): FormPage | null => {
       if (!prev) return null;
       const newLinks = [...prev.links];
@@ -194,7 +222,7 @@ const DownloadPageManager: React.FC = () => {
               animeId: '', 
               slug: '', 
               title: '', 
-              links: [{ episode: 1, url: '' } as DownloadLink] 
+              links: [] 
             });
             setShowForm(true);
           }}
@@ -257,39 +285,90 @@ const DownloadPageManager: React.FC = () => {
             <div>
               <label className="block text-sm mb-2">Links (1-10) *</label>
               {editingPage.links?.map((link, idx) => (
-                <div key={idx} className="bg-gray-700 p-3 rounded mb-2">
-                  <div className="grid grid-cols-6 gap-2 mb-2">
+                <div key={idx} className="bg-gray-700 p-4 rounded mb-3">
+                  <div className="grid grid-cols-12 gap-2 mb-2">
+                    {/* Episode */}
+                    <div className="col-span-1">
+                      <input
+                        type="number"
+                        placeholder="Ep"
+                        value={link.episode}
+                        onChange={e => updateLink(idx, 'episode', parseInt(e.target.value))}
+                        className="w-full bg-gray-600 rounded px-2 py-1 text-sm"
+                        min="1"
+                      />
+                    </div>
+                    {/* Type dropdown */}
+                    <div className="col-span-2">
+                      <select
+                        value={link.type}
+                        onChange={e => updateLink(idx, 'type', e.target.value as 'download' | 'watch')}
+                        className="w-full bg-gray-600 rounded px-2 py-1 text-sm"
+                      >
+                        <option value="download">Download</option>
+                        <option value="watch">Watch</option>
+                      </select>
+                    </div>
+                    {/* URL */}
+                    <div className="col-span-7">
+                      <input
+                        type="url"
+                        placeholder="URL"
+                        value={link.url}
+                        onChange={e => updateLink(idx, 'url', e.target.value)}
+                        className="w-full bg-gray-600 rounded px-2 py-1 text-sm"
+                      />
+                    </div>
+                    {/* Remove button */}
+                    <div className="col-span-2 flex justify-end">
+                      <button
+                        onClick={() => removeLink(idx)}
+                        className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Optional fields: quality and language */}
+                  <div className="grid grid-cols-2 gap-2 mt-2">
                     <input
-                      type="number"
-                      placeholder="Ep"
-                      value={link.episode}
-                      onChange={e => updateLink(idx, 'episode', parseInt(e.target.value))}
-                      className="col-span-1 bg-gray-600 rounded px-2 py-1"
+                      type="text"
+                      placeholder="Quality (e.g., 1080p)"
+                      value={link.quality || ''}
+                      onChange={e => updateLink(idx, 'quality', e.target.value)}
+                      className="bg-gray-600 rounded px-2 py-1 text-sm"
                     />
                     <input
-                      type="url"
-                      placeholder="Download URL"
-                      value={link.url}
-                      onChange={e => updateLink(idx, 'url', e.target.value)}
-                      className="col-span-5 bg-gray-600 rounded px-2 py-1"
+                      type="text"
+                      placeholder="Language (e.g., English)"
+                      value={link.language || ''}
+                      onChange={e => updateLink(idx, 'language', e.target.value)}
+                      className="bg-gray-600 rounded px-2 py-1 text-sm"
                     />
                   </div>
-                  <button
-                    onClick={() => removeLink(idx)}
-                    className="text-red-400 hover:text-red-300 text-sm"
-                  >
-                    Remove
-                  </button>
                 </div>
               ))}
 
-              {(!editingPage.links || editingPage.links.length < 10) && (
+              {/* Two separate buttons for adding links */}
+              <div className="flex gap-2 mt-2">
                 <button
-                  onClick={addLink}
-                  className="mt-2 bg-green-600 hover:bg-green-700 px-4 py-2 rounded text-sm"
+                  onClick={addDownloadLink}
+                  disabled={editingPage.links.length >= 10}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed px-4 py-2 rounded text-sm"
                 >
-                  + Add Link
+                  + Add Download Link
                 </button>
+                <button
+                  onClick={addWatchLink}
+                  disabled={editingPage.links.length >= 10}
+                  className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed px-4 py-2 rounded text-sm"
+                >
+                  + Add Watch Link
+                </button>
+              </div>
+              {editingPage.links.length >= 10 && (
+                <p className="text-xs text-yellow-500 mt-1">Maximum 10 links reached.</p>
               )}
             </div>
 
@@ -312,6 +391,7 @@ const DownloadPageManager: React.FC = () => {
         </div>
       )}
 
+      {/* List of pages */}
       <div className="grid gap-4">
         {pages.map(page => (
           <div key={page._id} className="bg-gray-800 rounded-lg p-4 flex justify-between items-center">
@@ -320,6 +400,17 @@ const DownloadPageManager: React.FC = () => {
               <p className="text-sm text-gray-400">
                 Slug: {page.slug} | Links: {page.links.length} | Button: {page.title}
               </p>
+              <div className="text-xs text-gray-500 mt-1">
+                {(() => {
+                  const downloadCount = page.links.filter(l => l.type === 'download').length;
+                  const watchCount = page.links.filter(l => l.type === 'watch').length;
+                  return (
+                    <span>
+                      Download: {downloadCount} | Watch: {watchCount}
+                    </span>
+                  );
+                })()}
+              </div>
             </div>
             <div className="flex gap-2">
               <button

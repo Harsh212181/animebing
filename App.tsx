@@ -1,4 +1,4 @@
- // App.tsx - UPDATED WITH DOWNLOAD LINK PAGE ROUTE
+ // App.tsx - UPDATED WITH DOWNLOAD LINK PAGE ROUTE & PRINT HIDDEN FOR ADMIN ELEMENTS
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import type { Anime, FilterType, ContentType, ContentTypeFilter } from './src/types';
@@ -439,11 +439,19 @@ const MainApp: React.FC = () => {
   }
 
   if (adminView === 'login') {
-    return <AdminLogin onLogin={handleAdminLogin} />;
+    return (
+      <div className="print:hidden">
+        <AdminLogin onLogin={handleAdminLogin} />
+      </div>
+    );
   }
 
   if (adminView === 'dashboard' && isAdminAuthenticated) {
-    return <AdminDashboard onLogout={handleAdminLogout} />;
+    return (
+      <div className="print:hidden">
+        <AdminDashboard onLogout={handleAdminLogout} />
+      </div>
+    );
   }
 
   return (
@@ -616,10 +624,10 @@ const MainApp: React.FC = () => {
         <Footer />
         <ScrollToTopButton />
         
-        {/* Secret Code Typing Hint */}
+        {/* Secret Code Typing Hint - hidden in print */}
         {showCodeHint && (
           <div 
-            className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[99999] glow-green-border hover-glow-green"
+            className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[99999] glow-green-border hover-glow-green print:hidden"
             style={{
               background: 'rgba(30, 41, 59, 0.9)',
               backdropFilter: 'blur(10px)',

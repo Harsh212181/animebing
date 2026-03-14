@@ -1,4 +1,4 @@
-// src/types.ts – COMPLETE UPDATED VERSION WITH DEVICE-BASED POLL VOTING
+ // src/types.ts – COMPLETE UPDATED VERSION WITH DEVICE-BASED POLL VOTING
 /* =========================
    DOWNLOAD / EPISODE / CHAPTER
 ========================= */
@@ -444,15 +444,21 @@ export interface AnimeAssignmentResponse {
   anime?: Anime;             // Updated anime document
   message?: string;
 }
+
 // ============================================
-// DOWNLOAD PAGES TYPES
+// DOWNLOAD PAGES TYPES (UPDATED)
 // ============================================
 
-export interface DownloadLink {
+/**
+ * Represents a single link on a download page.
+ * Renamed from DownloadLink to avoid conflict with episode/chapter links.
+ */
+export interface DownloadPageLink {
   episode: number;
   url: string;
   quality?: string;
   language?: string;
+  type: 'download' | 'watch';   // ✅ distinguishes download vs watch
 }
 
 export interface DownloadPage {
@@ -460,9 +466,10 @@ export interface DownloadPage {
   animeId: {
     _id: string;
     title: string;
+    contentType?: ContentType;  // ✅ added to conditionally show "Movie"
   };
   slug: string;
   title: string;
-  links: DownloadLink[];
+  links: DownloadPageLink[];    // ✅ uses renamed type
   createdAt: string;
 }
