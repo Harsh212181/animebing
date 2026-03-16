@@ -657,38 +657,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     fetchFullAnimeDetails();
   }, [anime]);
 
-  // ============================================
-  // ✅ NEW: CREATE DOWNLOAD SESSION ON PAGE LOAD
-  // ============================================
-  useEffect(() => {
-    if (!displayAnime?._id) return;
-
-    // Determine source: if document.referrer includes our domain and is home page, source = 'home'
-    let source: 'home' | 'detail' = 'detail';
-    try {
-      const referrer = document.referrer;
-      if (referrer) {
-        const referrerUrl = new URL(referrer);
-        if (referrerUrl.origin === window.location.origin) {
-          // If referrer path is '/' (home) or contains '/home' (if you have a home route)
-          const path = referrerUrl.pathname;
-          if (path === '/' || path.includes('/home')) {
-            source = 'home';
-          }
-        }
-      }
-    } catch (e) {
-      // Ignore URL parsing errors
-    }
-
-    // Call the session creation endpoint
-    fetch(`${API_BASE}/anime/create-session`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ animeId: displayAnime._id, source })
-    }).catch(err => console.error('Failed to create download session:', err));
-  }, [displayAnime?._id]);
-
   // ✅ FIXED: GENERATE SEO DATA WITH PROPER CANONICAL URL
   const getSEOData = () => {
     if (!displayAnime) {

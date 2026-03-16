@@ -121,21 +121,10 @@ const DownloadLinkPage: React.FC = () => {
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
-      setError('');
       try {
         const res = await fetch(`${API_BASE}/download-pages/${slug}`);
-        
-        // ✅ Handle 403 (access expired) specially
-        if (res.status === 403) {
-          const data = await res.json();
-          throw new Error(data.error || 'Access expired or invalid. Please visit the anime detail page first.');
-        }
-        
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-        }
-        
         const data = await res.json();
+        if (data.error) throw new Error(data.error);
         setPage(data);
 
         // Handle animeId: could be a populated object or a string ID
@@ -259,20 +248,14 @@ const DownloadLinkPage: React.FC = () => {
     );
   }
 
-  // ✅ Handle error state (including 403)
   if (error || !page) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900/20 to-black flex items-center justify-center">
         <div className="bg-red-500/10 backdrop-blur-sm border border-red-500/30 rounded-xl p-8 text-center max-w-md shadow-2xl">
-          <p className="text-red-400 text-lg font-medium mb-4">{error || 'Page not found'}</p>
-          <p className="text-gray-300 text-sm mb-6">
-            {error?.includes('expired') 
-              ? 'Your access has expired. Please go back to the anime detail page to request a new link.'
-              : 'Please check the URL or go back to the anime detail page.'}
-          </p>
+          <p className="text-red-400 text-lg font-medium">{error || 'Page not found'}</p>
           <button
             onClick={() => navigate(-1)}
-            className="px-6 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-lg text-white font-medium transition-all transform hover:scale-105"
+            className="mt-6 px-6 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-lg text-white font-medium transition-all transform hover:scale-105"
           >
             Go Back
           </button>
