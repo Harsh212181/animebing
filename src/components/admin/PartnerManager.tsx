@@ -477,7 +477,10 @@ const PartnerManager: React.FC<PartnerManagerProps> = ({ token, apiBase }) => {
                       {/* Wrapper that styles the inner input of SearchableDropdown */}
                       <div className="[&>div>input]:w-full [&>div>input]:px-5 [&>div>input]:py-3 [&>div>input]:bg-gray-800/80 [&>div>input]:border [&>div>input]:border-white/10 [&>div>input]:rounded-xl [&>div>input]:text-white [&>div>input]:placeholder-gray-500 [&>div>input]:focus:outline-none [&>div>input]:focus:ring-2 [&>div>input]:focus:ring-indigo-500 [&>div>input]:focus:border-transparent [&>div>input]:transition">
                         <SearchableDropdown
-                          onSelect={(item: DropdownItem) => handleAssignAnime(item, partner._id)}
+                          fetchUrl={`${apiBase}/anime/unassigned`}
+                          apiBase={apiBase}
+                          token={token}
+                          onSelect={(item: DropdownItem) => { void handleAssignAnime(item, partner._id); }}
                           placeholder="Search anime by title..."
                           disabled={modalLoading}
                           autoFocus={focusSearchForPartner === partner._id}

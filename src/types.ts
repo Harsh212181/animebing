@@ -445,9 +445,9 @@ export interface AnimeAssignmentResponse {
   message?: string;
 }
 
-// ============================================
-// DOWNLOAD PAGES TYPES (UPDATED)
-// ============================================
+/* =====================================================
+   ✅ DOWNLOAD PAGES TYPES – UPDATED WITH EPISODE NUMBER
+===================================================== */
 
 /**
  * Represents a single link on a download page.
@@ -461,15 +461,27 @@ export interface DownloadPageLink {
   type: 'download' | 'watch';   // ✅ distinguishes download vs watch
 }
 
+/**
+ * Download Page – now includes episodeNumber field.
+ * This is the episode number where the page button should appear.
+ */
 export interface DownloadPage {
   _id: string;
-  animeId: {
-    _id: string;
-    title: string;
-    contentType?: ContentType;  // ✅ added to conditionally show "Movie"
-  };
+  animeId:
+    | {
+        _id: string;
+        title: string;
+        contentType?: ContentType;        // optional but often populated
+        subDubStatus?: SubDubStatus;       // ✅ ADDED: sub/dub status
+        status?: string;                   // optional: Ongoing/Complete
+        releaseYear?: number;               // optional: release year
+      }
+    | string; // can be just the ID in some contexts
   slug: string;
   title: string;
-  links: DownloadPageLink[];    // ✅ uses renamed type
+  buttonTitle?: string;        // optional custom button text
+  episodeNumber: number;       // ✅ NEW: required episode number this page belongs to
+  links: DownloadPageLink[];
   createdAt: string;
+  updatedAt?: string;          // optional timestamp
 }

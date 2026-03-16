@@ -12,7 +12,7 @@ const API_BASE =
 
 type TabType = 'download' | 'watch';
 
-// Helper functions (unchanged)
+// Helper functions
 const getLanguageFlag = (lang: string): string => {
   const flags: Record<string, string> = {
     English: '🇬🇧',
@@ -65,7 +65,7 @@ const generateSrcSet = (url: string | undefined, baseWidth: number, baseHeight: 
   }
 };
 
-// Icons (unchanged)
+// Icons
 const HeartIcon = ({ className = "w-5 h-5", filled = false }: { className?: string, filled?: boolean }) => (
   <svg 
     className={className} 
@@ -227,7 +227,7 @@ const DownloadLinkPage: React.FC = () => {
 
   const isLoading = loading || animeLoading;
 
-  // Loading skeleton with improved design
+  // Loading skeleton
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900/20 to-black py-8 px-4">
@@ -264,7 +264,8 @@ const DownloadLinkPage: React.FC = () => {
     );
   }
 
-  const isMovie = page.animeId?.contentType === 'Movie';
+  // ✅ Use animeDetails for all anime metadata (more reliable)
+  const isMovie = animeDetails?.contentType === 'Movie';
   const downloadLinks = page.links.filter(link => link.type !== 'watch');
   const watchLinks = page.links.filter(link => link.type === 'watch');
 
@@ -288,7 +289,7 @@ const DownloadLinkPage: React.FC = () => {
     : 'https://via.placeholder.com/320x448/1e293b/64748b?text=No+Image';
   const desktopThumbnailSrcSet = thumbnail ? generateSrcSet(thumbnail, 320, 448) : '';
 
-  // Vote buttons component (improved styling)
+  // Vote buttons component
   const VoteButtons = ({ isMobile = false }: { isMobile?: boolean }) => {
     const buttonSize = isMobile ? 'h-4 w-4' : 'h-5 w-5';
     const textSize = isMobile ? 'text-xs' : 'text-sm';
@@ -338,7 +339,7 @@ const DownloadLinkPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900/20 to-black py-8 px-4">
       <div className="w-full max-w-7xl mx-auto">
-        {/* Back button with improved styling */}
+        {/* Back button */}
         <button
           onClick={() => navigate(-1)}
           className="group mb-6 flex items-center text-gray-400 hover:text-purple-400 transition-all duration-200"
@@ -561,7 +562,7 @@ const DownloadLinkPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Tabs with icons - improved styling */}
+        {/* Tabs with icons */}
         <div className="flex border-b border-gray-800 mb-6">
           <button
             onClick={() => setActiveTab('download')}
@@ -649,7 +650,7 @@ const DownloadLinkPage: React.FC = () => {
   );
 };
 
-// LinkCard component with enhanced design
+// LinkCard component
 const LinkCard: React.FC<{
   link: DownloadPage['links'][0];
   isMovie: boolean;

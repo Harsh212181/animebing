@@ -1,4 +1,4 @@
- // components/AnimeDetailPage.tsx - FINAL FIXED VERSION + DOWNLOAD PAGES (DEV ONLY)
+ // components/AnimeDetailPage.tsx - FINAL FIXED VERSION + MULTIPLE DOWNLOAD PAGES PER EPISODE (DEV ONLY)
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom'; // ✅ ADDED for internal navigation
 import type { Anime, Episode, Chapter, DownloadPage } from '../src/types'; // ✅ ADDED DownloadPage
@@ -322,13 +322,18 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
       }
     };
     fetchDownloadPages();
-  }, [displayAnime?._id, API_BASE]); // ✅ Correct dependencies
+  }, [displayAnime?._id]);
 
-  // ✅ MAP EPISODE NUMBER TO DOWNLOAD PAGE
+  // ✅ MAP EPISODE NUMBER TO DOWNLOAD PAGES (using page.episodeNumber)
   const episodeToPageMap = useMemo(() => {
-    const map = new Map<number, DownloadPage>();
+    const map = new Map<number, DownloadPage[]>();
     downloadPages.forEach(page => {
-      page.links.forEach(link => map.set(link.episode, page));
+      const episode = page.episodeNumber;
+      if (!episode) return; // skip if missing (should not happen)
+      if (!map.has(episode)) {
+        map.set(episode, []);
+      }
+      map.get(episode)!.push(page);
     });
     return map;
   }, [downloadPages]);
@@ -1165,15 +1170,21 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                                 className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white p-2 rounded-lg shadow-lg hover:shadow-blue-500/20 transition-all duration-200 flex items-center justify-center"
                                 showText={false}
                               />
-                              {/* ✅ NEW: Download Page button (only in development, not for manga) */}
-                              {!isManga && import.meta.env.DEV && episodeToPageMap.has(itemData.episodeNumber) && (
-                                <Link
-                                  to={`/download/${episodeToPageMap.get(itemData.episodeNumber)!.slug}`}
-                                  className="bg-purple-600 hover:bg-purple-700 text-white p-2 rounded-lg text-xs font-medium ml-1 flex items-center justify-center"
-                                  title={episodeToPageMap.get(itemData.episodeNumber)!.title}
-                                >
-                                  <span className="text-xs">📄</span>
-                                </Link>
+                              {/* ✅ DEV ONLY: Download Page button - only in development */}
+                              {import.meta.env.DEV && episodeToPageMap.has(itemData.episodeNumber) && (
+                                <>
+                                  {episodeToPageMap.get(itemData.episodeNumber)!.map((page, idx) => (
+                                    <Link
+                                      key={page._id || idx}
+                                      to={`/download/${page.slug}`}
+                                      className="bg-purple-600 hover:bg-purple-700 text-white p-2 rounded-lg text-xs font-medium ml-1 flex items-center justify-center"
+                                      title={page.title}
+                                    >
+                                      <span className="text-xs">📄</span>
+                                      {page.buttonTitle && <span className="ml-1 hidden sm:inline">{page.buttonTitle}</span>}
+                                    </Link>
+                                  ))}
+                                </>
                               )}
                               <ReportButton
                                 animeId={anime.id || anime._id}
@@ -1405,15 +1416,21 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                                   className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white px-4 py-2 rounded-lg transition-all duration-300 font-medium flex items-center gap-2 hover:scale-105 active:scale-95"
                                   showText={true}
                                 />
-                                {/* ✅ NEW: Download Page button (only in development, not for manga) */}
-                                {!isManga && import.meta.env.DEV && episodeToPageMap.has(itemData.episodeNumber) && (
-                                  <Link
-                                    to={`/download/${episodeToPageMap.get(itemData.episodeNumber)!.slug}`}
-                                    className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition-all duration-300 hover:scale-105 flex items-center gap-1"
-                                  >
-                                    <span className="text-sm">📄</span>
-                                    {episodeToPageMap.get(itemData.episodeNumber)!.title}
-                                  </Link>
+                                {/* ✅ DEV ONLY: Multiple Download Page buttons - only in development */}
+                                {import.meta.env.DEV && episodeToPageMap.has(itemData.episodeNumber) && (
+                                  <div className="flex gap-1 flex-wrap">
+                                    {episodeToPageMap.get(itemData.episodeNumber)!.map((page, idx) => (
+                                      <Link
+                                        key={page._id || idx}
+                                        to={`/download/${page.slug}`}
+                                        className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition-all duration-300 hover:scale-105 flex items-center gap-1"
+                                        title={page.title}
+                                      >
+                                        <span className="text-sm">📄</span>
+                                        {page.buttonTitle || page.title}
+                                      </Link>
+                                    ))}
+                                  </div>
                                 )}
                                 <div className="scale-90">
                                   <ReportButton

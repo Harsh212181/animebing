@@ -1,4 +1,4 @@
- // src/components/admin/EpisodeStatusManager.tsx
+ // src/components/admin/EpisodeStatusManager.tsx – Redesigned with glass‑morphism
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
@@ -122,198 +122,242 @@ const EpisodeStatusManager: React.FC = () => {
     }
   };
 
+  // Loading state
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="bg-red-900/30 border border-red-700/50 text-red-200 p-4 rounded-lg">
-        <p className="font-semibold">Error loading anime:</p>
-        <p>{error}</p>
-        <button
-          onClick={fetchAnime}
-          className="mt-3 px-4 py-2 bg-red-700 hover:bg-red-600 rounded text-white"
-        >
-          Retry
-        </button>
+      <div className="flex flex-col items-center justify-center min-h-[60vh] bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+        <div className="w-16 h-16 border-4 border-purple-500/30 border-t-purple-500 rounded-full animate-spin"></div>
+        <p className="mt-4 text-white/60 text-lg">Loading anime list...</p>
       </div>
     );
   }
 
   return (
-    <div className="p-4">
-      <div className="mb-6 flex flex-col sm:flex-row gap-4 items-center justify-between">
-        <h2 className="text-2xl font-bold text-purple-300">Episode Status Manager</h2>
-        
-        {/* Filter Controls */}
-        <div className="flex flex-wrap gap-3">
-          {/* Content Type Filter */}
-          <select
-            value={contentTypeFilter}
-            onChange={(e) => setContentTypeFilter(e.target.value as any)}
-            className="px-3 py-2 bg-purple-900/30 border border-purple-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-          >
-            <option value="All">All Types</option>
-            <option value="Anime">Anime</option>
-            <option value="Movie">Movie</option>
-            <option value="Manga">Manga</option>
-          </select>
+    <div className="p-6 space-y-8 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 min-h-screen">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="p-2 bg-purple-500/20 rounded-xl">
+          <svg className="w-8 h-8 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+          </svg>
+        </div>
+        <h1 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-pink-300">
+          Episode Status Manager
+        </h1>
+      </div>
 
-          {/* Status Filter */}
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as any)}
-            className="px-3 py-2 bg-purple-900/30 border border-purple-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-          >
-            <option value="All">All Status</option>
-            <option value="Ongoing">Ongoing</option>
-            <option value="Complete">Complete</option>
-          </select>
+      {/* Error display */}
+      {error && (
+        <div className="relative p-4 bg-rose-500/10 border border-rose-500/30 rounded-2xl backdrop-blur-sm text-rose-200 flex items-center gap-3 shadow-lg shadow-rose-500/5">
+          <svg className="w-5 h-5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          {error}
+        </div>
+      )}
 
-          {/* Search Input */}
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Search anime..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-64 px-4 py-2 bg-purple-900/30 border border-purple-700 rounded-lg text-white placeholder-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-            />
-            {searchTerm && (
-              <button
-                onClick={() => setSearchTerm('')}
-                className="absolute right-2 top-2 text-purple-400 hover:text-white"
-              >
-                ✕
-              </button>
-            )}
+      {/* Filter bar – glass card */}
+      <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-6 shadow-2xl">
+        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+          <h2 className="text-xl font-semibold text-white/90 flex items-center gap-2">
+            <span className="w-1.5 h-6 bg-purple-400 rounded-full"></span>
+            Filters
+          </h2>
+          <div className="flex flex-wrap gap-3 w-full sm:w-auto">
+            {/* Content Type Filter */}
+            <select
+              value={contentTypeFilter}
+              onChange={(e) => setContentTypeFilter(e.target.value as any)}
+              className="px-4 py-2.5 bg-gray-800/60 border border-gray-700/80 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition appearance-none cursor-pointer"
+            >
+              <option value="All">All Types</option>
+              <option value="Anime">Anime</option>
+              <option value="Movie">Movie</option>
+              <option value="Manga">Manga</option>
+            </select>
+
+            {/* Status Filter */}
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as any)}
+              className="px-4 py-2.5 bg-gray-800/60 border border-gray-700/80 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition appearance-none cursor-pointer"
+            >
+              <option value="All">All Status</option>
+              <option value="Ongoing">Ongoing</option>
+              <option value="Complete">Complete</option>
+            </select>
+
+            {/* Search Input */}
+            <div className="relative min-w-[240px]">
+              <input
+                type="text"
+                placeholder="Search anime..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full px-4 py-2.5 bg-gray-800/60 border border-gray-700/80 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition pr-8"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
-      {filteredList.length === 0 ? (
-        <div className="text-center py-12 text-purple-400 bg-purple-900/20 rounded-lg">
-          {searchTerm || contentTypeFilter !== 'All' || statusFilter !== 'All' 
-            ? 'No anime match your filters.' 
-            : 'No anime found.'}
-        </div>
-      ) : (
-        <div className="overflow-x-auto bg-purple-900/30 rounded-xl border border-purple-700/50">
-          <table className="min-w-full divide-y divide-purple-700">
-            <thead className="bg-purple-800/50">
+      {/* Anime Table – glass card */}
+      <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-white/10">
+            <thead className="bg-white/5">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-purple-300 uppercase tracking-wider">
+                <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
                   Image
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-purple-300 uppercase tracking-wider">
+                <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
                   Title
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-purple-300 uppercase tracking-wider">
+                <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
                   Type
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-purple-300 uppercase tracking-wider">
-                  Total Episodes
+                <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
+                  Total
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-purple-300 uppercase tracking-wider">
-                  Current Episode
+                <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
+                  Current
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-purple-300 uppercase tracking-wider">
+                <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-purple-700">
-              {filteredList.map((anime) => (
-                <tr key={anime._id} className="hover:bg-purple-800/20 transition">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <img
-                      src={anime.thumbnail || 'https://via.placeholder.com/96x128/1e293b/64748b?text=No+Image'}
-                      alt={anime.title}
-                      className="w-19 h-20 object-cover rounded"   
-                      loading="lazy"
-                      onError={(e) => {
-                        e.currentTarget.src = 'https://via.placeholder.com/96x128/1e293b/64748b?text=No+Image';
-                      }}
-                    />
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">
-                    {anime.title}
-                    {anime.status && (
-                      <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${
-                        anime.status === 'Ongoing' ? 'bg-green-600/30 text-green-300' : 'bg-blue-600/30 text-blue-300'
-                      }`}>
-                        {anime.status}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-purple-300">
-                    {anime.contentType || 'Anime'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <input
-                      type="number"
-                      min="0"
-                      value={anime.totalEpisodes ?? 0}
-                      onChange={(e) => {
-                        const newTotal = parseInt(e.target.value) || 0;
-                        setAnimeList(prev =>
-                          prev.map(a => a._id === anime._id ? { ...a, totalEpisodes: newTotal } : a)
-                        );
-                      }}
-                      className="w-20 px-2 py-1 bg-purple-900/50 border border-purple-700 rounded text-white text-center"
-                    />
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <input
-                      type="number"
-                      min="0"
-                      value={anime.currentEpisode ?? 0}
-                      onChange={(e) => {
-                        const newCurrent = parseInt(e.target.value) || 0;
-                        setAnimeList(prev =>
-                          prev.map(a => a._id === anime._id ? { ...a, currentEpisode: newCurrent } : a)
-                        );
-                      }}
-                      className="w-20 px-2 py-1 bg-purple-900/50 border border-purple-700 rounded text-white text-center"
-                    />
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm">
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleUpdate(anime._id, anime.totalEpisodes, anime.currentEpisode)}
-                        disabled={savingId === anime._id}
-                        className="px-3 py-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-md text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {savingId === anime._id ? (
-                          <span className="flex items-center gap-1">
-                            <div className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full"></div>
-                            Saving...
-                          </span>
-                        ) : 'Save'}
-                      </button>
-                      <button
-                        onClick={() => handleSync(anime._id)}
-                        disabled={syncingId === anime._id}
-                        className="px-3 py-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white rounded-md text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {syncingId === anime._id ? (
-                          <span className="flex items-center gap-1">
-                            <div className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full"></div>
-                            Syncing...
-                          </span>
-                        ) : 'Sync'}
-                      </button>
-                    </div>
+            <tbody className="divide-y divide-white/10">
+              {filteredList.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-12 text-center text-white/40">
+                    <svg className="w-16 h-16 mx-auto text-white/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                    </svg>
+                    <p className="mt-4 text-white/60 text-lg">No anime match your filters.</p>
                   </td>
                 </tr>
-              ))}
+              ) : (
+                filteredList.map((anime) => (
+                  <tr key={anime._id} className="hover:bg-white/5 transition">
+                    <td className="px-2 sm:px-6 py-4 whitespace-nowrap">
+                      <img
+                        src={anime.thumbnail || 'https://via.placeholder.com/96x128/1e293b/64748b?text=No+Image'}
+                        alt={anime.title}
+                        className="w-12 h-16 sm:w-16 sm:h-20 object-cover rounded-lg shadow-lg"
+                        loading="lazy"
+                        onError={(e) => {
+                          e.currentTarget.src = 'https://via.placeholder.com/96x128/1e293b/64748b?text=No+Image';
+                        }}
+                      />
+                    </td>
+                    <td className="px-2 sm:px-6 py-4">
+                      <div className="flex flex-col gap-1">
+                        <span className="text-sm font-medium text-white break-words">{anime.title}</span>
+                        {anime.status && (
+                          <span className={`self-start px-2 py-0.5 text-xs rounded-full ${
+                            anime.status === 'Ongoing' 
+                              ? 'bg-green-500/20 text-green-300 border border-green-500/30' 
+                              : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                          }`}>
+                            {anime.status}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-sm text-purple-300">
+                      {anime.contentType || 'Anime'}
+                    </td>
+                    <td className="px-2 sm:px-6 py-4 whitespace-nowrap">
+                      <input
+                        type="number"
+                        min="0"
+                        value={anime.totalEpisodes ?? 0}
+                        onChange={(e) => {
+                          const newTotal = parseInt(e.target.value) || 0;
+                          setAnimeList(prev =>
+                            prev.map(a => a._id === anime._id ? { ...a, totalEpisodes: newTotal } : a)
+                          );
+                        }}
+                        className="w-16 sm:w-20 px-2 py-2 bg-gray-800/60 border border-gray-700/80 rounded-lg text-white text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+                      />
+                    </td>
+                    <td className="px-2 sm:px-6 py-4 whitespace-nowrap">
+                      <input
+                        type="number"
+                        min="0"
+                        value={anime.currentEpisode ?? 0}
+                        onChange={(e) => {
+                          const newCurrent = parseInt(e.target.value) || 0;
+                          setAnimeList(prev =>
+                            prev.map(a => a._id === anime._id ? { ...a, currentEpisode: newCurrent } : a)
+                          );
+                        }}
+                        className="w-16 sm:w-20 px-2 py-2 bg-gray-800/60 border border-gray-700/80 rounded-lg text-white text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+                      />
+                    </td>
+                    <td className="px-2 sm:px-6 py-4 whitespace-nowrap">
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <button
+                          onClick={() => handleUpdate(anime._id, anime.totalEpisodes, anime.currentEpisode)}
+                          disabled={savingId === anime._id}
+                          className="px-2 py-1.5 bg-indigo-500/20 hover:bg-indigo-500/40 border border-indigo-500/30 rounded-lg text-indigo-200 text-xs font-medium transition-all flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {savingId === anime._id ? (
+                            <>
+                              <div className="animate-spin h-3 w-3 border-2 border-indigo-200 border-t-transparent rounded-full"></div>
+                              <span className="hidden sm:inline">Saving...</span>
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                              </svg>
+                              <span className="hidden sm:inline">Save</span>
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => handleSync(anime._id)}
+                          disabled={syncingId === anime._id}
+                          className="px-2 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/40 border border-emerald-500/30 rounded-lg text-emerald-200 text-xs font-medium transition-all flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {syncingId === anime._id ? (
+                            <>
+                              <div className="animate-spin h-3 w-3 border-2 border-emerald-200 border-t-transparent rounded-full"></div>
+                              <span className="hidden sm:inline">Syncing...</span>
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                              <span className="hidden sm:inline">Sync</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* Summary – optional small footer */}
+      {filteredList.length > 0 && (
+        <div className="text-sm text-white/40 text-right">
+          Showing {filteredList.length} of {animeList.length} anime
         </div>
       )}
     </div>

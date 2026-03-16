@@ -547,7 +547,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                   : 'bg-purple-800/40 text-purple-300 hover:bg-purple-700/60 hover:text-white border border-purple-600/40'
               }`}
             >
-              <span className="text-lg">📥</span>
+              <span className="text-lg">🏴‍☠️</span>
               <span>Download Pages</span>
               {activeTab === 'downloadPages' && (
                 <div className="ml-2 w-2 h-2 bg-white rounded-full animate-pulse"></div>
