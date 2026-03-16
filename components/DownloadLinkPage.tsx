@@ -227,6 +227,10 @@ const DownloadLinkPage: React.FC = () => {
 
   const isLoading = loading || animeLoading;
 
+  // ✅ SAFE TITLE – always a string, never undefined
+  const title = animeDetails?.title ? animeDetails.title : 'Unknown Title';
+  console.log('📺 DownloadLinkPage - title being passed:', title);
+
   // Loading skeleton
   if (isLoading) {
     return (
@@ -264,13 +268,10 @@ const DownloadLinkPage: React.FC = () => {
     );
   }
 
-  // ✅ Use animeDetails for all anime metadata (more reliable)
   const isMovie = animeDetails?.contentType === 'Movie';
   const downloadLinks = page.links.filter(link => link.type !== 'watch');
   const watchLinks = page.links.filter(link => link.type === 'watch');
 
-  // Safe access with fallbacks
-  const title = animeDetails?.title || 'Unknown Title';
   const thumbnail = animeDetails?.thumbnail;
   const releaseYear = animeDetails?.releaseYear || 'N/A';
   const status = animeDetails?.status || 'Unknown';
@@ -279,7 +280,6 @@ const DownloadLinkPage: React.FC = () => {
   const genreList = animeDetails?.genreList || [];
   const description = animeDetails?.description || 'No description available.';
 
-  // Optimized thumbnails
   const mobileThumbnail = thumbnail 
     ? optimizeImageUrl(thumbnail, 80, 112)
     : 'https://via.placeholder.com/80x112/1e293b/64748b?text=No+Image';
@@ -289,7 +289,6 @@ const DownloadLinkPage: React.FC = () => {
     : 'https://via.placeholder.com/320x448/1e293b/64748b?text=No+Image';
   const desktopThumbnailSrcSet = thumbnail ? generateSrcSet(thumbnail, 320, 448) : '';
 
-  // Vote buttons component
   const VoteButtons = ({ isMobile = false }: { isMobile?: boolean }) => {
     const buttonSize = isMobile ? 'h-4 w-4' : 'h-5 w-5';
     const textSize = isMobile ? 'text-xs' : 'text-sm';
@@ -348,7 +347,7 @@ const DownloadLinkPage: React.FC = () => {
           <span className="font-medium">Back</span>
         </button>
 
-        {/* ===== ANIME DETAIL CARD (Mobile) ===== */}
+        {/* Mobile detail card */}
         <div className="lg:hidden mb-6">
           <div className="bg-slate-800/40 backdrop-blur-md rounded-2xl p-5 border border-slate-700/50 shadow-2xl">
             <div className="flex flex-col">
@@ -456,7 +455,7 @@ const DownloadLinkPage: React.FC = () => {
           </div>
         </div>
 
-        {/* ===== ANIME DETAIL CARD (PC) ===== */}
+        {/* Desktop detail card */}
         <div className="hidden lg:block mb-8">
           <div className="bg-slate-800/40 backdrop-blur-md rounded-3xl p-8 border border-slate-700/50 shadow-2xl">
             <div className="flex flex-col lg:flex-row gap-8">
@@ -562,7 +561,7 @@ const DownloadLinkPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Tabs with icons */}
+        {/* Tabs */}
         <div className="flex border-b border-gray-800 mb-6">
           <button
             onClick={() => setActiveTab('download')}
@@ -600,7 +599,7 @@ const DownloadLinkPage: React.FC = () => {
           </button>
         </div>
 
-        {/* Download / Watch links */}
+        {/* Download links */}
         {activeTab === 'download' && (
           <div className="space-y-3">
             {downloadLinks.length === 0 ? (
@@ -620,6 +619,7 @@ const DownloadLinkPage: React.FC = () => {
           </div>
         )}
 
+        {/* Watch links */}
         {activeTab === 'watch' && (
           <div className="space-y-3">
             {watchLinks.length === 0 ? (
@@ -637,7 +637,8 @@ const DownloadLinkPage: React.FC = () => {
                   />
                   {selectedIndex === idx && (
                     <div className="mt-2 rounded-xl overflow-hidden shadow-2xl border border-purple-500/30 animate-fadeIn">
-                      <VideoPlayer src={link.url} />
+                      {/* ✅ Pass the title prop */}
+                      <VideoPlayer src={link.url} title={title} />
                     </div>
                   )}
                 </React.Fragment>
