@@ -1,7 +1,8 @@
- // routes/animeRoutes.cjs - UPDATED WITH LIKE/DISLIKE SYSTEM, SEO SUPPORT & UNASSIGNED ROUTE
+// routes/animeRoutes.cjs - UPDATED WITH LIKE/DISLIKE SYSTEM, SEO SUPPORT, UNASSIGNED ROUTE & DOWNLOAD SESSION
 const express = require('express');
 const router = express.Router();
 const Anime = require('../models/Anime.cjs');
+const DownloadSession = require('../models/DownloadSession.cjs'); // ✅ NEW: Import DownloadSession model
 // ✅ FIXED: Import adminAuth directly (not destructured)
 const adminAuth = require('../middleware/adminAuth.cjs');
 
@@ -160,6 +161,38 @@ router.get('/unassigned', adminAuth, async (req, res) => {
   } catch (err) {
     console.error('❌ Error fetching unassigned anime:', err);
     res.status(500).json({ error: 'Failed to fetch unassigned anime' });
+  }
+});
+
+// ============================================
+// ✅ DOWNLOAD SESSION CREATION (from AnimeDetailPage)
+// ============================================
+router.post('/create-session', async (req, res) => {
+  try {
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const userAgent = req.headers['user-agent'];
+    const { animeId, source } = req.body; // source = 'home' or 'detail'
+
+    // Validate source
+    if (!['home', 'detail'].includes(source)) {
+      return res.status(400).json({ error: 'Invalid source' });
+    }
+
+    // Determine expiration
+    const hours = source === 'home' ? 6 : 4;
+    const expiresAt = new Date(Date.now() + hours * 60 * 60 * 1000);
+
+    // Upsert: replace any previous session for this (ip + userAgent + animeId)
+    await DownloadSession.findOneAndUpdate(
+      { ip, userAgent, animeId },
+      { source, expiresAt },
+      { upsert: true, new: true }
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Session creation error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

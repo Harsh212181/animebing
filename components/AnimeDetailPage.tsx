@@ -657,6 +657,38 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     fetchFullAnimeDetails();
   }, [anime]);
 
+  // ============================================
+  // ✅ NEW: CREATE DOWNLOAD SESSION ON PAGE LOAD
+  // ============================================
+  useEffect(() => {
+    if (!displayAnime?._id) return;
+
+    // Determine source: if document.referrer includes our domain and is home page, source = 'home'
+    let source: 'home' | 'detail' = 'detail';
+    try {
+      const referrer = document.referrer;
+      if (referrer) {
+        const referrerUrl = new URL(referrer);
+        if (referrerUrl.origin === window.location.origin) {
+          // If referrer path is '/' (home) or contains '/home' (if you have a home route)
+          const path = referrerUrl.pathname;
+          if (path === '/' || path.includes('/home')) {
+            source = 'home';
+          }
+        }
+      }
+    } catch (e) {
+      // Ignore URL parsing errors
+    }
+
+    // Call the session creation endpoint
+    fetch(`${API_BASE}/anime/create-session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ animeId: displayAnime._id, source })
+    }).catch(err => console.error('Failed to create download session:', err));
+  }, [displayAnime?._id]);
+
   // ✅ FIXED: GENERATE SEO DATA WITH PROPER CANONICAL URL
   const getSEOData = () => {
     if (!displayAnime) {
@@ -1180,7 +1212,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                                       className="bg-purple-600 hover:bg-purple-700 text-white p-2 rounded-lg text-xs font-medium ml-1 flex items-center justify-center"
                                       title={page.title}
                                     >
-                                      <span className="text-xs">📄</span>
+                                      <span className="text-xs">☠️</span>
                                       {page.buttonTitle && <span className="ml-1 hidden sm:inline">{page.buttonTitle}</span>}
                                     </Link>
                                   ))}
@@ -1426,7 +1458,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                                         className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition-all duration-300 hover:scale-105 flex items-center gap-1"
                                         title={page.title}
                                       >
-                                        <span className="text-sm">📄</span>
+                                        <span className="text-sm">☠️</span>
                                         {page.buttonTitle || page.title}
                                       </Link>
                                     ))}
