@@ -35,6 +35,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
   const swipeStartY = useRef<number | null>(null);
   const swipeSide = useRef<'left' | 'right' | null>(null);
 
+  // ----- States -----
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -56,11 +57,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
   const [showBrightnessPopup, setShowBrightnessPopup] = useState(false);
   const [autoQuality, setAutoQuality] = useState(true);
 
-  const skipFeedbackRef = useRef(skipFeedback);
-  useEffect(() => {
-    skipFeedbackRef.current = skipFeedback;
-  }, [skipFeedback]);
-
   // Zoom and pan
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
@@ -68,11 +64,26 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
   const dragStart = useRef({ x: 0, y: 0 });
   const lastPinchDistance = useRef<number | null>(null);
 
+  // Playback speed (unused, but harmless)
+  const [playbackRate, setPlaybackRate] = useState(1);
+  const [showSpeedMenu, setShowSpeedMenu] = useState(false); // not used now
+
+  // Buffering spinner
+  const [isBuffering, setIsBuffering] = useState(false);
+
+  // Double‑tap ripple
+  const [ripple, setRipple] = useState<{ x: number; y: number } | null>(null);
+
   // Keep latest isFullscreen in ref for orientation handler
   const isFullscreenRef = useRef(isFullscreen);
   useEffect(() => {
     isFullscreenRef.current = isFullscreen;
   }, [isFullscreen]);
+
+  const skipFeedbackRef = useRef(skipFeedback);
+  useEffect(() => {
+    skipFeedbackRef.current = skipFeedback;
+  }, [skipFeedback]);
 
   // Helper to check if our player is the fullscreen element
   const isOurFullscreenActive = () => {
@@ -144,7 +155,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
   useEffect(() => {
     const startHideTimer = () => {
       if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
-      if (playing && !showQualityMenu) {
+      if (playing && !showQualityMenu) { // showSpeedMenu removed
         hideTimeoutRef.current = setTimeout(() => {
           setControlsVisible(false);
         }, 10000);
@@ -166,6 +177,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
     }
   };
 
+  // ----- Playback functions -----
   const togglePlay = () => {
     if (videoRef.current) {
       if (playing) {
@@ -253,23 +265,54 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
     showControlsTemporarily();
   };
 
-  const handleFullscreen = () => {
+  // ----- Fullscreen with orientation lock -----
+  const handleFullscreen = async () => {
     if (!containerRef.current) return;
+
     if (!isFullscreen) {
+      try {
+        const orientation = screen.orientation as any;
+        if (orientation && orientation.lock) {
+          await orientation.lock('landscape');
+        }
+      } catch (err) {
+        console.log('Orientation lock not supported');
+      }
+
       if (containerRef.current.requestFullscreen) {
-        containerRef.current.requestFullscreen();
-      } else if (videoRef.current?.requestFullscreen) {
-        videoRef.current.requestFullscreen();
+        await containerRef.current.requestFullscreen();
       }
     } else {
+      try {
+        if (screen.orientation && screen.orientation.unlock) {
+          screen.orientation.unlock();
+        }
+      } catch {}
+
       if (document.exitFullscreen) {
-        document.exitFullscreen();
+        await document.exitFullscreen();
       }
     }
     showControlsTemporarily();
   };
 
-  // Quality change
+  // ----- Orientation change → automatic fullscreen (YouTube style) -----
+  useEffect(() => {
+    const handleOrientation = () => {
+      const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+
+      if (isLandscape && !isFullscreenRef.current && containerRef.current) {
+        containerRef.current.requestFullscreen().catch(() => {});
+      } else if (!isLandscape && isFullscreenRef.current && document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+    };
+
+    window.addEventListener('orientationchange', handleOrientation);
+    return () => window.removeEventListener('orientationchange', handleOrientation);
+  }, []);
+
+  // ----- Quality change -----
   const handleQualityChange = (newSrc: string) => {
     const wasPlaying = playing;
     setCurrentSrc(newSrc);
@@ -321,36 +364,71 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
         connection.removeEventListener('change', detectAutoQuality);
       }
     };
-  }, [qualities, autoQuality]);
+  }, [qualities, autoQuality, currentSrc]);
 
-  // ----- Orientation-based fullscreen (like YouTube) -----
-  useEffect(() => {
-    // Only on mobile/touch devices
-    const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-    if (!isMobile) return;
-
-    const handleOrientationChange = () => {
-      // Use matchMedia to detect landscape
-      const isLandscape = window.matchMedia('(orientation: landscape)').matches;
-      const currentFullscreen = isFullscreenRef.current;
-
-      if (isLandscape && !currentFullscreen && containerRef.current) {
-        // Landscape and not fullscreen -> enter fullscreen
-        containerRef.current.requestFullscreen().catch(() => {});
-      } else if (!isLandscape && currentFullscreen && document.fullscreenElement) {
-        // Portrait and fullscreen -> exit fullscreen
-        document.exitFullscreen().catch(() => {});
+  // ----- Picture‑in‑Picture -----
+  const togglePiP = async () => {
+    if (!videoRef.current) return;
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+      } else {
+        await videoRef.current.requestPictureInPicture();
       }
-    };
+    } catch (err) {
+      console.error('PiP failed:', err);
+    }
+    showControlsTemporarily();
+  };
 
-    const mql = window.matchMedia('(orientation: landscape)');
-    mql.addEventListener('change', handleOrientationChange);
-    return () => mql.removeEventListener('change', handleOrientationChange);
-  }, []); // Empty deps – runs once, uses ref for latest fullscreen state
+  // ----- Resume playback (wait for metadata) -----
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const savedTime = localStorage.getItem(`video-progress-${currentSrc}`);
+    if (savedTime) {
+      const onLoaded = () => {
+        video.currentTime = parseFloat(savedTime);
+        video.removeEventListener('loadedmetadata', onLoaded);
+      };
+      video.addEventListener('loadedmetadata', onLoaded);
+    }
+  }, [currentSrc]);
+
+  // Save progress every 5 seconds
+  useEffect(() => {
+    if (!videoRef.current) return;
+    const interval = setInterval(() => {
+      localStorage.setItem(
+        `video-progress-${currentSrc}`,
+        videoRef.current!.currentTime.toString()
+      );
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [currentSrc]);
+
+  // ----- Ripple animation -----
+  const showRipple = (x: number, y: number) => {
+    setRipple({ x, y });
+    setTimeout(() => setRipple(null), 500);
+  };
+
+  const skipForwardWithRipple = (clientX?: number, clientY?: number) => {
+    if (clientX !== undefined && clientY !== undefined) {
+      showRipple(clientX, clientY);
+    }
+    skipForward();
+  };
+
+  const skipBackwardWithRipple = (clientX?: number, clientY?: number) => {
+    if (clientX !== undefined && clientY !== undefined) {
+      showRipple(clientX, clientY);
+    }
+    skipBackward();
+  };
 
   // ----- Gesture handlers -----
-  const SWIPE_THRESHOLD = 10;
-
   const handleTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 1) {
       const touch = e.touches[0];
@@ -399,7 +477,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
       const touch = e.touches[0];
       const dx = Math.abs(touch.clientX - swipeStartPos.current.x);
       const dy = Math.abs(touch.clientY - swipeStartPos.current.y);
-      if (dx > SWIPE_THRESHOLD || dy > SWIPE_THRESHOLD) {
+      if (dx > 10 || dy > 10) {
         isSwiping.current = true;
         if (longPressTimeoutRef.current) {
           clearTimeout(longPressTimeoutRef.current);
@@ -478,8 +556,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
-    if (!isSwiping.current && swipeSide.current) {
+    if (!isSwiping.current && swipeSide.current && e.changedTouches.length > 0) {
       const zone = swipeSide.current;
+      const touch = e.changedTouches[0];
       const now = Date.now();
       const timeSinceLastTap = now - lastTapTimeRef.current;
 
@@ -491,9 +570,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
       if (timeSinceLastTap < 300 && lastTapZoneRef.current === zone) {
         // Double tap
         if (zone === 'left') {
-          skipBackward();
+          skipBackwardWithRipple(touch.clientX, touch.clientY);
         } else {
-          skipForward();
+          skipForwardWithRipple(touch.clientX, touch.clientY);
         }
         lastTapTimeRef.current = 0;
         lastTapZoneRef.current = null;
@@ -629,7 +708,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
   return (
     <div
       ref={containerRef}
-      className="relative w-full bg-black overflow-hidden outline-none"
+      className="relative w-full bg-black outline-none"
       style={{ touchAction: 'none' }}
       tabIndex={-1}
       onTouchStart={handleTouchStart}
@@ -650,6 +729,10 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
         @keyframes fadeIn {
           0% { opacity: 0; }
           100% { opacity: 1; }
+        }
+        @keyframes rippleAnim {
+          0% { transform: translate(-50%, -50%) scale(0); opacity: 1; }
+          100% { transform: translate(-50%, -50%) scale(2); opacity: 0; }
         }
         .watermark-container {
           animation: fadeInScale 0.5s ease-out forwards;
@@ -693,6 +776,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
           height: '100%',
           filter: `brightness(${brightness})`,
         }}
+        className="relative overflow-hidden"
       >
         <video
           ref={videoRef}
@@ -701,7 +785,12 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}
           onPlay={() => setPlaying(true)}
-          onPause={() => setPlaying(false)}
+          onPause={() => {
+            setPlaying(false);
+            setIsBuffering(false);
+          }}
+          onWaiting={() => setIsBuffering(true)}
+          onPlaying={() => setIsBuffering(false)}
           onError={(e) => {
             console.error('Video error:', e);
           }}
@@ -710,10 +799,36 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
         />
       </div>
 
-      {/* Centered play overlay – exactly in the middle */}
+      {/* Buffering spinner */}
+      {isBuffering && (
+        <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
+          <div className="w-12 h-12 border-4 border-white border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
+
+      {/* Ripple overlay */}
+      {ripple && (
+        <div
+          className="absolute pointer-events-none z-40"
+          style={{
+            left: ripple.x,
+            top: ripple.y,
+            width: '150px',
+            height: '150px',
+            borderRadius: '50%',
+            background: 'rgba(255,255,255,0.3)',
+            transform: 'translate(-50%, -50%)',
+            animation: 'rippleAnim 0.5s ease-out',
+          }}
+        />
+      )}
+
+      {/* Centered play overlay */}
       {!playing && (
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none">
-          <span className="text-white text-6xl" style={{ textShadow: '0 2px 8px rgba(0,0,0,0.7)' }}>▶</span>
+        <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
+          <span className="text-white text-7xl" style={{ textShadow: '0 2px 8px rgba(0,0,0,0.7)' }}>
+            ▶
+          </span>
         </div>
       )}
 
@@ -747,7 +862,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
       <div className="absolute inset-0 z-10 flex">
         <div
           className="w-1/3 h-full"
-          onTouchStart={() => {}} // Handled by container
+          onTouchStart={() => {}}
           onTouchEnd={() => {}}
           onMouseDown={() => startLongPress('left')}
           onMouseUp={() => endLongPress('left')}
@@ -783,7 +898,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
           className="w-full mb-0 accent-purple-500"
         />
 
-        <div className="overflow-x-auto pb-1 no-scrollbar">
+        <div className="overflow-x-auto pb-1 no-scrollbar relative">
           <div className="flex items-center space-x-3 min-w-max">
             <button onClick={volumeDown} className="flex-shrink-0 text-white/80 hover:text-white text-xl">♪–</button>
             <button onClick={volumeUp} className="flex-shrink-0 text-white/80 hover:text-white text-xl">♪+</button>
@@ -795,18 +910,26 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
             <span className="text-xs whitespace-nowrap flex-shrink-0 text-white/60">
               {formatTime(currentTime)} / {formatTime(duration)}
             </span>
+
+            {/* Quality Button */}
             {qualities && qualities.length > 0 && (
               <div className="relative flex-shrink-0">
                 <button
-                  onClick={() => setShowQualityMenu(!showQualityMenu)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowQualityMenu(!showQualityMenu);
+                  }}
                   className="text-sm text-white/80 hover:text-white px-2 py-1"
                 >
                   Quality
                 </button>
                 {showQualityMenu && (
-                  <div className="absolute bottom-full right-0 mb-2 bg-gray-800/90 rounded shadow-lg">
+                  <div className="absolute bottom-full right-0 mb-2 bg-gray-800/90 rounded shadow-lg z-50">
                     <button
-                      onClick={() => setAutoQuality(true)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setAutoQuality(true);
+                      }}
                       className={`block w-full text-left px-4 py-2 text-sm hover:bg-purple-700 ${
                         autoQuality ? 'text-green-400' : 'text-white/80'
                       }`}
@@ -816,7 +939,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
                     {qualities.map(q => (
                       <button
                         key={q.src}
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           setAutoQuality(false);
                           handleQualityChange(q.src);
                         }}
@@ -831,8 +955,15 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
                 )}
               </div>
             )}
+
+            {/* PiP Button */}
+            <button onClick={togglePiP} className="flex-shrink-0 text-white/80 hover:text-white">
+              PiP
+            </button>
+
+            {/* Fullscreen Button */}
             <button onClick={handleFullscreen} className="flex-shrink-0 text-white/80 hover:text-white text-1xl">
-              {isFullscreen ? 'Exit' : '⛶'}
+              {isFullscreen ? '⤫' : '⛶'}
             </button>
           </div>
         </div>
