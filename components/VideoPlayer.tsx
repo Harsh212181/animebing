@@ -1,4 +1,4 @@
- import React, { useRef, useState, useEffect } from 'react';
+ import React, { useRef, useState, useEffect, useCallback } from 'react';
 
 interface VideoPlayerProps {
   src: string;
@@ -43,7 +43,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
   const [currentSrc, setCurrentSrc] = useState(src);
   const [showQualityMenu, setShowQualityMenu] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [showVolumePopup, setShowVolumePopup] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [skipFeedback, setSkipFeedback] = useState<{ direction: 'left' | 'right'; active: boolean }>({
     direction: 'left',
@@ -57,16 +56,12 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
   const [showBrightnessPopup, setShowBrightnessPopup] = useState(false);
   const [autoQuality, setAutoQuality] = useState(true);
 
-  // Zoom and pan
+  // Zoom and pan - scale from 0.5 to 3
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStart = useRef({ x: 0, y: 0 });
   const lastPinchDistance = useRef<number | null>(null);
-
-  // Playback speed (unused, but harmless)
-  const [playbackRate, setPlaybackRate] = useState(1);
-  const [showSpeedMenu, setShowSpeedMenu] = useState(false); // not used now
 
   // Buffering spinner
   const [isBuffering, setIsBuffering] = useState(false);
@@ -87,7 +82,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
 
   // Helper to check if our player is the fullscreen element
   const isOurFullscreenActive = () => {
-    const fsElement = document.fullscreenElement;
+    const fsElement = document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement;
     return fsElement === containerRef.current || fsElement === videoRef.current;
   };
 
@@ -112,7 +107,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
     }
   }, []);
 
-  // Fullscreen change listener + history
+  // Fullscreen change listener + history (with vendor prefixes)
   useEffect(() => {
     const handleFullscreenChange = () => {
       const ourFullscreen = isOurFullscreenActive();
@@ -128,14 +123,17 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
           window.history.replaceState({}, '');
           fullscreenStatePushed.current = false;
         }
-        // Reset zoom when exiting fullscreen (optional)
+        // Reset zoom when exiting fullscreen
         setScale(1);
         setTranslate({ x: 0, y: 0 });
       }
     };
 
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    const events = ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'];
+    events.forEach(event => document.addEventListener(event, handleFullscreenChange));
+    return () => {
+      events.forEach(event => document.removeEventListener(event, handleFullscreenChange));
+    };
   }, []);
 
   // Popstate (back button) handler – exit fullscreen if active
@@ -155,7 +153,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
   useEffect(() => {
     const startHideTimer = () => {
       if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
-      if (playing && !showQualityMenu) { // showSpeedMenu removed
+      if (playing && !showQualityMenu) {
         hideTimeoutRef.current = setTimeout(() => {
           setControlsVisible(false);
         }, 10000);
@@ -249,8 +247,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
     if (videoRef.current) {
       videoRef.current.volume = newVolume;
     }
-    setShowVolumePopup(true);
-    setTimeout(() => setShowVolumePopup(false), 800);
     showControlsTemporarily();
   };
 
@@ -260,25 +256,21 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
     if (videoRef.current) {
       videoRef.current.volume = newVolume;
     }
-    setShowVolumePopup(true);
-    setTimeout(() => setShowVolumePopup(false), 800);
     showControlsTemporarily();
   };
 
-  // ----- FULLSCREEN WITH ORIENTATION LOCK (silent on unsupported devices) -----
+  // ----- FULLSCREEN WITH ORIENTATION LOCK -----
   const handleFullscreen = async () => {
     if (!containerRef.current) return;
 
     if (!isFullscreen) {
       try {
-        // First enter fullscreen (user gesture required)
         await containerRef.current.requestFullscreen();
-        // Then try to lock orientation – ignore errors if not supported
         if (screen.orientation && 'lock' in screen.orientation) {
           try {
             await (screen.orientation as any).lock('landscape');
           } catch (orientationErr) {
-            // Silently ignore – orientation lock not supported on this device
+            // ignore
           }
         }
       } catch (err) {
@@ -286,7 +278,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
       }
     } else {
       try {
-        // Unlock orientation when exiting fullscreen (if supported)
         if (screen.orientation && 'unlock' in screen.orientation) {
           try {
             (screen.orientation as any).unlock();
@@ -418,7 +409,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
     skipBackward();
   };
 
-  // ----- Gesture handlers -----
+  // ----- Touch handlers (manual, non‑passive) -----
   const handleTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 1) {
       const touch = e.touches[0];
@@ -462,7 +453,10 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
     showControlsTemporarily();
   };
 
-  const handleTouchMove = (e: React.TouchEvent) => {
+  // This handler is attached manually with non‑passive option
+  const handleTouchMove = useCallback((e: TouchEvent) => {
+    e.preventDefault();
+
     if (!isSwiping.current && swipeStartPos.current && e.touches.length === 1) {
       const touch = e.touches[0];
       const dx = Math.abs(touch.clientX - swipeStartPos.current.x);
@@ -506,27 +500,23 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
         if (videoRef.current) {
           videoRef.current.volume = newVolume;
         }
-        setShowVolumePopup(true);
-        setTimeout(() => setShowVolumePopup(false), 800);
       }
 
       swipeStartY.current = e.touches[0].clientY;
     }
 
     if (e.touches.length === 2) {
-      e.preventDefault();
       const distance = Math.hypot(
         e.touches[0].pageX - e.touches[1].pageX,
         e.touches[0].pageY - e.touches[1].pageY
       );
       if (lastPinchDistance.current) {
         const delta = distance / lastPinchDistance.current;
-        const newScale = Math.min(Math.max(scale * delta, 1), 3);
+        const newScale = Math.min(3, Math.max(0.5, scale * delta));
         setScale(newScale);
       }
       lastPinchDistance.current = distance;
     } else if (e.touches.length === 1 && isDragging) {
-      e.preventDefault();
       const newX = e.touches[0].pageX - dragStart.current.x;
       const newY = e.touches[0].pageY - dragStart.current.y;
       if (containerRef.current) {
@@ -543,7 +533,18 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
       }
     }
     showControlsTemporarily();
-  };
+  }, [brightness, volume, scale, translate, isDragging, isSwiping, swipeSide, swipeStartY, activeLongPressZone, skipIntervalRef, tapTimeoutRef, longPressTimeoutRef, dragStart, lastPinchDistance]);
+
+  // Set up manual touchmove listener with non‑passive option
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    return () => {
+      container.removeEventListener('touchmove', handleTouchMove);
+    };
+  }, [handleTouchMove]);
 
   const handleTouchEnd = (e: React.TouchEvent) => {
     if (!isSwiping.current && swipeSide.current && e.changedTouches.length > 0) {
@@ -702,7 +703,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
       style={{ touchAction: 'none' }}
       tabIndex={-1}
       onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       onMouseMove={showControlsTemporarily}
     >
@@ -841,13 +841,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
         </div>
       )}
 
-      {/* Volume popup */}
-      {showVolumePopup && (
-        <div className="absolute top-1/2 right-4 transform -translate-y-1/2 bg-purple-600/80 px-3 py-1 rounded text-white text-sm z-30">
-          🔊 {Math.round(volume * 100)}%
-        </div>
-      )}
-
       {/* Gesture zones */}
       <div className="absolute inset-0 z-10 flex">
         <div
@@ -892,11 +885,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
           <div className="flex items-center space-x-3 min-w-max">
             <button onClick={volumeDown} className="flex-shrink-0 text-white/80 hover:text-white text-xl">♪–</button>
             <button onClick={volumeUp} className="flex-shrink-0 text-white/80 hover:text-white text-xl">♪+</button>
-            {showVolumePopup && (
-              <div className="flex-shrink-0 bg-purple-600/80 px-2 py-1 rounded text-sm text-white">
-                {Math.round(volume * 100)}%
-              </div>
-            )}
             <span className="text-xs whitespace-nowrap flex-shrink-0 text-white/60">
               {formatTime(currentTime)} / {formatTime(duration)}
             </span>
