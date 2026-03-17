@@ -710,7 +710,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
     <div
       ref={containerRef}
       className="relative w-full bg-black outline-none"
-      style={{ touchAction: 'pan-y' }} // ✅ Allow vertical pan for seek bar, but prevent other gestures
+      style={{ touchAction: 'pan-y' }}
       tabIndex={-1}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
@@ -745,18 +745,24 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
         }
       `}</style>
 
-      {/* Anime title on top left */}
+      {/* Anime title on top left - now hides with controls */}
       {title && (
         <div
-          className="absolute top-1 left-3 z-40 pointer-events-none text-white text-sm font-semibold break-words line-clamp-2 px-1"
+          className={`absolute top-1 left-3 z-40 pointer-events-none text-white text-sm font-semibold break-words line-clamp-2 px-1 transition-opacity duration-300 ${
+            controlsVisible ? 'opacity-100' : 'opacity-0'
+          }`}
           style={{ maxWidth: 'calc(100% - 6rem)', textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}
         >
           {title}
         </div>
       )}
 
-      {/* Watermark */}
-      <div className="absolute top-1 right-3 flex items-center space-x-2 z-40 pointer-events-none watermark-container">
+      {/* Watermark - now hides with controls */}
+      <div
+        className={`absolute top-1 right-3 flex items-center space-x-2 z-40 pointer-events-none watermark-container transition-opacity duration-300 ${
+          controlsVisible ? 'opacity-100' : 'opacity-0'
+        }`}
+      >
         <img
           src="/skull,logo.jpeg"
           alt="Animebing"
@@ -878,8 +884,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
           value={currentTime}
           onChange={handleSeek}
           className="w-full mb-0 accent-purple-500"
-          onTouchStart={(e) => e.stopPropagation()} // ✅ Prevent container handlers
-          onTouchMove={(e) => e.stopPropagation()}  // ✅ Allow native drag
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchMove={(e) => e.stopPropagation()}
         />
 
         <div className="overflow-x-auto pb-1 no-scrollbar relative">
