@@ -826,7 +826,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
       {/* Centered play overlay */}
       {!playing && (
         <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
-          <span className="text-white text-7xl" style={{ textShadow: '0 2px 8px rgba(0,0,0,0.7)' }}>
+          <span className="text-white text-4xl" style={{ textShadow: '0 2px 8px rgba(0,0,0,0.7)' }}>
             ▶
           </span>
         </div>

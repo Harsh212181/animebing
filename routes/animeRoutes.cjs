@@ -4,6 +4,8 @@ const router = express.Router();
 const Anime = require('../models/Anime.cjs');
 // ✅ FIXED: Import adminAuth directly (not destructured)
 const adminAuth = require('../middleware/adminAuth.cjs');
+// ✅ ADDED: Import DownloadPage model for cascade deletion
+const DownloadPage = require('../models/DownloadPage.cjs');
 
 // ✅ CRITICAL FIX: STATIC ROUTES MUST COME BEFORE DYNAMIC ROUTES
 
@@ -681,6 +683,32 @@ router.put('/featured/order', adminAuth, async (req, res) => {
     });
   } catch (err) {
     console.error('Error updating featured order:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * ✅ DELETE ANIME (ADMIN ONLY) – CASCADE DELETE ASSOCIATED DOWNLOAD PAGES
+ */
+router.delete('/:id', adminAuth, async (req, res) => {
+  try {
+    const anime = await Anime.findById(req.params.id);
+    if (!anime) {
+      return res.status(404).json({ success: false, error: 'Anime not found' });
+    }
+
+    // ✅ Delete all download pages linked to this anime
+    await DownloadPage.deleteMany({ animeId: req.params.id });
+
+    // ✅ Delete the anime itself
+    await anime.deleteOne();
+
+    res.json({ 
+      success: true, 
+      message: 'Anime and associated download pages deleted successfully' 
+    });
+  } catch (err) {
+    console.error('Error deleting anime:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
