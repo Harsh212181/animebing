@@ -265,52 +265,42 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
     showControlsTemporarily();
   };
 
-  // ----- Fullscreen with orientation lock -----
+  // ----- FULLSCREEN WITH ORIENTATION LOCK (silent on unsupported devices) -----
   const handleFullscreen = async () => {
     if (!containerRef.current) return;
 
     if (!isFullscreen) {
       try {
-        const orientation = screen.orientation as any;
-        if (orientation && orientation.lock) {
-          await orientation.lock('landscape');
+        // First enter fullscreen (user gesture required)
+        await containerRef.current.requestFullscreen();
+        // Then try to lock orientation – ignore errors if not supported
+        if (screen.orientation && 'lock' in screen.orientation) {
+          try {
+            await (screen.orientation as any).lock('landscape');
+          } catch (orientationErr) {
+            // Silently ignore – orientation lock not supported on this device
+          }
         }
       } catch (err) {
-        console.log('Orientation lock not supported');
-      }
-
-      if (containerRef.current.requestFullscreen) {
-        await containerRef.current.requestFullscreen();
+        console.warn('Fullscreen request failed:', err);
       }
     } else {
       try {
-        if (screen.orientation && screen.orientation.unlock) {
-          screen.orientation.unlock();
+        // Unlock orientation when exiting fullscreen (if supported)
+        if (screen.orientation && 'unlock' in screen.orientation) {
+          try {
+            (screen.orientation as any).unlock();
+          } catch {
+            // ignore
+          }
         }
-      } catch {}
-
-      if (document.exitFullscreen) {
         await document.exitFullscreen();
+      } catch (err) {
+        console.warn('Exit fullscreen failed:', err);
       }
     }
     showControlsTemporarily();
   };
-
-  // ----- Orientation change → automatic fullscreen (YouTube style) -----
-  useEffect(() => {
-    const handleOrientation = () => {
-      const isLandscape = window.matchMedia('(orientation: landscape)').matches;
-
-      if (isLandscape && !isFullscreenRef.current && containerRef.current) {
-        containerRef.current.requestFullscreen().catch(() => {});
-      } else if (!isLandscape && isFullscreenRef.current && document.fullscreenElement) {
-        document.exitFullscreen().catch(() => {});
-      }
-    };
-
-    window.addEventListener('orientationchange', handleOrientation);
-    return () => window.removeEventListener('orientationchange', handleOrientation);
-  }, []);
 
   // ----- Quality change -----
   const handleQualityChange = (newSrc: string) => {
