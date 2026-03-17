@@ -14,11 +14,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
   const lastTapTimeRef = useRef<number>(0);
   const lastTapZoneRef = useRef<string | null>(null);
   const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const longPressTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const skipIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const activeLongPressZone = useRef<string | null>(null);
   const isSwiping = useRef<boolean>(false);
   const swipeStartPos = useRef<{ x: number; y: number } | null>(null);
+
+  // ✅ NEW: Skip timeout ref
+  const skipTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Refs for keyboard handlers
   const togglePlayRef = useRef<() => void>(() => {});
@@ -44,17 +44,21 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
   const [showQualityMenu, setShowQualityMenu] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
-  const [skipFeedback, setSkipFeedback] = useState<{ direction: 'left' | 'right'; active: boolean }>({
+
+  // Consolidated skip state
+  const [skip, setSkip] = useState<{ direction: 'left' | 'right'; active: boolean; seconds: number }>({
     direction: 'left',
     active: false,
+    seconds: 0,
   });
-  const [continuousSkipActive, setContinuousSkipActive] = useState<'left' | 'right' | null>(null);
-  const [skipSeconds, setSkipSeconds] = useState(0);
 
   // Brightness and auto quality
   const [brightness, setBrightness] = useState(1);
   const [showBrightnessPopup, setShowBrightnessPopup] = useState(false);
   const [autoQuality, setAutoQuality] = useState(true);
+
+  // Volume popup
+  const [showVolumePopup, setShowVolumePopup] = useState(false);
 
   // Zoom and pan - scale from 0.5 to 3
   const [scale, setScale] = useState(1);
@@ -69,16 +73,15 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
   // Double‑tap ripple
   const [ripple, setRipple] = useState<{ x: number; y: number } | null>(null);
 
+  // Timeout refs for popups
+  const brightnessTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const volumeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   // Keep latest isFullscreen in ref for orientation handler
   const isFullscreenRef = useRef(isFullscreen);
   useEffect(() => {
     isFullscreenRef.current = isFullscreen;
   }, [isFullscreen]);
-
-  const skipFeedbackRef = useRef(skipFeedback);
-  useEffect(() => {
-    skipFeedbackRef.current = skipFeedback;
-  }, [skipFeedback]);
 
   // Helper to check if our player is the fullscreen element
   const isOurFullscreenActive = () => {
@@ -207,22 +210,31 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
     showControlsTemporarily();
   };
 
+  // ✅ FIXED: showSkipFeedback with proper timeout management
+  const MAX_SKIP = 120; // optional limit
   const showSkipFeedback = (direction: 'left' | 'right') => {
-    setSkipFeedback({ direction, active: true });
-
-    setSkipSeconds(prev => {
-      if (skipFeedbackRef.current.direction !== direction) {
-        return 15;
-      }
-      return prev + 15;
+    setSkip(prev => {
+      const newSeconds = prev.direction === direction ? prev.seconds + 15 : 15;
+      return {
+        direction,
+        active: true,
+        seconds: Math.min(newSeconds, MAX_SKIP), // cap if desired
+      };
     });
 
-    if (tapTimeoutRef.current) clearTimeout(tapTimeoutRef.current);
+    // Clear previous timeout
+    if (skipTimeoutRef.current) {
+      clearTimeout(skipTimeoutRef.current);
+    }
 
-    tapTimeoutRef.current = setTimeout(() => {
-      setSkipFeedback(prev => ({ ...prev, active: false }));
-      setSkipSeconds(0);
-    }, 800);
+    // Set new timeout to hide overlay after 800ms
+    skipTimeoutRef.current = setTimeout(() => {
+      setSkip({
+        direction: 'left',
+        active: false,
+        seconds: 0,
+      });
+    }, 800); // 800ms feels snappy
   };
 
   const skipForward = () => {
@@ -247,6 +259,10 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
     if (videoRef.current) {
       videoRef.current.volume = newVolume;
     }
+    // Show volume popup for 2 seconds
+    setShowVolumePopup(true);
+    if (volumeTimeoutRef.current) clearTimeout(volumeTimeoutRef.current);
+    volumeTimeoutRef.current = setTimeout(() => setShowVolumePopup(false), 2000);
     showControlsTemporarily();
   };
 
@@ -256,6 +272,10 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
     if (videoRef.current) {
       videoRef.current.volume = newVolume;
     }
+    // Show volume popup for 2 seconds
+    setShowVolumePopup(true);
+    if (volumeTimeoutRef.current) clearTimeout(volumeTimeoutRef.current);
+    volumeTimeoutRef.current = setTimeout(() => setShowVolumePopup(false), 2000);
     showControlsTemporarily();
   };
 
@@ -411,6 +431,17 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
 
   // ----- Touch handlers (manual, non‑passive) -----
   const handleTouchStart = (e: React.TouchEvent) => {
+    // Ignore if two fingers (pinch) – we don't want to interfere with zoom
+    if (e.touches.length === 2) {
+      // Prepare for pinch
+      const distance = Math.hypot(
+        e.touches[0].pageX - e.touches[1].pageX,
+        e.touches[0].pageY - e.touches[1].pageY
+      );
+      lastPinchDistance.current = distance;
+      return;
+    }
+
     if (e.touches.length === 1) {
       const touch = e.touches[0];
       swipeStartPos.current = { x: touch.clientX, y: touch.clientY };
@@ -420,35 +451,14 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
 
       isSwiping.current = false;
 
-      if (longPressTimeoutRef.current) clearTimeout(longPressTimeoutRef.current);
-      longPressTimeoutRef.current = setTimeout(() => {
-        if (!isSwiping.current && swipeSide.current) {
-          activeLongPressZone.current = swipeSide.current;
-          setContinuousSkipActive(swipeSide.current);
-          if (skipIntervalRef.current) clearInterval(skipIntervalRef.current);
-          skipIntervalRef.current = setInterval(() => {
-            if (swipeSide.current === 'left') {
-              skipBackward();
-            } else {
-              skipForward();
-            }
-          }, 200);
-        }
-      }, 400);
-    }
-
-    if (e.touches.length === 2) {
-      const distance = Math.hypot(
-        e.touches[0].pageX - e.touches[1].pageX,
-        e.touches[0].pageY - e.touches[1].pageY
-      );
-      lastPinchDistance.current = distance;
-    } else if (e.touches.length === 1 && scale > 1) {
-      setIsDragging(true);
-      dragStart.current = {
-        x: e.touches[0].pageX - translate.x,
-        y: e.touches[0].pageY - translate.y,
-      };
+      // If we are already zoomed, allow panning
+      if (scale > 1) {
+        setIsDragging(true);
+        dragStart.current = {
+          x: touch.pageX - translate.x,
+          y: touch.pageY - translate.y,
+        };
+      }
     }
     showControlsTemporarily();
   };
@@ -457,54 +467,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
   const handleTouchMove = useCallback((e: TouchEvent) => {
     e.preventDefault();
 
-    if (!isSwiping.current && swipeStartPos.current && e.touches.length === 1) {
-      const touch = e.touches[0];
-      const dx = Math.abs(touch.clientX - swipeStartPos.current.x);
-      const dy = Math.abs(touch.clientY - swipeStartPos.current.y);
-      if (dx > 10 || dy > 10) {
-        isSwiping.current = true;
-        if (longPressTimeoutRef.current) {
-          clearTimeout(longPressTimeoutRef.current);
-          longPressTimeoutRef.current = null;
-        }
-        if (tapTimeoutRef.current) {
-          clearTimeout(tapTimeoutRef.current);
-          tapTimeoutRef.current = null;
-        }
-        if (activeLongPressZone.current) {
-          if (skipIntervalRef.current) {
-            clearInterval(skipIntervalRef.current);
-            skipIntervalRef.current = null;
-          }
-          setContinuousSkipActive(null);
-          activeLongPressZone.current = null;
-        }
-      }
-    }
-
-    if (isSwiping.current && swipeStartY.current !== null && swipeSide.current) {
-      const deltaY = swipeStartY.current - e.touches[0].clientY;
-
-      if (swipeSide.current === 'left') {
-        let newBrightness = brightness + deltaY / 500;
-        newBrightness = Math.max(0.3, Math.min(newBrightness, 2));
-        setBrightness(newBrightness);
-        setShowBrightnessPopup(true);
-        setTimeout(() => setShowBrightnessPopup(false), 800);
-      }
-
-      if (swipeSide.current === 'right') {
-        let newVolume = volume + deltaY / 500;
-        newVolume = Math.max(0, Math.min(newVolume, 1));
-        setVolume(newVolume);
-        if (videoRef.current) {
-          videoRef.current.volume = newVolume;
-        }
-      }
-
-      swipeStartY.current = e.touches[0].clientY;
-    }
-
+    // Two fingers – pinch zoom
     if (e.touches.length === 2) {
       const distance = Math.hypot(
         e.touches[0].pageX - e.touches[1].pageX,
@@ -516,24 +479,74 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
         setScale(newScale);
       }
       lastPinchDistance.current = distance;
-    } else if (e.touches.length === 1 && isDragging) {
-      const newX = e.touches[0].pageX - dragStart.current.x;
-      const newY = e.touches[0].pageY - dragStart.current.y;
-      if (containerRef.current) {
-        const containerWidth = containerRef.current.clientWidth;
-        const containerHeight = containerRef.current.clientHeight;
-        const videoWidth = containerWidth * scale;
-        const videoHeight = containerHeight * scale;
-        const maxX = (videoWidth - containerWidth) / 2;
-        const maxY = (videoHeight - containerHeight) / 2;
-        setTranslate({
-          x: Math.min(maxX, Math.max(-maxX, newX)),
-          y: Math.min(maxY, Math.max(-maxY, newY)),
-        });
+      return;
+    }
+
+    // One finger – brightness/volume swipes or panning
+    if (e.touches.length === 1) {
+      // Panning when zoomed
+      if (scale > 1 && isDragging) {
+        const newX = e.touches[0].pageX - dragStart.current.x;
+        const newY = e.touches[0].pageY - dragStart.current.y;
+        if (containerRef.current) {
+          const containerWidth = containerRef.current.clientWidth;
+          const containerHeight = containerRef.current.clientHeight;
+          const videoWidth = containerWidth * scale;
+          const videoHeight = containerHeight * scale;
+          const maxX = (videoWidth - containerWidth) / 2;
+          const maxY = (videoHeight - containerHeight) / 2;
+          setTranslate({
+            x: Math.min(maxX, Math.max(-maxX, newX)),
+            y: Math.min(maxY, Math.max(-maxY, newY)),
+          });
+        }
+        return;
+      }
+
+      // Brightness/volume swipe
+      if (!isSwiping.current && swipeStartPos.current) {
+        const touch = e.touches[0];
+        const dx = Math.abs(touch.clientX - swipeStartPos.current.x);
+        const dy = Math.abs(touch.clientY - swipeStartPos.current.y);
+        if (dx > 10 || dy > 10) {
+          isSwiping.current = true;
+          // Cancel any pending double-tap
+          if (tapTimeoutRef.current) {
+            clearTimeout(tapTimeoutRef.current);
+            tapTimeoutRef.current = null;
+          }
+        }
+      }
+
+      if (isSwiping.current && swipeStartY.current !== null && swipeSide.current) {
+        const deltaY = swipeStartY.current - e.touches[0].clientY;
+
+        if (swipeSide.current === 'left') {
+          let newBrightness = brightness + deltaY / 500;
+          newBrightness = Math.max(0.3, Math.min(newBrightness, 2));
+          setBrightness(newBrightness);
+          setShowBrightnessPopup(true);
+          if (brightnessTimeoutRef.current) clearTimeout(brightnessTimeoutRef.current);
+          brightnessTimeoutRef.current = setTimeout(() => setShowBrightnessPopup(false), 2000);
+        }
+
+        if (swipeSide.current === 'right') {
+          let newVolume = volume + deltaY / 500;
+          newVolume = Math.max(0, Math.min(newVolume, 1));
+          setVolume(newVolume);
+          if (videoRef.current) {
+            videoRef.current.volume = newVolume;
+          }
+          setShowVolumePopup(true);
+          if (volumeTimeoutRef.current) clearTimeout(volumeTimeoutRef.current);
+          volumeTimeoutRef.current = setTimeout(() => setShowVolumePopup(false), 2000);
+        }
+
+        swipeStartY.current = e.touches[0].clientY;
       }
     }
     showControlsTemporarily();
-  }, [brightness, volume, scale, translate, isDragging, isSwiping, swipeSide, swipeStartY, activeLongPressZone, skipIntervalRef, tapTimeoutRef, longPressTimeoutRef, dragStart, lastPinchDistance]);
+  }, [brightness, volume, scale, translate, isDragging, isSwiping, swipeSide, swipeStartY, dragStart, lastPinchDistance]);
 
   // Set up manual touchmove listener with non‑passive option
   useEffect(() => {
@@ -547,7 +560,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
   }, [handleTouchMove]);
 
   const handleTouchEnd = (e: React.TouchEvent) => {
-    if (!isSwiping.current && swipeSide.current && e.changedTouches.length > 0) {
+    // Single tap / double tap detection (only if not swiping and not pinch)
+    if (!isSwiping.current && swipeSide.current && e.changedTouches.length > 0 && e.touches.length === 0) {
       const zone = swipeSide.current;
       const touch = e.changedTouches[0];
       const now = Date.now();
@@ -559,7 +573,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
       }
 
       if (timeSinceLastTap < 300 && lastTapZoneRef.current === zone) {
-        // Double tap
+        // Double tap on same side
         if (zone === 'left') {
           skipBackwardWithRipple(touch.clientX, touch.clientY);
         } else {
@@ -568,7 +582,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
         lastTapTimeRef.current = 0;
         lastTapZoneRef.current = null;
       } else {
-        // First tap
+        // First tap – wait to see if it becomes a double tap
         lastTapTimeRef.current = now;
         lastTapZoneRef.current = zone;
         tapTimeoutRef.current = setTimeout(() => {
@@ -579,17 +593,13 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
       }
     }
 
+    // Reset all gesture states
     setIsDragging(false);
     lastPinchDistance.current = null;
     swipeStartY.current = null;
     swipeSide.current = null;
     swipeStartPos.current = null;
     isSwiping.current = false;
-
-    if (longPressTimeoutRef.current) {
-      clearTimeout(longPressTimeoutRef.current);
-      longPressTimeoutRef.current = null;
-    }
 
     showControlsTemporarily();
   };
@@ -598,38 +608,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
     e.preventDefault();
     setScale(1);
     setTranslate({ x: 0, y: 0 });
-  };
-
-  // Long-press for mouse
-  const startLongPress = (zone: 'left' | 'right') => {
-    if (longPressTimeoutRef.current) clearTimeout(longPressTimeoutRef.current);
-    longPressTimeoutRef.current = setTimeout(() => {
-      activeLongPressZone.current = zone;
-      setContinuousSkipActive(zone);
-      if (skipIntervalRef.current) clearInterval(skipIntervalRef.current);
-      skipIntervalRef.current = setInterval(() => {
-        if (zone === 'left') {
-          skipBackward();
-        } else {
-          skipForward();
-        }
-      }, 200);
-    }, 400);
-  };
-
-  const endLongPress = (zone: 'left' | 'right') => {
-    if (longPressTimeoutRef.current) {
-      clearTimeout(longPressTimeoutRef.current);
-      longPressTimeoutRef.current = null;
-    }
-    if (activeLongPressZone.current === zone) {
-      if (skipIntervalRef.current) {
-        clearInterval(skipIntervalRef.current);
-        skipIntervalRef.current = null;
-      }
-      setContinuousSkipActive(null);
-      activeLongPressZone.current = null;
-    }
   };
 
   const formatTime = (time: number) => {
@@ -691,10 +669,17 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [showQualityMenu]);
 
-  const showLeftOverlay = skipFeedback.active && skipFeedback.direction === 'left';
-  const showRightOverlay = skipFeedback.active && skipFeedback.direction === 'right';
-  const showContinuousLeft = continuousSkipActive === 'left';
-  const showContinuousRight = continuousSkipActive === 'right';
+  // ✅ Cleanup skip timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (skipTimeoutRef.current) {
+        clearTimeout(skipTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const showLeftOverlay = skip.active && skip.direction === 'left';
+  const showRightOverlay = skip.active && skip.direction === 'right';
 
   return (
     <div
@@ -822,48 +807,37 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
         </div>
       )}
 
-      {/* Skip feedback overlays */}
-      {(showLeftOverlay || showContinuousLeft) && (
+      {/* Skip feedback overlays (1 second) */}
+      {showLeftOverlay && (
         <div className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black/70 text-white text-4xl font-bold px-3 py-1 rounded z-30">
-          -{skipSeconds || 15}
+          -{skip.seconds}
         </div>
       )}
-      {(showRightOverlay || showContinuousRight) && (
+      {showRightOverlay && (
         <div className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black/70 text-white text-4xl font-bold px-3 py-1 rounded z-30">
-          +{skipSeconds || 15}
+          +{skip.seconds}
         </div>
       )}
 
-      {/* Brightness popup */}
+      {/* Brightness popup (2 seconds) */}
       {showBrightnessPopup && (
         <div className="absolute top-1/2 left-4 transform -translate-y-1/2 bg-yellow-500/80 px-3 py-1 rounded text-white text-sm z-30">
           ☀ {Math.round(brightness * 100)}%
         </div>
       )}
 
-      {/* Gesture zones */}
+      {/* Volume popup (2 seconds) */}
+      {showVolumePopup && (
+        <div className="absolute top-1/2 right-4 transform -translate-y-1/2 bg-purple-600/80 px-3 py-1 rounded text-white text-sm z-30">
+          🔊 {Math.round(volume * 100)}%
+        </div>
+      )}
+
+      {/* Gesture zones (only for double‑tap detection, no long-press) */}
       <div className="absolute inset-0 z-10 flex">
-        <div
-          className="w-1/3 h-full"
-          onTouchStart={() => {}}
-          onTouchEnd={() => {}}
-          onMouseDown={() => startLongPress('left')}
-          onMouseUp={() => endLongPress('left')}
-          onMouseLeave={() => endLongPress('left')}
-        />
-        <div
-          className="w-1/3 h-full"
-          onClick={togglePlay}
-          onDoubleClick={handleDoubleTap}
-        />
-        <div
-          className="w-1/3 h-full"
-          onTouchStart={() => {}}
-          onTouchEnd={() => {}}
-          onMouseDown={() => startLongPress('right')}
-          onMouseUp={() => endLongPress('right')}
-          onMouseLeave={() => endLongPress('right')}
-        />
+        <div className="w-1/3 h-full" />
+        <div className="w-1/3 h-full" onClick={togglePlay} onDoubleClick={handleDoubleTap} />
+        <div className="w-1/3 h-full" />
       </div>
 
       {/* Controls */}
@@ -879,12 +853,25 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
           value={currentTime}
           onChange={handleSeek}
           className="w-full mb-0 accent-purple-500"
+          onTouchStart={(e) => e.stopPropagation()}
         />
 
         <div className="overflow-x-auto pb-1 no-scrollbar relative">
           <div className="flex items-center space-x-3 min-w-max">
-            <button onClick={volumeDown} className="flex-shrink-0 text-white/80 hover:text-white text-xl">♪–</button>
-            <button onClick={volumeUp} className="flex-shrink-0 text-white/80 hover:text-white text-xl">♪+</button>
+            <button
+              onClick={volumeDown}
+              onTouchStart={(e) => e.stopPropagation()}
+              className="flex-shrink-0 text-white/80 hover:text-white text-xl"
+            >
+              ♪–
+            </button>
+            <button
+              onClick={volumeUp}
+              onTouchStart={(e) => e.stopPropagation()}
+              className="flex-shrink-0 text-white/80 hover:text-white text-xl"
+            >
+              ♪+
+            </button>
             <span className="text-xs whitespace-nowrap flex-shrink-0 text-white/60">
               {formatTime(currentTime)} / {formatTime(duration)}
             </span>
@@ -897,6 +884,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
                     e.stopPropagation();
                     setShowQualityMenu(!showQualityMenu);
                   }}
+                  onTouchStart={(e) => e.stopPropagation()}
                   className="text-sm text-white/80 hover:text-white px-2 py-1"
                 >
                   Quality
@@ -908,6 +896,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
                         e.stopPropagation();
                         setAutoQuality(true);
                       }}
+                      onTouchStart={(e) => e.stopPropagation()}
                       className={`block w-full text-left px-4 py-2 text-sm hover:bg-purple-700 ${
                         autoQuality ? 'text-green-400' : 'text-white/80'
                       }`}
@@ -922,6 +911,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
                           setAutoQuality(false);
                           handleQualityChange(q.src);
                         }}
+                        onTouchStart={(e) => e.stopPropagation()}
                         className={`block w-full text-left px-4 py-2 text-sm hover:bg-purple-700 ${
                           q.src === currentSrc && !autoQuality ? 'font-bold text-purple-400' : 'text-white/80'
                         }`}
@@ -935,12 +925,20 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
             )}
 
             {/* PiP Button */}
-            <button onClick={togglePiP} className="flex-shrink-0 text-white/80 hover:text-white">
+            <button
+              onClick={togglePiP}
+              onTouchStart={(e) => e.stopPropagation()}
+              className="flex-shrink-0 text-white/80 hover:text-white"
+            >
               PiP
             </button>
 
             {/* Fullscreen Button */}
-            <button onClick={handleFullscreen} className="flex-shrink-0 text-white/80 hover:text-white text-1xl">
+            <button
+              onClick={handleFullscreen}
+              onTouchStart={(e) => e.stopPropagation()}
+              className="flex-shrink-0 text-white/80 hover:text-white text-1xl"
+            >
               {isFullscreen ? '⤫' : '⛶'}
             </button>
           </div>
