@@ -17,8 +17,12 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
   const isSwiping = useRef<boolean>(false);
   const swipeStartPos = useRef<{ x: number; y: number } | null>(null);
 
-  // ✅ NEW: Skip timeout ref
+  // ✅ Skip timeout ref
   const skipTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // ✅ Refs for smooth zoom animation
+  const animationFrame = useRef<number | null>(null);
+  const targetScale = useRef(1);
 
   // Refs for keyboard handlers
   const togglePlayRef = useRef<() => void>(() => {});
@@ -129,6 +133,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
         // Reset zoom when exiting fullscreen
         setScale(1);
         setTranslate({ x: 0, y: 0 });
+        targetScale.current = 1;
       }
     };
 
@@ -201,40 +206,39 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
     if (videoRef.current) setDuration(videoRef.current.duration);
   };
 
+  // ✅ Seek handler – updates video time directly
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const time = Number(e.target.value);
     if (videoRef.current) {
       videoRef.current.currentTime = time;
-      setCurrentTime(time);
     }
+    setCurrentTime(time);
     showControlsTemporarily();
   };
 
   // ✅ FIXED: showSkipFeedback with proper timeout management
-  const MAX_SKIP = 120; // optional limit
+  const MAX_SKIP = 120;
   const showSkipFeedback = (direction: 'left' | 'right') => {
     setSkip(prev => {
       const newSeconds = prev.direction === direction ? prev.seconds + 15 : 15;
       return {
         direction,
         active: true,
-        seconds: Math.min(newSeconds, MAX_SKIP), // cap if desired
+        seconds: Math.min(newSeconds, MAX_SKIP),
       };
     });
 
-    // Clear previous timeout
     if (skipTimeoutRef.current) {
       clearTimeout(skipTimeoutRef.current);
     }
 
-    // Set new timeout to hide overlay after 800ms
     skipTimeoutRef.current = setTimeout(() => {
       setSkip({
         direction: 'left',
         active: false,
         seconds: 0,
       });
-    }, 800); // 800ms feels snappy
+    }, 800);
   };
 
   const skipForward = () => {
@@ -259,7 +263,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
     if (videoRef.current) {
       videoRef.current.volume = newVolume;
     }
-    // Show volume popup for 2 seconds
     setShowVolumePopup(true);
     if (volumeTimeoutRef.current) clearTimeout(volumeTimeoutRef.current);
     volumeTimeoutRef.current = setTimeout(() => setShowVolumePopup(false), 2000);
@@ -272,7 +275,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
     if (videoRef.current) {
       videoRef.current.volume = newVolume;
     }
-    // Show volume popup for 2 seconds
     setShowVolumePopup(true);
     if (volumeTimeoutRef.current) clearTimeout(volumeTimeoutRef.current);
     volumeTimeoutRef.current = setTimeout(() => setShowVolumePopup(false), 2000);
@@ -429,11 +431,29 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
     skipBackward();
   };
 
-  // ----- Touch handlers (manual, non‑passive) -----
+  // ----- Smooth zoom animation -----
+  const smoothScaleUpdate = () => {
+    setScale(prev => {
+      const diff = targetScale.current - prev;
+      return prev + diff * 0.15; // smooth easing
+    });
+
+    animationFrame.current = requestAnimationFrame(smoothScaleUpdate);
+  };
+
+  // Cleanup animation frame on unmount
+  useEffect(() => {
+    return () => {
+      if (animationFrame.current) {
+        cancelAnimationFrame(animationFrame.current);
+      }
+    };
+  }, []);
+
+  // ----- Touch handlers -----
   const handleTouchStart = (e: React.TouchEvent) => {
     // Ignore if two fingers (pinch) – we don't want to interfere with zoom
     if (e.touches.length === 2) {
-      // Prepare for pinch
       const distance = Math.hypot(
         e.touches[0].pageX - e.touches[1].pageX,
         e.touches[0].pageY - e.touches[1].pageY
@@ -463,11 +483,13 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
     showControlsTemporarily();
   };
 
-  // This handler is attached manually with non‑passive option
   const handleTouchMove = useCallback((e: TouchEvent) => {
-    e.preventDefault();
+    // ✅ Conditionally prevent default only when we need to handle gestures
+    if (isSwiping.current || scale > 1 || e.touches.length === 2) {
+      e.preventDefault();
+    }
 
-    // Two fingers – pinch zoom
+    // Two fingers – pinch zoom with smooth animation
     if (e.touches.length === 2) {
       const distance = Math.hypot(
         e.touches[0].pageX - e.touches[1].pageX,
@@ -475,8 +497,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
       );
       if (lastPinchDistance.current) {
         const delta = distance / lastPinchDistance.current;
-        const newScale = Math.min(3, Math.max(0.5, scale * delta));
-        setScale(newScale);
+        targetScale.current = Math.min(3, Math.max(0.5, targetScale.current * delta));
+
+        if (!animationFrame.current) {
+          animationFrame.current = requestAnimationFrame(smoothScaleUpdate);
+        }
       }
       lastPinchDistance.current = distance;
       return;
@@ -510,7 +535,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
         const dy = Math.abs(touch.clientY - swipeStartPos.current.y);
         if (dx > 10 || dy > 10) {
           isSwiping.current = true;
-          // Cancel any pending double-tap
           if (tapTimeoutRef.current) {
             clearTimeout(tapTimeoutRef.current);
             tapTimeoutRef.current = null;
@@ -608,6 +632,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
     e.preventDefault();
     setScale(1);
     setTranslate({ x: 0, y: 0 });
+    targetScale.current = 1;
   };
 
   const formatTime = (time: number) => {
@@ -669,7 +694,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [showQualityMenu]);
 
-  // ✅ Cleanup skip timeout on unmount
+  // Cleanup skip timeout on unmount
   useEffect(() => {
     return () => {
       if (skipTimeoutRef.current) {
@@ -685,7 +710,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
     <div
       ref={containerRef}
       className="relative w-full bg-black outline-none"
-      style={{ touchAction: 'none' }}
+      style={{ touchAction: 'pan-y' }} // ✅ Allow vertical pan for seek bar, but prevent other gestures
       tabIndex={-1}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
@@ -807,7 +832,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
         </div>
       )}
 
-      {/* Skip feedback overlays (1 second) */}
+      {/* Skip feedback overlays */}
       {showLeftOverlay && (
         <div className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black/70 text-white text-4xl font-bold px-3 py-1 rounded z-30">
           -{skip.seconds}
@@ -853,7 +878,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
           value={currentTime}
           onChange={handleSeek}
           className="w-full mb-0 accent-purple-500"
-          onTouchStart={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()} // ✅ Prevent container handlers
+          onTouchMove={(e) => e.stopPropagation()}  // ✅ Allow native drag
         />
 
         <div className="overflow-x-auto pb-1 no-scrollbar relative">
