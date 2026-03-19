@@ -631,7 +631,7 @@ const DownloadPageManager: React.FC = () => {
   );
 };
 
-// Extracted Page Form component (unchanged)
+// Extracted Page Form component
 const PageForm: React.FC<{
   editingPage: FormPage;
   setEditingPage: React.Dispatch<React.SetStateAction<FormPage | null>>;
@@ -665,7 +665,7 @@ const PageForm: React.FC<{
     <div className="space-y-6">
       {/* Anime Selector */}
       <div>
-        <label className="block text-sm font-medium text-white/80 mb-2 flexl items-center gap-2">
+        <label className="block text-sm font-medium text-white/80 mb-2 flex items-center gap-2">
           <span className="w-1.5 h-5 bg-emerald-400 rounded-full"></span>
           Anime *
         </label>
@@ -680,7 +680,7 @@ const PageForm: React.FC<{
 
       {/* Slug */}
       <div>
-        <label className="block text-sm font-medium text-white/80 mb-2 flexl items-center gap-2">
+        <label className="block text-sm font-medium text-white/80 mb-2 flex items-center gap-2">
           <span className="w-1.5 h-5 bg-indigo-400 rounded-full"></span>
           Slug (unique) *
         </label>
@@ -695,7 +695,7 @@ const PageForm: React.FC<{
 
       {/* Starting Episode Number */}
       <div>
-        <label className="block text-sm font-medium text-white/80 mb-2 flexl items-center gap-2">
+        <label className="block text-sm font-medium text-white/80 mb-2 flex items-center gap-2">
           <span className="w-1.5 h-5 bg-amber-400 rounded-full"></span>
           Starting Episode Number *
           {calculatingNext && <Spinner size="sm" />}
@@ -716,7 +716,7 @@ const PageForm: React.FC<{
 
       {/* Button Title */}
       <div>
-        <label className="block text-sm font-medium text-white/80 mb-2 flexl items-center gap-2">
+        <label className="block text-sm font-medium text-white/80 mb-2 flex items-center gap-2">
           <span className="w-1.5 h-5 bg-pink-400 rounded-full"></span>
           Button Title
         </label>
@@ -731,7 +731,7 @@ const PageForm: React.FC<{
 
       {/* Links */}
       <div>
-        <label className="block text-sm font-medium text-white/80 mb-3 flexl items-center gap-2">
+        <label className="block text-sm font-medium text-white/80 mb-3 flex items-center gap-2">
           <span className="w-1.5 h-5 bg-amber-400 rounded-full"></span>
           Links (Max 12 watch, 12 download)
         </label>
