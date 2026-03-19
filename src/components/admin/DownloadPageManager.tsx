@@ -10,6 +10,11 @@ const getApiBase = () => {
 };
 const API_BASE = getApiBase();
 
+const getFrontendBase = () => {
+  if (typeof window === 'undefined') return 'https://animebing.in';
+  return window.location.origin;
+};
+
 const getToken = () => localStorage.getItem('adminToken') || '';
 
 interface AnimeOption {
@@ -140,6 +145,18 @@ const DownloadPageManager: React.FC = () => {
       return;
     }
 
+    // Frontend per‑type validation
+    const watchCount = editingPage.links.filter(l => l.type === 'watch').length;
+    const downloadCount = editingPage.links.filter(l => l.type === 'download').length;
+    if (watchCount > 12) {
+      alert(`You cannot have more than 12 watch links. Currently: ${watchCount}`);
+      return;
+    }
+    if (downloadCount > 12) {
+      alert(`You cannot have more than 12 download links. Currently: ${downloadCount}`);
+      return;
+    }
+
     const method = editingPage._id ? 'PUT' : 'POST';
     const url = editingPage._id
       ? `${API_BASE}/download-pages/${editingPage._id}`
@@ -187,8 +204,10 @@ const DownloadPageManager: React.FC = () => {
   const addDownloadLink = () => {
     setEditingPage((prev: FormPage | null): FormPage | null => {
       if (!prev) return null;
+      const downloadCount = prev.links.filter(l => l.type === 'download').length;
+      const nextEpisode = downloadCount + 1;
       const newLink: DownloadPageLink = {
-        episode: prev.episodeNumber,
+        episode: nextEpisode,
         url: '',
         type: 'download',
         quality: '',
@@ -204,8 +223,10 @@ const DownloadPageManager: React.FC = () => {
   const addWatchLink = () => {
     setEditingPage((prev: FormPage | null): FormPage | null => {
       if (!prev) return null;
+      const watchCount = prev.links.filter(l => l.type === 'watch').length;
+      const nextEpisode = watchCount + 1;
       const newLink: DownloadPageLink = {
-        episode: prev.episodeNumber,
+        episode: nextEpisode,
         url: '',
         type: 'watch',
         quality: '',
@@ -247,6 +268,10 @@ const DownloadPageManager: React.FC = () => {
       <Spinner size="lg" text="Loading download pages..." />
     </div>
   );
+
+  // Compute current counts for the form (if editing)
+  const watchCount = editingPage ? editingPage.links.filter(l => l.type === 'watch').length : 0;
+  const downloadCount = editingPage ? editingPage.links.filter(l => l.type === 'download').length : 0;
 
   return (
     <div className="p-6 space-y-8 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 min-h-screen">
@@ -311,7 +336,7 @@ const DownloadPageManager: React.FC = () => {
           <div className="space-y-6">
             {/* Anime Selector */}
             <div>
-              <label className="block text-sm font-medium text-white/80 mb-2 flexl items-center gap-2">
+              <label className="block text-sm font-medium text-white/80 mb-2 flex items-center gap-2">
                 <span className="w-1.5 h-5 bg-emerald-400 rounded-full"></span>
                 Anime *
               </label>
@@ -325,7 +350,7 @@ const DownloadPageManager: React.FC = () => {
 
             {/* Slug */}
             <div>
-              <label className="block text-sm font-medium text-white/80 mb-2 flexl items-center gap-2">
+              <label className="block text-sm font-medium text-white/80 mb-2 flex items-center gap-2">
                 <span className="w-1.5 h-5 bg-indigo-400 rounded-full"></span>
                 Slug (unique) *
               </label>
@@ -340,7 +365,7 @@ const DownloadPageManager: React.FC = () => {
 
             {/* Episode Number */}
             <div>
-              <label className="block text-sm font-medium text-white/80 mb-2 flexl items-center gap-2">
+              <label className="block text-sm font-medium text-white/80 mb-2 flex items-center gap-2">
                 <span className="w-1.5 h-5 bg-amber-400 rounded-full"></span>
                 Episode Number (where this button should appear) *
               </label>
@@ -360,7 +385,7 @@ const DownloadPageManager: React.FC = () => {
 
             {/* Button Title */}
             <div>
-              <label className="block text-sm font-medium text-white/80 mb-2 flexl items-center gap-2">
+              <label className="block text-sm font-medium text-white/80 mb-2 flex items-center gap-2">
                 <span className="w-1.5 h-5 bg-pink-400 rounded-full"></span>
                 Button Title
               </label>
@@ -375,9 +400,9 @@ const DownloadPageManager: React.FC = () => {
 
             {/* Links */}
             <div>
-              <label className="block text-sm font-medium text-white/80 mb-3 flexl items-center gap-2">
+              <label className="block text-sm font-medium text-white/80 mb-3 flex items-center gap-2">
                 <span className="w-1.5 h-5 bg-amber-400 rounded-full"></span>
-                Links (1-10) *
+                Links (Max 12 watch, 12 download)
               </label>
               {editingPage.links?.map((link, idx) => (
                 <div key={idx} className="bg-gray-800/40 border border-white/5 rounded-xl p-4 mb-3">
@@ -445,28 +470,31 @@ const DownloadPageManager: React.FC = () => {
               <div className="flex gap-3 mt-2">
                 <button
                   onClick={addDownloadLink}
-                  disabled={editingPage.links.length >= 10}
+                  disabled={downloadCount >= 12}
                   className="px-4 py-2 bg-blue-600/20 hover:bg-blue-600/40 border border-blue-500/30 rounded-xl text-blue-200 text-sm font-medium transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                   </svg>
-                  + Add Download Link
+                  + Add Download Link ({downloadCount}/12)
                 </button>
                 <button
                   onClick={addWatchLink}
-                  disabled={editingPage.links.length >= 10}
+                  disabled={watchCount >= 12}
                   className="px-4 py-2 bg-green-600/20 hover:bg-green-600/40 border border-green-500/30 rounded-xl text-green-200 text-sm font-medium transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  + Add Watch Link
+                  + Add Watch Link ({watchCount}/12)
                 </button>
               </div>
-              {editingPage.links.length >= 10 && (
-                <p className="text-xs text-yellow-500 mt-2">Maximum 10 links reached.</p>
+              {(downloadCount >= 12 || watchCount >= 12) && (
+                <p className="text-xs text-yellow-500 mt-2">
+                  {downloadCount >= 12 && 'Download limit reached. '}
+                  {watchCount >= 12 && 'Watch limit reached.'}
+                </p>
               )}
             </div>
 
@@ -616,8 +644,19 @@ const DownloadPageManager: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Action buttons */}
+                  {/* Action buttons – they should appear here */}
                   <div className="flex gap-2 items-center">
+                    {/* View button – opens public page */}
+                    <button
+                      onClick={() => window.open(`${getFrontendBase()}/download/${page.slug}`, '_blank')}
+                      title="View public page"
+                      className="p-2.5 bg-white/5 hover:bg-emerald-500/20 border border-white/10 hover:border-emerald-500/50 rounded-xl text-white/80 hover:text-emerald-300 transition-all"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    </button>
                     <button
                       onClick={() => { setEditingPage(convertToFormPage(page)); setShowForm(true); }}
                       title="Edit page"

@@ -1,15 +1,22 @@
-// routes/downloadPageRoutes.cjs
-const express = require('express');
+ const express = require('express');
 const router = express.Router();
 const DownloadPage = require('../models/DownloadPage.cjs');
 const Anime = require('../models/Anime.cjs');
 const adminAuth = require('../middleware/adminAuth.cjs');
 
+// Helper to count link types
+function countLinksByType(links) {
+  return {
+    watch: links.filter(l => l.type === 'watch').length,
+    download: links.filter(l => l.type === 'download').length
+  };
+}
+
 // ✅ Public: get a page by slug – now includes contentType and episodeNumber
 router.get('/:slug', async (req, res) => {
   try {
     const page = await DownloadPage.findOne({ slug: req.params.slug })
-      .populate('animeId', 'title contentType'); // ✅ added contentType
+      .populate('animeId', 'title contentType');
     if (!page) return res.status(404).json({ error: 'Page not found' });
     res.json(page);
   } catch (err) {
@@ -21,7 +28,7 @@ router.get('/:slug', async (req, res) => {
 router.get('/anime/:animeId', async (req, res) => {
   try {
     const pages = await DownloadPage.find({ animeId: req.params.animeId })
-      .sort('episodeNumber createdAt'); // sort by episode first
+      .sort('episodeNumber createdAt');
     res.json(pages);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -32,7 +39,7 @@ router.get('/anime/:animeId', async (req, res) => {
 router.get('/', adminAuth, async (req, res) => {
   try {
     const pages = await DownloadPage.find()
-      .populate('animeId', 'title contentType subDubStatus status releaseYear') // ✅ added all fields
+      .populate('animeId', 'title contentType subDubStatus status releaseYear')
       .sort('-createdAt');
     res.json(pages);
   } catch (err) {
@@ -62,18 +69,25 @@ router.post('/', adminAuth, async (req, res) => {
       return res.status(400).json({ error: 'Anime not found' });
     }
 
-    // Validate links array (max 10 links)
-    if (links.length > 10) {
-      return res.status(400).json({ error: 'Maximum 10 links allowed' });
+    // Validate per‑type link limits (max 12 watch, 12 download)
+    if (links.length > 24) {
+      return res.status(400).json({ error: 'Maximum total links allowed is 24' });
+    }
+    const counts = countLinksByType(links);
+    if (counts.watch > 12) {
+      return res.status(400).json({ error: `Maximum watch links allowed is 12 (you have ${counts.watch})` });
+    }
+    if (counts.download > 12) {
+      return res.status(400).json({ error: `Maximum download links allowed is 12 (you have ${counts.download})` });
     }
 
-    // Ensure each link has required fields
+    // Ensure each link has required fields and default type
     for (const link of links) {
       if (!link.episode || !link.url) {
         return res.status(400).json({ error: 'Each link must have episode and url' });
       }
-      // Optionally set default type if missing
-      if (!link.type) link.type = 'download';
+      if (!link.type) link.type = 'download'; // default if missing
+      // Optionally validate that type is 'watch' or 'download' (schema enum will catch)
     }
 
     const page = new DownloadPage({
@@ -114,7 +128,18 @@ router.put('/:id', adminAuth, async (req, res) => {
     }
 
     if (links) {
-      if (links.length > 10) return res.status(400).json({ error: 'Maximum 10 links allowed' });
+      // Validate total links and per‑type limits
+      if (links.length > 24) {
+        return res.status(400).json({ error: 'Maximum total links allowed is 24' });
+      }
+      const counts = countLinksByType(links);
+      if (counts.watch > 12) {
+        return res.status(400).json({ error: `Maximum watch links allowed is 12 (you have ${counts.watch})` });
+      }
+      if (counts.download > 12) {
+        return res.status(400).json({ error: `Maximum download links allowed is 12 (you have ${counts.download})` });
+      }
+
       // Validate each link
       for (const link of links) {
         if (!link.episode || !link.url) {
