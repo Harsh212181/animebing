@@ -1,4 +1,4 @@
- import React, { useState, useEffect } from 'react';
+ import React, { useState, useEffect, useMemo } from 'react';
 import { DownloadPage, DownloadPageLink, ContentType, SubDubStatus } from '../../types';
 import SearchableDropdown from './SearchableDropdown';
 import Spinner from '../Spinner';
@@ -27,7 +27,7 @@ interface FormPage {
   animeId: string;
   slug: string;
   title: string;
-  episodeNumber: number;
+  episodeNumber: number; // still used internally, but not displayed
   links: DownloadPageLink[];
 }
 
@@ -39,16 +39,22 @@ const getAnimeTitle = (page: DownloadPage): string => {
   return 'Unknown Anime';
 };
 
-// Helper to get full anime details (title, contentType, subDubStatus) – now with proper types
-const getAnimeDetails = (page: DownloadPage): { title: string; contentType?: ContentType; subDubStatus?: SubDubStatus } => {
+// Helper to get full anime details (title, contentType, subDubStatus)
+const getAnimeDetails = (page: DownloadPage): { 
+  title: string; 
+  contentType?: ContentType; 
+  subDubStatus?: SubDubStatus;
+  animeId: string;
+} => {
   if (page.animeId && typeof page.animeId === 'object') {
     return {
       title: page.animeId.title || 'Unknown Anime',
       contentType: page.animeId.contentType,
-      subDubStatus: page.animeId.subDubStatus
+      subDubStatus: page.animeId.subDubStatus,
+      animeId: page.animeId._id
     };
   }
-  return { title: 'Unknown Anime' };
+  return { title: 'Unknown Anime', animeId: typeof page.animeId === 'string' ? page.animeId : '' };
 };
 
 const DownloadPageManager: React.FC = () => {
@@ -59,6 +65,7 @@ const DownloadPageManager: React.FC = () => {
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [calculatingNext, setCalculatingNext] = useState(false);
 
   const fetchPages = async () => {
     setLoading(true);
@@ -110,6 +117,31 @@ const DownloadPageManager: React.FC = () => {
     }
   };
 
+  // Fetch all pages for a given anime and return the highest episode number found
+  const getNextStartingEpisode = async (animeId: string): Promise<number> => {
+    if (!animeId) return 1;
+    try {
+      const token = getToken();
+      const res = await fetch(`${API_BASE}/download-pages/anime/${animeId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (!res.ok) return 1;
+      const animePages = await res.json();
+      if (!Array.isArray(animePages)) return 1;
+
+      let maxEpisode = 0;
+      animePages.forEach((page: DownloadPage) => {
+        page.links.forEach(link => {
+          if (link.episode > maxEpisode) maxEpisode = link.episode;
+        });
+      });
+      return maxEpisode + 1;
+    } catch (error) {
+      console.error('Failed to fetch pages for anime:', error);
+      return 1;
+    }
+  };
+
   useEffect(() => {
     fetchPages();
     fetchAnime();
@@ -127,6 +159,29 @@ const DownloadPageManager: React.FC = () => {
     }))
   });
 
+  // When anime is selected in create mode, automatically set the starting episode number
+  const handleAnimeChange = async (option: AnimeOption | null) => {
+    const animeId = option?._id || '';
+    if (!animeId) {
+      setEditingPage(prev => prev ? { ...prev, animeId: '' } : null);
+      return;
+    }
+
+    // If we are in create mode (no _id), calculate and set the starting episode number
+    if (!editingPage?._id) {
+      setCalculatingNext(true);
+      const next = await getNextStartingEpisode(animeId);
+      setEditingPage(prev => {
+        if (!prev) return null;
+        return { ...prev, animeId, episodeNumber: next };
+      });
+      setCalculatingNext(false);
+    } else {
+      // In edit mode, just set the animeId (starting episode remains unchanged)
+      setEditingPage(prev => prev ? { ...prev, animeId } : null);
+    }
+  };
+
   const handleSave = async () => {
     if (!editingPage?.animeId) {
       alert('Please select an anime');
@@ -134,10 +189,6 @@ const DownloadPageManager: React.FC = () => {
     }
     if (!editingPage.slug) {
       alert('Please enter a slug (e.g., naruto-eps-1-10)');
-      return;
-    }
-    if (!editingPage.episodeNumber || editingPage.episodeNumber < 1) {
-      alert('Please enter a valid episode number (minimum 1)');
       return;
     }
     if (!editingPage.links || editingPage.links.length === 0) {
@@ -205,7 +256,7 @@ const DownloadPageManager: React.FC = () => {
     setEditingPage((prev: FormPage | null): FormPage | null => {
       if (!prev) return null;
       const downloadCount = prev.links.filter(l => l.type === 'download').length;
-      const nextEpisode = downloadCount + 1;
+      const nextEpisode = prev.episodeNumber + downloadCount;
       const newLink: DownloadPageLink = {
         episode: nextEpisode,
         url: '',
@@ -224,7 +275,7 @@ const DownloadPageManager: React.FC = () => {
     setEditingPage((prev: FormPage | null): FormPage | null => {
       if (!prev) return null;
       const watchCount = prev.links.filter(l => l.type === 'watch').length;
-      const nextEpisode = watchCount + 1;
+      const nextEpisode = prev.episodeNumber + watchCount;
       const newLink: DownloadPageLink = {
         episode: nextEpisode,
         url: '',
@@ -255,6 +306,22 @@ const DownloadPageManager: React.FC = () => {
       return { ...prev, links: newLinks };
     });
   };
+
+  // Compute page order for each anime based on creation time (_id)
+  const pagesByAnime = useMemo(() => {
+    const map = new Map<string, DownloadPage[]>();
+    pages.forEach(page => {
+      const animeId = getAnimeDetails(page).animeId;
+      if (!animeId) return;
+      if (!map.has(animeId)) map.set(animeId, []);
+      map.get(animeId)!.push(page);
+    });
+    // Sort each anime's pages by _id (which embeds creation timestamp) ascending
+    map.forEach((list, id) => {
+      list.sort((a, b) => a._id.localeCompare(b._id));
+    });
+    return map;
+  }, [pages]);
 
   // Filter pages based on anime title only
   const filteredPages = pages.filter(page => {
@@ -343,9 +410,10 @@ const DownloadPageManager: React.FC = () => {
               <SearchableDropdown
                 options={animeOptions}
                 value={animeOptions.find(a => a._id === editingPage.animeId) || null}
-                onChange={option => setEditingPage({ ...editingPage, animeId: option?._id || '' })}
+                onChange={handleAnimeChange}
                 placeholder="Search anime..."
               />
+              {calculatingNext && <Spinner size="sm" className="mt-2" />}
             </div>
 
             {/* Slug */}
@@ -357,30 +425,10 @@ const DownloadPageManager: React.FC = () => {
               <input
                 type="text"
                 value={editingPage.slug || ''}
-                onChange={e => setEditingPage({ ...editingPage, slug: e.target.value })}
+                onChange={e => setEditingPage(prev => prev ? { ...prev, slug: e.target.value } : null)}
                 className="w-full px-5 py-3 bg-gray-800/60 border border-gray-700/80 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
                 placeholder="e.g., naruto-eps-1-10"
               />
-            </div>
-
-            {/* Episode Number */}
-            <div>
-              <label className="block text-sm font-medium text-white/80 mb-2 flex items-center gap-2">
-                <span className="w-1.5 h-5 bg-amber-400 rounded-full"></span>
-                Episode Number (where this button should appear) *
-              </label>
-              <input
-                type="number"
-                min="1"
-                step="1"
-                value={editingPage.episodeNumber || ''}
-                onChange={e => setEditingPage({ ...editingPage, episodeNumber: parseInt(e.target.value) || 1 })}
-                className="w-full px-5 py-3 bg-gray-800/60 border border-gray-700/80 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
-                placeholder="e.g., 1"
-              />
-              <p className="text-xs text-white/40 mt-1">
-                The episode number where this download page button should be shown.
-              </p>
             </div>
 
             {/* Button Title */}
@@ -392,7 +440,7 @@ const DownloadPageManager: React.FC = () => {
               <input
                 type="text"
                 value={editingPage.title || ''}
-                onChange={e => setEditingPage({ ...editingPage, title: e.target.value })}
+                onChange={e => setEditingPage(prev => prev ? { ...prev, title: e.target.value } : null)}
                 className="w-full px-5 py-3 bg-gray-800/60 border border-gray-700/80 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
                 placeholder="Download"
               />
@@ -573,6 +621,10 @@ const DownloadPageManager: React.FC = () => {
         ) : (
           filteredPages.map(page => {
             const animeDetails = getAnimeDetails(page);
+            // Find page index for this anime based on creation order (_id)
+            const animePageList = pagesByAnime.get(animeDetails.animeId) || [];
+            const pageIndex = animePageList.findIndex(p => p._id === page._id) + 1;
+
             return (
               <div
                 key={page._id}
@@ -587,6 +639,12 @@ const DownloadPageManager: React.FC = () => {
                       <h3 className="text-xl font-bold text-white">
                         {animeDetails.title}
                       </h3>
+                      {/* Page number badge based on creation order */}
+                      {pageIndex > 0 && (
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-purple-600/30 text-purple-300 border border-purple-500/50">
+                          Page {pageIndex}
+                        </span>
+                      )}
                       {/* Content Type Badge */}
                       {animeDetails.contentType && (
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
@@ -599,7 +657,7 @@ const DownloadPageManager: React.FC = () => {
                           {animeDetails.contentType}
                         </span>
                       )}
-                      {/* Sub/Dub Status Badge – now properly typed */}
+                      {/* Sub/Dub Status Badge */}
                       {animeDetails.subDubStatus && (
                         <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-pink-600/30 text-pink-300 border border-pink-500/50">
                           {animeDetails.subDubStatus}
@@ -616,9 +674,6 @@ const DownloadPageManager: React.FC = () => {
                       </span>
                       <span className="text-white/70">
                         <span className="text-purple-300 font-medium">Links:</span> {page.links.length}
-                      </span>
-                      <span className="text-white/70">
-                        <span className="text-purple-300 font-medium">Episode:</span> {page.episodeNumber}
                       </span>
                       {page.title && (
                         <span className="text-white/70">
@@ -644,7 +699,7 @@ const DownloadPageManager: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Action buttons – they should appear here */}
+                  {/* Action buttons */}
                   <div className="flex gap-2 items-center">
                     {/* View button – opens public page */}
                     <button
