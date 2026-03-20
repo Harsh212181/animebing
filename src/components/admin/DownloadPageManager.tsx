@@ -254,42 +254,44 @@ const DownloadPageManager: React.FC = () => {
     }
   };
 
-  const addDownloadLink = () => {
-    setEditingPage((prev: FormPage | null): FormPage | null => {
+  // ✅ FIXED: addDownloadLink – uses global next episode
+  const addDownloadLink = async () => {
+    if (!editingPage || !editingPage.animeId) return;
+    setCalculatingNext(true);
+    const baseEpisode = await getNextStartingEpisode(editingPage.animeId);
+    setEditingPage(prev => {
       if (!prev) return null;
       const downloadCount = prev.links.filter(l => l.type === 'download').length;
-      const nextEpisode = prev.episodeNumber + downloadCount;
       const newLink: DownloadPageLink = {
-        episode: nextEpisode,
+        episode: baseEpisode + downloadCount,
         url: '',
         type: 'download',
         quality: '',
         language: ''
       };
-      return {
-        ...prev,
-        links: [...prev.links, newLink]
-      };
+      return { ...prev, links: [...prev.links, newLink] };
     });
+    setCalculatingNext(false);
   };
 
-  const addWatchLink = () => {
-    setEditingPage((prev: FormPage | null): FormPage | null => {
+  // ✅ FIXED: addWatchLink – uses global next episode
+  const addWatchLink = async () => {
+    if (!editingPage || !editingPage.animeId) return;
+    setCalculatingNext(true);
+    const baseEpisode = await getNextStartingEpisode(editingPage.animeId);
+    setEditingPage(prev => {
       if (!prev) return null;
       const watchCount = prev.links.filter(l => l.type === 'watch').length;
-      const nextEpisode = prev.episodeNumber + watchCount;
       const newLink: DownloadPageLink = {
-        episode: nextEpisode,
+        episode: baseEpisode + watchCount,
         url: '',
         type: 'watch',
         quality: '',
         language: ''
       };
-      return {
-        ...prev,
-        links: [...prev.links, newLink]
-      };
+      return { ...prev, links: [...prev.links, newLink] };
     });
+    setCalculatingNext(false);
   };
 
   const updateLink = (index: number, field: keyof DownloadPageLink, value: any) => {
@@ -612,7 +614,7 @@ const DownloadPageManager: React.FC = () => {
                       onAnimeChange={handleEditAnimeChange}
                       onSave={() => handleSave(editingPage)}
                       onCancel={() => setEditingPage(null)}
-                      calculatingNext={false}
+                      calculatingNext={calculatingNext}
                       addDownloadLink={addDownloadLink}
                       addWatchLink={addWatchLink}
                       updateLink={updateLink}
@@ -640,8 +642,8 @@ const PageForm: React.FC<{
   onSave: () => void;
   onCancel: () => void;
   calculatingNext: boolean;
-  addDownloadLink: () => void;
-  addWatchLink: () => void;
+  addDownloadLink: () => Promise<void>;  // now async
+  addWatchLink: () => Promise<void>;      // now async
   updateLink: (index: number, field: keyof DownloadPageLink, value: any) => void;
   removeLink: (index: number) => void;
   watchCount: number;
@@ -693,12 +695,11 @@ const PageForm: React.FC<{
         />
       </div>
 
-      {/* Starting Episode Number */}
+      {/* Starting Episode Number – independent */}
       <div>
         <label className="block text-sm font-medium text-white/80 mb-2 flex items-center gap-2">
           <span className="w-1.5 h-5 bg-amber-400 rounded-full"></span>
-          Starting Episode Number *
-          {calculatingNext && <Spinner size="sm" />}
+          Starting Episode Number (reference only) *
         </label>
         <input
           type="number"
@@ -710,7 +711,7 @@ const PageForm: React.FC<{
           placeholder="e.g., 1"
         />
         <p className="text-xs text-white/40 mt-1">
-          The first episode number for this page. New links will be numbered starting from this value.
+          This is just a reference. It does NOT affect link numbering.
         </p>
       </div>
 
@@ -801,23 +802,31 @@ const PageForm: React.FC<{
         <div className="flex gap-3 mt-2">
           <button
             onClick={addDownloadLink}
-            disabled={downloadCount >= 12}
+            disabled={downloadCount >= 12 || calculatingNext}
             className="px-4 py-2 bg-blue-600/20 hover:bg-blue-600/40 border border-blue-500/30 rounded-xl text-blue-200 text-sm font-medium transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
+            {calculatingNext ? (
+              <Spinner size="sm" />
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+            )}
             + Add Download Link ({downloadCount}/12)
           </button>
           <button
             onClick={addWatchLink}
-            disabled={watchCount >= 12}
+            disabled={watchCount >= 12 || calculatingNext}
             className="px-4 py-2 bg-green-600/20 hover:bg-green-600/40 border border-green-500/30 rounded-xl text-green-200 text-sm font-medium transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+            {calculatingNext ? (
+              <Spinner size="sm" />
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            )}
             + Add Watch Link ({watchCount}/12)
           </button>
         </div>
