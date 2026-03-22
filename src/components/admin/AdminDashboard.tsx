@@ -849,7 +849,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                 {tabs.find(t => t.id === activeTab)?.icon || 
                  (activeTab === 'episode-status' ? '🪼' : 
                   activeTab === 'partners' ? '🎉' :
-                  activeTab === 'downloadPages' ? '📥' : '🎉')}
+                  activeTab === 'downloadPages' ? '🏴‍☠️' : '🎉')}
               </span>
               {tabs.find(t => t.id === activeTab)?.label || 
                (activeTab === 'episode-status' ? 'Episode Status' : 

@@ -39,33 +39,20 @@ const getAnimeTitle = (page: DownloadPage): string => {
   return 'Unknown Anime';
 };
 
-// Helper to get full anime details (title, contentType, subDubStatus)
-const getAnimeDetails = (page: DownloadPage): { 
-  title: string; 
-  contentType?: ContentType; 
-  subDubStatus?: SubDubStatus;
-  animeId: string;
-} => {
-  if (page.animeId && typeof page.animeId === 'object') {
-    return {
-      title: page.animeId.title || 'Unknown Anime',
-      contentType: page.animeId.contentType,
-      subDubStatus: page.animeId.subDubStatus,
-      animeId: page.animeId._id
-    };
-  }
-  return { title: 'Unknown Anime', animeId: typeof page.animeId === 'string' ? page.animeId : '' };
-};
-
 const DownloadPageManager: React.FC = () => {
   const [pages, setPages] = useState<DownloadPage[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingPage, setEditingPage] = useState<FormPage | null>(null);
   const [animeOptions, setAnimeOptions] = useState<AnimeOption[]>([]);
+  const [animeThumbnails, setAnimeThumbnails] = useState<Map<string, string>>(new Map());
   const [showNewForm, setShowNewForm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [calculatingNext, setCalculatingNext] = useState(false);
+
+  // Filter states
+  const [contentTypeFilter, setContentTypeFilter] = useState<'all' | ContentType>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'ongoing' | 'complete'>('all');
 
   const fetchPages = async () => {
     setLoading(true);
@@ -107,6 +94,17 @@ const DownloadPageManager: React.FC = () => {
       const animeArray = json.data || json;
       if (Array.isArray(animeArray)) {
         setAnimeOptions(animeArray.map((a: any) => ({ _id: a._id, title: a.title })));
+        
+        // Build thumbnail map
+        const map = new Map<string, string>();
+        animeArray.forEach((a: any) => {
+          let thumb = a.thumbnail || a.image || a.poster || a.cover;
+          if (thumb && !thumb.startsWith('http')) {
+            thumb = `${API_BASE}${thumb.startsWith('/') ? '' : '/'}${thumb}`;
+          }
+          if (thumb) map.set(a._id, thumb);
+        });
+        setAnimeThumbnails(map);
       } else {
         console.error('Expected array but got:', json);
         setAnimeOptions([]);
@@ -158,6 +156,41 @@ const DownloadPageManager: React.FC = () => {
       type: (link as any).type || 'download'
     }))
   });
+
+  // Helper to get full anime details with fallback thumbnail from map
+  const getAnimeDetails = (page: DownloadPage): { 
+    title: string; 
+    contentType?: ContentType; 
+    subDubStatus?: SubDubStatus;
+    status?: string;
+    thumbnail?: string;
+    animeId: string;
+  } => {
+    if (page.animeId && typeof page.animeId === 'object') {
+      const animeObj = page.animeId as any;
+      let thumbnail = animeObj.thumbnail || animeObj.image || animeObj.poster || animeObj.cover;
+      
+      // If thumbnail not found in nested object, try the map
+      if (!thumbnail && animeObj._id) {
+        thumbnail = animeThumbnails.get(animeObj._id);
+      }
+      
+      // Make URL absolute if relative
+      if (thumbnail && !thumbnail.startsWith('http')) {
+        thumbnail = `${API_BASE}${thumbnail.startsWith('/') ? '' : '/'}${thumbnail}`;
+      }
+      
+      return {
+        title: animeObj.title || 'Unknown Anime',
+        contentType: animeObj.contentType,
+        subDubStatus: animeObj.subDubStatus,
+        status: animeObj.status,
+        thumbnail: thumbnail,
+        animeId: animeObj._id
+      };
+    }
+    return { title: 'Unknown Anime', animeId: typeof page.animeId === 'string' ? page.animeId : '' };
+  };
 
   // Handle anime selection for new page creation (auto-calculates next episode)
   const handleNewAnimeChange = async (option: AnimeOption | null) => {
@@ -254,7 +287,7 @@ const DownloadPageManager: React.FC = () => {
     }
   };
 
-  // ✅ FIXED: addDownloadLink – uses global next episode
+  // addDownloadLink – uses global next episode
   const addDownloadLink = async () => {
     if (!editingPage || !editingPage.animeId) return;
     setCalculatingNext(true);
@@ -274,7 +307,7 @@ const DownloadPageManager: React.FC = () => {
     setCalculatingNext(false);
   };
 
-  // ✅ FIXED: addWatchLink – uses global next episode
+  // addWatchLink – uses global next episode
   const addWatchLink = async () => {
     if (!editingPage || !editingPage.animeId) return;
     setCalculatingNext(true);
@@ -327,12 +360,23 @@ const DownloadPageManager: React.FC = () => {
     return map;
   }, [pages]);
 
-  // Filter and sort pages globally by creation order (oldest first)
-  const filteredPages = pages.filter(page => {
-    const animeTitle = getAnimeTitle(page).toLowerCase();
-    const term = searchTerm.toLowerCase();
-    return animeTitle.includes(term);
-  }).sort((a, b) => a._id.localeCompare(b._id)); // ascending = oldest first
+  // Filter pages based on search, contentType, and status
+  const filteredPages = useMemo(() => {
+    return pages.filter(page => {
+      const animeTitle = getAnimeTitle(page).toLowerCase();
+      const term = searchTerm.toLowerCase();
+      if (!animeTitle.includes(term)) return false;
+
+      const details = getAnimeDetails(page);
+      if (contentTypeFilter !== 'all' && details.contentType !== contentTypeFilter) return false;
+      if (statusFilter !== 'all') {
+        const animeStatus = details.status?.toLowerCase();
+        if (statusFilter === 'ongoing' && animeStatus !== 'ongoing') return false;
+        if (statusFilter === 'complete' && animeStatus !== 'complete') return false;
+      }
+      return true;
+    }).sort((a, b) => a._id.localeCompare(b._id));
+  }, [pages, searchTerm, contentTypeFilter, statusFilter]);
 
   if (loading) return (
     <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
@@ -407,21 +451,93 @@ const DownloadPageManager: React.FC = () => {
         )}
       </div>
 
-      {/* List of Pages with Search */}
-      <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-1">
-          <h2 className="text-xl font-semibold text-white/90 flex items-center gap-2">
-            <span className="w-1.5 h-6 bg-purple-400 rounded-full"></span>
-            All Download Pages
-            {pages.length > 0 && (
-              <span className="ml-2 text-sm font-normal px-3 py-1 bg-white/5 rounded-full text-white/60">
-                {filteredPages.length} / {pages.length}
-              </span>
-            )}
-          </h2>
+      {/* Filters Section */}
+      <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-6 space-y-4">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-white/70">Type:</span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setContentTypeFilter('all')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  contentTypeFilter === 'all'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                    : 'bg-white/10 text-white/70 hover:bg-white/20'
+                }`}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setContentTypeFilter('Anime')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  contentTypeFilter === 'Anime'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                    : 'bg-white/10 text-white/70 hover:bg-white/20'
+                }`}
+              >
+                Anime
+              </button>
+              <button
+                onClick={() => setContentTypeFilter('Movie')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  contentTypeFilter === 'Movie'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                    : 'bg-white/10 text-white/70 hover:bg-white/20'
+                }`}
+              >
+                Movies
+              </button>
+              <button
+                onClick={() => setContentTypeFilter('Manga')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  contentTypeFilter === 'Manga'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                    : 'bg-white/10 text-white/70 hover:bg-white/20'
+                }`}
+              >
+                Manga
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-white/70">Status:</span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setStatusFilter('all')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  statusFilter === 'all'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                    : 'bg-white/10 text-white/70 hover:bg-white/20'
+                }`}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setStatusFilter('ongoing')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  statusFilter === 'ongoing'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                    : 'bg-white/10 text-white/70 hover:bg-white/20'
+                }`}
+              >
+                Ongoing
+              </button>
+              <button
+                onClick={() => setStatusFilter('complete')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  statusFilter === 'complete'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                    : 'bg-white/10 text-white/70 hover:bg-white/20'
+                }`}
+              >
+                Complete
+              </button>
+            </div>
+          </div>
 
           {/* Search Input */}
-          <div className="relative">
+          <div className="relative ml-auto">
             <input
               type="text"
               placeholder="Search by anime title..."
@@ -445,6 +561,25 @@ const DownloadPageManager: React.FC = () => {
           </div>
         </div>
 
+        {/* Active filters info */}
+        <div className="text-xs text-white/40">
+          {filteredPages.length} / {pages.length} pages shown
+          {(contentTypeFilter !== 'all' || statusFilter !== 'all') && (
+            <button
+              onClick={() => {
+                setContentTypeFilter('all');
+                setStatusFilter('all');
+              }}
+              className="ml-2 text-purple-400 hover:text-purple-300 underline"
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* List of Pages */}
+      <div className="space-y-4">
         {filteredPages.length === 0 && !error ? (
           <div className="text-center py-16 bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl">
             <svg className="w-16 h-16 mx-auto text-white/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -483,74 +618,110 @@ const DownloadPageManager: React.FC = () => {
                     <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-gradient-to-b from-purple-400 to-pink-400 rounded-l-2xl"></div>
 
                     <div className="flex-1 pl-3">
-                      <div className="flex items-center flex-wrap gap-2">
-                        <h3 className="text-xl font-bold text-white">
-                          {animeDetails.title}
-                        </h3>
-                        {/* Page number badge based on creation order */}
-                        {pageIndex > 0 && (
-                          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-purple-600/30 text-purple-300 border border-purple-500/50">
-                            Page {pageIndex}
-                          </span>
-                        )}
-                        {/* Content Type Badge */}
-                        {animeDetails.contentType && (
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                            animeDetails.contentType === 'Movie'
-                              ? 'bg-purple-600/30 text-purple-300 border border-purple-500/50'
-                              : animeDetails.contentType === 'Manga'
-                              ? 'bg-green-600/30 text-green-300 border border-green-500/50'
-                              : 'bg-blue-600/30 text-blue-300 border border-blue-500/50'
-                          }`}>
-                            {animeDetails.contentType}
-                          </span>
-                        )}
-                        {/* Sub/Dub Status Badge */}
-                        {animeDetails.subDubStatus && (
-                          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-pink-600/30 text-pink-300 border border-pink-500/50">
-                            {animeDetails.subDubStatus}
-                          </span>
-                        )}
-                        <span className="text-xs text-white/40 bg-white/5 px-2 py-1 rounded-md ml-auto sm:ml-0">
-                          ID: {page._id.slice(-6)}
-                        </span>
-                      </div>
+                      <div className="flex items-start gap-4">
+                        {/* Thumbnail - fixed dimensions */}
+                        <div className="flex-shrink-0 w-16 h-20 sm:w-20 sm:h-24 rounded-lg overflow-hidden bg-gray-800/80 shadow-lg border border-white/10">
+                          {animeDetails.thumbnail ? (
+                            <img
+                              src={animeDetails.thumbnail}
+                              alt={animeDetails.title}
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                              onError={(e) => {
+                                e.currentTarget.onerror = null;
+                                e.currentTarget.src = 'https://via.placeholder.com/96x128/1e293b/64748b?text=No+Image';
+                              }}
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-gray-700/50">
+                              <svg className="w-8 h-8 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
 
-                      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-                        <span className="text-white/70">
-                          <span className="text-purple-300 font-medium">Slug:</span> {page.slug}
-                        </span>
-                        <span className="text-white/70">
-                          <span className="text-purple-300 font-medium">Links:</span> {page.links.length}
-                        </span>
-                        <span className="text-white/70">
-                          <span className="text-purple-300 font-medium">Starting Ep:</span> {page.episodeNumber}
-                        </span>
-                        {page.title && (
-                          <span className="text-white/70">
-                            <span className="text-purple-300 font-medium">Button:</span> {page.title}
-                          </span>
-                        )}
-                        {/* Episode range */}
-                        <span className="text-white/70">
-                          <span className="text-purple-300 font-medium">{episodeRange}</span>
-                        </span>
-                      </div>
+                        {/* Content */}
+                        <div className="flex-1">
+                          <div className="flex items-center flex-wrap gap-2">
+                            <h3 className="text-xl font-bold text-white">
+                              {animeDetails.title}
+                            </h3>
+                            {/* Page number badge */}
+                            {pageIndex > 0 && (
+                              <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-purple-600/30 text-purple-300 border border-purple-500/50">
+                                Page {pageIndex}
+                              </span>
+                            )}
+                            {/* Content Type Badge */}
+                            {animeDetails.contentType && (
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                                animeDetails.contentType === 'Movie'
+                                  ? 'bg-purple-600/30 text-purple-300 border border-purple-500/50'
+                                  : animeDetails.contentType === 'Manga'
+                                  ? 'bg-green-600/30 text-green-300 border border-green-500/50'
+                                  : 'bg-blue-600/30 text-blue-300 border border-blue-500/50'
+                              }`}>
+                                {animeDetails.contentType}
+                              </span>
+                            )}
+                            {/* Sub/Dub Status Badge */}
+                            {animeDetails.subDubStatus && (
+                              <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-pink-600/30 text-pink-300 border border-pink-500/50">
+                                {animeDetails.subDubStatus}
+                              </span>
+                            )}
+                            {/* Status Badge (Ongoing/Complete) */}
+                            {animeDetails.status && (
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                                animeDetails.status.toLowerCase() === 'ongoing'
+                                  ? 'bg-yellow-600/30 text-yellow-300 border border-yellow-500/50'
+                                  : animeDetails.status.toLowerCase() === 'complete'
+                                  ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/50'
+                                  : 'bg-gray-600/30 text-gray-300 border border-gray-500/50'
+                              }`}>
+                                {animeDetails.status}
+                              </span>
+                            )}
+                          </div>
 
-                      <div className="mt-2 text-sm text-white/50 flex items-center gap-2">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l5 5a2 2 0 01.586 1.414V19a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z" />
-                        </svg>
-                        {(() => {
-                          const downloadCount = page.links.filter(l => l.type === 'download').length;
-                          const watchCount = page.links.filter(l => l.type === 'watch').length;
-                          return (
-                            <>
-                              <span>Download: <span className="text-emerald-300 font-medium">{downloadCount}</span></span>
-                              <span>Watch: <span className="text-blue-300 font-medium">{watchCount}</span></span>
-                            </>
-                          );
-                        })()}
+                          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                            <span className="text-white/70">
+                              <span className="text-purple-300 font-medium">Slug:</span> {page.slug}
+                            </span>
+                            <span className="text-white/70">
+                              <span className="text-purple-300 font-medium">Links:</span> {page.links.length}
+                            </span>
+                            <span className="text-white/70">
+                              <span className="text-purple-300 font-medium">Starting Ep:</span> {page.episodeNumber}
+                            </span>
+                            {page.title && (
+                              <span className="text-white/70">
+                                <span className="text-purple-300 font-medium">Button:</span> {page.title}
+                              </span>
+                            )}
+                            {/* Episode range */}
+                            <span className="text-white/70">
+                              <span className="text-purple-300 font-medium">{episodeRange}</span>
+                            </span>
+                          </div>
+
+                          <div className="mt-2 text-sm text-white/50 flex items-center gap-2">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l5 5a2 2 0 01.586 1.414V19a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z" />
+                            </svg>
+                            {(() => {
+                              const downloadCount = page.links.filter(l => l.type === 'download').length;
+                              const watchCount = page.links.filter(l => l.type === 'watch').length;
+                              return (
+                                <>
+                                  <span>Download: <span className="text-emerald-300 font-medium">{downloadCount}</span></span>
+                                  <span>Watch: <span className="text-blue-300 font-medium">{watchCount}</span></span>
+                                </>
+                              );
+                            })()}
+                          </div>
+                        </div>
                       </div>
                     </div>
 
@@ -567,14 +738,12 @@ const DownloadPageManager: React.FC = () => {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                         </svg>
                       </button>
-                      {/* Edit button - toggles edit form */}
+                      {/* Edit button */}
                       <button
                         onClick={() => {
                           if (isEditingThis) {
-                            // If already editing this page, close it
                             setEditingPage(null);
                           } else {
-                            // Close new form and open edit for this page
                             setShowNewForm(false);
                             setEditingPage(convertToFormPage(page));
                           }
@@ -600,7 +769,7 @@ const DownloadPageManager: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Inline Edit Form for this page */}
+                {/* Inline Edit Form */}
                 {isEditingThis && (
                   <div className="mt-4 ml-8 mr-4 bg-white/5 backdrop-blur-sm border border-purple-500/30 rounded-2xl p-6 shadow-2xl">
                     <h3 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
@@ -633,7 +802,7 @@ const DownloadPageManager: React.FC = () => {
   );
 };
 
-// Extracted Page Form component
+// Extracted Page Form component (unchanged)
 const PageForm: React.FC<{
   editingPage: FormPage;
   setEditingPage: React.Dispatch<React.SetStateAction<FormPage | null>>;
@@ -642,8 +811,8 @@ const PageForm: React.FC<{
   onSave: () => void;
   onCancel: () => void;
   calculatingNext: boolean;
-  addDownloadLink: () => Promise<void>;  // now async
-  addWatchLink: () => Promise<void>;      // now async
+  addDownloadLink: () => Promise<void>;
+  addWatchLink: () => Promise<void>;
   updateLink: (index: number, field: keyof DownloadPageLink, value: any) => void;
   removeLink: (index: number) => void;
   watchCount: number;
