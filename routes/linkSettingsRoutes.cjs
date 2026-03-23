@@ -1,13 +1,26 @@
- const express = require('express');
+const express = require('express');
 const router = express.Router();
 const LinkSettings = require('../models/LinkSettings.cjs');
+
+// =====================
+//  HELPER: Get current weekday in India timezone (0 = Sunday, 1 = Monday, ...)
+// =====================
+function getIndiaWeekday() {
+  const now = new Date();
+  const options = { timeZone: 'Asia/Kolkata', weekday: 'numeric' };
+  const weekdayNum = parseInt(new Intl.DateTimeFormat('en-US', options).format(now), 10);
+  return weekdayNum % 7;
+}
+
+// Optional: log only in development
+const isDev = process.env.NODE_ENV !== 'production';
 
 // ✅ GET all link settings (Public)
 router.get('/', async (req, res) => {
   try {
-    console.log('📡 GET /api/link-settings called');
+    if (isDev) console.log('📡 GET /api/link-settings called');
     const settings = await LinkSettings.getSettings();
-    console.log('✅ Settings found:', settings);
+    if (isDev) console.log('✅ Settings found');
     res.json(settings);
   } catch (error) {
     console.error('❌ Error fetching link settings:', error);
@@ -21,20 +34,20 @@ router.get('/', async (req, res) => {
 // ✅ UPDATE all link settings (Admin)
 router.put('/', async (req, res) => {
   try {
-    console.log('📡 PUT /api/link-settings called with:', req.body);
-    const { link1, link2, link3, link4, link5 } = req.body;
+    if (isDev) console.log('📡 PUT /api/link-settings called with:', req.body);
+    const { link1, link2, link3, link4, link5, autoSundayMode } = req.body;
     
-    // Validate input
     const updates = {};
     if (link1 !== undefined) updates.link1 = Boolean(link1);
     if (link2 !== undefined) updates.link2 = Boolean(link2);
     if (link3 !== undefined) updates.link3 = Boolean(link3);
     if (link4 !== undefined) updates.link4 = Boolean(link4);
     if (link5 !== undefined) updates.link5 = Boolean(link5);
+    if (autoSundayMode !== undefined) updates.autoSundayMode = Boolean(autoSundayMode);
     
     const settings = await LinkSettings.updateSettings(updates);
     
-    console.log('✅ Settings updated:', settings);
+    if (isDev) console.log('✅ Settings updated');
     res.json({
       success: true,
       message: 'Link settings updated successfully',
@@ -49,11 +62,11 @@ router.put('/', async (req, res) => {
   }
 });
 
-// ✅ TOGGLE specific link (Admin) - CRITICAL for your AdminDashboard
+// ✅ TOGGLE specific link (Admin)
 router.put('/toggle/:linkNumber', async (req, res) => {
   try {
     const linkNumber = parseInt(req.params.linkNumber);
-    console.log(`📡 PUT /api/link-settings/toggle/${linkNumber} called`);
+    if (isDev) console.log(`📡 PUT /api/link-settings/toggle/${linkNumber} called`);
     
     if (linkNumber < 1 || linkNumber > 5) {
       return res.status(400).json({ error: 'Link number must be between 1 and 5' });
@@ -61,14 +74,24 @@ router.put('/toggle/:linkNumber', async (req, res) => {
     
     const settings = await LinkSettings.getSettings();
     
-    // Toggle the specific link
     const linkKey = `link${linkNumber}`;
     settings[linkKey] = !settings[linkKey];
     settings.lastUpdated = Date.now();
+
+    // If Auto Sunday Mode is ON and it's NOT Sunday, update normalState
+    if (settings.autoSundayMode && getIndiaWeekday() !== 0) {
+      settings.normalState = {
+        link1: settings.link1,
+        link2: settings.link2,
+        link3: settings.link3,
+        link4: settings.link4,
+        link5: settings.link5
+      };
+    }
     
-    await settings.save();
+    await settings.safeSave(); // use safe save from model
     
-    console.log(`✅ Link ${linkNumber} toggled to:`, settings[linkKey]);
+    if (isDev) console.log(`✅ Link ${linkNumber} toggled to:`, settings[linkKey]);
     res.json({
       success: true,
       message: `Link ${linkNumber} ${settings[linkKey] ? 'activated' : 'deactivated'}`,
@@ -88,10 +111,38 @@ router.put('/toggle/:linkNumber', async (req, res) => {
   }
 });
 
+// ✅ TOGGLE Auto Sunday Mode (Admin)
+router.put('/toggle-autosunday', async (req, res) => {
+  try {
+    if (isDev) console.log('📡 PUT /api/link-settings/toggle-autosunday called');
+    const settings = await LinkSettings.getSettings();
+
+    settings.autoSundayMode = !settings.autoSundayMode;
+    settings.lastUpdated = Date.now();
+    await settings.safeSave();
+
+    // Let the model handle Sunday logic
+    await settings.applyAutoSundayLogic();
+
+    if (isDev) console.log(`✅ Auto Sunday mode toggled to: ${settings.autoSundayMode}`);
+    res.json({
+      success: true,
+      message: `Auto Sunday mode is now ${settings.autoSundayMode ? 'ON' : 'OFF'}`,
+      settings: settings
+    });
+  } catch (error) {
+    console.error('❌ Error toggling auto Sunday mode:', error);
+    res.status(500).json({ 
+      error: 'Failed to toggle auto Sunday mode',
+      details: error.message 
+    });
+  }
+});
+
 // ✅ GET active links status (Public)
 router.get('/status', async (req, res) => {
   try {
-    console.log('📡 GET /api/link-settings/status called');
+    if (isDev) console.log('📡 GET /api/link-settings/status called');
     const settings = await LinkSettings.getSettings();
     const activeLinks = settings.getActiveLinks();
     
@@ -104,7 +155,8 @@ router.get('/status', async (req, res) => {
         link2: settings.link2,
         link3: settings.link3,
         link4: settings.link4,
-        link5: settings.link5
+        link5: settings.link5,
+        autoSundayMode: settings.autoSundayMode
       },
       lastUpdated: settings.lastUpdated
     });
@@ -120,7 +172,7 @@ router.get('/status', async (req, res) => {
 // ✅ GET active links only (Public - for DownloadRedirectPage)
 router.get('/active', async (req, res) => {
   try {
-    console.log('📡 GET /api/link-settings/active called');
+    if (isDev) console.log('📡 GET /api/link-settings/active called');
     const settings = await LinkSettings.getSettings();
     const activeLinks = settings.getActiveLinks();
     
@@ -159,7 +211,7 @@ router.get('/health', async (req, res) => {
 // ✅ Initialize default settings (Admin - one-time use)
 router.post('/init', async (req, res) => {
   try {
-    console.log('📡 POST /api/link-settings/init called');
+    if (isDev) console.log('📡 POST /api/link-settings/init called');
     const existing = await LinkSettings.findOne();
     
     if (!existing) {
@@ -168,10 +220,11 @@ router.post('/init', async (req, res) => {
         link2: true,
         link3: true,
         link4: true,
-        link5: true
+        link5: true,
+        autoSundayMode: false
       });
       
-      console.log('✅ Default settings created');
+      if (isDev) console.log('✅ Default settings created');
       res.json({
         success: true,
         message: 'Default link settings created',
@@ -196,7 +249,7 @@ router.post('/init', async (req, res) => {
 // ✅ Emergency reset to defaults (Admin)
 router.post('/reset', async (req, res) => {
   try {
-    console.log('📡 POST /api/link-settings/reset called');
+    if (isDev) console.log('📡 POST /api/link-settings/reset called');
     
     await LinkSettings.deleteMany({});
     
@@ -205,10 +258,11 @@ router.post('/reset', async (req, res) => {
       link2: true,
       link3: true,
       link4: true,
-      link5: true
+      link5: true,
+      autoSundayMode: false
     });
     
-    console.log('✅ Settings reset to defaults');
+    if (isDev) console.log('✅ Settings reset to defaults');
     res.json({
       success: true,
       message: 'Link settings reset to defaults',
@@ -223,5 +277,5 @@ router.post('/reset', async (req, res) => {
   }
 });
 
-console.log('✅ LinkSettings routes loaded');
+if (isDev) console.log('✅ LinkSettings routes loaded');
 module.exports = router;

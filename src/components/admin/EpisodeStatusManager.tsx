@@ -1,6 +1,7 @@
- // src/components/admin/EpisodeStatusManager.tsx – Redesigned with glass‑morphism
+ // src/components/admin/EpisodeStatusManager.tsx – Redesigned with glass‑morphism and toast notifications
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { toast } from 'react-hot-toast'; // ✅ Import toast
 
 // Helper to get API base (same as AdminDashboard)
 const getApiBase = () => {
@@ -19,6 +20,25 @@ interface Anime {
   currentEpisode: number;
   contentType: string;
   status: string;
+}
+
+interface DownloadLink {
+  episode: number;
+  url: string;
+  quality?: string;
+  language?: string;
+  type?: 'download' | 'watch';
+}
+
+interface DownloadPage {
+  _id: string;
+  animeId: string;
+  slug: string;
+  title: string;
+  episodeNumber?: number;
+  links: DownloadLink[];
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 const EpisodeStatusManager: React.FC = () => {
@@ -81,6 +101,7 @@ const EpisodeStatusManager: React.FC = () => {
   const handleUpdate = async (id: string, totalEpisodes: number, currentEpisode: number) => {
     setSavingId(id);
     setError('');
+    const toastId = toast.loading('Updating episode status...');
     try {
       await axios.patch(
         `${API_BASE}/admin/protected/anime/${id}/episode-status`,
@@ -91,32 +112,74 @@ const EpisodeStatusManager: React.FC = () => {
       setAnimeList(prev =>
         prev.map(a => (a._id === id ? { ...a, totalEpisodes, currentEpisode } : a))
       );
-      alert('Episode status updated successfully!');
+      toast.success('Episode status updated successfully!', { id: toastId });
     } catch (err: any) {
       console.error('Update failed', err);
-      alert('Failed to update: ' + (err.response?.data?.error || err.message));
+      toast.error('Failed to update: ' + (err.response?.data?.error || err.message), { id: toastId });
     } finally {
       setSavingId(null);
     }
   };
 
+  // New sync logic: fetch download pages, find highest episode, update anime
   const handleSync = async (id: string) => {
     setSyncingId(id);
     setError('');
+    const toastId = toast.loading('Syncing from download pages...');
     try {
-      const { data } = await axios.post(
-        `${API_BASE}/admin/protected/anime/${id}/sync-episode-count`,
-        {},
+      // 1. Fetch all download pages for this anime
+      const { data: pages } = await axios.get<DownloadPage[]>(
+        `${API_BASE}/download-pages/anime/${id}`
+      );
+
+      if (!pages || pages.length === 0) {
+        toast.error('No download pages found for this anime.', { id: toastId });
+        setSyncingId(null);
+        return;
+      }
+
+      // 2. Extract all episode numbers from links
+      let maxEpisode = 0;
+      pages.forEach(page => {
+        page.links.forEach(link => {
+          if (link.episode > maxEpisode) {
+            maxEpisode = link.episode;
+          }
+        });
+      });
+
+      if (maxEpisode === 0) {
+        toast.error('No valid episode numbers found in download pages.', { id: toastId });
+        setSyncingId(null);
+        return;
+      }
+
+      // 3. Update the anime's currentEpisode (and optionally totalEpisodes)
+      const anime = animeList.find(a => a._id === id);
+      if (!anime) throw new Error('Anime not found in local list');
+
+      await axios.patch(
+        `${API_BASE}/admin/protected/anime/${id}/episode-status`,
+        {
+          currentEpisode: maxEpisode,
+          // totalEpisodes: maxEpisode   // optional: set total to max as well
+        },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      // Update the anime in list with new currentEpisode from response
+
+      // 4. Update local state
       setAnimeList(prev =>
-        prev.map(a => (a._id === id ? { ...a, currentEpisode: data.anime.currentEpisode } : a))
+        prev.map(a =>
+          a._id === id
+            ? { ...a, currentEpisode: maxEpisode }
+            : a
+        )
       );
-      alert(`Synced! Current episode set to ${data.anime.currentEpisode}`);
+
+      toast.success(`Synced! Current episode set to ${maxEpisode}`, { id: toastId });
     } catch (err: any) {
       console.error('Sync failed', err);
-      alert('Sync failed: ' + (err.response?.data?.error || err.message));
+      toast.error('Sync failed: ' + (err.response?.data?.error || err.message), { id: toastId });
     } finally {
       setSyncingId(null);
     }

@@ -1,28 +1,24 @@
- // src/components/admin/AnimeListTable.tsx - UPDATED WITH PARTNER MODE SUPPORT
-import React, { useState, useEffect } from 'react';
+ import React, { useState, useEffect } from 'react';
 import type { Anime } from '../../types';
 import axios from 'axios';
 import Spinner from '../Spinner';
+import toast from 'react-hot-toast'; // ✅ using react-hot-toast
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://animabing.onrender.com/api';
 const token = localStorage.getItem('adminToken') || '';
 
 interface AnimeListTableProps {
-  /** Optional: Pass anime list directly (used by PartnerManager) */
   animeList?: Anime[];
-  /** Callback for remove button (PartnerManager) */
   onRemoveFromPartner?: (animeId: string) => void;
-  /** Show remove button instead of edit/delete */
   showRemoveButton?: boolean;
-  /** External loading state (PartnerManager) */
   isLoading?: boolean;
 }
 
-const AnimeListTable: React.FC<AnimeListTableProps> = ({ 
-  animeList: propAnimeList, 
-  onRemoveFromPartner, 
+const AnimeListTable: React.FC<AnimeListTableProps> = ({
+  animeList: propAnimeList,
+  onRemoveFromPartner,
   showRemoveButton = false,
-  isLoading: propIsLoading = false
+  isLoading: propIsLoading = false,
 }) => {
   const [animes, setAnimes] = useState<Anime[]>([]);
   const [filteredAnimes, setFilteredAnimes] = useState<Anime[]>([]);
@@ -32,6 +28,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
   const [contentTypeFilter, setContentTypeFilter] = useState<'All' | 'Anime' | 'Movie' | 'Manga'>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [editingAnimeId, setEditingAnimeId] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ animeId: string; animeTitle: string } | null>(null);
   const [editForm, setEditForm] = useState({
     title: '',
     description: '',
@@ -41,15 +38,12 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
     genreList: [''],
     status: 'Ongoing',
     contentType: 'Anime' as 'Anime' | 'Movie' | 'Manga',
-    
-    // ✅ SEO FIELDS
     seoTitle: '',
     seoDescription: '',
     seoKeywords: '',
-    slug: ''
+    slug: '',
   });
 
-  // Determine if we are in "partner mode" (external anime list provided)
   const isPartnerMode = propAnimeList !== undefined;
 
   // Initialize or update animes when propAnimeList changes (partner mode)
@@ -57,7 +51,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
     if (isPartnerMode && propAnimeList) {
       setAnimes(propAnimeList);
       setFilteredAnimes(propAnimeList);
-      setLoading(false); // No internal loading needed
+      setLoading(false);
       setError('');
     }
   }, [propAnimeList, isPartnerMode]);
@@ -73,23 +67,22 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
         const params = new URLSearchParams();
         if (statusFilter !== 'All') params.append('status', statusFilter);
         if (contentTypeFilter !== 'All') params.append('contentType', contentTypeFilter);
-        
+
         const url = `${API_BASE}/admin/protected/anime-list${params.toString() ? `?${params.toString()}` : ''}`;
         const { data } = await axios.get(url, {
-          headers: { Authorization: `Bearer ${token}` }
+          headers: { Authorization: `Bearer ${token}` },
         });
-        
-        // Transform data with SEO fields
-        const animeData = data.map((a: any) => ({ 
-          ...a, 
+
+        const animeData = data.map((a: any) => ({
+          ...a,
           id: a._id,
           seoTitle: a.seoTitle || '',
           seoDescription: a.seoDescription || '',
           seoKeywords: a.seoKeywords || '',
           slug: a.slug || '',
-          episodes: a.episodes || []
+          episodes: a.episodes || [],
         }));
-        
+
         setAnimes(animeData);
         setFilteredAnimes(animeData);
       } catch (err: any) {
@@ -103,56 +96,72 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
     fetchAnimes();
   }, [statusFilter, contentTypeFilter, isPartnerMode]);
 
-  // Search filtering – works for both normal and partner mode
+  // Search filtering
   useEffect(() => {
     if (searchQuery.trim() === '') {
       setFilteredAnimes(animes);
     } else {
       const query = searchQuery.toLowerCase();
-      const filtered = animes.filter(anime =>
-        anime.title.toLowerCase().includes(query) ||
-        anime.genreList.some(genre => 
-          genre.toLowerCase().includes(query)
-        ) ||
-        anime.subDubStatus.toLowerCase().includes(query) ||
-        anime.contentType.toLowerCase().includes(query) ||
-        (anime.seoTitle && anime.seoTitle.toLowerCase().includes(query)) ||
-        (anime.seoKeywords && anime.seoKeywords.toLowerCase().includes(query)) ||
-        (anime.slug && anime.slug.toLowerCase().includes(query))
+      const filtered = animes.filter(
+        (anime) =>
+          anime.title.toLowerCase().includes(query) ||
+          anime.genreList.some((genre) => genre.toLowerCase().includes(query)) ||
+          anime.subDubStatus.toLowerCase().includes(query) ||
+          anime.contentType.toLowerCase().includes(query) ||
+          (anime.seoTitle && anime.seoTitle.toLowerCase().includes(query)) ||
+          (anime.seoKeywords && anime.seoKeywords.toLowerCase().includes(query)) ||
+          (anime.slug && anime.slug.toLowerCase().includes(query))
       );
       setFilteredAnimes(filtered);
     }
   }, [searchQuery, animes]);
 
-  // Normal admin actions (Edit, Delete) – not used in partner mode
-  const handleDelete = async (id: string) => {
+  const handleDelete = (id: string) => {
     if (isPartnerMode) return;
-    const animeTitle = animes.find(a => a.id === id)?.title || 'this anime';
-    if (!confirm(`Delete "${animeTitle}"? This will also delete all episodes/chapters.`)) return;
+    const animeTitle = animes.find((a) => a.id === id)?.title || 'this anime';
+    setDeleteConfirm({ animeId: id, animeTitle });
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteConfirm) return;
+    const { animeId } = deleteConfirm;
+    const toastId = toast.loading('Deleting anime...');
     try {
       await axios.delete(`${API_BASE}/admin/protected/delete-anime`, {
         headers: { Authorization: `Bearer ${token}` },
-        data: { id }
+        data: { id: animeId },
       });
       setEditingAnimeId(null);
-      // Refresh will be triggered by filter useEffect due to status/contentType change? 
-      // Better to manually fetch or update state. We'll rely on the fetchAnimes effect.
-      // Since we changed statusFilter or contentTypeFilter? No, we didn't. Let's just refetch.
+      // Refresh list
       const params = new URLSearchParams();
       if (statusFilter !== 'All') params.append('status', statusFilter);
       if (contentTypeFilter !== 'All') params.append('contentType', contentTypeFilter);
       const url = `${API_BASE}/admin/protected/anime-list${params.toString() ? `?${params.toString()}` : ''}`;
       const { data } = await axios.get(url, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
-      const animeData = data.map((a: any) => ({ ...a, id: a._id, seoTitle: a.seoTitle || '', seoDescription: a.seoDescription || '', seoKeywords: a.seoKeywords || '', slug: a.slug || '', episodes: a.episodes || [] }));
+      const animeData = data.map((a: any) => ({
+        ...a,
+        id: a._id,
+        seoTitle: a.seoTitle || '',
+        seoDescription: a.seoDescription || '',
+        seoKeywords: a.seoKeywords || '',
+        slug: a.slug || '',
+        episodes: a.episodes || [],
+      }));
       setAnimes(animeData);
       setFilteredAnimes(animeData);
-      alert('✅ Anime deleted successfully!');
+      toast.success('✅ Anime deleted successfully!', { id: toastId });
     } catch (err: any) {
       console.error('Delete error:', err);
-      alert(err.response?.data?.error || 'Delete failed. Please try again.');
+      toast.error(err.response?.data?.error || 'Delete failed. Please try again.', { id: toastId });
+    } finally {
+      setDeleteConfirm(null);
     }
+  };
+
+  const cancelDelete = () => {
+    setDeleteConfirm(null);
   };
 
   const handleEdit = (anime: Anime) => {
@@ -173,7 +182,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
         seoTitle: anime.seoTitle || '',
         seoDescription: anime.seoDescription || '',
         seoKeywords: anime.seoKeywords || '',
-        slug: anime.slug || ''
+        slug: anime.slug || '',
       });
     }
   };
@@ -182,29 +191,37 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
     e.preventDefault();
     if (!editingAnimeId || isPartnerMode) return;
 
+    const toastId = toast.loading('Saving changes...');
     try {
-      await axios.put(`${API_BASE}/admin/protected/edit-anime/${editingAnimeId}`, 
-        editForm,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      
-      alert('✅ Anime updated successfully! SEO data has been saved.');
+      await axios.put(`${API_BASE}/admin/protected/edit-anime/${editingAnimeId}`, editForm, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      toast.success('✅ Anime updated successfully! SEO data saved.', { id: toastId });
       setEditingAnimeId(null);
-      
+
       // Refresh list
       const params = new URLSearchParams();
       if (statusFilter !== 'All') params.append('status', statusFilter);
       if (contentTypeFilter !== 'All') params.append('contentType', contentTypeFilter);
       const url = `${API_BASE}/admin/protected/anime-list${params.toString() ? `?${params.toString()}` : ''}`;
       const { data } = await axios.get(url, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
-      const animeData = data.map((a: any) => ({ ...a, id: a._id, seoTitle: a.seoTitle || '', seoDescription: a.seoDescription || '', seoKeywords: a.seoKeywords || '', slug: a.slug || '', episodes: a.episodes || [] }));
+      const animeData = data.map((a: any) => ({
+        ...a,
+        id: a._id,
+        seoTitle: a.seoTitle || '',
+        seoDescription: a.seoDescription || '',
+        seoKeywords: a.seoKeywords || '',
+        slug: a.slug || '',
+        episodes: a.episodes || [],
+      }));
       setAnimes(animeData);
       setFilteredAnimes(animeData);
     } catch (err: any) {
       console.error('Update error:', err);
-      alert(err.response?.data?.error || 'Update failed. Please try again.');
+      toast.error(err.response?.data?.error || 'Update failed. Please try again.', { id: toastId });
     }
   };
 
@@ -213,7 +230,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
   };
 
   const handleGenreChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const genres = e.target.value.split(',').map(g => g.trim()).filter(g => g);
+    const genres = e.target.value.split(',').map((g) => g.trim()).filter((g) => g);
     setEditForm({ ...editForm, genreList: genres.length ? genres : ['Action'] });
   };
 
@@ -221,17 +238,16 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
     setSearchQuery('');
   };
 
-  // Auto-generate SEO when title changes
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newTitle = e.target.value;
     setEditForm({ ...editForm, title: newTitle });
-    
+
     if (!editForm.slug && newTitle.trim()) {
       const generatedSlug = generateSlug(newTitle);
-      setEditForm(prev => ({ 
-        ...prev, 
+      setEditForm((prev) => ({
+        ...prev,
         slug: generatedSlug,
-        seoTitle: prev.seoTitle || `Watch ${newTitle} Online in ${prev.subDubStatus} | AnimeBing`
+        seoTitle: prev.seoTitle || `Watch ${newTitle} Online in ${prev.subDubStatus} | AnimeBing`,
       }));
     }
   };
@@ -249,11 +265,11 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
   const handleSubDubStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newStatus = e.target.value as Anime['subDubStatus'];
     setEditForm({ ...editForm, subDubStatus: newStatus });
-    
+
     if (editForm.title.trim()) {
-      setEditForm(prev => ({ 
-        ...prev, 
-        seoTitle: `Watch ${prev.title} Online in ${newStatus} | AnimeBing`
+      setEditForm((prev) => ({
+        ...prev,
+        seoTitle: `Watch ${prev.title} Online in ${newStatus} | AnimeBing`,
       }));
     }
   };
@@ -270,7 +286,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
       `${editForm.title} ${editForm.subDubStatus.toLowerCase()}`,
       `${editForm.title} free download`
     );
-    
+
     if (editForm.genreList && editForm.genreList.length > 0) {
       editForm.genreList.forEach((genre: string) => {
         keywords.push(
@@ -280,9 +296,9 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
         );
       });
     }
-    
-    const statuses = editForm.subDubStatus.toLowerCase().split(',').map(s => s.trim());
-    
+
+    const statuses = editForm.subDubStatus.toLowerCase().split(',').map((s) => s.trim());
+
     if (statuses.includes('hindi dub')) {
       keywords.push(
         'hindi dubbed anime',
@@ -292,7 +308,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
         'watch anime in hindi'
       );
     }
-    
+
     if (statuses.includes('hindi sub')) {
       keywords.push(
         'hindi subbed anime',
@@ -302,7 +318,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
         'hindi subtitles anime'
       );
     }
-    
+
     if (statuses.includes('english sub')) {
       keywords.push(
         'english subbed anime',
@@ -312,7 +328,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
         'english subtitles anime'
       );
     }
-    
+
     if (editForm.contentType === 'Movie') {
       keywords.push(
         `${editForm.title} movie`,
@@ -338,41 +354,38 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
         'hindi dubbed episodes'
       );
     }
-    
-    keywords.push(
-      'animebing',
-      'animebing.in',
-      'anime streaming site',
-      'free anime downloads'
-    );
-    
+
+    keywords.push('animebing', 'animebing.in', 'anime streaming site', 'free anime downloads');
+
     return [...new Set(keywords)].join(', ');
   };
 
   const handleAutoGenerateSEO = () => {
     if (!editForm.title.trim()) {
-      alert('Please enter a title first');
+      toast.error('Please enter a title first');
       return;
     }
 
     const generatedSlug = generateSlug(editForm.title);
     const seoKeywords = generateFullSEO();
-    
-    setEditForm(prev => ({
+
+    setEditForm((prev) => ({
       ...prev,
-      seoTitle: prev.seoTitle || `Watch ${prev.title} Online in ${prev.subDubStatus} | AnimeBing`,
-      seoDescription: prev.seoDescription || 
+      seoTitle:
+        prev.seoTitle || `Watch ${prev.title} Online in ${prev.subDubStatus} | AnimeBing`,
+      seoDescription:
+        prev.seoDescription ||
         `Watch ${prev.title} online in ${prev.subDubStatus}. HD quality streaming and downloads. ${
           prev.contentType === 'Movie' ? 'Full movie available' : 'All episodes available'
         } on AnimeBing.`,
       seoKeywords: prev.seoKeywords || seoKeywords,
-      slug: prev.slug || generatedSlug
+      slug: prev.slug || generatedSlug,
     }));
-    
-    alert('✅ SEO data auto-generated successfully!');
+
+    toast.success('✅ SEO data auto-generated successfully!');
   };
 
-  const getSEOStatus = (anime: Anime): { text: string, color: string, bgColor: string } => {
+  const getSEOStatus = (anime: Anime): { text: string; color: string; bgColor: string } => {
     if (!anime.seoTitle && !anime.seoDescription && !anime.slug) {
       return { text: 'No SEO', color: 'text-red-400', bgColor: 'bg-red-600/20' };
     }
@@ -385,589 +398,701 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
     return { text: 'Partial SEO', color: 'text-yellow-400', bgColor: 'bg-yellow-600/20' };
   };
 
-  // Loading state: normal mode or partner mode with external loading
   if ((!isPartnerMode && loading) || (isPartnerMode && propIsLoading)) {
-    return <div className="flex justify-center py-8"><Spinner size="lg" /></div>;
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+        <div className="w-16 h-16 border-4 border-purple-500/30 border-t-purple-500 rounded-full animate-spin"></div>
+        <p className="mt-4 text-white/60 text-lg">Loading anime list...</p>
+      </div>
+    );
   }
 
   if (error) return <p className="text-red-400 text-center p-4">{error}</p>;
 
   return (
-    <div>
-      {/* Search & Filters – hide in partner mode? We'll keep them but conditionally show some elements */}
-      <div className="flex flex-col gap-4 mb-6">
-        {/* Search Bar */}
-        <div className="relative">
-          <div className="flex items-center gap-3">
-            <div className="relative flex-1 max-w-md">
+    <div className="p-6 space-y-8 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 min-h-screen">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="p-2 bg-purple-500/20 rounded-xl">
+          <svg
+            className="w-8 h-8 text-purple-400"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={1.5}
+              d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"
+            />
+          </svg>
+        </div>
+        <h1 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-pink-300">
+          Anime List Manager
+        </h1>
+      </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl shadow-xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-xl font-semibold text-white mb-4">Confirm Delete</h3>
+            <p className="text-slate-300 mb-6">
+              Are you sure you want to delete "{deleteConfirm.animeTitle}"? This will also delete all episodes/chapters.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={cancelDelete}
+                className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="bg-red-600/80 hover:bg-red-500 text-white px-4 py-2 rounded-lg transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Search & Filters */}
+      <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-6 shadow-2xl">
+        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+          <h2 className="text-xl font-semibold text-white/90 flex items-center gap-2">
+            <span className="w-1.5 h-6 bg-purple-400 rounded-full"></span>
+            Filters
+          </h2>
+          <div className="flex flex-wrap gap-3 w-full sm:w-auto">
+            {/* Content Type Filter */}
+            <select
+              value={contentTypeFilter}
+              onChange={(e) => setContentTypeFilter(e.target.value as any)}
+              className="px-4 py-2.5 bg-gray-800/60 border border-gray-700/80 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition appearance-none cursor-pointer"
+            >
+              <option value="All">All Types</option>
+              <option value="Anime">Anime</option>
+              <option value="Movie">Movie</option>
+              <option value="Manga">Manga</option>
+            </select>
+
+            {/* Status Filter */}
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as any)}
+              className="px-4 py-2.5 bg-gray-800/60 border border-gray-700/80 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition appearance-none cursor-pointer"
+            >
+              <option value="All">All Status</option>
+              <option value="Ongoing">Ongoing</option>
+              <option value="Complete">Complete</option>
+            </select>
+
+            {/* Search Input */}
+            <div className="relative min-w-[240px]">
               <input
                 type="text"
-                placeholder="Search by title, genre, language, SEO keywords, slug, or type..."
+                placeholder="Search anime..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg pl-10 pr-10 py-2.5 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
+                className="w-full px-4 py-2.5 bg-gray-800/60 border border-gray-700/80 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition pr-8"
               />
-              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-              </div>
               {searchQuery && (
                 <button
                   onClick={clearSearch}
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-white transition-colors"
-                  aria-label="Clear search"
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  ✕
                 </button>
               )}
             </div>
-            
-            <div className="text-sm text-slate-300 whitespace-nowrap">
-              {searchQuery ? (
-                <span>
-                  Showing {filteredAnimes.length} of {animes.length} results
-                </span>
-              ) : (
-                <span>Total: {animes.length} items</span>
-              )}
-            </div>
-          </div>
-          
-          {searchQuery && filteredAnimes.length === 0 && (
-            <div className="mt-2 text-sm text-slate-400">
-              💡 Try searching by: title, genre (action, romance), language (hindi, english), SEO keywords, slug, or type (anime, movie)
-            </div>
-          )}
-        </div>
 
-        {/* Filters and Controls – Hide refresh button and filters in partner mode? We'll keep but disable some? */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <h3 className="text-xl font-semibold text-white">
-            {isPartnerMode ? 'Assigned Anime' : 'Content List'}
-            <span className="text-sm text-slate-400 ml-2">
-              {contentTypeFilter !== 'All' && `- ${contentTypeFilter}s`}
-              {statusFilter !== 'All' && ` - ${statusFilter}`}
-              {searchQuery && ` - "${searchQuery}"`}
-            </span>
-          </h3>
-          
-          {!isPartnerMode && (
-            <div className="flex items-center gap-4">
-              {/* Content Type Filter */}
-              <div className="flex items-center gap-2 bg-slate-800/50 p-1 rounded-lg">
-                <button
-                  onClick={() => setContentTypeFilter('All')}
-                  className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                    contentTypeFilter === 'All'
-                      ? 'bg-blue-600 text-white'
-                      : 'text-slate-300 hover:bg-slate-700'
-                  }`}
-                  aria-label="Show all content types"
-                >
-                  All
-                </button>
-                <button
-                  onClick={() => setContentTypeFilter('Anime')}
-                  className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                    contentTypeFilter === 'Anime'
-                      ? 'bg-blue-600 text-white'
-                      : 'text-slate-300 hover:bg-slate-700'
-                  }`}
-                  aria-label="Filter by Anime"
-                >
-                  Anime
-                </button>
-                <button
-                  onClick={() => setContentTypeFilter('Movie')}
-                  className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                    contentTypeFilter === 'Movie'
-                      ? 'bg-blue-600 text-white'
-                      : 'text-slate-300 hover:bg-slate-700'
-                  }`}
-                  aria-label="Filter by Movies"
-                >
-                  Movies
-                </button>
-                <button
-                  onClick={() => setContentTypeFilter('Manga')}
-                  className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                    contentTypeFilter === 'Manga'
-                      ? 'bg-blue-600 text-white'
-                      : 'text-slate-300 hover:bg-slate-700'
-                  }`}
-                  aria-label="Filter by Manga"
-                >
-                  Manga
-                </button>
-              </div>
-
-              {/* Status Filter */}
-              <div className="flex items-center gap-2 bg-slate-800/50 p-1 rounded-lg">
-                <button
-                  onClick={() => setStatusFilter('All')}
-                  className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                    statusFilter === 'All'
-                      ? 'bg-purple-600 text-white'
-                      : 'text-slate-300 hover:bg-slate-700'
-                  }`}
-                  aria-label="Show all status"
-                >
-                  All
-                </button>
-                <button
-                  onClick={() => setStatusFilter('Ongoing')}
-                  className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                    statusFilter === 'Ongoing'
-                      ? 'bg-purple-600 text-white'
-                      : 'text-slate-300 hover:bg-slate-700'
-                  }`}
-                  aria-label="Filter by Ongoing"
-                >
-                  Ongoing
-                </button>
-                <button
-                  onClick={() => setStatusFilter('Complete')}
-                  className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                    statusFilter === 'Complete'
-                      ? 'bg-purple-600 text-white'
-                      : 'text-slate-300 hover:bg-slate-700'
-                  }`}
-                  aria-label="Filter by Complete"
-                >
-                  Complete
-                </button>
-              </div>
-              
-              <button 
+            {/* Refresh Button (only in normal mode) */}
+            {!isPartnerMode && (
+              <button
                 onClick={() => {
-                  // Refresh by re-fetching
                   const params = new URLSearchParams();
                   if (statusFilter !== 'All') params.append('status', statusFilter);
                   if (contentTypeFilter !== 'All') params.append('contentType', contentTypeFilter);
                   const url = `${API_BASE}/admin/protected/anime-list${params.toString() ? `?${params.toString()}` : ''}`;
-                  axios.get(url, { headers: { Authorization: `Bearer ${token}` } })
+                  axios
+                    .get(url, { headers: { Authorization: `Bearer ${token}` } })
                     .then(({ data }) => {
-                      const animeData = data.map((a: any) => ({ ...a, id: a._id, seoTitle: a.seoTitle || '', seoDescription: a.seoDescription || '', seoKeywords: a.seoKeywords || '', slug: a.slug || '', episodes: a.episodes || [] }));
+                      const animeData = data.map((a: any) => ({
+                        ...a,
+                        id: a._id,
+                        seoTitle: a.seoTitle || '',
+                        seoDescription: a.seoDescription || '',
+                        seoKeywords: a.seoKeywords || '',
+                        slug: a.slug || '',
+                        episodes: a.episodes || [],
+                      }));
                       setAnimes(animeData);
                       setFilteredAnimes(animeData);
+                      toast.success('List refreshed');
                     })
-                    .catch(err => console.error('Refresh error:', err));
+                    .catch(() => toast.error('Failed to refresh'));
                 }}
-                className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-sm transition flex items-center gap-2"
-                aria-label="Refresh anime list"
+                className="px-4 py-2.5 bg-purple-600/80 hover:bg-purple-500 text-white rounded-xl text-sm font-medium transition-all flex items-center gap-2"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                  />
                 </svg>
                 Refresh
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="bg-slate-800/50 rounded-lg shadow-lg overflow-hidden">
+      {/* Anime Table – glass card */}
+      <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-slate-700/50">
+          <table className="min-w-full divide-y divide-white/10">
+            <thead className="bg-white/5">
               <tr>
-                <th className="p-4 text-left text-slate-300 font-medium">Title</th>
-                <th className="p-4 text-left text-slate-300 font-medium">Type</th>
-                <th className="p-4 text-left text-slate-300 font-medium">Year</th>
-                <th className="p-4 text-left text-slate-300 font-medium">Status</th>
-                <th className="p-4 text-left text-slate-300 font-medium">Sub/Dub</th>
-                <th className="p-4 text-left text-slate-300 font-medium">Episodes</th>
+                <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
+                  Image
+                </th>
+                <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
+                  Title
+                </th>
+                <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
+                  Type
+                </th>
+                <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
+                  Year
+                </th>
+                <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
+                  Sub/Dub
+                </th>
+                <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
+                  Episodes
+                </th>
                 {!isPartnerMode && (
-                  <th className="p-4 text-left text-slate-300 font-medium">SEO Status</th>
+                  <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
+                    SEO Status
+                  </th>
                 )}
-                <th className="p-4 text-left text-slate-300 font-medium">Actions</th>
+                <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
+                  Actions
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-700">
-              {filteredAnimes.map(anime => {
-                const seoStatus = !isPartnerMode ? getSEOStatus(anime) : null;
-                
-                return (
-                  <React.Fragment key={anime.id}>
-                    <tr className={`hover:bg-slate-700/30 transition-colors ${editingAnimeId === anime.id ? 'bg-slate-700/50' : ''}`}>
-                      <td className="p-4 font-medium text-white">
-                        <div className="flex items-center gap-3">
-                          <img 
-                            src={anime.thumbnail} 
+            <tbody className="divide-y divide-white/10">
+              {filteredAnimes.length === 0 ? (
+                <tr>
+                  <td colSpan={isPartnerMode ? 8 : 9} className="px-6 py-12 text-center text-white/40">
+                    <svg
+                      className="w-16 h-16 mx-auto text-white/20"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1}
+                        d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
+                      />
+                    </svg>
+                    <p className="mt-4 text-white/60 text-lg">No anime match your filters.</p>
+                  </td>
+                </tr>
+              ) : (
+                filteredAnimes.map((anime) => {
+                  const seoStatus = !isPartnerMode ? getSEOStatus(anime) : null;
+                  return (
+                    <React.Fragment key={anime.id}>
+                      <tr
+                        className={`hover:bg-white/5 transition ${
+                          editingAnimeId === anime.id ? 'bg-white/10' : ''
+                        }`}
+                      >
+                        <td className="px-2 sm:px-6 py-4 whitespace-nowrap">
+                          <img
+                            src={anime.thumbnail || 'https://via.placeholder.com/96x128/1e293b/64748b?text=No+Image'}
                             alt={anime.title}
-                            className="w-12 h-16 object-cover rounded"
+                            className="w-12 h-16 sm:w-16 sm:h-20 object-cover rounded-lg shadow-lg"
                             loading="lazy"
                             onError={(e) => {
-                              e.currentTarget.src = 'https://via.placeholder.com/48x64/1e293b/64748b?text=No+Image';
+                              e.currentTarget.src = 'https://via.placeholder.com/96x128/1e293b/64748b?text=No+Image';
                             }}
                           />
-                          <div>
-                            <div className="font-semibold">{anime.title}</div>
-                          </div>
-                        </div>
-                      </td>
-                      
-                      <td className="p-4">
-                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                          anime.contentType === 'Movie' 
-                            ? 'bg-blue-600 text-white' 
-                            : anime.contentType === 'Manga'
-                            ? 'bg-green-600 text-white'
-                            : 'bg-purple-600 text-white'
-                        }`}>
-                          {anime.contentType}
-                        </span>
-                      </td>
-                      
-                      <td className="p-4 text-slate-300 text-center">
-                        {anime.releaseYear || 'N/A'}
-                      </td>
-                      
-                      <td className="p-4">
-                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                          anime.status === 'Complete' 
-                            ? 'bg-green-600 text-white' 
-                            : 'bg-yellow-600 text-white'
-                        }`}>
-                          {anime.status || 'Ongoing'}
-                        </span>
-                      </td>
-                      
-                      <td className="p-4">
-                        <span 
-                          className={`px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
-                            anime.subDubStatus === 'Hindi Dub' 
-                              ? 'bg-red-600 text-white' 
-                              : anime.subDubStatus === 'Hindi Sub'
-                              ? 'bg-orange-600 text-white'
-                              : anime.subDubStatus === 'English Sub'
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-purple-600 text-white'
-                          }`}
-                          style={{ minWidth: '80px', display: 'inline-block', textAlign: 'center' }}
-                        >
-                          {anime.subDubStatus}
-                        </span>
-                      </td>
-                      
-                      <td className="p-4 text-slate-300 text-center">
-                        <span className="bg-blue-600/20 text-blue-400 px-2 py-1 rounded text-xs whitespace-nowrap">
-                          {anime.episodes?.length || 0} episodes
-                        </span>
-                      </td>
-                      
-                      {!isPartnerMode && (
-                        <td className="p-4">
-                          {seoStatus && (
-                            <span className={`${seoStatus.bgColor} ${seoStatus.color} px-2 py-1 rounded text-xs whitespace-nowrap`}>
-                              {seoStatus.text}
-                            </span>
-                          )}
                         </td>
-                      )}
-                      
-                      <td className="p-4">
-                        <div className="flex gap-2">
-                          {showRemoveButton && onRemoveFromPartner ? (
-                            <button
-                              onClick={() => onRemoveFromPartner(anime.id)}
-                              className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-sm transition-colors whitespace-nowrap"
-                              aria-label={`Remove ${anime.title} from partner`}
-                            >
-                              Remove
-                            </button>
-                          ) : (
-                            !isPartnerMode && (
-                              <>
-                                <button
-                                  onClick={() => handleEdit(anime)}
-                                  className={`px-3 py-1 rounded text-sm transition-colors whitespace-nowrap ${
-                                    editingAnimeId === anime.id 
-                                      ? 'bg-yellow-600 hover:bg-yellow-500 text-white' 
-                                      : 'bg-blue-600 hover:bg-blue-500 text-white'
-                                  }`}
-                                  aria-label={`Edit ${anime.title}`}
-                                >
-                                  {editingAnimeId === anime.id ? 'Cancel Edit' : 'Edit SEO'}
-                                </button>
-                                {editingAnimeId !== anime.id && (
-                                  <button
-                                    onClick={() => handleDelete(anime.id)}
-                                    className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-sm transition-colors whitespace-nowrap"
-                                    aria-label={`Delete ${anime.title}`}
-                                  >
-                                    Delete
-                                  </button>
-                                )}
-                              </>
-                            )
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                    
-                    {/* Edit form row – only in normal mode */}
-                    {!isPartnerMode && editingAnimeId === anime.id && (
-                      <tr className="bg-slate-800/70">
-                        <td colSpan={8} className="p-4">
-                          <div className="border-l-4 border-blue-500 pl-4 py-2">
-                            <div className="flex justify-between items-center mb-3">
-                              <h4 className="text-lg font-semibold text-white flex items-center gap-2">
-                                <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                </svg>
-                                Edit {anime.contentType}: {anime.title}
-                              </h4>
+                        <td className="px-2 sm:px-6 py-4">
+                          <div className="flex flex-col gap-1">
+                            <span className="text-sm font-medium text-white break-words">{anime.title}</span>
+                            {anime.status && (
+                              <span
+                                className={`self-start px-2 py-0.5 text-xs rounded-full ${
+                                  anime.status === 'Ongoing'
+                                    ? 'bg-green-500/20 text-green-300 border border-green-500/30'
+                                    : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                                }`}
+                              >
+                                {anime.status}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-sm text-purple-300">
+                          {anime.contentType}
+                        </td>
+                        <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-sm text-white/70 text-center">
+                          {anime.releaseYear || 'N/A'}
+                        </td>
+                        <td className="px-2 sm:px-6 py-4 whitespace-nowrap">
+                          <span
+                            className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                              anime.status === 'Complete'
+                                ? 'bg-green-600/80 text-white'
+                                : 'bg-yellow-600/80 text-white'
+                            }`}
+                          >
+                            {anime.status || 'Ongoing'}
+                          </span>
+                        </td>
+                        <td className="px-2 sm:px-6 py-4 whitespace-nowrap">
+                          <span
+                            className={`px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
+                              anime.subDubStatus === 'Hindi Dub'
+                                ? 'bg-red-600/80 text-white'
+                                : anime.subDubStatus === 'Hindi Sub'
+                                ? 'bg-orange-600/80 text-white'
+                                : anime.subDubStatus === 'English Sub'
+                                ? 'bg-blue-600/80 text-white'
+                                : 'bg-purple-600/80 text-white'
+                            }`}
+                            style={{ minWidth: '80px', display: 'inline-block', textAlign: 'center' }}
+                          >
+                            {anime.subDubStatus}
+                          </span>
+                        </td>
+                        <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-sm text-white/70 text-center">
+                          <span className="bg-blue-600/20 text-blue-300 px-2 py-1 rounded text-xs whitespace-nowrap">
+                            {anime.episodes?.length || 0} episodes
+                          </span>
+                        </td>
+                        {!isPartnerMode && (
+                          <td className="px-2 sm:px-6 py-4 whitespace-nowrap">
+                            {seoStatus && (
+                              <span
+                                className={`${seoStatus.bgColor} ${seoStatus.color} px-2 py-1 rounded text-xs whitespace-nowrap`}
+                              >
+                                {seoStatus.text}
+                              </span>
+                            )}
+                          </td>
+                        )}
+                        <td className="px-2 sm:px-6 py-4 whitespace-nowrap">
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            {showRemoveButton && onRemoveFromPartner ? (
                               <button
-                                onClick={handleAutoGenerateSEO}
-                                className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-3 py-1 rounded text-sm transition-colors whitespace-nowrap flex items-center gap-1"
-                                aria-label="Auto-generate SEO data"
+                                onClick={() => onRemoveFromPartner(anime.id)}
+                                className="px-2 py-1.5 bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 rounded-lg text-red-200 text-xs font-medium transition-all flex items-center justify-center gap-1"
                               >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                  />
                                 </svg>
-                                Auto-Generate SEO
+                                Remove
                               </button>
-                            </div>
-                            
-                            <form onSubmit={handleEditSubmit} className="space-y-4">
-                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                <div>
-                                  <label className="block text-sm font-medium text-slate-300 mb-1">Title *</label>
-                                  <input
-                                    type="text"
-                                    value={editForm.title}
-                                    onChange={handleTitleChange}
-                                    className="w-full bg-slate-700 border border-slate-600 text-white rounded px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                                    required
-                                    aria-required="true"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-slate-300 mb-1">Content Type</label>
-                                  <select
-                                    value={editForm.contentType}
-                                    onChange={(e) => setEditForm({ ...editForm, contentType: e.target.value as 'Anime' | 'Movie' | 'Manga' })}
-                                    className="w-full bg-slate-700 border border-slate-600 text-white rounded px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                            ) : (
+                              !isPartnerMode && (
+                                <>
+                                  <button
+                                    onClick={() => handleEdit(anime)}
+                                    className={`px-2 py-1.5 ${
+                                      editingAnimeId === anime.id
+                                        ? 'bg-yellow-500/20 hover:bg-yellow-500/40 border-yellow-500/30 text-yellow-200'
+                                        : 'bg-indigo-500/20 hover:bg-indigo-500/40 border-indigo-500/30 text-indigo-200'
+                                    } border rounded-lg text-xs font-medium transition-all flex items-center justify-center gap-1`}
                                   >
-                                    <option value="Anime">Anime Series</option>
-                                    <option value="Movie">Movie</option>
-                                    <option value="Manga">Manga</option>
-                                  </select>
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-slate-300 mb-1">Release Year</label>
-                                  <input
-                                    type="number"
-                                    value={editForm.releaseYear}
-                                    onChange={(e) => setEditForm({ ...editForm, releaseYear: Number(e.target.value) })}
-                                    className="w-full bg-slate-700 border border-slate-600 text-white rounded px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                                    min="1900"
-                                    max="2030"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-slate-300 mb-1">Sub/Dub Status</label>
-                                  <select
-                                    value={editForm.subDubStatus}
-                                    onChange={handleSubDubStatusChange}
-                                    className="w-full bg-slate-700 border border-slate-600 text-white rounded px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                                  >
-                                    <option value="Hindi Dub">Hindi Dub</option>
-                                    <option value="Hindi Sub">Hindi Sub</option>
-                                    <option value="English Sub">English Sub</option>
-                                    <option value="Both">Both</option>
-                                    <option value="Subbed">Subbed</option>
-                                    <option value="Dubbed">Dubbed</option>
-                                    <option value="Sub & Dub">Sub & Dub</option>
-                                    <option value="Dual Audio">Dual Audio</option>
-                                  </select>
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-slate-300 mb-1">Status</label>
-                                  <select
-                                    value={editForm.status}
-                                    onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
-                                    className="w-full bg-slate-700 border border-slate-600 text-white rounded px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                                  >
-                                    <option value="Ongoing">Ongoing</option>
-                                    <option value="Complete">Complete</option>
-                                  </select>
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-slate-300 mb-1">Thumbnail URL</label>
-                                  <input
-                                    type="url"
-                                    value={editForm.thumbnail}
-                                    onChange={(e) => setEditForm({ ...editForm, thumbnail: e.target.value })}
-                                    className="w-full bg-slate-700 border border-slate-600 text-white rounded px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                                    placeholder="https://res.cloudinary.com/..."
-                                  />
-                                </div>
-                              </div>
-
-                              <div>
-                                <label className="block text-sm font-medium text-slate-300 mb-1">Description</label>
-                                <textarea
-                                  value={editForm.description}
-                                  onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-                                  className="w-full bg-slate-700 border border-slate-600 text-white rounded px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-colors h-20"
-                                  placeholder="Brief description of the anime..."
-                                />
-                              </div>
-
-                              <div>
-                                <label className="block text-sm font-medium text-slate-300 mb-1">Genres (comma separated)</label>
-                                <input
-                                  type="text"
-                                  value={editForm.genreList.join(', ')}
-                                  onChange={handleGenreChange}
-                                  className="w-full bg-slate-700 border border-slate-600 text-white rounded px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                                  placeholder="Action, Adventure, Fantasy"
-                                />
-                              </div>
-
-                              {/* SEO SECTION */}
-                              <div className="mt-6 pt-4 border-t border-slate-600">
-                                <h4 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                                  <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-                                  </svg>
-                                  SEO Settings (For Google Search)
-                                </h4>
-                                
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                  <div>
-                                    <label className="block text-sm font-medium text-slate-300 mb-1">
-                                      SEO Title
-                                      <span className={`text-xs ml-2 ${editForm.seoTitle.length > 60 ? 'text-red-400' : 'text-green-400'}`}>
-                                        ({editForm.seoTitle.length}/60)
-                                      </span>
-                                    </label>
-                                    <input
-                                      type="text"
-                                      value={editForm.seoTitle}
-                                      onChange={(e) => setEditForm({ ...editForm, seoTitle: e.target.value })}
-                                      className="w-full bg-slate-700 border border-slate-600 text-white rounded px-3 py-2 text-sm focus:ring-1 focus:ring-green-500 focus:border-green-500 transition-colors"
-                                      placeholder="Watch {Title} Online in {Language} | AnimeBing"
-                                      maxLength={60}
-                                    />
-                                    <p className="text-xs text-slate-400 mt-1">Appears in Google search results</p>
-                                  </div>
-
-                                  <div>
-                                    <label className="block text-sm font-medium text-slate-300 mb-1">
-                                      URL Slug
-                                      <span className="text-xs text-blue-400 ml-2">animebing.in/detail/{editForm.slug || 'your-slug'}</span>
-                                    </label>
-                                    <input
-                                      type="text"
-                                      value={editForm.slug}
-                                      onChange={(e) => setEditForm({ ...editForm, slug: e.target.value })}
-                                      className="w-full bg-slate-700 border border-slate-600 text-white rounded px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                                      placeholder="naruto-shippuden-hindi-dub"
-                                    />
-                                    <p className="text-xs text-slate-400 mt-1">SEO-friendly URL (lowercase, hyphens)</p>
-                                  </div>
-
-                                  <div className="md:col-span-2">
-                                    <label className="block text-sm font-medium text-slate-300 mb-1">
-                                      SEO Description
-                                      <span className={`text-xs ml-2 ${editForm.seoDescription.length > 160 ? 'text-red-400' : 'text-green-400'}`}>
-                                        ({editForm.seoDescription.length}/160)
-                                      </span>
-                                    </label>
-                                    <textarea
-                                      value={editForm.seoDescription}
-                                      onChange={(e) => setEditForm({ ...editForm, seoDescription: e.target.value })}
-                                      className="w-full bg-slate-700 border border-slate-600 text-white rounded px-3 py-2 text-sm focus:ring-1 focus:ring-green-500 focus:border-green-500 transition-colors h-20"
-                                      placeholder="Watch {Title} online in {Language}. HD quality streaming and downloads. All episodes available."
-                                      maxLength={160}
-                                    />
-                                    <p className="text-xs text-slate-400 mt-1">Appears below the title in Google search results</p>
-                                  </div>
-
-                                  <div className="md:col-span-2">
-                                    <label className="block text-sm font-medium text-slate-300 mb-1">
-                                      SEO Keywords (Comma separated)
-                                      <span className="text-xs text-slate-400 ml-2">Important for search rankings</span>
-                                    </label>
-                                    <textarea
-                                      value={editForm.seoKeywords}
-                                      onChange={(e) => setEditForm({ ...editForm, seoKeywords: e.target.value })}
-                                      className="w-full bg-slate-700 border border-slate-600 text-white rounded px-3 py-2 text-sm focus:ring-1 focus:ring-green-500 focus:border-green-500 transition-colors h-20"
-                                      placeholder="naruto shippuden hindi dub, watch naruto shippuden online, naruto anime in hindi, action anime, adventure anime"
-                                    />
-                                    <p className="text-xs text-slate-400 mt-1">Keywords that users might search for on Google</p>
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="flex gap-3 pt-2">
-                                <button
-                                  type="submit"
-                                  className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-medium py-2 px-4 rounded text-sm transition-colors flex items-center gap-2"
-                                >
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                  </svg>
-                                  Save Changes & SEO
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={handleCancelEdit}
-                                  className="bg-slate-600 hover:bg-slate-500 text-white font-medium py-2 px-4 rounded text-sm transition-colors"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            </form>
+                                    {editingAnimeId === anime.id ? (
+                                      <>
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth={2}
+                                            d="M6 18L18 6M6 6l12 12"
+                                          />
+                                        </svg>
+                                        Cancel
+                                      </>
+                                    ) : (
+                                      <>
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth={2}
+                                            d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                                          />
+                                        </svg>
+                                        Edit SEO
+                                      </>
+                                    )}
+                                  </button>
+                                  {editingAnimeId !== anime.id && (
+                                    <button
+                                      onClick={() => handleDelete(anime.id)}
+                                      className="px-2 py-1.5 bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 rounded-lg text-red-200 text-xs font-medium transition-all flex items-center justify-center gap-1"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          strokeWidth={2}
+                                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                        />
+                                      </svg>
+                                      Delete
+                                    </button>
+                                  )}
+                                </>
+                              )
+                            )}
                           </div>
                         </td>
                       </tr>
-                    )}
-                  </React.Fragment>
-                );
-              })}
+
+                      {/* Edit form row – only in normal mode */}
+                      {!isPartnerMode && editingAnimeId === anime.id && (
+                        <tr className="bg-white/5">
+                          <td colSpan={9} className="p-4">
+                            <div className="border-l-4 border-blue-500 pl-4 py-2">
+                              <div className="flex justify-between items-center mb-3">
+                                <h4 className="text-lg font-semibold text-white flex items-center gap-2">
+                                  <svg
+                                    className="w-5 h-5 text-blue-400"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                                    />
+                                  </svg>
+                                  Edit {anime.contentType}: {anime.title}
+                                </h4>
+                                <button
+                                  onClick={handleAutoGenerateSEO}
+                                  className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-3 py-1 rounded text-sm transition-colors whitespace-nowrap flex items-center gap-1"
+                                >
+                                  <svg
+                                    className="w-4 h-4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M13 10V3L4 14h7v7l9-11h-7z"
+                                    />
+                                  </svg>
+                                  Auto-Generate SEO
+                                </button>
+                              </div>
+
+                              <form onSubmit={handleEditSubmit} className="space-y-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                  <div>
+                                    <label className="block text-sm font-medium text-slate-300 mb-1">
+                                      Title *
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={editForm.title}
+                                      onChange={handleTitleChange}
+                                      className="w-full bg-gray-800/60 border border-gray-700/80 rounded-lg text-white px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
+                                      required
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-slate-300 mb-1">
+                                      Content Type
+                                    </label>
+                                    <select
+                                      value={editForm.contentType}
+                                      onChange={(e) =>
+                                        setEditForm({
+                                          ...editForm,
+                                          contentType: e.target.value as 'Anime' | 'Movie' | 'Manga',
+                                        })
+                                      }
+                                      className="w-full bg-gray-800/60 border border-gray-700/80 rounded-lg text-white px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
+                                    >
+                                      <option value="Anime">Anime Series</option>
+                                      <option value="Movie">Movie</option>
+                                      <option value="Manga">Manga</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-slate-300 mb-1">
+                                      Release Year
+                                    </label>
+                                    <input
+                                      type="number"
+                                      value={editForm.releaseYear}
+                                      onChange={(e) =>
+                                        setEditForm({ ...editForm, releaseYear: Number(e.target.value) })
+                                      }
+                                      className="w-full bg-gray-800/60 border border-gray-700/80 rounded-lg text-white px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
+                                      min="1900"
+                                      max="2030"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-slate-300 mb-1">
+                                      Sub/Dub Status
+                                    </label>
+                                    <select
+                                      value={editForm.subDubStatus}
+                                      onChange={handleSubDubStatusChange}
+                                      className="w-full bg-gray-800/60 border border-gray-700/80 rounded-lg text-white px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
+                                    >
+                                      <option value="Hindi Dub">Hindi Dub</option>
+                                      <option value="Hindi Sub">Hindi Sub</option>
+                                      <option value="English Sub">English Sub</option>
+                                      <option value="Both">Both</option>
+                                      <option value="Subbed">Subbed</option>
+                                      <option value="Dubbed">Dubbed</option>
+                                      <option value="Sub & Dub">Sub & Dub</option>
+                                      <option value="Dual Audio">Dual Audio</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-slate-300 mb-1">
+                                      Status
+                                    </label>
+                                    <select
+                                      value={editForm.status}
+                                      onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                                      className="w-full bg-gray-800/60 border border-gray-700/80 rounded-lg text-white px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
+                                    >
+                                      <option value="Ongoing">Ongoing</option>
+                                      <option value="Complete">Complete</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-slate-300 mb-1">
+                                      Thumbnail URL
+                                    </label>
+                                    <input
+                                      type="url"
+                                      value={editForm.thumbnail}
+                                      onChange={(e) =>
+                                        setEditForm({ ...editForm, thumbnail: e.target.value })
+                                      }
+                                      className="w-full bg-gray-800/60 border border-gray-700/80 rounded-lg text-white px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
+                                      placeholder="https://res.cloudinary.com/..."
+                                    />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="block text-sm font-medium text-slate-300 mb-1">
+                                    Description
+                                  </label>
+                                  <textarea
+                                    value={editForm.description}
+                                    onChange={(e) =>
+                                      setEditForm({ ...editForm, description: e.target.value })
+                                    }
+                                    className="w-full bg-gray-800/60 border border-gray-700/80 rounded-lg text-white px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition h-20"
+                                    placeholder="Brief description of the anime..."
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="block text-sm font-medium text-slate-300 mb-1">
+                                    Genres (comma separated)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editForm.genreList.join(', ')}
+                                    onChange={handleGenreChange}
+                                    className="w-full bg-gray-800/60 border border-gray-700/80 rounded-lg text-white px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
+                                    placeholder="Action, Adventure, Fantasy"
+                                  />
+                                </div>
+
+                                {/* SEO SECTION */}
+                                <div className="mt-6 pt-4 border-t border-white/10">
+                                  <h4 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                                    <svg
+                                      className="w-5 h-5 text-green-400"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"
+                                      />
+                                    </svg>
+                                    SEO Settings (For Google Search)
+                                  </h4>
+
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                      <label className="block text-sm font-medium text-slate-300 mb-1">
+                                        SEO Title
+                                        <span
+                                          className={`text-xs ml-2 ${
+                                            editForm.seoTitle.length > 60 ? 'text-red-400' : 'text-green-400'
+                                          }`}
+                                        >
+                                          ({editForm.seoTitle.length}/60)
+                                        </span>
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={editForm.seoTitle}
+                                        onChange={(e) =>
+                                          setEditForm({ ...editForm, seoTitle: e.target.value })
+                                        }
+                                        className="w-full bg-gray-800/60 border border-gray-700/80 rounded-lg text-white px-3 py-2 text-sm focus:ring-1 focus:ring-green-500 focus:border-green-500 transition"
+                                        placeholder="Watch {Title} Online in {Language} | AnimeBing"
+                                        maxLength={60}
+                                      />
+                                      <p className="text-xs text-slate-400 mt-1">
+                                        Appears in Google search results
+                                      </p>
+                                    </div>
+
+                                    <div>
+                                      <label className="block text-sm font-medium text-slate-300 mb-1">
+                                        URL Slug
+                                        <span className="text-xs text-blue-400 ml-2">
+                                          animebing.in/detail/{editForm.slug || 'your-slug'}
+                                        </span>
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={editForm.slug}
+                                        onChange={(e) => setEditForm({ ...editForm, slug: e.target.value })}
+                                        className="w-full bg-gray-800/60 border border-gray-700/80 rounded-lg text-white px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition"
+                                        placeholder="naruto-shippuden-hindi-dub"
+                                      />
+                                      <p className="text-xs text-slate-400 mt-1">
+                                        SEO-friendly URL (lowercase, hyphens)
+                                      </p>
+                                    </div>
+
+                                    <div className="md:col-span-2">
+                                      <label className="block text-sm font-medium text-slate-300 mb-1">
+                                        SEO Description
+                                        <span
+                                          className={`text-xs ml-2 ${
+                                            editForm.seoDescription.length > 160 ? 'text-red-400' : 'text-green-400'
+                                          }`}
+                                        >
+                                          ({editForm.seoDescription.length}/160)
+                                        </span>
+                                      </label>
+                                      <textarea
+                                        value={editForm.seoDescription}
+                                        onChange={(e) =>
+                                          setEditForm({ ...editForm, seoDescription: e.target.value })
+                                        }
+                                        className="w-full bg-gray-800/60 border border-gray-700/80 rounded-lg text-white px-3 py-2 text-sm focus:ring-1 focus:ring-green-500 focus:border-green-500 transition h-20"
+                                        placeholder="Watch {Title} online in {Language}. HD quality streaming and downloads. All episodes available."
+                                        maxLength={160}
+                                      />
+                                      <p className="text-xs text-slate-400 mt-1">
+                                        Appears below the title in Google search results
+                                      </p>
+                                    </div>
+
+                                    <div className="md:col-span-2">
+                                      <label className="block text-sm font-medium text-slate-300 mb-1">
+                                        SEO Keywords (Comma separated)
+                                        <span className="text-xs text-slate-400 ml-2">
+                                          Important for search rankings
+                                        </span>
+                                      </label>
+                                      <textarea
+                                        value={editForm.seoKeywords}
+                                        onChange={(e) =>
+                                          setEditForm({ ...editForm, seoKeywords: e.target.value })
+                                        }
+                                        className="w-full bg-gray-800/60 border border-gray-700/80 rounded-lg text-white px-3 py-2 text-sm focus:ring-1 focus:ring-green-500 focus:border-green-500 transition h-20"
+                                        placeholder="naruto shippuden hindi dub, watch naruto shippuden online, naruto anime in hindi, action anime, adventure anime"
+                                      />
+                                      <p className="text-xs text-slate-400 mt-1">
+                                        Keywords that users might search for on Google
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex gap-3 pt-2">
+                                  <button
+                                    type="submit"
+                                    className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-medium py-2 px-4 rounded-lg text-sm transition-colors flex items-center gap-2"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M5 13l4 4L19 7"
+                                      />
+                                    </svg>
+                                    Save Changes & SEO
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={handleCancelEdit}
+                                    className="bg-white/10 hover:bg-white/20 text-white font-medium py-2 px-4 rounded-lg text-sm transition-colors"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </form>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
-        
-        {filteredAnimes.length === 0 && (
-          <div className="text-center py-12">
-            <div className="text-4xl mb-4">
-              {searchQuery ? '🔍' : '📺'}
-            </div>
-            <h3 className="text-xl font-semibold text-slate-300 mb-2">
-              {searchQuery ? 'No Results Found' : 'No Content Found'}
-            </h3>
-            <p className="text-slate-400">
-              {searchQuery 
-                ? `No results found for "${searchQuery}". Try different keywords.`
-                : isPartnerMode
-                ? 'No anime assigned to this partner yet.'
-                : statusFilter !== 'All' || contentTypeFilter !== 'All'
-                ? `No ${contentTypeFilter !== 'All' ? contentTypeFilter : ''} ${statusFilter !== 'All' ? statusFilter : ''} content found.` 
-                : 'Get started by adding your first anime or movie!'
-              }
-            </p>
-            {searchQuery && (
-              <button
-                onClick={clearSearch}
-                className="mt-4 bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2 mx-auto"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-                Clear Search
-              </button>
-            )}
-          </div>
-        )}
       </div>
+
+      {/* Summary */}
+      {filteredAnimes.length > 0 && (
+        <div className="text-sm text-white/40 text-right">
+          Showing {filteredAnimes.length} of {animes.length} anime
+        </div>
+      )}
     </div>
   );
 };

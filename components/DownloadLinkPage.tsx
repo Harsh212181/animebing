@@ -637,8 +637,12 @@ const DownloadLinkPage: React.FC = () => {
                   />
                   {selectedIndex === idx && (
                     <div className="mt-2 rounded-xl overflow-hidden shadow-2xl border border-purple-500/30 animate-fadeIn">
-                      {/* ✅ Pass the title prop */}
-                      <VideoPlayer src={link.url} title={title} />
+                      {/* 👇 Pass title and episode */}
+                      <VideoPlayer 
+                        src={link.url} 
+                        title={title} 
+                        episode={link.episode}
+                      />
                     </div>
                   )}
                 </React.Fragment>

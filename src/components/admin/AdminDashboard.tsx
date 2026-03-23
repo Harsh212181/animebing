@@ -1,26 +1,24 @@
- // src/components/admin/AdminDashboard.tsx - UPDATED WITH AUTO SUNDAY MODE + SCROLL TO TOP + EPISODE STATUS MANAGER + DOWNLOAD PAGES MANAGER
+ // src/components/admin/AdminDashboard.tsx - UPDATED: Professional toast notifications
 import React, { useState, useEffect } from 'react';
+import { Toaster, toast } from 'react-hot-toast'; // ✅ Import toast
 import AnimeListTable from './AnimeListTable';
 import AddAnimeForm from './AddAnimeForm';
 import EpisodesManager from './EpisodesManager';
 import FeaturedAnimeManager from './FeaturedAnimeManager';
 import ReportsManager from './ReportsManager';
 import SocialMediaManager from './SocialMediaManager';
-import PollManager from './PollManager'; // ✅ POLL MANAGER IMPORT
-import PartnerManager from './PartnerManager'; // ✅ PARTNER MANAGER IMPORT
-import EpisodeStatusManager from './EpisodeStatusManager'; // ✅ EPISODE STATUS MANAGER
-import DownloadPageManager from './DownloadPageManager'; // ✅ NEW DOWNLOAD PAGES MANAGER
+import PollManager from './PollManager';
+import PartnerManager from './PartnerManager';
+import EpisodeStatusManager from './EpisodeStatusManager';
+import DownloadPageManager from './DownloadPageManager';
 import Spinner from '../Spinner';
 import axios from 'axios';
 
 // ✅ FIXED: Production पर हमेशा full URL use करें
 const getApiBase = () => {
   if (typeof window === 'undefined') return 'https://animabing.onrender.com/api';
-  
-  // Development में localhost use करें
   const isLocal = window.location.hostname === 'localhost' || 
                   window.location.hostname === '127.0.0.1';
-  
   return isLocal ? 'http://localhost:3000/api' : 'https://animabing.onrender.com/api';
 };
 
@@ -36,6 +34,7 @@ interface LinkSettings {
   link3: boolean;
   link4: boolean;
   link5: boolean;
+  autoSundayMode: boolean;
   _id?: string;
   lastUpdated?: string;
 }
@@ -56,6 +55,13 @@ const LINK_COLORS = {
   3: "from-amber-500 to-orange-500",
   4: "from-rose-500 to-pink-500",
   5: "from-violet-500 to-purple-500"
+};
+
+// ✅ Fixed: Check if today is Sunday in India timezone (matches backend)
+const isSundayInIndia = (): boolean => {
+  const now = new Date();
+  const indiaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  return indiaTime.getDay() === 0; // 0 = Sunday
 };
 
 // ✅ ScrollToTop Button Component (inline)
@@ -116,14 +122,26 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     link2: true,
     link3: true,
     link4: true,
-    link5: true
+    link5: true,
+    autoSundayMode: false
   });
   
-  // ✅ AUTO SUNDAY MODE STATES
-  const [autoMode, setAutoMode] = useState(false);
+  // ✅ Download Pages stats
+  const [downloadStats, setDownloadStats] = useState({
+    totalPages: 0,
+    totalDownloadEpisodes: 0
+  });
+
+  // ✅ AUTO SUNDAY MODE: derived from linkSettings
+  const autoMode = linkSettings.autoSundayMode;
   const [autoLoading, setAutoLoading] = useState(false);
 
   const token = localStorage.getItem('adminToken');
+
+  // Auth header helper
+  const authHeaders = () => ({
+    headers: { Authorization: `Bearer ${token}` }
+  });
 
   useEffect(() => {
     if (!token) {
@@ -136,65 +154,32 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
     loadInitialData();
     fetchLinkSettings();
+    fetchDownloadStats();
   }, [token]);
 
-  // ✅ AUTO SUNDAY MODE: hourly check when autoMode is on
-  useEffect(() => {
-    let intervalId: NodeJS.Timeout;
-    if (autoMode) {
-      // Check every hour (3600000 ms)
-      intervalId = setInterval(async () => {
-        const today = new Date().getDay();
-        if (today === 0) { // 0 = Sunday
-          await applySundayRule();
-        }
-      }, 3600000);
-    }
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [autoMode]);
-
-  // ✅ Apply Sunday rule: link5 ON, link1-4 OFF
-  const applySundayRule = async () => {
+  // ✅ Toggle auto mode on/off via backend API with loading toast
+  const toggleAutoMode = async () => {
     setAutoLoading(true);
+    const toastId = toast.loading('Updating auto Sunday mode...');
     try {
-      const target = {
-        link1: false,
-        link2: false,
-        link3: false,
-        link4: false,
-        link5: true
-      };
-      // Only toggle links that need to change
-      const toggles = [];
-      if (linkSettings.link1 !== target.link1) toggles.push(1);
-      if (linkSettings.link2 !== target.link2) toggles.push(2);
-      if (linkSettings.link3 !== target.link3) toggles.push(3);
-      if (linkSettings.link4 !== target.link4) toggles.push(4);
-      if (linkSettings.link5 !== target.link5) toggles.push(5);
-      
-      for (const linkNum of toggles) {
-        await toggleLink(linkNum); // toggleLink updates state and API
+      const response = await axios.put(`${API_BASE}/link-settings/toggle-autosunday`, {}, authHeaders());
+      if (response.data.settings) {
+        setLinkSettings(response.data.settings);
       }
-    } catch (error) {
-      console.error('Failed to apply Sunday rule:', error);
-      alert('Failed to apply automatic Sunday rule. Please try manual.');
+      toast.success(`Auto Sunday mode is now ${response.data.settings.autoSundayMode ? 'ON' : 'OFF'}`, { id: toastId });
+    } catch (error: any) {
+      console.error('❌ Failed to toggle auto Sunday mode:', error);
+      let errorMessage = 'Unknown error';
+      if (error.response?.data?.details) {
+        errorMessage = error.response.data.details;
+      } else if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      toast.error(`Failed to toggle auto Sunday mode: ${errorMessage}`, { id: toastId });
     } finally {
       setAutoLoading(false);
-    }
-  };
-
-  // ✅ Toggle auto mode on/off
-  const toggleAutoMode = async () => {
-    const newMode = !autoMode;
-    setAutoMode(newMode);
-    if (newMode) {
-      // Immediately apply if today is Sunday
-      const today = new Date().getDay();
-      if (today === 0) {
-        await applySundayRule();
-      }
     }
   };
 
@@ -204,7 +189,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     try {
       console.log('📡 Loading admin data from:', `${API_BASE}/admin/protected/user-info`);
       
-      // Axios instance with better error handling
       const axiosInstance = axios.create({
         timeout: 10000,
         headers: { 
@@ -213,12 +197,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         }
       });
 
-      // Fetch user info
       const userResponse = await axiosInstance.get(`${API_BASE}/admin/protected/user-info`);
       setUser(userResponse.data);
       console.log('✅ User info loaded:', userResponse.data);
 
-      // Fetch analytics
       const analyticsResponse = await axiosInstance.get(`${API_BASE}/admin/protected/analytics`);
       setAnalytics(analyticsResponse.data);
       console.log('✅ Analytics loaded:', analyticsResponse.data);
@@ -260,17 +242,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       setLinkSettings(data);
     } catch (err: any) {
       console.error('❌ Error fetching link settings:', err);
-      
-      // Initialize default settings if API fails
-      setLinkSettings({
-        link1: true,
-        link2: true,
-        link3: true,
-        link4: true,
-        link5: true
-      });
+      // Keep default values
     } finally {
       setLinkSettingsLoading(false);
+    }
+  };
+
+  // ✅ Fetch download stats (total pages and total episodes)
+  const fetchDownloadStats = async () => {
+    try {
+      const response = await axios.get(`${API_BASE}/download-pages/stats`, {
+        timeout: 5000,
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setDownloadStats(response.data);
+    } catch (err) {
+      console.error('Failed to fetch download stats:', err);
+      // Keep default zeros
     }
   };
 
@@ -284,50 +272,26 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       setLinkSettingsLoading(true);
       console.log(`🔄 Toggling link ${linkNumber} at:`, `${API_BASE}/link-settings/toggle/${linkNumber}`);
       
-      // Use the toggle endpoint
-      const { data } = await axios.put(`${API_BASE}/link-settings/toggle/${linkNumber}`, {}, {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
+      const { data } = await axios.put(`${API_BASE}/link-settings/toggle/${linkNumber}`, {}, authHeaders());
       console.log('✅ Link toggled successfully:', data);
       
-      // Update local state with the response
       if (data.settings) {
         setLinkSettings(data.settings);
       }
       
-      // Show success message
       const isActive = data.toggledLink?.status;
-      alert(`✅ ${LINK_NAMES[linkNumber as keyof typeof LINK_NAMES]} is now ${isActive ? 'ACTIVE' : 'INACTIVE'} globally!`);
+      toast.success(`${LINK_NAMES[linkNumber as keyof typeof LINK_NAMES]} is now ${isActive ? 'ACTIVE' : 'INACTIVE'} globally!`);
     } catch (err: any) {
       console.error('❌ Error toggling link:', err);
-      
-      // Fallback: Toggle locally if API fails
-      const updatedSettings = { ...linkSettings };
-      
-      // Type-safe toggle
-      switch (linkNumber) {
-        case 1:
-          updatedSettings.link1 = !updatedSettings.link1;
-          break;
-        case 2:
-          updatedSettings.link2 = !updatedSettings.link2;
-          break;
-        case 3:
-          updatedSettings.link3 = !updatedSettings.link3;
-          break;
-        case 4:
-          updatedSettings.link4 = !updatedSettings.link4;
-          break;
-        case 5:
-          updatedSettings.link5 = !updatedSettings.link5;
-          break;
+      let errorMessage = 'Unknown error';
+      if (err.response?.data?.details) {
+        errorMessage = err.response.data.details;
+      } else if (err.response?.data?.error) {
+        errorMessage = err.response.data.error;
+      } else if (err.message) {
+        errorMessage = err.message;
       }
-      
-      setLinkSettings(updatedSettings);
-      
-      alert(`⚠️ Updated locally (server might be unavailable)\n${LINK_NAMES[linkNumber as keyof typeof LINK_NAMES]} is now ${updatedSettings[`link${linkNumber}` as keyof LinkSettings] ? 'ON' : 'OFF'}`);
+      toast.error(`Failed to toggle link: ${errorMessage}`);
     } finally {
       setLinkSettingsLoading(false);
     }
@@ -336,18 +300,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   // Helper function to get link status
   const getLinkStatus = (linkNumber: number): boolean => {
     switch (linkNumber) {
-      case 1:
-        return linkSettings.link1;
-      case 2:
-        return linkSettings.link2;
-      case 3:
-        return linkSettings.link3;
-      case 4:
-        return linkSettings.link4;
-      case 5:
-        return linkSettings.link5;
-      default:
-        return false;
+      case 1: return linkSettings.link1;
+      case 2: return linkSettings.link2;
+      case 3: return linkSettings.link3;
+      case 4: return linkSettings.link4;
+      case 5: return linkSettings.link5;
+      default: return false;
     }
   };
 
@@ -369,7 +327,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
-  // ✅ TABS: Removed Episode Status (now only in top bar)
   const tabs = [
     { id: 'list', label: 'Content List', icon: '🤖', color: 'from-purple-600 to-purple-700' },
     { id: 'add', label: 'Add Content', icon: '🐦‍🔥', color: 'from-emerald-600 to-green-600' },
@@ -389,17 +346,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       case 'reports': return <ReportsManager />;
       case 'social': return <SocialMediaManager />;
       case 'polls': return <PollManager token={token || ''} apiBase={API_BASE} />;
-      // ✅ Episode Status Manager (accessed via top bar only)
       case 'episode-status': return <EpisodeStatusManager />;
-      // ✅ Partner Manager (accessed via top bar only)
       case 'partners': return <PartnerManager token={token || ''} apiBase={API_BASE} />;
-      // ✅ NEW: Download Pages Manager (accessed via top bar only)
       case 'downloadPages': return <DownloadPageManager />;
       default: return <AnimeListTable />;
     }
   };
 
-  // Updated Analytics cards colors - alag alag colors with improved contrast
+  // Updated Analytics cards colors (now 6 cards: Total Content, Anime, Movies, Manga, Episodes, Download Pages)
   const analyticsColors = [
     { 
       gradient: 'from-red-500 via-orange-500 to-amber-500', 
@@ -496,8 +450,43 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     );
   }
 
+  // ✅ Determine if link toggles should be disabled
+  const isSunday = isSundayInIndia();
+  const areTogglesDisabled = linkSettingsLoading || (autoMode && isSunday);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-950 via-purple-900 to-purple-950 text-white">
+      {/* ✅ Toast Container */}
+      <Toaster
+        position="top-right"
+        toastOptions={{
+          duration: 4000,
+          style: {
+            background: '#1f2937',
+            color: '#fff',
+            border: '1px solid #4b5563',
+          },
+          success: {
+            style: {
+              border: '1px solid #10b981',
+            },
+            iconTheme: {
+              primary: '#10b981',
+              secondary: '#fff',
+            },
+          },
+          error: {
+            style: {
+              border: '1px solid #ef4444',
+            },
+            iconTheme: {
+              primary: '#ef4444',
+              secondary: '#fff',
+            },
+          },
+        }}
+      />
+      
       {/* Top Header */}
       <header className="bg-gradient-to-r from-purple-900/80 via-purple-800/60 to-purple-900/80 backdrop-blur-xl border-b border-purple-700/50 p-6 shadow-2xl">
         {/* Top Bar - User Info and Actions */}
@@ -513,16 +502,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               <p className="text-sm text-purple-300">
                 Welcome back, <span className="font-semibold text-pink-300">{user.username || 'Admin'}</span> • 
                 <span className="ml-2 text-xs bg-gradient-to-r from-purple-600 to-pink-600 text-white px-2 py-1 rounded-full">
-                  {window.location.hostname === 'localhost' ? 'Local Development' : 'Production'}
+                  {window.location.hostname === 'localhost' ? 'Development' : 'Production'}
                 </span>
               </p>
-              {/* ✅ API URL display REMOVED as requested */}
             </div>
           </div>
           
-          {/* ✅ Button group: Partner Manager → Download Pages → Episode Status → Refresh → Logout */}
+          {/* Button group */}
           <div className="flex items-center gap-3">
-            {/* Partner Manager Button */}
             <button
               onClick={() => setActiveTab('partners')}
               className={`flex items-center gap-2 px-5 py-2 rounded-lg transition-all duration-300 font-semibold text-sm shadow-lg ${
@@ -533,12 +520,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             >
               <span className="text-lg">🎉</span>
               <span>Partner Manager</span>
-              {activeTab === 'partners' && (
-                <div className="ml-2 w-2 h-2 bg-white rounded-full animate-pulse"></div>
-              )}
+              {activeTab === 'partners' && <div className="ml-2 w-2 h-2 bg-white rounded-full animate-pulse"></div>}
             </button>
 
-            {/* ✅ NEW: Download Pages Button */}
             <button
               onClick={() => setActiveTab('downloadPages')}
               className={`flex items-center gap-2 px-5 py-2 rounded-lg transition-all duration-300 font-semibold text-sm shadow-lg ${
@@ -549,12 +533,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             >
               <span className="text-lg">🏴‍☠️</span>
               <span>Download Pages</span>
-              {activeTab === 'downloadPages' && (
-                <div className="ml-2 w-2 h-2 bg-white rounded-full animate-pulse"></div>
-              )}
+              {activeTab === 'downloadPages' && <div className="ml-2 w-2 h-2 bg-white rounded-full animate-pulse"></div>}
             </button>
 
-            {/* Episode Status Button */}
             <button
               onClick={() => setActiveTab('episode-status')}
               className={`flex items-center gap-2 px-5 py-2 rounded-lg transition-all duration-300 font-semibold text-sm shadow-lg ${
@@ -565,12 +546,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             >
               <span className="text-lg">🪼</span>
               <span>Episode Status</span>
-              {activeTab === 'episode-status' && (
-                <div className="ml-2 w-2 h-2 bg-white rounded-full animate-pulse"></div>
-              )}
+              {activeTab === 'episode-status' && <div className="ml-2 w-2 h-2 bg-white rounded-full animate-pulse"></div>}
             </button>
 
-            {/* Refresh Data button */}
             <button
               onClick={loadInitialData}
               className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-5 py-2 rounded-lg transition transform hover:scale-105 font-semibold shadow-lg shadow-purple-500/30 whitespace-nowrap text-sm flex items-center gap-2"
@@ -578,7 +556,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               <span>↻</span> Refresh Data
             </button>
 
-            {/* Logout button */}
             <button
               onClick={handleLogout}
               className="bg-gradient-to-r from-red-600/80 to-red-700/80 hover:from-red-600 hover:to-red-700 text-white px-5 py-2 rounded-lg transition font-semibold text-sm border border-red-500/40 shadow-lg flex items-center gap-2"
@@ -588,7 +565,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           </div>
         </div>
 
-        {/* Navigation Tabs - All main tabs (Partner Manager, Download Pages, Episode Status are in top bar) */}
+        {/* Navigation Tabs */}
         <div className="mb-6">
           <div className="flex flex-wrap gap-1.5">
             {tabs.map(tab => (
@@ -603,9 +580,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               >
                 <span className="text-lg">{tab.icon}</span>
                 <span>{tab.label}</span>
-                {activeTab === tab.id && (
-                  <div className="ml-2 w-2 h-2 bg-white rounded-full animate-pulse"></div>
-                )}
+                {activeTab === tab.id && <div className="ml-2 w-2 h-2 bg-white rounded-full animate-pulse"></div>}
               </button>
             ))}
           </div>
@@ -627,7 +602,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                {/* ✅ AUTO SUNDAY MODE BUTTON */}
+                {/* ✅ AUTO SUNDAY MODE BUTTON - uses backend state */}
                 <button
                   onClick={toggleAutoMode}
                   disabled={linkSettingsLoading || autoLoading}
@@ -672,7 +647,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                   <div key={num} className="text-center group">
                     <button
                       onClick={() => toggleLink(num)}
-                      disabled={isLoading || autoMode} // ✅ Disable when autoMode is ON
+                      disabled={areTogglesDisabled}
                       className={`w-full py-4 rounded-xl font-bold transition-all duration-300 relative overflow-hidden ${
                         isActive
                           ? `bg-gradient-to-b ${linkColor} text-white shadow-xl hover:shadow-2xl hover:scale-[1.02] border-2 border-white/30`
@@ -719,6 +694,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                 );
               })}
             </div>
+            {/* ✅ Info message when toggles are disabled due to Sunday auto mode */}
+            {autoMode && isSunday && (
+              <div className="mt-3 text-center text-xs text-amber-300 bg-amber-900/30 rounded-lg p-2 border border-amber-500/50">
+                ⚠️ Auto Sunday Mode is ON — links are automatically set (only Link 5 active). Manual changes are disabled on Sundays.
+              </div>
+            )}
           </div>
         </div>
 
@@ -730,7 +711,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               <div className="flex items-center justify-between mb-3">
                 <p className="text-xs font-semibold uppercase tracking-wider text-gray-300">Total Content</p>
                 <div className={`w-8 h-8 rounded-lg bg-gradient-to-r ${analyticsColors[0].gradient} flex items-center justify-center`}>
-                  <span className="text-xs font-bold">TC</span>
+                  <span className="text-xs font-bold">^_^</span>
                 </div>
               </div>
               <p className={`text-3xl font-bold ${analyticsColors[0].text} mb-2`}>
@@ -749,7 +730,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               <div className="flex items-center justify-between mb-3">
                 <p className="text-xs font-semibold uppercase tracking-wider text-gray-300">Anime</p>
                 <div className={`w-8 h-8 rounded-lg bg-gradient-to-r ${analyticsColors[1].gradient} flex items-center justify-center`}>
-                  <span className="text-xs font-bold">AN</span>
+                  <span className="text-xs font-bold">X_X</span>
                 </div>
               </div>
               <p className={`text-3xl font-bold ${analyticsColors[1].text} mb-2`}>
@@ -768,7 +749,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               <div className="flex items-center justify-between mb-3">
                 <p className="text-xs font-semibold uppercase tracking-wider text-gray-300">Movies</p>
                 <div className={`w-8 h-8 rounded-lg bg-gradient-to-r ${analyticsColors[2].gradient} flex items-center justify-center`}>
-                  <span className="text-xs font-bold">MV</span>
+                  <span className="text-xs font-bold">+_+</span>
                 </div>
               </div>
               <p className={`text-3xl font-bold ${analyticsColors[2].text} mb-2`}>
@@ -787,7 +768,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               <div className="flex items-center justify-between mb-3">
                 <p className="text-xs font-semibold uppercase tracking-wider text-gray-300">Manga</p>
                 <div className={`w-8 h-8 rounded-lg bg-gradient-to-r ${analyticsColors[3].gradient} flex items-center justify-center`}>
-                  <span className="text-xs font-bold">MG</span>
+                  <span className="text-xs font-bold">¬_¬</span>
                 </div>
               </div>
               <p className={`text-3xl font-bold ${analyticsColors[3].text} mb-2`}>
@@ -806,7 +787,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               <div className="flex items-center justify-between mb-3">
                 <p className="text-xs font-semibold uppercase tracking-wider text-gray-300">Episodes</p>
                 <div className={`w-8 h-8 rounded-lg bg-gradient-to-r ${analyticsColors[4].gradient} flex items-center justify-center`}>
-                  <span className="text-xs font-bold">EP</span>
+                  <span className="text-xs font-bold">^_~</span>
                 </div>
               </div>
               <p className={`text-3xl font-bold ${analyticsColors[4].text} mb-2`}>
@@ -819,20 +800,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             <div className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${analyticsColors[4].gradient} opacity-50 group-hover:opacity-100 transition-opacity`}></div>
           </div>
 
-          {/* Users Today Card */}
+          {/* Download Pages Card - replaces Users Today */}
           <div className={`${analyticsColors[5].bg} border ${analyticsColors[5].border} rounded-xl p-4 backdrop-blur shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all duration-300 relative overflow-hidden group`}>
             <div className="relative z-10">
               <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-semibold uppercase tracking-wider text-gray-300">Users Today</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-gray-300">Download Pages</p>
                 <div className={`w-8 h-8 rounded-lg bg-gradient-to-r ${analyticsColors[5].gradient} flex items-center justify-center`}>
-                  <span className="text-xs font-bold">UT</span>
+                  <span className="text-xs font-bold">U_U</span>
                 </div>
               </div>
               <p className={`text-3xl font-bold ${analyticsColors[5].text} mb-2`}>
-                {analytics.todayUsers}
+                {downloadStats.totalPages}
               </p>
               <div className="text-xs text-gray-400 font-medium">
-                Active Today
+                Total Pages • {downloadStats.totalDownloadEpisodes} Episodes
               </div>
             </div>
             <div className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${analyticsColors[5].gradient} opacity-50 group-hover:opacity-100 transition-opacity`}></div>

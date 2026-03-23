@@ -1,10 +1,9 @@
- // src/components/admin/PartnerManager.tsx – COMPLETE VISUAL REDESIGN, SAME LOGIC
-// ADDED: per-partner anime/movie/manga counts + conditional display
-import React, { useState, useEffect, useRef } from 'react';
+ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Partner, Anime } from '../../types';
 import SearchableDropdown from './SearchableDropdown';
 import AnimeListTable from './AnimeListTable';
+import toast from 'react-hot-toast'; // ✅ added toast
 
 interface DropdownItem {
   _id: string;
@@ -22,13 +21,21 @@ const PartnerManager: React.FC<PartnerManagerProps> = ({ token, apiBase }) => {
   const [partners, setPartners] = useState<Partner[]>([]);
   const [newPartnerName, setNewPartnerName] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null); // kept for inline error, but toasts also used
 
   const [partnerAnimeMap, setPartnerAnimeMap] = useState<Record<string, Anime[]>>({});
   const [expandedPartnerId, setExpandedPartnerId] = useState<string | null>(null);
   const [focusSearchForPartner, setFocusSearchForPartner] = useState<string | null>(null);
   const [modalLoading, setModalLoading] = useState(false);
+
+  // Confirmation modal state
+  const [confirmDialog, setConfirmDialog] = useState<{
+    type: 'partner' | 'anime';
+    partnerId?: string;
+    partnerName?: string;
+    animeId?: string;
+    animeTitle?: string;
+  } | null>(null);
 
   // ---------- NEW: per‑partner media type counts ----------
   const [partnerCounts, setPartnerCounts] = useState<
@@ -74,7 +81,7 @@ const PartnerManager: React.FC<PartnerManagerProps> = ({ token, apiBase }) => {
       return animeList;
     } catch (err: any) {
       console.error('Failed to fetch partner anime:', err);
-      setError(err.response?.data?.error || 'Failed to load anime for this partner.');
+      toast.error(err.response?.data?.error || 'Failed to load anime for this partner.');
       return [];
     }
   };
@@ -99,6 +106,7 @@ const PartnerManager: React.FC<PartnerManagerProps> = ({ token, apiBase }) => {
     } catch (err: any) {
       console.error('Failed to fetch partners:', err);
       setError(err.response?.data?.error || 'Failed to load partners. Please try again.');
+      toast.error(err.response?.data?.error || 'Failed to load partners.');
     } finally {
       setLoading(false);
     }
@@ -115,44 +123,47 @@ const PartnerManager: React.FC<PartnerManagerProps> = ({ token, apiBase }) => {
     }
   }, [partners]);
 
-  useEffect(() => {
-    if (success) {
-      const timer = setTimeout(() => setSuccess(null), 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [success]);
-
-  // ---------- ORIGINAL HANDLERS (updated to recalc counts) ----------
+  // ---------- ORIGINAL HANDLERS (updated to use toast) ----------
   const handleCreatePartner = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPartnerName.trim()) {
-      setError('Partner name cannot be empty');
+      toast.error('Partner name cannot be empty');
       return;
     }
     setLoading(true);
     setError(null);
+    const toastId = toast.loading('Creating partner...');
     try {
       await axiosInstance.post('/partners', { name: newPartnerName.trim() });
       setNewPartnerName('');
-      setSuccess(`Partner "${newPartnerName}" created successfully!`);
+      toast.success(`Partner "${newPartnerName}" created successfully!`, { id: toastId });
       fetchPartners();
     } catch (err: any) {
       console.error('Failed to create partner:', err);
-      setError(err.response?.data?.error || 'Failed to create partner. Please try again.');
+      toast.error(err.response?.data?.error || 'Failed to create partner. Please try again.', { id: toastId });
     } finally {
       setLoading(false);
     }
   };
 
   const handleDeletePartner = async (partnerId: string, partnerName: string) => {
-    if (!window.confirm(`Are you sure you want to delete "${partnerName}"? All associated anime will be unlinked.`)) {
-      return;
-    }
+    // Show confirmation modal instead of browser confirm
+    setConfirmDialog({
+      type: 'partner',
+      partnerId,
+      partnerName,
+    });
+  };
+
+  const confirmDeletePartner = async () => {
+    if (!confirmDialog || confirmDialog.type !== 'partner') return;
+    const { partnerId, partnerName } = confirmDialog;
+    setConfirmDialog(null);
     setLoading(true);
-    setError(null);
+    const toastId = toast.loading(`Deleting partner "${partnerName}"...`);
     try {
       await axiosInstance.delete(`/partners/${partnerId}`);
-      setSuccess(`Partner "${partnerName}" deleted successfully.`);
+      toast.success(`Partner "${partnerName}" deleted successfully.`, { id: toastId });
       setPartnerAnimeMap(prev => {
         const newMap = { ...prev };
         delete newMap[partnerId];
@@ -167,9 +178,43 @@ const PartnerManager: React.FC<PartnerManagerProps> = ({ token, apiBase }) => {
       fetchPartners();
     } catch (err: any) {
       console.error('Failed to delete partner:', err);
-      setError(err.response?.data?.error || 'Failed to delete partner. Please try again.');
+      toast.error(err.response?.data?.error || 'Failed to delete partner. Please try again.', { id: toastId });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRemoveAnime = (animeId: string, partnerId: string) => {
+    // Find anime title from partnerAnimeMap for modal
+    const anime = partnerAnimeMap[partnerId]?.find(a => a.id === animeId);
+    setConfirmDialog({
+      type: 'anime',
+      partnerId,
+      animeId,
+      animeTitle: anime?.title || 'this anime',
+    });
+  };
+
+  const confirmRemoveAnime = async () => {
+    if (!confirmDialog || confirmDialog.type !== 'anime') return;
+    const { partnerId, animeId, animeTitle } = confirmDialog;
+    setConfirmDialog(null);
+    setModalLoading(true);
+    const toastId = toast.loading(`Removing "${animeTitle}" from partner...`);
+    try {
+      await axiosInstance.delete(`/partners/${partnerId}/anime/${animeId}`);
+      const updatedList = await axiosInstance.get(`/partners/${partnerId}/anime`);
+      setPartnerAnimeMap(prev => ({ ...prev, [partnerId]: updatedList.data }));
+      // Update counts
+      const counts = computeCounts(updatedList.data);
+      setPartnerCounts(prev => ({ ...prev, [partnerId]: counts }));
+      fetchPartners();
+      toast.success(`"${animeTitle}" removed successfully!`, { id: toastId });
+    } catch (err: any) {
+      console.error('Failed to remove anime:', err);
+      toast.error(err.response?.data?.error || 'Failed to remove anime. Please try again.', { id: toastId });
+    } finally {
+      setModalLoading(false);
     }
   };
 
@@ -196,11 +241,11 @@ const PartnerManager: React.FC<PartnerManagerProps> = ({ token, apiBase }) => {
   const handleAssignAnime = async (selected: DropdownItem, partnerId: string) => {
     const animeId = selected._id;
     if (!animeId) {
-      setError('Invalid anime selection');
+      toast.error('Invalid anime selection');
       return;
     }
     setModalLoading(true);
-    setError(null);
+    const toastId = toast.loading('Assigning anime...');
     try {
       await axiosInstance.post(`/partners/${partnerId}/anime`, { animeId });
       const updatedList = await axiosInstance.get(`/partners/${partnerId}/anime`);
@@ -209,31 +254,10 @@ const PartnerManager: React.FC<PartnerManagerProps> = ({ token, apiBase }) => {
       const counts = computeCounts(updatedList.data);
       setPartnerCounts(prev => ({ ...prev, [partnerId]: counts }));
       fetchPartners();
-      setSuccess('Anime assigned successfully!');
+      toast.success('Anime assigned successfully!', { id: toastId });
     } catch (err: any) {
       console.error('Failed to assign anime:', err);
-      setError(err.response?.data?.error || 'Failed to assign anime. Please try again.');
-    } finally {
-      setModalLoading(false);
-    }
-  };
-
-  const handleRemoveAnime = async (animeId: string, partnerId: string) => {
-    if (!window.confirm('Are you sure you want to remove this anime from the partner?')) return;
-    setModalLoading(true);
-    setError(null);
-    try {
-      await axiosInstance.delete(`/partners/${partnerId}/anime/${animeId}`);
-      const updatedList = await axiosInstance.get(`/partners/${partnerId}/anime`);
-      setPartnerAnimeMap(prev => ({ ...prev, [partnerId]: updatedList.data }));
-      // Update counts
-      const counts = computeCounts(updatedList.data);
-      setPartnerCounts(prev => ({ ...prev, [partnerId]: counts }));
-      fetchPartners();
-      setSuccess('Anime removed successfully!');
-    } catch (err: any) {
-      console.error('Failed to remove anime:', err);
-      setError(err.response?.data?.error || 'Failed to remove anime. Please try again.');
+      toast.error(err.response?.data?.error || 'Failed to assign anime. Please try again.', { id: toastId });
     } finally {
       setModalLoading(false);
     }
@@ -290,24 +314,6 @@ const PartnerManager: React.FC<PartnerManagerProps> = ({ token, apiBase }) => {
           Partner Manager
         </h1>
       </div>
-
-      {/* Alerts – new glass style */}
-      {success && (
-        <div className="relative p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl backdrop-blur-sm text-emerald-200 flex items-center gap-3 shadow-lg shadow-emerald-500/5">
-          <svg className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          {success}
-        </div>
-      )}
-      {error && (
-        <div className="relative p-4 bg-rose-500/10 border border-rose-500/30 rounded-2xl backdrop-blur-sm text-rose-200 flex items-center gap-3 shadow-lg shadow-rose-500/5">
-          <svg className="w-5 h-5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          {error}
-        </div>
-      )}
 
       {/* Create Partner – glass card */}
       <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-6 shadow-2xl">
@@ -390,7 +396,7 @@ const PartnerManager: React.FC<PartnerManagerProps> = ({ token, apiBase }) => {
                     <div className="flex items-center flex-wrap gap-3">
                       <h3 className="text-xl font-bold text-white">{partner.name}</h3>
 
-                      {/* ✅ REPLACED: static animeCount with dynamic media‑type badges */}
+                      {/* Dynamic media‑type badges */}
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
                         {renderMediaCounts(partner._id)}
                       </div>
@@ -407,7 +413,7 @@ const PartnerManager: React.FC<PartnerManagerProps> = ({ token, apiBase }) => {
                     </div>
                   </div>
 
-                  {/* Button group – now with tooltips on hover */}
+                  {/* Button group */}
                   <div className="flex gap-2 items-center">
                     <button
                       onClick={() => handleToggleExpand(partner)}
@@ -441,7 +447,7 @@ const PartnerManager: React.FC<PartnerManagerProps> = ({ token, apiBase }) => {
                   </div>
                 </div>
 
-                {/* Expanded Section – redesigned with inset glass look */}
+                {/* Expanded Section */}
                 {isExpanded && (
                   <div ref={expandedSectionRef} className="relative mt-2 p-6 bg-gray-900/60 border-t border-white/10 backdrop-blur-sm">
                     {/* Header with partner name and extra delete button */}
@@ -468,13 +474,12 @@ const PartnerManager: React.FC<PartnerManagerProps> = ({ token, apiBase }) => {
                       </button>
                     </div>
 
-                    {/* Add Anime Section – with custom‑styled SearchableDropdown wrapper */}
+                    {/* Add Anime Section */}
                     <div className="mb-8">
                       <h4 className="text-md font-medium text-white/80 mb-3 flex items-center gap-2">
                         <span className="w-1.5 h-5 bg-emerald-400 rounded-full"></span>
                         Assign new anime to {partner.name}
                       </h4>
-                      {/* Wrapper that styles the inner input of SearchableDropdown */}
                       <div className="[&>div>input]:w-full [&>div>input]:px-5 [&>div>input]:py-3 [&>div>input]:bg-gray-800/80 [&>div>input]:border [&>div>input]:border-white/10 [&>div>input]:rounded-xl [&>div>input]:text-white [&>div>input]:placeholder-gray-500 [&>div>input]:focus:outline-none [&>div>input]:focus:ring-2 [&>div>input]:focus:ring-indigo-500 [&>div>input]:focus:border-transparent [&>div>input]:transition">
                         <SearchableDropdown
                           fetchUrl={`${apiBase}/anime/unassigned`}
@@ -491,7 +496,7 @@ const PartnerManager: React.FC<PartnerManagerProps> = ({ token, apiBase }) => {
                       </p>
                     </div>
 
-                    {/* Assigned Anime List – wrapped for consistent styling */}
+                    {/* Assigned Anime List */}
                     <div>
                       <h4 className="text-md font-medium text-white/80 mb-3 flex items-center gap-2">
                         <span className="w-1.5 h-5 bg-indigo-400 rounded-full"></span>
@@ -527,6 +532,37 @@ const PartnerManager: React.FC<PartnerManagerProps> = ({ token, apiBase }) => {
           })
         )}
       </div>
+
+      {/* Confirmation Modal */}
+      {confirmDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl shadow-xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-xl font-semibold text-white mb-4">
+              {confirmDialog.type === 'partner' ? 'Delete Partner' : 'Remove Anime'}
+            </h3>
+            <p className="text-slate-300 mb-6">
+              {confirmDialog.type === 'partner'
+                ? `Are you sure you want to delete "${confirmDialog.partnerName}"? All associated anime will be unlinked.`
+                : `Are you sure you want to remove "${confirmDialog.animeTitle}" from this partner?`
+              }
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setConfirmDialog(null)}
+                className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDialog.type === 'partner' ? confirmDeletePartner : confirmRemoveAnime}
+                className="bg-red-600/80 hover:bg-red-500 text-white px-4 py-2 rounded-lg transition-colors"
+              >
+                {confirmDialog.type === 'partner' ? 'Delete' : 'Remove'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

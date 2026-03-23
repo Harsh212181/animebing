@@ -1,4 +1,4 @@
- import React, { useState, useEffect, useMemo } from 'react';
+ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { DownloadPage, DownloadPageLink, ContentType, SubDubStatus } from '../../types';
 import SearchableDropdown from './SearchableDropdown';
 import Spinner from '../Spinner';
@@ -39,6 +39,99 @@ const getAnimeTitle = (page: DownloadPage): string => {
   return 'Unknown Anime';
 };
 
+// ----- Toast Component -----
+interface ToastState {
+  message: string;
+  type: 'success' | 'error' | 'info';
+  visible: boolean;
+}
+
+const Toast: React.FC<{ toast: ToastState; onClose: () => void }> = ({ toast, onClose }) => {
+  useEffect(() => {
+    if (toast.visible) {
+      const timer = setTimeout(onClose, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast.visible, onClose]);
+
+  if (!toast.visible) return null;
+
+  const bgColor = {
+    success: 'bg-emerald-500/20 border-emerald-500/50 text-emerald-200',
+    error: 'bg-rose-500/20 border-rose-500/50 text-rose-200',
+    info: 'bg-blue-500/20 border-blue-500/50 text-blue-200',
+  }[toast.type];
+
+  const icon = {
+    success: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+      </svg>
+    ),
+    error: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    ),
+    info: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+  }[toast.type];
+
+  return (
+    <div className="fixed top-4 right-4 z-50 animate-in slide-in-from-top-2 fade-in duration-300">
+      <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border backdrop-blur-md shadow-2xl ${bgColor}`}>
+        {icon}
+        <span className="text-sm font-medium">{toast.message}</span>
+        <button onClick={onClose} className="ml-2 opacity-70 hover:opacity-100">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ----- Confirm Modal Component -----
+interface ConfirmModalProps {
+  open: boolean;
+  title: string;
+  message: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+const ConfirmModal: React.FC<ConfirmModalProps> = ({ open, title, message, onConfirm, onCancel }) => {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-gray-900 border border-white/20 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl animate-in zoom-in-95 duration-200">
+        <h3 className="text-xl font-bold text-white mb-2">{title}</h3>
+        <p className="text-white/70 mb-6">{message}</p>
+        <div className="flex justify-end gap-3">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white/80 font-medium transition"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 rounded-lg text-white font-medium transition shadow-lg shadow-rose-600/20"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ----- Main Component -----
 const DownloadPageManager: React.FC = () => {
   const [pages, setPages] = useState<DownloadPage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,6 +142,16 @@ const DownloadPageManager: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [calculatingNext, setCalculatingNext] = useState(false);
+
+  // Toast state
+  const [toast, setToast] = useState<ToastState>({ message: '', type: 'info', visible: false });
+  const showToast = (message: string, type: 'success' | 'error' | 'info') => {
+    setToast({ message, type, visible: true });
+  };
+  const closeToast = () => setToast(prev => ({ ...prev, visible: false }));
+
+  // Delete confirmation state
+  const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; id: string | null }>({ show: false, id: null });
 
   // Filter states
   const [contentTypeFilter, setContentTypeFilter] = useState<'all' | ContentType>('all');
@@ -216,30 +319,30 @@ const DownloadPageManager: React.FC = () => {
 
   const handleSave = async (pageToSave: FormPage) => {
     if (!pageToSave.animeId) {
-      alert('Please select an anime');
+      showToast('Please select an anime', 'error');
       return;
     }
     if (!pageToSave.slug) {
-      alert('Please enter a slug (e.g., naruto-eps-1-10)');
+      showToast('Please enter a slug (e.g., naruto-eps-1-10)', 'error');
       return;
     }
     if (!pageToSave.episodeNumber || pageToSave.episodeNumber < 1) {
-      alert('Please enter a valid episode number (minimum 1)');
+      showToast('Please enter a valid episode number (minimum 1)', 'error');
       return;
     }
     if (!pageToSave.links || pageToSave.links.length === 0) {
-      alert('Please add at least one link');
+      showToast('Please add at least one link', 'error');
       return;
     }
 
     const watchCount = pageToSave.links.filter(l => l.type === 'watch').length;
     const downloadCount = pageToSave.links.filter(l => l.type === 'download').length;
     if (watchCount > 12) {
-      alert(`You cannot have more than 12 watch links. Currently: ${watchCount}`);
+      showToast(`You cannot have more than 12 watch links. Currently: ${watchCount}`, 'error');
       return;
     }
     if (downloadCount > 12) {
-      alert(`You cannot have more than 12 download links. Currently: ${downloadCount}`);
+      showToast(`You cannot have more than 12 download links. Currently: ${downloadCount}`, 'error');
       return;
     }
 
@@ -262,28 +365,40 @@ const DownloadPageManager: React.FC = () => {
         fetchPages();
         setEditingPage(null);
         setShowNewForm(false);
+        showToast(pageToSave._id ? 'Page updated successfully!' : 'Page created successfully!', 'success');
       } else {
         const err = await res.json().catch(() => ({ error: 'Unknown error' }));
-        alert(err.error || 'Save failed');
+        showToast(err.error || 'Save failed', 'error');
       }
     } catch (error) {
       console.error('Save error:', error);
-      alert('Network error. Check console.');
+      showToast('Network error. Check console.', 'error');
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure?')) return;
+  const requestDelete = (id: string) => {
+    setDeleteConfirm({ show: true, id });
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteConfirm.id) return;
     try {
       const token = getToken();
-      const res = await fetch(`${API_BASE}/download-pages/${id}`, {
+      const res = await fetch(`${API_BASE}/download-pages/${deleteConfirm.id}`, {
         method: 'DELETE',
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
-      if (res.ok) fetchPages();
-      else alert('Delete failed');
+      if (res.ok) {
+        fetchPages();
+        showToast('Page deleted successfully', 'success');
+      } else {
+        showToast('Delete failed', 'error');
+      }
     } catch (error) {
       console.error('Delete error:', error);
+      showToast('Network error while deleting', 'error');
+    } finally {
+      setDeleteConfirm({ show: false, id: null });
     }
   };
 
@@ -386,6 +501,16 @@ const DownloadPageManager: React.FC = () => {
 
   return (
     <div className="p-6 space-y-8 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 min-h-screen">
+      {/* Toast and Modal */}
+      <Toast toast={toast} onClose={closeToast} />
+      <ConfirmModal
+        open={deleteConfirm.show}
+        title="Delete Page"
+        message="Are you sure you want to delete this download page? This action cannot be undone."
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirm({ show: false, id: null })}
+      />
+
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="p-2 bg-purple-500/20 rounded-xl">
@@ -757,7 +882,7 @@ const DownloadPageManager: React.FC = () => {
                       </button>
                       {/* Delete button */}
                       <button
-                        onClick={() => handleDelete(page._id)}
+                        onClick={() => requestDelete(page._id)}
                         title="Delete page"
                         className="p-2.5 bg-white/5 hover:bg-rose-500/20 border border-white/10 hover:border-rose-500/50 rounded-xl text-white/80 hover:text-rose-300 transition-all"
                       >
