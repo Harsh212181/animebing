@@ -287,19 +287,19 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
 
   // ✅ GET CONTENT LABEL FOR UI
   const getContentLabel = () => {
-    if (isManga) return 'Episodes';
+    if (isManga) return 'Chapters';
     if (isMovie) return 'Movie';
     return 'Episodes';
   };
 
   const getContentLabelSingular = () => {
-    if (isManga) return 'Episode';
+    if (isManga) return 'Chapter';
     if (isMovie) return 'Movie';
     return 'Episode';
   };
 
   const getNoContentMessage = () => {
-    if (isManga) return 'Episodes will be added soon!';
+    if (isManga) return 'Chapters will be added soon!';
     if (isMovie) return 'Movie will be added soon!';
     return 'Episodes will be added soon!';
   };
@@ -885,13 +885,14 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     );
   };
 
-  // ✅ Download button component WITHOUT LINK COUNT
+  // ✅ UPDATED: Download button component - NEW PROFESSIONAL DESIGN + MOBILE SIZING
   const DownloadButton: React.FC<{ 
     item: Episode | Chapter; 
     className?: string;
     showText?: boolean;
     itemId: string;
-  }> = ({ item, className = '', showText = true, itemId }) => {
+    iconClassName?: string; // ✅ NEW: Allow custom icon size
+  }> = ({ item, className = '', showText = true, itemId, iconClassName = 'h-4 w-4' }) => {
     const episodeItem = item as any;
     const downloadLinks: DownloadLink[] = episodeItem.downloadLinks || [];
     
@@ -909,7 +910,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
           disabled
           aria-label="Download links disabled"
         >
-          {showText ? 'Disabled' : <DownloadIcon className="h-3 w-3" />}
+          {showText ? 'Disabled' : <DownloadIcon className={iconClassName} />}
         </button>
       );
     }
@@ -917,17 +918,26 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     return (
       <button
         onClick={() => handleDownloadClick(item)}
-        className={`${className} ${downloadingItem === itemId ? 'animate-pulse' : ''}`}
+        className={`${className} ${downloadingItem === itemId ? 'animate-pulse' : ''} group`}
         title="Download"
         disabled={downloadingItem === itemId || linkSettingsLoading}
         aria-label="Download"
       >
         {downloadingItem === itemId ? (
-          showText ? 'Downloading...' : <Spinner size="sm" />
+          showText ? (
+            <span className="flex items-center gap-1">
+              <Spinner size="xs" /> Downloading...
+            </span>
+          ) : (
+            <Spinner size="sm" />
+          )
         ) : linkSettingsLoading ? (
           showText ? 'Checking...' : <Spinner size="sm" />
         ) : (
-          showText ? 'Download' : <DownloadIcon className="h-3 w-3" />
+          <>
+            <DownloadIcon className={`${iconClassName} group-hover:scale-110 transition-transform`} />
+            {showText && <span>Download</span>}
+          </>
         )}
       </button>
     );
@@ -1152,23 +1162,20 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                           className="group bg-slate-700/30 hover:bg-slate-600/40 rounded-lg p-2 transition-all duration-200 border border-slate-600 hover:border-purple-500/50 backdrop-blur-sm"
                         >
                           <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                              <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-2 py-1 rounded text-xs font-bold min-w-10 text-center flex-shrink-0">
-                                {isMovie ? 'MOVIE' : (isManga ? 'CHAPTER' : 'EP')}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <h3 className="text-white font-medium text-xs break-words">
-                                  {itemData.title ||
-                                    `${getContentLabelSingular()}`}
-                                </h3>
-                              </div>
+                            <div className="flex-1 min-w-0">
+                              <h3 className="text-white font-medium text-xs break-words">
+                                {itemData.title ||
+                                  `${getContentLabelSingular()}`}
+                              </h3>
                             </div>
                             <div className="flex gap-1 flex-shrink-0">
+                              {/* ✅ UPDATED: Mobile download button - larger size with text */}
                               <DownloadButton
                                 item={item as Episode | Chapter}
                                 itemId={itemData._id}
-                                className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white p-2 rounded-lg shadow-lg hover:shadow-blue-500/20 transition-all duration-200 flex items-center justify-center"
-                                showText={false}
+                                className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-3 py-2 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-1 group text-xs sm:text-sm whitespace-nowrap"
+                                showText={true}
+                                iconClassName="h-4 w-4 sm:h-5 w-5"
                               />
                               {/* ✅ DEV ONLY: Download Page button - only in development */}
                               {import.meta.env.DEV && episodeToPageMap.has(itemData.episodeNumber) && (
@@ -1210,15 +1217,15 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                   <ul className="space-y-2 text-xs text-blue-300">
                     <li className="flex items-start gap-2">
                       <span className="text-blue-400 mt-0.5">•</span>
-                      <span>1. Download at least 1 and at most 4 ZIP files or movies at a time. This helps keep your download speed fast. If you download more than 4 files at once, the speed will slow down. Once these files finish downloading, you can start downloading more.</span>
+                      <span>1. Download at least 1 and at most 4 files or movies at a time. This helps keep your download speed fast. If you download more than 4 files at once, the speed will slow down. Once these files finish downloading, you can start downloading more.</span>
                     </li>
                     <li className="flex items-start gap-2">
                       <span className="text-blue-400 mt-0.5">•</span>
-                      <span>2. if Wrong Audio you can Fix: Open MX Player → click Audio → Change track to Hindi / Tamil / Telugu / English / Japanese.</span>
+                      <span>2. If Wrong Audio you can Fix: Open MX Player → click Audio → Change track to Hindi / Tamil / Telugu / English / Japanese.</span>
                     </li>
                     <li className="flex items-start gap-2">
                       <span className="text-blue-400 mt-0.5">•</span>
-                      <span>3. Downloaded ZIP Episodes File: Download ZIP → Open File Manager → Select ZIP → Extract All → Open extracted video in MX Player and other media player</span>
+                      <span>3. If you see an ad before download: Complete the short ad (if any) to unlock the download link. After the download finishes, you can watch the movie/episode offline in any media player (MX Player, VLC, etc.) without interruptions.</span>
                     </li>
                   </ul>
                 </div>
@@ -1393,28 +1400,22 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                             className="group bg-slate-700/30 hover:bg-slate-600/40 rounded-xl p-4 transition-all duration-300 border border-slate-600 hover:border-purple-500/50 hover:shadow-lg hover:shadow-purple-500/10 backdrop-blur-sm"
                           >
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                              <div className="flex items-start sm:items-center gap-4 flex-1">
-                                <div className="flex items-center gap-3">
-                                  <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg text-sm font-bold min-w-16 text-center">
-                                    {isMovie ? 'MOVIE' : (isManga ? 'CHAPTER' : 'EP')}
-                                  </span>
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <h3 className="text-white font-semibold text-lg truncate">
-                                    {itemData.title ||
-                                      `${getContentLabelSingular()}`}
-                                  </h3>
-                                  {itemData.session > 1 && (
-                                    <p className="text-slate-400 text-sm mt-1">Session {itemData.session}</p>
-                                  )}
-                                </div>
+                              <div className="flex-1 min-w-0">
+                                <h3 className="text-white font-semibold text-lg truncate">
+                                  {itemData.title ||
+                                    `${getContentLabelSingular()}`}
+                                </h3>
+                                {itemData.session > 1 && (
+                                  <p className="text-slate-400 text-sm mt-1">Session {itemData.session}</p>
+                                )}
                               </div>
                               <div className="flex gap-2 flex-shrink-0">
                                 <DownloadButton
                                   item={item as Episode | Chapter}
                                   itemId={itemData._id}
-                                  className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white px-4 py-2 rounded-lg transition-all duration-300 font-medium flex items-center gap-2 hover:scale-105 active:scale-95"
+                                  className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-4 py-2 rounded-lg shadow-md hover:shadow-lg transition-all duration-300 font-medium flex items-center gap-2 group"
                                   showText={true}
+                                  iconClassName="h-4 w-4"
                                 />
                                 {/* ✅ DEV ONLY: Multiple Download Page buttons - only in development */}
                                 {import.meta.env.DEV && episodeToPageMap.has(itemData.episodeNumber) && (
@@ -1457,15 +1458,15 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                       <ul className="space-y-2 text-sm text-blue-300">
                         <li className="flex items-start gap-2">
                           <span className="text-blue-400 mt-0.5">•</span>
-                          <span>1. Download at least 1 and at most 4 ZIP files or movies at a time. This helps keep your download speed fast. If you download more than 4 files at once, the speed will slow down. Once these files finish downloading, you can start downloading more.</span>
+                          <span>1. Download at least 1 and at most 4 files or movies at a time. This helps keep your download speed fast. If you download more than 4 files at once, the speed will slow down. Once these files finish downloading, you can start downloading more.</span>
                         </li>
                         <li className="flex items-start gap-2">
                           <span className="text-blue-400 mt-0.5">•</span>
-                          <span>2. if Wrong Audio you can Fix: Open MX Player → click Audio → Change track to Hindi / Tamil / Telugu / English / Japanese.</span>
+                          <span>2. If Wrong Audio you can Fix: Open MX Player → click Audio → Change track to Hindi / Tamil / Telugu / English / Japanese.</span>
                         </li>
                         <li className="flex items-start gap-2">
                           <span className="text-blue-400 mt-0.5">•</span>
-                          <span>3. Downloaded ZIP Episodes File: Download ZIP → Open File Manager → Select ZIP → Extract All → Open extracted video in MX Player and other media player</span>
+                          <span>3. If you see an ad before download: Complete the short ad (if any) to unlock the download link. After the download finishes, you can watch the movie/episode offline in any media player (MX Player, VLC, etc.) without interruptions.</span>
                         </li>
                       </ul>
                     </div>
