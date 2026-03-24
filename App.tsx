@@ -139,9 +139,8 @@ const MainApp: React.FC = () => {
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [isAppLoading, setIsAppLoading] = useState(true);
   
-  // ✅ SECRET CODE STATES
+  // ✅ SECRET CODE STATES (hint removed)
   const [typedText, setTypedText] = useState('');
-  const [showCodeHint, setShowCodeHint] = useState(false);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // ✅ SEARCH DEBOUNCE REF
@@ -229,7 +228,7 @@ const MainApp: React.FC = () => {
     initializeApp();
   }, []);
 
-  // ✅ SECRET CODE KEYBOARD LISTENER - TYPE "2007harsh" OR PRESS Ctrl+Shift+Alt FOR DIRECT ADMIN
+  // ✅ SECRET CODE KEYBOARD LISTENER - TYPE "2007harsh" OR PRESS Ctrl+Shift+Alt FOR DIRECT ADMIN (HINT REMOVED)
   useEffect(() => {
     // Helper to show the green success notification
     const showAdminNotification = () => {
@@ -264,13 +263,11 @@ const MainApp: React.FC = () => {
       if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
         const newTypedText = (typedText + e.key).toLowerCase();
         setTypedText(newTypedText);
-        setShowCodeHint(true);
 
         if (newTypedText.includes('2007harsh')) {
           e.preventDefault();
           setAdminView('login');
           setTypedText('');
-          setShowCodeHint(false);
           showAdminNotification();
         }
 
@@ -278,7 +275,6 @@ const MainApp: React.FC = () => {
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
         typingTimeoutRef.current = setTimeout(() => {
           setTypedText('');
-          setShowCodeHint(false);
         }, 3000);
       }
 
@@ -624,78 +620,7 @@ const MainApp: React.FC = () => {
         <Footer />
         <ScrollToTopButton />
         
-        {/* Secret Code Typing Hint - hidden in print */}
-        {showCodeHint && (
-          <div 
-            className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[99999] glow-green-border hover-glow-green print:hidden"
-            style={{
-              background: 'rgba(30, 41, 59, 0.9)',
-              backdropFilter: 'blur(10px)',
-              borderRadius: '0.75rem'
-            }}
-          >
-            <div className="p-4 min-w-[300px]">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <div 
-                    className="p-2 rounded-lg"
-                    style={{
-                      background: 'rgba(115, 245, 138, 0.2)',
-                      border: '1px solid rgba(115, 245, 138, 0.3)'
-                    }}
-                  >
-                    <span className="text-green-400">🔐</span>
-                  </div>
-                  <div>
-                    <div className="text-sm text-green-300 font-medium">Secret Code Active</div>
-                    <div className="text-xs text-purple-400">Type "2007harsh" for admin access</div>
-                  </div>
-                </div>
-                <div className="text-purple-500 text-sm">
-                  {typedText.length}/9
-                </div>
-              </div>
-              
-              <div className="mb-3">
-                <div className="text-xs text-purple-400 mb-1">Current typing:</div>
-                <div className="flex items-center gap-1">
-                  {Array.from('2007harsh').map((char, index) => (
-                    <div 
-                      key={index}
-                      className={`w-7 h-8 flex items-center justify-center rounded text-sm font-mono font-bold
-                        ${index < typedText.length 
-                          ? typedText[index] === char
-                            ? 'bg-green-600 text-white border border-green-400' 
-                            : 'bg-red-600 text-white border border-red-400'
-                          : 'bg-purple-800 text-purple-500 border border-purple-700'
-                        }`}
-                      style={{
-                        boxShadow: index < typedText.length && typedText[index] === char 
-                          ? '0 0 10px rgba(115, 245, 138, 0.5)' 
-                          : 'none'
-                      }}
-                    >
-                      {char}
-                    </div>
-                  ))}
-                </div>
-              </div>
-              
-              <div 
-                className="w-full h-1.5 rounded-full overflow-hidden"
-                style={{ background: 'rgba(115, 245, 138, 0.1)' }}
-              >
-                <div 
-                  className="h-full transition-all duration-300"
-                  style={{ 
-                    width: `${(typedText.length / 9) * 100}%`,
-                    background: 'linear-gradient(90deg, #10b981, #34d399, #73F58A)'
-                  }}
-                ></div>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* ❌ Secret Code Hint Removed – No hint box shown anymore */}
       </ScrollToTop>
     </div>
   );
