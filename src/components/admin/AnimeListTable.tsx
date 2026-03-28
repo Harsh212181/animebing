@@ -1,8 +1,8 @@
- import React, { useState, useEffect } from 'react';
+ import React, { useState, useEffect, useMemo } from 'react';
 import type { Anime } from '../../types';
 import axios from 'axios';
 import Spinner from '../Spinner';
-import toast from 'react-hot-toast'; // ✅ using react-hot-toast
+import toast from 'react-hot-toast';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://animabing.onrender.com/api';
 const token = localStorage.getItem('adminToken') || '';
@@ -21,11 +21,14 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
   isLoading: propIsLoading = false,
 }) => {
   const [animes, setAnimes] = useState<Anime[]>([]);
-  const [filteredAnimes, setFilteredAnimes] = useState<Anime[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'All' | 'Ongoing' | 'Complete'>('All');
-  const [contentTypeFilter, setContentTypeFilter] = useState<'All' | 'Anime' | 'Movie' | 'Manga'>('All');
+
+  // Filter states – now using button group values
+  const [contentTypeFilter, setContentTypeFilter] = useState<'all' | 'Anime' | 'Movie' | 'Manga'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'Ongoing' | 'Complete'>('all');
+  const [subDubFilter, setSubDubFilter] = useState<'all' | 'Hindi Sub' | 'Hindi Dub' | 'English Sub'>('all');
+
   const [searchQuery, setSearchQuery] = useState('');
   const [editingAnimeId, setEditingAnimeId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ animeId: string; animeTitle: string } | null>(null);
@@ -50,13 +53,12 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
   useEffect(() => {
     if (isPartnerMode && propAnimeList) {
       setAnimes(propAnimeList);
-      setFilteredAnimes(propAnimeList);
       setLoading(false);
       setError('');
     }
   }, [propAnimeList, isPartnerMode]);
 
-  // Fetch animes (only in normal admin mode)
+  // Fetch animes (only in normal admin mode) – fetch all, no server‑side filters
   useEffect(() => {
     if (isPartnerMode) return;
 
@@ -64,11 +66,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
       setLoading(true);
       setError('');
       try {
-        const params = new URLSearchParams();
-        if (statusFilter !== 'All') params.append('status', statusFilter);
-        if (contentTypeFilter !== 'All') params.append('contentType', contentTypeFilter);
-
-        const url = `${API_BASE}/admin/protected/anime-list${params.toString() ? `?${params.toString()}` : ''}`;
+        const url = `${API_BASE}/admin/protected/anime-list`;
         const { data } = await axios.get(url, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -84,7 +82,6 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
         }));
 
         setAnimes(animeData);
-        setFilteredAnimes(animeData);
       } catch (err: any) {
         console.error('Error fetching animes:', err);
         setError(err.response?.data?.error || 'Failed to load anime list');
@@ -94,15 +91,31 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
     };
 
     fetchAnimes();
-  }, [statusFilter, contentTypeFilter, isPartnerMode]);
+  }, [isPartnerMode]); // only runs once, no filter dependencies
 
-  // Search filtering
-  useEffect(() => {
-    if (searchQuery.trim() === '') {
-      setFilteredAnimes(animes);
-    } else {
+  // Client‑side filtering based on all filters and search query
+  const filteredAnimes = useMemo(() => {
+    let result = animes;
+
+    // Apply content type filter
+    if (contentTypeFilter !== 'all') {
+      result = result.filter(anime => anime.contentType === contentTypeFilter);
+    }
+
+    // Apply status filter
+    if (statusFilter !== 'all') {
+      result = result.filter(anime => anime.status === statusFilter);
+    }
+
+    // Apply sub/dub filter
+    if (subDubFilter !== 'all') {
+      result = result.filter(anime => anime.subDubStatus === subDubFilter);
+    }
+
+    // Apply search query (title, genres, etc.)
+    if (searchQuery.trim() !== '') {
       const query = searchQuery.toLowerCase();
-      const filtered = animes.filter(
+      result = result.filter(
         (anime) =>
           anime.title.toLowerCase().includes(query) ||
           anime.genreList.some((genre) => genre.toLowerCase().includes(query)) ||
@@ -112,9 +125,10 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
           (anime.seoKeywords && anime.seoKeywords.toLowerCase().includes(query)) ||
           (anime.slug && anime.slug.toLowerCase().includes(query))
       );
-      setFilteredAnimes(filtered);
     }
-  }, [searchQuery, animes]);
+
+    return result;
+  }, [animes, contentTypeFilter, statusFilter, subDubFilter, searchQuery]);
 
   const handleDelete = (id: string) => {
     if (isPartnerMode) return;
@@ -132,12 +146,8 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
         data: { id: animeId },
       });
       setEditingAnimeId(null);
-      // Refresh list
-      const params = new URLSearchParams();
-      if (statusFilter !== 'All') params.append('status', statusFilter);
-      if (contentTypeFilter !== 'All') params.append('contentType', contentTypeFilter);
-      const url = `${API_BASE}/admin/protected/anime-list${params.toString() ? `?${params.toString()}` : ''}`;
-      const { data } = await axios.get(url, {
+      // Refresh the list after deletion
+      const { data } = await axios.get(`${API_BASE}/admin/protected/anime-list`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const animeData = data.map((a: any) => ({
@@ -150,7 +160,6 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
         episodes: a.episodes || [],
       }));
       setAnimes(animeData);
-      setFilteredAnimes(animeData);
       toast.success('✅ Anime deleted successfully!', { id: toastId });
     } catch (err: any) {
       console.error('Delete error:', err);
@@ -200,12 +209,8 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
       toast.success('✅ Anime updated successfully! SEO data saved.', { id: toastId });
       setEditingAnimeId(null);
 
-      // Refresh list
-      const params = new URLSearchParams();
-      if (statusFilter !== 'All') params.append('status', statusFilter);
-      if (contentTypeFilter !== 'All') params.append('contentType', contentTypeFilter);
-      const url = `${API_BASE}/admin/protected/anime-list${params.toString() ? `?${params.toString()}` : ''}`;
-      const { data } = await axios.get(url, {
+      // Refresh the list
+      const { data } = await axios.get(`${API_BASE}/admin/protected/anime-list`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const animeData = data.map((a: any) => ({
@@ -218,7 +223,6 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
         episodes: a.episodes || [],
       }));
       setAnimes(animeData);
-      setFilteredAnimes(animeData);
     } catch (err: any) {
       console.error('Update error:', err);
       toast.error(err.response?.data?.error || 'Update failed. Please try again.', { id: toastId });
@@ -459,96 +463,182 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
         </div>
       )}
 
-      {/* Search & Filters */}
+      {/* Filters Section – matches DownloadPageManager layout */}
       <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-6 shadow-2xl">
-        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-          <h2 className="text-xl font-semibold text-white/90 flex items-center gap-2">
-            <span className="w-1.5 h-6 bg-purple-400 rounded-full"></span>
-            Filters
-          </h2>
-          <div className="flex flex-wrap gap-3 w-full sm:w-auto">
-            {/* Content Type Filter */}
-            <select
-              value={contentTypeFilter}
-              onChange={(e) => setContentTypeFilter(e.target.value as any)}
-              className="px-4 py-2.5 bg-gray-800/60 border border-gray-700/80 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition appearance-none cursor-pointer"
-            >
-              <option value="All">All Types</option>
-              <option value="Anime">Anime</option>
-              <option value="Movie">Movie</option>
-              <option value="Manga">Manga</option>
-            </select>
-
-            {/* Status Filter */}
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as any)}
-              className="px-4 py-2.5 bg-gray-800/60 border border-gray-700/80 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition appearance-none cursor-pointer"
-            >
-              <option value="All">All Status</option>
-              <option value="Ongoing">Ongoing</option>
-              <option value="Complete">Complete</option>
-            </select>
-
-            {/* Search Input */}
-            <div className="relative min-w-[240px]">
-              <input
-                type="text"
-                placeholder="Search anime..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full px-4 py-2.5 bg-gray-800/60 border border-gray-700/80 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition pr-8"
-              />
-              {searchQuery && (
-                <button
-                  onClick={clearSearch}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-
-            {/* Refresh Button (only in normal mode) */}
-            {!isPartnerMode && (
+        <div className="flex flex-wrap items-center gap-4">
+          {/* Content Type Filter */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-white/70">Type:</span>
+            <div className="flex gap-2">
               <button
-                onClick={() => {
-                  const params = new URLSearchParams();
-                  if (statusFilter !== 'All') params.append('status', statusFilter);
-                  if (contentTypeFilter !== 'All') params.append('contentType', contentTypeFilter);
-                  const url = `${API_BASE}/admin/protected/anime-list${params.toString() ? `?${params.toString()}` : ''}`;
-                  axios
-                    .get(url, { headers: { Authorization: `Bearer ${token}` } })
-                    .then(({ data }) => {
-                      const animeData = data.map((a: any) => ({
-                        ...a,
-                        id: a._id,
-                        seoTitle: a.seoTitle || '',
-                        seoDescription: a.seoDescription || '',
-                        seoKeywords: a.seoKeywords || '',
-                        slug: a.slug || '',
-                        episodes: a.episodes || [],
-                      }));
-                      setAnimes(animeData);
-                      setFilteredAnimes(animeData);
-                      toast.success('List refreshed');
-                    })
-                    .catch(() => toast.error('Failed to refresh'));
-                }}
-                className="px-4 py-2.5 bg-purple-600/80 hover:bg-purple-500 text-white rounded-xl text-sm font-medium transition-all flex items-center gap-2"
+                onClick={() => setContentTypeFilter('all')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  contentTypeFilter === 'all'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                    : 'bg-white/10 text-white/70 hover:bg-white/20'
+                }`}
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                  />
-                </svg>
-                Refresh
+                All
               </button>
-            )}
+              <button
+                onClick={() => setContentTypeFilter('Anime')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  contentTypeFilter === 'Anime'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                    : 'bg-white/10 text-white/70 hover:bg-white/20'
+                }`}
+              >
+                Anime
+              </button>
+              <button
+                onClick={() => setContentTypeFilter('Movie')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  contentTypeFilter === 'Movie'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                    : 'bg-white/10 text-white/70 hover:bg-white/20'
+                }`}
+              >
+                Movies
+              </button>
+              <button
+                onClick={() => setContentTypeFilter('Manga')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  contentTypeFilter === 'Manga'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                    : 'bg-white/10 text-white/70 hover:bg-white/20'
+                }`}
+              >
+                Manga
+              </button>
+            </div>
           </div>
+
+          {/* Status Filter */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-white/70">Status:</span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setStatusFilter('all')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  statusFilter === 'all'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                    : 'bg-white/10 text-white/70 hover:bg-white/20'
+                }`}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setStatusFilter('Ongoing')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  statusFilter === 'Ongoing'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                    : 'bg-white/10 text-white/70 hover:bg-white/20'
+                }`}
+              >
+                Ongoing
+              </button>
+              <button
+                onClick={() => setStatusFilter('Complete')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  statusFilter === 'Complete'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                    : 'bg-white/10 text-white/70 hover:bg-white/20'
+                }`}
+              >
+                Complete
+              </button>
+            </div>
+          </div>
+
+          {/* Search Input */}
+          <div className="relative ml-auto">
+            <input
+              type="text"
+              placeholder="Search by anime title..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full sm:w-64 px-4 py-2 bg-gray-800/60 border border-gray-700/80 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition pl-10"
+            />
+            <svg
+              className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
+          </div>
+        </div>
+
+        {/* Row 2: Sub/Dub Filter (no refresh button) */}
+        <div className="flex flex-wrap items-center gap-4 mt-4">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-white/70">Sub/Dub:</span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setSubDubFilter('all')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  subDubFilter === 'all'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                    : 'bg-white/10 text-white/70 hover:bg-white/20'
+                }`}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setSubDubFilter('Hindi Sub')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  subDubFilter === 'Hindi Sub'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                    : 'bg-white/10 text-white/70 hover:bg-white/20'
+                }`}
+              >
+                Hindi Sub
+              </button>
+              <button
+                onClick={() => setSubDubFilter('Hindi Dub')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  subDubFilter === 'Hindi Dub'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                    : 'bg-white/10 text-white/70 hover:bg-white/20'
+                }`}
+              >
+                Hindi Dub
+              </button>
+              <button
+                onClick={() => setSubDubFilter('English Sub')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  subDubFilter === 'English Sub'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                    : 'bg-white/10 text-white/70 hover:bg-white/20'
+                }`}
+              >
+                English Sub
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Active filters info */}
+        <div className="text-xs text-white/40 mt-4">
+          {filteredAnimes.length} / {animes.length} anime shown
+          {(contentTypeFilter !== 'all' || statusFilter !== 'all' || subDubFilter !== 'all') && (
+            <button
+              onClick={() => {
+                setContentTypeFilter('all');
+                setStatusFilter('all');
+                setSubDubFilter('all');
+              }}
+              className="ml-2 text-purple-400 hover:text-purple-300 underline"
+            >
+              Clear filters
+            </button>
+          )}
         </div>
       </div>
 
@@ -619,16 +709,20 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
                           editingAnimeId === anime.id ? 'bg-white/10' : ''
                         }`}
                       >
+                        {/* Thumbnail column – fixed size like DownloadPageManager */}
                         <td className="px-2 sm:px-6 py-4 whitespace-nowrap">
-                          <img
-                            src={anime.thumbnail || 'https://via.placeholder.com/96x128/1e293b/64748b?text=No+Image'}
-                            alt={anime.title}
-                            className="w-12 h-16 sm:w-16 sm:h-20 object-cover rounded-lg shadow-lg"
-                            loading="lazy"
-                            onError={(e) => {
-                              e.currentTarget.src = 'https://via.placeholder.com/96x128/1e293b/64748b?text=No+Image';
-                            }}
-                          />
+                          <div className="w-20 h-24 sm:w-24 sm:h-28 rounded-lg overflow-hidden bg-gray-800/80 shadow-lg border border-white/10">
+                            <img
+                              src={anime.thumbnail || 'https://via.placeholder.com/96x128/1e293b/64748b?text=No+Image'}
+                              alt={anime.title}
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                              onError={(e) => {
+                                e.currentTarget.onerror = null;
+                                e.currentTarget.src = 'https://via.placeholder.com/96x128/1e293b/64748b?text=No+Image';
+                              }}
+                            />
+                          </div>
                         </td>
                         <td className="px-2 sm:px-6 py-4">
                           <div className="flex flex-col gap-1">

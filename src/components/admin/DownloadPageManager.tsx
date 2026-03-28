@@ -156,6 +156,7 @@ const DownloadPageManager: React.FC = () => {
   // Filter states
   const [contentTypeFilter, setContentTypeFilter] = useState<'all' | ContentType>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'ongoing' | 'complete'>('all');
+  const [subDubFilter, setSubDubFilter] = useState<'all' | string>('all');
 
   const fetchPages = async () => {
     setLoading(true);
@@ -442,6 +443,44 @@ const DownloadPageManager: React.FC = () => {
     setCalculatingNext(false);
   };
 
+  // addBothLinks – adds one download and one watch link together
+  const addBothLinks = async () => {
+    if (!editingPage || !editingPage.animeId) return;
+    setCalculatingNext(true);
+    const baseEpisode = await getNextStartingEpisode(editingPage.animeId);
+    setEditingPage(prev => {
+      if (!prev) return null;
+      const downloadCount = prev.links.filter(l => l.type === 'download').length;
+      const watchCount = prev.links.filter(l => l.type === 'watch').length;
+      
+      if (downloadCount + 1 > 12) {
+        showToast('Download limit reached (max 12)', 'error');
+        return prev;
+      }
+      if (watchCount + 1 > 12) {
+        showToast('Watch limit reached (max 12)', 'error');
+        return prev;
+      }
+      
+      const newDownloadLink: DownloadPageLink = {
+        episode: baseEpisode + downloadCount,
+        url: '',
+        type: 'download',
+        quality: '',
+        language: ''
+      };
+      const newWatchLink: DownloadPageLink = {
+        episode: baseEpisode + watchCount,
+        url: '',
+        type: 'watch',
+        quality: '',
+        language: ''
+      };
+      return { ...prev, links: [...prev.links, newDownloadLink, newWatchLink] };
+    });
+    setCalculatingNext(false);
+  };
+
   const updateLink = (index: number, field: keyof DownloadPageLink, value: any) => {
     setEditingPage((prev: FormPage | null): FormPage | null => {
       if (!prev) return null;
@@ -475,7 +514,7 @@ const DownloadPageManager: React.FC = () => {
     return map;
   }, [pages]);
 
-  // Filter pages based on search, contentType, and status
+  // Filter pages based on search, contentType, status, and sub/dub status
   const filteredPages = useMemo(() => {
     return pages.filter(page => {
       const animeTitle = getAnimeTitle(page).toLowerCase();
@@ -489,9 +528,14 @@ const DownloadPageManager: React.FC = () => {
         if (statusFilter === 'ongoing' && animeStatus !== 'ongoing') return false;
         if (statusFilter === 'complete' && animeStatus !== 'complete') return false;
       }
+      // Sub/Dub filter
+      if (subDubFilter !== 'all') {
+        const subDub = details.subDubStatus;
+        if (subDub !== subDubFilter) return false;
+      }
       return true;
     }).sort((a, b) => a._id.localeCompare(b._id));
-  }, [pages, searchTerm, contentTypeFilter, statusFilter]);
+  }, [pages, searchTerm, contentTypeFilter, statusFilter, subDubFilter]);
 
   if (loading) return (
     <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
@@ -542,15 +586,20 @@ const DownloadPageManager: React.FC = () => {
           </h2>
           <button
             onClick={() => {
-              setEditingPage({ animeId: '', slug: '', title: '', episodeNumber: 1, links: [] });
-              setShowNewForm(true);
+              if (showNewForm && editingPage && !editingPage._id) {
+                setShowNewForm(false);
+                setEditingPage(null);
+              } else {
+                setEditingPage({ animeId: '', slug: '', title: '', episodeNumber: 1, links: [] });
+                setShowNewForm(true);
+              }
             }}
             className="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-medium rounded-xl shadow-lg shadow-purple-600/20 transition-all flex items-center gap-2"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
             </svg>
-            + New Page
+            {showNewForm && editingPage && !editingPage._id ? 'Cancel New Page' : '+ New Page'}
           </button>
         </div>
 
@@ -567,6 +616,7 @@ const DownloadPageManager: React.FC = () => {
               calculatingNext={calculatingNext}
               addDownloadLink={addDownloadLink}
               addWatchLink={addWatchLink}
+              addBothLinks={addBothLinks}
               updateLink={updateLink}
               removeLink={removeLink}
               watchCount={editingPage.links.filter(l => l.type === 'watch').length}
@@ -578,7 +628,9 @@ const DownloadPageManager: React.FC = () => {
 
       {/* Filters Section */}
       <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-6 space-y-4">
+        {/* Row 1: Type and Status filters + search */}
         <div className="flex flex-wrap items-center gap-4">
+          {/* Content Type Filter */}
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-white/70">Type:</span>
             <div className="flex gap-2">
@@ -625,6 +677,7 @@ const DownloadPageManager: React.FC = () => {
             </div>
           </div>
 
+          {/* Status Filter */}
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-white/70">Status:</span>
             <div className="flex gap-2">
@@ -686,14 +739,64 @@ const DownloadPageManager: React.FC = () => {
           </div>
         </div>
 
+        {/* Row 2: Sub/Dub Filter */}
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-white/70">Sub/Dub:</span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setSubDubFilter('all')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  subDubFilter === 'all'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                    : 'bg-white/10 text-white/70 hover:bg-white/20'
+                }`}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setSubDubFilter('Hindi Sub')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  subDubFilter === 'Hindi Sub'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                    : 'bg-white/10 text-white/70 hover:bg-white/20'
+                }`}
+              >
+                Hindi Sub
+              </button>
+              <button
+                onClick={() => setSubDubFilter('Hindi Dub')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  subDubFilter === 'Hindi Dub'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                    : 'bg-white/10 text-white/70 hover:bg-white/20'
+                }`}
+              >
+                Hindi Dub
+              </button>
+              <button
+                onClick={() => setSubDubFilter('English Sub')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  subDubFilter === 'English Sub'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                    : 'bg-white/10 text-white/70 hover:bg-white/20'
+                }`}
+              >
+                English Sub
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Active filters info */}
         <div className="text-xs text-white/40">
           {filteredPages.length} / {pages.length} pages shown
-          {(contentTypeFilter !== 'all' || statusFilter !== 'all') && (
+          {(contentTypeFilter !== 'all' || statusFilter !== 'all' || subDubFilter !== 'all') && (
             <button
               onClick={() => {
                 setContentTypeFilter('all');
                 setStatusFilter('all');
+                setSubDubFilter('all');
               }}
               className="ml-2 text-purple-400 hover:text-purple-300 underline"
             >
@@ -911,6 +1014,7 @@ const DownloadPageManager: React.FC = () => {
                       calculatingNext={calculatingNext}
                       addDownloadLink={addDownloadLink}
                       addWatchLink={addWatchLink}
+                      addBothLinks={addBothLinks}
                       updateLink={updateLink}
                       removeLink={removeLink}
                       watchCount={editingPage.links.filter(l => l.type === 'watch').length}
@@ -927,7 +1031,7 @@ const DownloadPageManager: React.FC = () => {
   );
 };
 
-// Extracted Page Form component (unchanged)
+// Extracted Page Form component
 const PageForm: React.FC<{
   editingPage: FormPage;
   setEditingPage: React.Dispatch<React.SetStateAction<FormPage | null>>;
@@ -938,6 +1042,7 @@ const PageForm: React.FC<{
   calculatingNext: boolean;
   addDownloadLink: () => Promise<void>;
   addWatchLink: () => Promise<void>;
+  addBothLinks: () => Promise<void>;
   updateLink: (index: number, field: keyof DownloadPageLink, value: any) => void;
   removeLink: (index: number) => void;
   watchCount: number;
@@ -952,6 +1057,7 @@ const PageForm: React.FC<{
   calculatingNext,
   addDownloadLink,
   addWatchLink,
+  addBothLinks,
   updateLink,
   removeLink,
   watchCount,
@@ -1093,7 +1199,7 @@ const PageForm: React.FC<{
           </div>
         ))}
 
-        <div className="flex gap-3 mt-2">
+        <div className="flex gap-3 mt-2 flex-wrap">
           <button
             onClick={addDownloadLink}
             disabled={downloadCount >= 12 || calculatingNext}
@@ -1122,6 +1228,17 @@ const PageForm: React.FC<{
               </svg>
             )}
             + Add Watch Link ({watchCount}/12)
+          </button>
+          <button
+            onClick={addBothLinks}
+            disabled={downloadCount >= 12 || watchCount >= 12 || calculatingNext}
+            className="px-4 py-2 bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/30 rounded-xl text-purple-200 text-sm font-medium transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+            </svg>
+            + Add Both (Download + Watch)
           </button>
         </div>
         {(downloadCount >= 12 || watchCount >= 12) && (

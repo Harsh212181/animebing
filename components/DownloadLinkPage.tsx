@@ -637,11 +637,11 @@ const DownloadLinkPage: React.FC = () => {
                   />
                   {selectedIndex === idx && (
                     <div className="mt-2 rounded-xl overflow-hidden shadow-2xl border border-purple-500/30 animate-fadeIn">
-                      {/* 👇 Pass title and episode */}
+                      {/* 👇 Only pass episode if it's NOT a movie */}
                       <VideoPlayer 
                         src={link.url} 
                         title={title} 
-                        episode={link.episode}
+                        episode={!isMovie ? link.episode : undefined}
                       />
                     </div>
                   )}

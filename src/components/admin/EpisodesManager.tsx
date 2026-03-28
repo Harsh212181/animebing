@@ -4,8 +4,8 @@ import type { Anime, Episode, Chapter } from '../../types';
 import axios from 'axios';
 import Spinner from '../Spinner';
 import SearchableDropdown from './SearchableDropdown';
+import toast from 'react-hot-toast';
 
-// ✅ Define DownloadLink interface locally
 interface DownloadLink {
   name: string;
   url: string;
@@ -13,10 +13,9 @@ interface DownloadLink {
   type?: string;
 }
 
-// ✅ Default download link names
 const DEFAULT_LINK_NAMES = [
   'Cuty.io',
-  'Shrinkme', 
+  'Shrinkme',
   'Linkjust.com',
   'Gplinks',
   'Link 5'
@@ -54,9 +53,11 @@ const EpisodesManager: React.FC = () => {
     downloadLinks: [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }] as DownloadLink[]
   });
 
+  // ✅ State for delete confirmation modal
+  const [deleteConfirm, setDeleteConfirm] = useState<{ itemId: string; itemNumber: number; session: number } | null>(null);
+
   const isManga = selectedAnime?.contentType === 'Manga';
 
-  // Get available sessions
   const getAvailableSessions = () => {
     const items = isManga ? chapters : episodes;
     const sessions = new Set<number>();
@@ -64,7 +65,6 @@ const EpisodesManager: React.FC = () => {
     return Array.from(sessions).sort((a, b) => a - b);
   };
 
-  // Filter items by session
   const filteredItems = (isManga ? chapters : episodes).filter(item => (item.session || 1) === selectedSession);
 
   useEffect(() => {
@@ -84,7 +84,7 @@ const EpisodesManager: React.FC = () => {
       })));
     } catch (err: any) {
       console.error('❌ Animes load error:', err.response?.data || err.message);
-      alert('Failed to load animes');
+      toast.error('Failed to load animes');
     } finally {
       setAnimesLoading(false);
     }
@@ -112,13 +112,13 @@ const EpisodesManager: React.FC = () => {
           setSelectedAnime(null);
           setEpisodes([]);
           setChapters([]);
-          alert('Previously selected content was removed from the list.');
+          toast.error('Previously selected content was removed from the list.');
         }
       }
-      alert('Content refreshed successfully!');
+      toast.success('Content refreshed successfully!');
     } catch (err: any) {
       console.error('❌ Refresh error:', err.response?.data || err.message);
-      alert('Failed to refresh content');
+      toast.error('Failed to refresh content');
     } finally {
       setAnimesLoading(false);
     }
@@ -180,7 +180,7 @@ const EpisodesManager: React.FC = () => {
       }
     } catch (err: any) {
       console.error('❌ Content load error:', err.response?.data || err.message);
-      alert('Failed to load content');
+      toast.error('Failed to load content');
     } finally {
       setLoading(false);
     }
@@ -214,7 +214,7 @@ const EpisodesManager: React.FC = () => {
 
   const handleAddDownloadLink = () => {
     if (newItem.downloadLinks.length >= 5) {
-      alert('Maximum 5 download links allowed');
+      toast.error('Maximum 5 download links allowed');
       return;
     }
     setNewItem(prev => ({
@@ -228,7 +228,7 @@ const EpisodesManager: React.FC = () => {
 
   const handleEditAddDownloadLink = () => {
     if (editForm.downloadLinks.length >= 5) {
-      alert('Maximum 5 download links allowed');
+      toast.error('Maximum 5 download links allowed');
       return;
     }
     setEditForm(prev => ({
@@ -242,7 +242,7 @@ const EpisodesManager: React.FC = () => {
 
   const handleRemoveDownloadLink = (index: number) => {
     if (newItem.downloadLinks.length <= 1) {
-      alert('At least one download link is required');
+      toast.error('At least one download link is required');
       return;
     }
     setNewItem(prev => ({
@@ -253,7 +253,7 @@ const EpisodesManager: React.FC = () => {
 
   const handleEditRemoveDownloadLink = (index: number) => {
     if (editForm.downloadLinks.length <= 1) {
-      alert('At least one download link is required');
+      toast.error('At least one download link is required');
       return;
     }
     setEditForm(prev => ({
@@ -278,25 +278,25 @@ const EpisodesManager: React.FC = () => {
 
   const validateDownloadLinks = (links: DownloadLink[]): boolean => {
     if (links.length === 0) {
-      alert('At least one download link is required');
+      toast.error('At least one download link is required');
       return false;
     }
     if (links.length > 5) {
-      alert('Maximum 5 download links allowed');
+      toast.error('Maximum 5 download links allowed');
       return false;
     }
     for (let i = 0; i < links.length; i++) {
       const link = links[i];
       if (!link.name.trim()) {
-        alert(`Download link ${i + 1} must have a name`);
+        toast.error(`Download link ${i + 1} must have a name`);
         return false;
       }
       if (!link.url.trim()) {
-        alert(`Download link ${i + 1} must have a URL`);
+        toast.error(`Download link ${i + 1} must have a URL`);
         return false;
       }
       if (!link.url.startsWith('http')) {
-        alert(`Download link ${i + 1} must be a valid URL starting with http:// or https://`);
+        toast.error(`Download link ${i + 1} must be a valid URL starting with http:// or https://`);
         return false;
       }
     }
@@ -306,7 +306,7 @@ const EpisodesManager: React.FC = () => {
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedAnime) {
-      alert('Please select content first');
+      toast.error('Please select content first');
       return;
     }
     if (!validateDownloadLinks(newItem.downloadLinks)) return;
@@ -340,7 +340,7 @@ const EpisodesManager: React.FC = () => {
         }
       });
 
-      alert(`${isManga ? 'Chapter' : 'Episode'} added successfully!`);
+      toast.success(`${isManga ? 'Chapter' : 'Episode'} added successfully!`);
 
       if (isManga) {
         setChapters(prev => [...prev, transformChapterData(response.data.episode || response.data)]);
@@ -358,7 +358,7 @@ const EpisodesManager: React.FC = () => {
       });
     } catch (err: any) {
       console.error('❌ Add error:', err.response?.data || err.message);
-      alert(`Failed to add ${isManga ? 'chapter' : 'episode'}: ${err.response?.data?.error || err.message}`);
+      toast.error(`Failed to add ${isManga ? 'chapter' : 'episode'}: ${err.response?.data?.error || err.message}`);
     } finally {
       setAddingItem(false);
     }
@@ -396,18 +396,19 @@ const EpisodesManager: React.FC = () => {
         }
       });
 
-      alert(`${isManga ? 'Chapter' : 'Episode'} updated successfully!`);
+      toast.success(`${isManga ? 'Chapter' : 'Episode'} updated successfully!`);
       setEditingItemId(null);
       await fetchContent(selectedAnime.id);
     } catch (err: any) {
       console.error('❌ Update error:', err.response?.data || err.message);
-      alert(`Failed to update ${isManga ? 'chapter' : 'episode'}: ${err.response?.data?.error || err.message}`);
+      toast.error(`Failed to update ${isManga ? 'chapter' : 'episode'}: ${err.response?.data?.error || err.message}`);
     }
   };
 
-  const handleDeleteItem = async (itemId: string, itemNumber: number, session: number) => {
-    if (!confirm(`Are you sure you want to delete ${isManga ? 'chapter' : 'episode'} ${itemNumber}?`)) return;
-
+  // ✅ New function to actually delete after confirmation
+  const confirmDelete = async () => {
+    if (!deleteConfirm) return;
+    const { itemId, itemNumber, session } = deleteConfirm;
     try {
       const token = getToken();
       const endpoint = isManga ? '/chapters' : '/episodes';
@@ -419,19 +420,51 @@ const EpisodesManager: React.FC = () => {
           session: session
         }
       });
-
-      alert(`${isManga ? 'Chapter' : 'Episode'} deleted successfully!`);
+      toast.success(`${isManga ? 'Chapter' : 'Episode'} deleted successfully!`);
       if (selectedAnime) await fetchContent(selectedAnime.id);
     } catch (err: any) {
       console.error('❌ Delete error:', err.response?.data || err.message);
-      alert(err.response?.data?.error || `Failed to delete ${isManga ? 'chapter' : 'episode'}`);
+      toast.error(err.response?.data?.error || `Failed to delete ${isManga ? 'chapter' : 'episode'}`);
+    } finally {
+      setDeleteConfirm(null); // Close modal
     }
   };
 
   const openMainLink = (link: string) => link && window.open(link, '_blank', 'noopener,noreferrer');
 
+  const copyToClipboard = (text: string, message: string = 'Copied!') => {
+    navigator.clipboard.writeText(text);
+    toast.success(message);
+  };
+
   return (
     <div className="space-y-6">
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4 shadow-xl border border-slate-700">
+            <h3 className="text-xl font-semibold text-white mb-4">Confirm Deletion</h3>
+            <p className="text-slate-300 mb-6">
+              Are you sure you want to delete {isManga ? 'chapter' : 'episode'} {deleteConfirm.itemNumber}?
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="px-4 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-white">Manage {isManga ? 'Chapters' : 'Episodes'}</h2>
         <button
@@ -448,7 +481,6 @@ const EpisodesManager: React.FC = () => {
         <label className="block text-sm font-medium text-slate-300 mb-3">
           Select {isManga ? 'Manga' : 'Anime/Movie'} *
         </label>
-        {/* ✅ Fixed: Added explicit generic <Anime> to resolve type error */}
         <SearchableDropdown<Anime>
           options={animes}
           value={selectedAnime}
@@ -572,7 +604,7 @@ const EpisodesManager: React.FC = () => {
               </button>
               <button
                 type="button"
-                onClick={() => newItem.mainLink && navigator.clipboard.writeText(newItem.mainLink) && alert('Copied!')}
+                onClick={() => newItem.mainLink && copyToClipboard(newItem.mainLink)}
                 disabled={!newItem.mainLink}
                 className="bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 text-white px-3 py-2 rounded text-sm flex items-center gap-1"
               >
@@ -693,12 +725,12 @@ const EpisodesManager: React.FC = () => {
                           <td className="p-3">
                             {item.mainLink ? (
                               <div className="space-y-2">
-                                <div className="text-xs text-yellow-300 truncate max-w-xs cursor-pointer" title={item.mainLink} onClick={() => navigator.clipboard.writeText(item.mainLink)}>
+                                <div className="text-xs text-yellow-300 truncate max-w-xs cursor-pointer" title={item.mainLink} onClick={() => copyToClipboard(item.mainLink)}>
                                   {item.mainLink.substring(0, 30)}...
                                 </div>
                                 <div className="flex gap-1">
                                   <button onClick={() => openMainLink(item.mainLink)} className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded">Open</button>
-                                  <button onClick={() => navigator.clipboard.writeText(item.mainLink) && alert('Copied!')} className="text-xs bg-yellow-600 hover:bg-yellow-500 text-white px-2 py-1 rounded">Copy</button>
+                                  <button onClick={() => copyToClipboard(item.mainLink)} className="text-xs bg-yellow-600 hover:bg-yellow-500 text-white px-2 py-1 rounded">Copy</button>
                                 </div>
                               </div>
                             ) : <span className="text-slate-500 text-xs italic">None</span>}
@@ -719,7 +751,16 @@ const EpisodesManager: React.FC = () => {
                                 {isEditing ? '❌ Cancel' : '🪶 Edit'}
                               </button>
                               {!isEditing && (
-                                <button onClick={() => handleDeleteItem(item._id, isManga ? item.chapterNumber : item.episodeNumber, item.session || 1)} className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-sm">🗑️ Delete</button>
+                                <button
+                                  onClick={() => setDeleteConfirm({
+                                    itemId: item._id,
+                                    itemNumber: isManga ? item.chapterNumber : item.episodeNumber,
+                                    session: item.session || 1
+                                  })}
+                                  className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-sm"
+                                >
+                                  🗑️ Delete
+                                </button>
                               )}
                             </div>
                           </td>

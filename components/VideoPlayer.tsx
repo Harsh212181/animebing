@@ -546,7 +546,10 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
 
   // ---- Title display logic ----
   const animeTitle = title || '';
-  const episodeStr = episode ? ` Ep ${episode}` : '';
+  
+  // Only append episode if it exists and is not an empty string
+  const hasEpisode = episode !== undefined && episode !== null && episode !== '';
+  const episodeStr = hasEpisode ? ` Ep ${episode}` : '';
   const fullTitle = `${animeTitle}${episodeStr}`;
   
   const MAX_TITLE_LEN = 30; // max characters for anime title before truncation
