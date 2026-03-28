@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+Sitemap: https://animebing.in/sitemap.xml
+
+User-agent: Googlebot
+Allow: /
+Crawl-delay: 1
