@@ -215,7 +215,7 @@ const generateAnimeKeywords = (anime: Anime): string => {
   return [...new Set(keywords)].join(', ');
 };
 
-// ✅ Generate structured data for Google
+// ✅ Generate structured data for Google (used locally and passed to SEO)
 const generateAnimeStructuredData = (anime: Anime) => {
   if (!anime) return null;
   
@@ -635,7 +635,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
           return;
         }
 
-        const fields = 'title,thumbnail,releaseYear,status,contentType,subDubStatus,description,genreList,seoTitle,seoDescription,seoKeywords,slug,likes,dislikes';
+        const fields = 'title,thumbnail,releaseYear,status,contentType,subDubStatus,description,genreList,seoTitle,seoDescription,seoKeywords,slug,likes,dislikes,createdAt,updatedAt';
         const fullAnimeData = await getAnimeByIdOrSlug(animeIdentifier, fields);
         
         if (fullAnimeData) {
@@ -667,6 +667,8 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
         ogImage: 'https://animebing.in/AnimeBinglogo.jpg',
         ogUrl: 'https://animebing.in/',
         canonicalUrl: 'https://animebing.in/', // ✅ Fixed canonical for error state
+        publishedTime: undefined,
+        modifiedTime: undefined,
       };
     }
 
@@ -701,6 +703,8 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
       ogImage: displayAnime.thumbnail || 'https://animebing.in/AnimeBinglogo.jpg',
       ogUrl: cleanCanonicalUrl, // ✅ Use clean URL for OG
       canonicalUrl: cleanCanonicalUrl, // ✅ CRITICAL: Pass canonical URL
+      publishedTime: displayAnime.createdAt,
+      modifiedTime: displayAnime.updatedAt,
     };
   };
 
@@ -952,15 +956,18 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
 
   return (
     <>
-      {/* ✅ FIXED: SEO COMPONENT WITH ALL REQUIRED PROPS */}
+      {/* ✅ FIXED: SEO COMPONENT WITH ALL REQUIRED PROPS (canonical, structuredData, timestamps) */}
       <SEO
         title={seoData.title}
         description={seoData.description}
         keywords={seoData.keywords}
         image={seoData.ogImage}
         url={seoData.ogUrl}
-        canonicalUrl={seoData.canonicalUrl}  // ✅ CRITICAL: Ab canonicalUrl pass ho raha hai
+        canonicalUrl={seoData.canonicalUrl}
         type="video.tv_show"
+        structuredData={generateAnimeStructuredData(displayAnime)}
+        publishedTime={seoData.publishedTime}
+        modifiedTime={seoData.modifiedTime}
       />
       
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">

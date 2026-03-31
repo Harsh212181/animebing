@@ -1,4 +1,4 @@
- // src/components/SEO.tsx - FINAL FIXED VERSION
+ // src/components/SEO.tsx - FINAL FIXED VERSION (with all updates)
 import { Helmet } from 'react-helmet-async';
 
 interface SEOProps {
@@ -65,19 +65,21 @@ const SEO: React.FC<SEOProps> = ({
   
   // Resolve final values using aliases if needed
   const finalOgImage = ogImage || image || defaultImage;
-  const finalOgUrl = ogUrl || url || siteUrl;  // ✅ Never use window.location.href for OG URL either
-  const finalContentType = contentType || type || 'website';
   
-  // ✅ FIXED: Canonical URL - Sirf canonicalUrl prop use karo
-  // Agar canonicalUrl prop nahi diya to site URL use karo
-  // Kabhi bhi window.location.href mat use karo!
-  const finalCanonicalUrl = canonicalUrl || siteUrl;
+  // ✅ UPDATE 2: OG URL fix - now uses canonicalUrl as fallback
+  const finalOgUrl = ogUrl || url || canonicalUrl || siteUrl;
+  
+  // ✅ UPDATE 1: Canonical URL fix - uses finalOgUrl as fallback
+  const finalCanonicalUrl = canonicalUrl || finalOgUrl || siteUrl;
+  
+  const finalContentType = contentType || type || 'website';
   
   return (
     <Helmet>
       {/* Basic Meta Tags */}
       <title>{fullTitle}</title>
-      <meta name="description" content={description.substring(0, 155)} />
+      {/* ✅ UPDATE 3: Description - crash safe with optional chaining and slice */}
+      <meta name="description" content={description?.slice(0, 155)} />
       <meta name="keywords" content={keywords} />
       
       {/* ✅ FIXED: Canonical URL - Always fixed, never current URL */}
@@ -86,7 +88,7 @@ const SEO: React.FC<SEOProps> = ({
       {/* Open Graph / Facebook */}
       <meta property="og:type" content={finalContentType} />
       <meta property="og:title" content={ogTitle || fullTitle} />
-      <meta property="og:description" content={ogDescription || description.substring(0, 155)} />
+      <meta property="og:description" content={ogDescription || description?.slice(0, 155)} />
       <meta property="og:image" content={finalOgImage} />
       <meta property="og:image:width" content="1200" />
       <meta property="og:image:height" content="630" />
@@ -102,7 +104,7 @@ const SEO: React.FC<SEOProps> = ({
       {/* Twitter */}
       <meta name="twitter:card" content={twitterCard} />
       <meta name="twitter:title" content={ogTitle || fullTitle} />
-      <meta name="twitter:description" content={ogDescription || description.substring(0, 155)} />
+      <meta name="twitter:description" content={ogDescription || description?.slice(0, 155)} />
       <meta name="twitter:image" content={finalOgImage} />
       <meta name="twitter:site" content="@animebing" />
       <meta name="twitter:creator" content="@animebing" />
@@ -118,6 +120,9 @@ const SEO: React.FC<SEOProps> = ({
       <meta name="robots" content={noIndex ? "noindex, nofollow" : "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"} />
       <meta name="googlebot" content={noIndex ? "noindex, nofollow" : "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1"} />
       <meta name="bingbot" content={noIndex ? "noindex, nofollow" : "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1"} />
+      
+      {/* ✅ UPDATE 4: Optional pro fix - better indexing control */}
+      <meta name="google" content="notranslate" />
       
       {/* Mobile Specific */}
       <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />

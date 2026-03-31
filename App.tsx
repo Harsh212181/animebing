@@ -1,6 +1,8 @@
- // App.tsx - UPDATED WITH DOWNLOAD LINK PAGE ROUTE & PRINT HIDDEN FOR ADMIN ELEMENTS
+ // App.tsx - FINAL FIXED VERSION (with HelmetProvider for dynamic meta tags)
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { HelmetProvider } from 'react-helmet-async'; // ✅ CRITICAL: For dynamic SEO tags
+
 import type { Anime, FilterType, ContentType, ContentTypeFilter } from './src/types';
 import Header from './components/Header';
 import Footer from './components/Footer';
@@ -15,24 +17,12 @@ import PrivacyPolicy from './components/PrivacyPolicy';
 import DMCA from './components/DMCA';
 import TermsAndConditions from './components/TermsAndConditions';
 import Contact from './components/Contact';
-import AnalyticsTracker from './src/components/AnalyticsTracker'; // ✅ GA4 ANALYTICS IMPORT
-
-// ✅ NEW IMPORT: AnimeDetailWrapper
+import AnalyticsTracker from './src/components/AnalyticsTracker';
 import AnimeDetailWrapper from './components/AnimeDetailWrapper';
-
-// ✅ NEW IMPORT: Top100Page
 import Top100Page from './components/Top100Page';
-
-// ✅ IMPORT: EarnMoney (merged page - contains both simple earn + promotion plan)
 import EarnMoney from './components/EarnMoney';
-
-// ✅ NEW IMPORT: WelcomePage for referral redirects
 import WelcomePage from './components/WelcomePage';
-
-// ✅ NEW IMPORT: DownloadLinkPage for grouped download pages
 import DownloadLinkPage from './components/DownloadLinkPage';
-
-// ❌ PromotionPlan import removed – now merged into EarnMoney
 
 // ✅ 404 ERROR PAGE COMPONENT
 const ErrorPage: React.FC = () => {
@@ -100,21 +90,18 @@ const ScrollToTop: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
   
   useEffect(() => {
-    // ✅ HAR PAGE CHANGE PAR TOP PAR SCROLL
     window.scrollTo({
       top: 0,
       left: 0,
       behavior: 'instant' as ScrollBehavior
     });
     
-    // ✅ EXTRA SAFETY: RequestAnimationFrame use karein
     requestAnimationFrame(() => {
       if (window.scrollY > 0) {
         window.scrollTo(0, 0);
       }
     });
     
-    // ✅ EXTRA SAFETY: 10ms baad bhi check karein
     const timer = setTimeout(() => {
       if (window.scrollY > 0) {
         window.scrollTo(0, 0);
@@ -122,7 +109,7 @@ const ScrollToTop: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     }, 10);
     
     return () => clearTimeout(timer);
-  }, [location.pathname, location.search]); // ✅ Path aur search params change hone par trigger hoga
+  }, [location.pathname, location.search]);
   
   return <>{children}</>;
 };
@@ -139,24 +126,14 @@ const MainApp: React.FC = () => {
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [isAppLoading, setIsAppLoading] = useState(true);
   
-  // ✅ SECRET CODE STATES (hint removed)
   const [typedText, setTypedText] = useState('');
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // ✅ SEARCH DEBOUNCE REF
   const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
-  // ✅ DUMMY FUNCTIONS FOR HEADER PROPS
-  const dummyFilterFunction = (filter: 'Hindi Dub' | 'Hindi Sub' | 'English Sub') => {
-    // Empty function because Header handles navigation itself
-  };
-
-  const dummyContentTypeFunction = (contentType: ContentType) => {
-    // Empty function because Header handles navigation itself
-  };
+  const dummyFilterFunction = (filter: 'Hindi Dub' | 'Hindi Sub' | 'English Sub') => {};
+  const dummyContentTypeFunction = (contentType: ContentType) => {};
 
   useEffect(() => {
-    // Sirf development mode mein logs show karein
     if (import.meta.env.DEV) {
       console.log('📍 URL Changed:', location.search);
       
@@ -188,7 +165,6 @@ const MainApp: React.FC = () => {
   }, [location.search, searchParams]);
 
   useEffect(() => {
-    // ✅ URL se state update karein (jab koi URL seedhe open kare)
     const urlContentType = searchParams.get('contentType') as ContentTypeFilter | null;
     const urlFilter = searchParams.get('filter') as FilterType | null;
     const urlSearchQuery = searchParams.get('search') || '';
@@ -217,7 +193,6 @@ const MainApp: React.FC = () => {
           setIsAdminAuthenticated(true);
         }
       } catch (error) {
-        // Sirf development mein error show karein
         if (import.meta.env.DEV) {
           console.error('App initialization error:', error);
         }
@@ -228,9 +203,8 @@ const MainApp: React.FC = () => {
     initializeApp();
   }, []);
 
-  // ✅ SECRET CODE KEYBOARD LISTENER - TYPE "2007harsh" OR PRESS Ctrl+Shift+Alt FOR DIRECT ADMIN (HINT REMOVED)
+  // ✅ SECRET CODE KEYBOARD LISTENER
   useEffect(() => {
-    // Helper to show the green success notification
     const showAdminNotification = () => {
       const notification = document.createElement('div');
       notification.style.cssText = `
@@ -253,13 +227,11 @@ const MainApp: React.FC = () => {
     };
 
     const handleKeyPress = (e: KeyboardEvent) => {
-      // Ignore if typing in an input or textarea
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
         return;
       }
 
-      // Secret code "2007harsh" (typed without modifiers)
       if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
         const newTypedText = (typedText + e.key).toLowerCase();
         setTypedText(newTypedText);
@@ -271,14 +243,12 @@ const MainApp: React.FC = () => {
           showAdminNotification();
         }
 
-        // Reset typing after 3 seconds of inactivity
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
         typingTimeoutRef.current = setTimeout(() => {
           setTypedText('');
         }, 3000);
       }
 
-      // DIRECT SHORTCUT: Ctrl + Shift + Alt
       if (e.ctrlKey && e.shiftKey && e.altKey) {
         e.preventDefault();
         setAdminView('login');
@@ -306,17 +276,14 @@ const MainApp: React.FC = () => {
     localStorage.removeItem('adminUsername');
     setIsAdminAuthenticated(false);
     setAdminView(null);
-    // Home page par redirect karein
     window.location.href = window.location.origin + '/';
   };
 
   const handleAnimeSelect = (anime: Anime) => {
-    // ✅ FIXED: Use anime.slug if available, else use anime.id
     const identifier = anime.slug || anime.id || anime._id;
     if (identifier) {
       navigate(`/detail/${identifier}`);
       
-      // ✅ INSTANT SCROLL TO TOP ON ANIME SELECT
       requestAnimationFrame(() => {
         window.scrollTo({
           top: 0,
@@ -335,16 +302,13 @@ const MainApp: React.FC = () => {
     navigate('/');
   };
 
-  // ✅ FIXED: handleSearchChange WITHOUT PAGE RELOAD
   const handleSearchChange = useCallback((query: string) => {
     setSearchQuery(query);
     
-    // Debounce the search to avoid rapid updates
     if (searchDebounceRef.current) {
       clearTimeout(searchDebounceRef.current);
     }
     
-    // Update URL without reloading page
     searchDebounceRef.current = setTimeout(() => {
       const params = new URLSearchParams(window.location.search);
       
@@ -354,15 +318,13 @@ const MainApp: React.FC = () => {
         params.delete('search');
       }
       
-      // Update URL without reloading page
       const newUrl = `${window.location.pathname}${params.toString() ? '?' + params.toString() : ''}`;
       window.history.pushState({}, '', newUrl);
       
-      // Log in development only
       if (import.meta.env.DEV) {
         console.log('🔍 Search updated to:', query);
       }
-    }, 400); // 400ms debounce
+    }, 400);
   }, []);
   
   const handleFilterChange = (newFilter: FilterType) => {
@@ -384,7 +346,6 @@ const MainApp: React.FC = () => {
       setSearchQuery('');
     }
     
-    // ✅ INSTANT SCROLL TO TOP ON NAVIGATION
     requestAnimationFrame(() => {
       window.scrollTo({
         top: 0,
@@ -457,7 +418,6 @@ const MainApp: React.FC = () => {
           0%, 100% { opacity: 0.3; }
           50% { opacity: 1; }
         }
-        /* ✅ FIXED: Green border styling - keep for other elements but removed from main container */
         .glow-green-border {
           border: 2px solid rgba(115, 245, 138, 0.5);
           box-shadow: 0 0 20px rgba(115, 245, 138, 0.3);
@@ -473,8 +433,6 @@ const MainApp: React.FC = () => {
         .border-green-custom-30 {
           border-color: rgba(115, 245, 138, 0.3);
         }
-        /* ✅ REMOVED: Main content container border styling */
-        /* ✅ FORCE SCROLL TO TOP STYLES */
         html {
           scroll-behavior: auto !important;
         }
@@ -483,12 +441,9 @@ const MainApp: React.FC = () => {
         }
       `}</style>
       
-      {/* ✅ GA4 ANALYTICS TRACKER - UTM FIX KA MANTRA */}
       <AnalyticsTracker />
       
-      {/* ✅ ScrollToTop component wrap karein */}
       <ScrollToTop>
-        {/* ✅ Header ko sabhi 5 props dein - Updated with top100 navigation */}
         <Header 
           onSearchChange={handleSearchChange} 
           searchQuery={searchQuery}
@@ -497,9 +452,7 @@ const MainApp: React.FC = () => {
           onContentTypeNavigate={dummyContentTypeFunction}
         />
         
-        {/* ✅ MAIN CONTAINER WITHOUT GREEN BORDER - MORE SPACE FOR ANIME CARDS */}
-        <main className="container mx-auto px-2 py-2"> {/* ✅ Reduced padding even more */}
-          {/* ✅ REMOVED: glow-green-border class for more space */}
+        <main className="container mx-auto px-2 py-2">
           <div 
             className="rounded-xl"
             style={{
@@ -519,23 +472,18 @@ const MainApp: React.FC = () => {
                 </div>
               } />
               
-              {/* ✅ Anime List Route */}
               <Route path="/anime" element={
                 <div className="rounded-lg overflow-hidden">
-                  <AnimeListPage 
-                    onAnimeSelect={handleAnimeSelect}
-                  />
+                  <AnimeListPage onAnimeSelect={handleAnimeSelect} />
                 </div>
               } />
               
-              {/* ✅ FIXED: Anime Detail Route with ID/Slug Support */}
               <Route path="/detail/:idOrSlug" element={
                 <div className="rounded-lg overflow-hidden">
                   <AnimeDetailWrapper />
                 </div>
               } />
               
-              {/* ✅ NEW: Top 100 Rankings Route */}
               <Route path="/top-100" element={
                 <div className="rounded-lg overflow-hidden">
                   <Top100Page 
@@ -545,7 +493,6 @@ const MainApp: React.FC = () => {
                 </div>
               } />
               
-              {/* ✅ FIXED: Both Download Routes Added */}
               <Route path="/download" element={
                 <div className="rounded-lg overflow-hidden">
                   <DownloadRedirectPage />
@@ -557,14 +504,12 @@ const MainApp: React.FC = () => {
                 </div>
               } />
               
-              {/* ✅ NEW: Download Link Page Route for grouped episodes */}
               <Route path="/download/:slug" element={
                 <div className="rounded-lg overflow-hidden">
                   <DownloadLinkPage />
                 </div>
               } />
               
-              {/* Other Pages with Green Outline - KEEP border for these */}
               <Route path="/privacy" element={
                 <div className="rounded-lg overflow-hidden glow-green-border">
                   <PrivacyPolicy />
@@ -585,29 +530,21 @@ const MainApp: React.FC = () => {
                   <Contact />
                 </div>
               } />
-
-              {/* ✅ NEW: Earn Money Page (merged with Promotion Plan) */}
               <Route path="/earn-money" element={
                 <div className="rounded-lg overflow-hidden glow-green-border">
                   <EarnMoney />
                 </div>
               } />
-
-              {/* ✅ Promotion Plan now shows the same merged EarnMoney page */}
               <Route path="/promotion-plan" element={
                 <div className="rounded-lg overflow-hidden glow-green-border">
                   <EarnMoney />
                 </div>
               } />
-              
-              {/* ✅ NEW: Welcome Page for Referral Redirects - NOW REDIRECTS TO HOME */}
               <Route path="/welcome" element={
                 <div className="rounded-lg overflow-hidden glow-green-border">
                   <WelcomePage />
                 </div>
               } />
-              
-              {/* ✅ 404 ERROR PAGE FOR NON-EXISTENT ROUTES */}
               <Route path="*" element={
                 <div className="rounded-lg overflow-hidden glow-green-border">
                   <ErrorPage />
@@ -619,18 +556,19 @@ const MainApp: React.FC = () => {
         
         <Footer />
         <ScrollToTopButton />
-        
-        {/* ❌ Secret Code Hint Removed – No hint box shown anymore */}
       </ScrollToTop>
     </div>
   );
 };
 
+// ✅ FINAL APP WITH HELMETPROVIDER WRAPPER
 const App: React.FC = () => {
   return (
-    <Router>
-      <MainApp />
-    </Router>
+    <HelmetProvider>
+      <Router>
+        <MainApp />
+      </Router>
+    </HelmetProvider>
   );
 };
 
