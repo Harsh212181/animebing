@@ -1,4 +1,4 @@
- import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy } from 'react';
 import { FaInstagram, FaTelegram } from 'react-icons/fa';
 import EarnMoneySimple from './EarnMoneySimple';
 import Spinner from './Spinner';
@@ -21,7 +21,7 @@ const EarnMoney: React.FC = () => {
         <PromotionPlanDetail />
       </Suspense>
 
-      {/* ✅ JOIN PROMOTION PROGRAM BUTTON - NOW AT THE END */}
+      {/* ✅ JOIN PROMOTION PROGRAM BUTTON - WITH RELIABLE CONVERSION TRACKING */}
       <div className="flex justify-center pt-4">
         <a
           href="https://forms.gle/puPzBEdmuzhunheFA"
@@ -29,6 +29,20 @@ const EarnMoney: React.FC = () => {
           rel="noopener noreferrer"
           className="inline-block bg-gradient-to-r from-green-500 to-green-600 hover:from-green-400 hover:to-green-500 text-white font-bold py-2 px-4 sm:py-4 sm:px-8 rounded-full text-base sm:text-xl shadow-lg transform transition-all hover:scale-105 border-2 border-green-300/50 glow-green-border whitespace-nowrap"
           style={{ boxShadow: '0 0 20px rgba(34, 197, 94, 0.5)' }}
+          onClick={(e) => {
+            e.preventDefault(); // Stop the immediate redirect
+
+            if (window.gtag) {
+              window.gtag('event', 'conversion', {
+                send_to: 'AW-17992389992/xxyDCN7J0IkcEOiquIND'
+              });
+            }
+
+            // Small delay to ensure the conversion event fires before redirect
+            setTimeout(() => {
+              window.open('https://forms.gle/puPzBEdmuzhunheFA', '_blank');
+            }, 300);
+          }}
         >
           🚀 Join Promotion Program
         </a>
