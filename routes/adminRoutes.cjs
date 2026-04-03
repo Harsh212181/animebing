@@ -1,4 +1,4 @@
- // routes/adminRoutes.cjs - AD FREE VERSION (UPDATED WITH EPISODE STATUS MANAGER)
+// routes/adminRoutes.cjs - AD FREE VERSION (UPDATED WITH EPISODE STATUS MANAGER & FIXED SORTING)
 const express = require('express');
 const router = express.Router();
 const Anime = require('../models/Anime.cjs');
@@ -83,9 +83,7 @@ router.delete('/delete-anime', async (req, res) => {
   }
 });
 
-// ✅ EPISODE STATUS MANAGEMENT (NEW ROUTES)
-
-// PATCH: Manually update episode status (totalEpisodes and/or currentEpisode)
+// ✅ EPISODE STATUS MANAGEMENT (UPDATED WITH lastContentAdded UPDATE)
 router.patch('/anime/:id/episode-status', async (req, res) => {
   try {
     const { id } = req.params;
@@ -105,9 +103,12 @@ router.patch('/anime/:id/episode-status', async (req, res) => {
       return res.status(404).json({ error: 'Anime not found' });
     }
 
+    // ✅ CRITICAL FIX: Update lastContentAdded so this anime moves to top on homepage
+    await Anime.updateLastContent(id);
+
     res.json({
       success: true,
-      message: 'Episode status updated successfully!',
+      message: 'Episode status updated successfully! Anime will now appear first on homepage.',
       anime: updatedAnime
     });
   } catch (err) {
@@ -116,7 +117,7 @@ router.patch('/anime/:id/episode-status', async (req, res) => {
   }
 });
 
-// POST: Auto-sync currentEpisode with actual episode count
+// ✅ POST: Auto-sync currentEpisode with actual episode count (also updates lastContentAdded)
 router.post('/anime/:id/sync-episode-count', async (req, res) => {
   try {
     const { id } = req.params;
@@ -134,9 +135,12 @@ router.post('/anime/:id/sync-episode-count', async (req, res) => {
       return res.status(404).json({ error: 'Anime not found' });
     }
 
+    // ✅ Also update lastContentAdded when syncing
+    await Anime.updateLastContent(id);
+
     res.json({
       success: true,
-      message: `Current episode synced to ${episodeCount}`,
+      message: `Current episode synced to ${episodeCount}. Anime moved to top.`,
       anime: updatedAnime
     });
   } catch (err) {
@@ -146,8 +150,6 @@ router.post('/anime/:id/sync-episode-count', async (req, res) => {
 });
 
 // ✅ EPISODE MANAGEMENT ROUTES (UPDATED FOR MULTIPLE DOWNLOAD LINKS)
-
-// Edit episode (UPDATED FOR MULTIPLE DOWNLOAD LINKS)
 router.put('/edit-episode/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -159,17 +161,13 @@ router.put('/edit-episode/:id', async (req, res) => {
       downloadLinksCount: downloadLinks ? downloadLinks.length : 0
     });
 
-    // ✅ Validate downloadLinks if provided
     if (downloadLinks !== undefined) {
       if (!Array.isArray(downloadLinks) || downloadLinks.length === 0) {
         return res.status(400).json({ error: 'At least one download link is required' });
       }
-
       if (downloadLinks.length > 5) {
         return res.status(400).json({ error: 'Maximum 5 download links allowed' });
       }
-
-      // Validate each download link
       for (let i = 0; i < downloadLinks.length; i++) {
         const link = downloadLinks[i];
         if (!link.name || !link.url) {
@@ -185,7 +183,6 @@ router.put('/edit-episode/:id', async (req, res) => {
     if (typeof secureFileReference !== 'undefined') updateData.secureFileReference = secureFileReference;
     if (typeof session !== 'undefined') updateData.session = session;
     
-    // ✅ Handle downloadLinks update
     if (downloadLinks !== undefined) {
       updateData.downloadLinks = downloadLinks.map((link, index) => ({
         name: link.name || `Download Link ${index + 1}`,
@@ -203,7 +200,6 @@ router.put('/edit-episode/:id', async (req, res) => {
 
     if (!episode) return res.status(404).json({ error: 'Episode not found' });
 
-    // ✅ Update anime's lastContentAdded for homepage priority
     await Anime.updateLastContent(episode.animeId);
 
     res.json({ 
@@ -220,7 +216,7 @@ router.put('/edit-episode/:id', async (req, res) => {
   }
 });
 
-// ✅ NEW ROUTE: Edit chapter (FOR MULTIPLE DOWNLOAD LINKS)
+// ✅ EDIT CHAPTER
 router.put('/edit-chapter/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -232,17 +228,13 @@ router.put('/edit-chapter/:id', async (req, res) => {
       downloadLinksCount: downloadLinks ? downloadLinks.length : 0
     });
 
-    // ✅ Validate downloadLinks if provided
     if (downloadLinks !== undefined) {
       if (!Array.isArray(downloadLinks) || downloadLinks.length === 0) {
         return res.status(400).json({ error: 'At least one download link is required' });
       }
-
       if (downloadLinks.length > 5) {
         return res.status(400).json({ error: 'Maximum 5 download links allowed' });
       }
-
-      // Validate each download link
       for (let i = 0; i < downloadLinks.length; i++) {
         const link = downloadLinks[i];
         if (!link.name || !link.url) {
@@ -258,7 +250,6 @@ router.put('/edit-chapter/:id', async (req, res) => {
     if (typeof secureFileReference !== 'undefined') updateData.secureFileReference = secureFileReference;
     if (typeof session !== 'undefined') updateData.session = session;
     
-    // ✅ Handle downloadLinks update
     if (downloadLinks !== undefined) {
       updateData.downloadLinks = downloadLinks.map((link, index) => ({
         name: link.name || `Download Link ${index + 1}`,
@@ -276,7 +267,6 @@ router.put('/edit-chapter/:id', async (req, res) => {
 
     if (!chapter) return res.status(404).json({ error: 'Chapter not found' });
 
-    // ✅ Update manga's lastContentAdded for homepage priority
     await Anime.updateLastContent(chapter.mangaId);
 
     res.json({ 
@@ -294,19 +284,14 @@ router.put('/edit-chapter/:id', async (req, res) => {
 });
 
 // ✅ REPORT MANAGEMENT ROUTES
-
-// Get all reports
 router.get('/reports', async (req, res) => {
   try {
     console.log('📋 Admin fetching reports...');
-    
     const reports = await Report.find()
       .populate('animeId', 'title thumbnail')
       .populate('resolvedBy', 'username')
       .sort({ createdAt: -1 });
-    
     console.log(`✅ Found ${reports.length} reports for admin`);
-    
     res.json(reports);
   } catch (err) {
     console.error('❌ Admin reports error:', err);
@@ -314,7 +299,6 @@ router.get('/reports', async (req, res) => {
   }
 });
 
-// Update report status with response - FIXED VERSION
 router.put('/reports/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -328,7 +312,6 @@ router.put('/reports/:id', async (req, res) => {
       })
     };
 
-    // ✅ FIXED: Server automatically sets resolvedBy from admin token
     if (status === 'Fixed') {
       updateData.resolvedAt = new Date();
       updateData.resolvedBy = req.admin.id;
@@ -351,31 +334,21 @@ router.put('/reports/:id', async (req, res) => {
   }
 });
 
-// ✅ DELETE single report
 router.delete('/reports/:id', async (req, res) => {
   try {
     const { id } = req.params;
     console.log('🗑️ Deleting report with ID:', id);
-
     const report = await Report.findById(id);
-    if (!report) {
-      return res.status(404).json({ error: 'Report not found' });
-    }
-
+    if (!report) return res.status(404).json({ error: 'Report not found' });
     await Report.findByIdAndDelete(id);
-    
     console.log('✅ Report deleted successfully');
-    res.json({ 
-      success: true, 
-      message: 'Report deleted successfully!' 
-    });
+    res.json({ success: true, message: 'Report deleted successfully!' });
   } catch (err) {
     console.error('❌ Delete report error:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ✅ BULK DELETE reports
 router.post('/reports/bulk-delete', async (req, res) => {
   try {
     const { reportIds } = req.body;
@@ -390,8 +363,6 @@ router.post('/reports/bulk-delete', async (req, res) => {
 });
 
 // ✅ SOCIAL MEDIA MANAGEMENT ROUTES
-
-// Get social media links
 router.get('/social-media', async (req, res) => {
   try {
     const socialLinks = await SocialMedia.find();
@@ -401,25 +372,22 @@ router.get('/social-media', async (req, res) => {
   }
 });
 
-// Update social media link
 router.put('/social-media/:platform', async (req, res) => {
   try {
     const { platform } = req.params;
     const { url, isActive } = req.body;
-    
     const socialLink = await SocialMedia.findOneAndUpdate(
       { platform },
       { url, isActive },
       { new: true, upsert: true }
     );
-    
     res.json(socialLink);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ✅ ANALYTICS ROUTE (SIMPLIFIED VERSION WITHOUT AD DATA)
+// ✅ ANALYTICS ROUTE (SIMPLIFIED)
 router.get('/analytics', async (req, res) => {
   try {
     const totalAnimes = await Anime.countDocuments({ contentType: 'Anime' });
@@ -438,7 +406,6 @@ router.get('/analytics', async (req, res) => {
       totalChapters,
       totalReports,
       pendingReports,
-      // Basic stats without ad data
       todayUsers: 0,
       totalUsers: 0,
       todayEarnings: 0,
@@ -448,10 +415,7 @@ router.get('/analytics', async (req, res) => {
     });
   } catch (err) {
     console.error('Analytics error:', err);
-    res.status(500).json({ 
-      success: false,
-      error: err.message 
-    });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -460,26 +424,18 @@ router.get('/user-info', async (req, res) => {
   try {
     const Admin = require('../models/Admin.cjs');
     const admin = await Admin.findById(req.admin.id);
-    res.json({
-      username: admin.username,
-      email: admin.email
-    });
+    res.json({ username: admin.username, email: admin.email });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ✅ NEW ROUTE: Get episode details for editing (including download links)
+// ✅ GET episode details for editing
 router.get('/episode/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    
     const episode = await Episode.findById(id);
-    
-    if (!episode) {
-      return res.status(404).json({ error: 'Episode not found' });
-    }
-    
+    if (!episode) return res.status(404).json({ error: 'Episode not found' });
     res.json({
       success: true,
       episode: {
@@ -498,17 +454,12 @@ router.get('/episode/:id', async (req, res) => {
   }
 });
 
-// ✅ NEW ROUTE: Get chapter details for editing (including download links)
+// ✅ GET chapter details for editing
 router.get('/chapter/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    
     const chapter = await Chapter.findById(id);
-    
-    if (!chapter) {
-      return res.status(404).json({ error: 'Chapter not found' });
-    }
-    
+    if (!chapter) return res.status(404).json({ error: 'Chapter not found' });
     res.json({
       success: true,
       chapter: {
