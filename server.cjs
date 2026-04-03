@@ -1,4 +1,4 @@
- // server.cjs - UPDATED WITH BOT HANDLING FOR META TAGS + DEBUG LOGS + FALLBACK + CACHE CONTROL HEADERS
+// server.cjs - UPDATED WITH FIXED BOT HANDLING FOR META TAGS + DIRECT DB QUERY
 // ✅ EPISODE ROUTE REMOVED AS PER YOUR INSTRUCTION (only detail page SEO)
 const express = require('express');
 const path = require('path');
@@ -11,7 +11,7 @@ const { generalLimiter, authLimiter, adminLimiter, apiLimiter } = require('./mid
 
 // ✅ BOT DETECTION AND META SERVICES
 const isBot = require('./middleware/botDetect.cjs');
-const { getAnimeMeta } = require('./services/metaService.cjs'); // episode meta import removed
+const { getAnimeMeta } = require('./services/metaService.cjs'); // kept for reference, but we use direct DB
 const generateMetaHTML = require('./utils/generateMetaHTML.cjs');
 
 // ✅ IMPORT MIDDLEWARE AND ROUTES
@@ -45,28 +45,61 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // ============================================
-// ✅ BOT HANDLING FOR DETAIL PAGE ONLY (as requested)
+// ✅ BOT HANDLING FOR DETAIL PAGE - DIRECT DATABASE QUERY (FIXED)
 // ============================================
 app.get('/detail/:slug', async (req, res, next) => {
   const userAgent = req.headers['user-agent'];
-  console.log(`🔍 DETAIL ROUTE HIT: slug=${req.params.slug}, isBot=${isBot(userAgent)}, UA=${userAgent?.substring(0, 50)}`);
+  const isBotRequest = isBot(userAgent);
+  
+  // Force bot mode for testing (add ?bot=true to URL)
+  const forceBot = req.query.bot === 'true';
+  
+  console.log(`🔍 DETAIL ROUTE: slug=${req.params.slug}, isBot=${isBotRequest}, forceBot=${forceBot}, UA=${userAgent?.substring(0, 70)}`);
 
-  if (isBot(userAgent)) {
+  if (isBotRequest || forceBot) {
     try {
-      const meta = await getAnimeMeta(req.params.slug);
-      console.log('📦 getAnimeMeta result:', meta ? 'found' : 'null');
-      if (meta) {
+      // Directly fetch anime from database
+      const Anime = require('./models/Anime.cjs');
+      const anime = await Anime.findOne({ slug: req.params.slug })
+        .select('title description seoDescription thumbnail contentType currentEpisode totalEpisodes');
+      
+      if (anime) {
+        // ✅ FIXED: Prioritize 'description' field over 'seoDescription' (real description)
+        let realDescription = anime.description || anime.seoDescription;
+        if (!realDescription || realDescription.trim() === '') {
+          realDescription = `Watch ${anime.title} online in HD quality. Free streaming and downloads.`;
+        }
+        
+        // Title with episode count for non-movies
+        let titleWithSuffix = anime.title;
+        if (anime.contentType === 'Movie') {
+          titleWithSuffix += ' (Movie)';
+        } else if (anime.contentType === 'Manga') {
+          titleWithSuffix += ' Manga';
+        } else {
+          const epCount = anime.currentEpisode || anime.totalEpisodes;
+          if (epCount && epCount > 0) titleWithSuffix += ` EP ${epCount}`;
+        }
+        
+        const meta = {
+          title: `${titleWithSuffix} | AnimeBing`,
+          description: realDescription,
+          image: anime.thumbnail || 'https://animebing.in/AnimeBinglogo.jpg',
+          url: `https://animebing.in/detail/${req.params.slug}`,
+          type: 'video.tv_show'
+        };
+        
         const html = generateMetaHTML(meta);
-        console.log(`📄 Generated HTML length: ${html.length}`);
-        // Prevent CDN/proxy from caching this response
+        console.log(`✅ BOT: Serving custom meta for "${anime.title}" (desc length: ${realDescription.length})`);
         res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-        res.set('X-Bot-Handler', 'true');
+        res.set('X-Bot-Handler', 'direct-db');
         return res.send(html);
       } else {
-        console.log('⚠️ No meta found for slug, serving fallback');
+        console.log(`⚠️ BOT: Anime not found for slug "${req.params.slug}"`);
+        // Fallback: use slug as title
         const fallbackMeta = {
           title: req.params.slug.replace(/-/g, ' ') + ' - AnimeBing',
-          description: 'Watch this anime online in HD quality. Free streaming and downloads.',
+          description: `Watch ${req.params.slug.replace(/-/g, ' ')} online in HD quality. Free streaming and downloads.`,
           image: 'https://animebing.in/AnimeBinglogo.jpg',
           url: `https://animebing.in/detail/${req.params.slug}`,
           type: 'website'
@@ -78,20 +111,21 @@ app.get('/detail/:slug', async (req, res, next) => {
       }
     } catch (err) {
       console.error('❌ Error in bot route:', err);
-      const fallbackMeta = {
+      const errorMeta = {
         title: 'Anime Details - AnimeBing',
         description: 'Watch anime online in HD quality. Free streaming and downloads.',
         image: 'https://animebing.in/AnimeBinglogo.jpg',
         url: `https://animebing.in/detail/${req.params.slug}`,
         type: 'website'
       };
-      const html = generateMetaHTML(fallbackMeta);
+      const html = generateMetaHTML(errorMeta);
       res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.set('X-Bot-Handler', 'error-fallback');
       return res.send(html);
     }
   }
-  console.log('➡️ Not a bot, passing to next middleware');
+  
+  console.log('➡️ Not a bot, passing to React app');
   next();
 });
 
@@ -1536,6 +1570,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('===============================================');
   console.log('🤖 BOT META TAGS ENABLED FOR:');
   console.log('   - GET /detail/:slug (episode route removed as per instruction)');
+  console.log('   - Force bot mode: add ?bot=true to URL for testing');
   console.log('===============================================');
   console.log('🔍 DEBUG ENDPOINTS:');
   console.log('   - GET /api/debug/vote-system - Debug vote system');

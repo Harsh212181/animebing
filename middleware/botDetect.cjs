@@ -1,38 +1,53 @@
- // middleware/botDetect.cjs
+// middleware/botDetect.cjs
+// ✅ Enhanced bot detection for SEO (Googlebot, Bingbot, social media crawlers, etc.)
 
-const botUserAgents = [
+const BOT_USER_AGENTS = [
+  // Search engines
   'googlebot',
   'bingbot',
-  'yandexbot',
-  'baiduspider',
+  'slurp',           // Yahoo
   'duckduckbot',
-
-  'facebookexternalhit',
+  'baiduspider',
+  'yandexbot',
   'facebot',
-
+  'facebookexternalhit',
   'twitterbot',
-
   'linkedinbot',
-
-  'telegrambot',
-
-  'whatsapp',
-
-  'discordbot',
-
-  'slackbot',
-
-  'applebot',
-
-  'embedly',
   'pinterest',
-  'vkshare',
-  'quora link preview'
+  'telegrambot',
+  'discordbot',
+  'whatsapp',
+  'slackbot',
+  'applebot',
+  'rogerbot',        // Moz
+  'embedly',
+  'quora link preview',
+  'showyoubot',
+  'outbrain',
+  'pinterest/0.',
+  'developers.google.com',
+  'bot',
+  'crawl',
+  'spider',
+  'scraper',
+  'curl',
+  'wget',
+  'python-requests',
+  'go-http-client',
+  'php',
+  'java',
+  'perl',
+  'ruby',
+  'node-fetch',
+  'okhttp',
+  'axios',
+  'http',
 ];
 
-function isBot(userAgent = '') {
+function isBot(userAgent) {
+  if (!userAgent) return false;
   const ua = userAgent.toLowerCase();
-  return botUserAgents.some(bot => ua.includes(bot));
+  return BOT_USER_AGENTS.some(bot => ua.includes(bot));
 }
 
 module.exports = isBot;
