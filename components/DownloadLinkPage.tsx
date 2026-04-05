@@ -1,6 +1,6 @@
  import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { FaArrowLeft, FaDownload, FaPlay, FaFilm, FaTv } from 'react-icons/fa';
+import { FaDownload, FaPlay, FaFilm, FaTv } from 'react-icons/fa';
 import Spinner from './Spinner';
 import VideoPlayer from './VideoPlayer';
 import { DownloadPage, Anime } from '../src/types';
@@ -106,7 +106,7 @@ const DownloadLinkPage: React.FC = () => {
   const [page, setPage] = useState<DownloadPage | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState<TabType>('download');
+  const [activeTab, setActiveTab] = useState<TabType>('watch');
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
   // Always an object (Anime) or null – never a string
@@ -338,14 +338,7 @@ const DownloadLinkPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900/20 to-black py-8 px-4">
       <div className="w-full max-w-7xl mx-auto">
-        {/* Back button */}
-        <button
-          onClick={() => navigate(-1)}
-          className="group mb-6 flex items-center text-gray-400 hover:text-purple-400 transition-all duration-200"
-        >
-          <FaArrowLeft className="mr-2 group-hover:-translate-x-1 transition-transform" />
-          <span className="font-medium">Back</span>
-        </button>
+        {/* Back button removed */}
 
         {/* Mobile detail card */}
         <div className="lg:hidden mb-6">
@@ -547,39 +540,16 @@ const DownloadLinkPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Header with page title */}
+        {/* Header with page title - no icon */}
         <div className="mb-4">
-          <div className="flex items-center mt-2 text-gray-400">
-            {isMovie ? (
-              <FaFilm className="mr-2 text-purple-500" />
-            ) : (
-              <FaTv className="mr-2 text-purple-500" />
-            )}
-            <span className="text-lg font-medium bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-              {page.title}
-            </span>
-          </div>
+          <span className="text-lg font-medium bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+            {page.title}
+          </span>
         </div>
 
-        {/* Tabs */}
+        {/* Tabs - WATCH first, DOWNLOAD second */}
         <div className="flex border-b border-gray-800 mb-6">
-          <button
-            onClick={() => setActiveTab('download')}
-            className={`flex items-center px-6 py-3 font-medium text-sm sm:text-base transition-all relative ${
-              activeTab === 'download'
-                ? 'text-purple-400'
-                : 'text-gray-500 hover:text-gray-300'
-            }`}
-          >
-            <FaDownload className={`mr-2 ${activeTab === 'download' ? 'text-purple-400' : ''}`} />
-            Download
-            <span className="ml-2 bg-gray-800 text-xs px-2 py-0.5 rounded-full">
-              {downloadLinks.length}
-            </span>
-            {activeTab === 'download' && (
-              <span className="absolute bottom-0 left-0 w-full h-0.5 bg-gradient-to-r from-purple-600 to-pink-600 rounded-t-full"></span>
-            )}
-          </button>
+          {/* Watch tab (first) */}
           <button
             onClick={() => setActiveTab('watch')}
             className={`flex items-center px-6 py-3 font-medium text-sm sm:text-base transition-all relative ${
@@ -597,29 +567,28 @@ const DownloadLinkPage: React.FC = () => {
               <span className="absolute bottom-0 left-0 w-full h-0.5 bg-gradient-to-r from-purple-600 to-pink-600 rounded-t-full"></span>
             )}
           </button>
+
+          {/* Download tab (second) */}
+          <button
+            onClick={() => setActiveTab('download')}
+            className={`flex items-center px-6 py-3 font-medium text-sm sm:text-base transition-all relative ${
+              activeTab === 'download'
+                ? 'text-purple-400'
+                : 'text-gray-500 hover:text-gray-300'
+            }`}
+          >
+            <FaDownload className={`mr-2 ${activeTab === 'download' ? 'text-purple-400' : ''}`} />
+            Download
+            <span className="ml-2 bg-gray-800 text-xs px-2 py-0.5 rounded-full">
+              {downloadLinks.length}
+            </span>
+            {activeTab === 'download' && (
+              <span className="absolute bottom-0 left-0 w-full h-0.5 bg-gradient-to-r from-purple-600 to-pink-600 rounded-t-full"></span>
+            )}
+          </button>
         </div>
 
-        {/* Download links */}
-        {activeTab === 'download' && (
-          <div className="space-y-3">
-            {downloadLinks.length === 0 ? (
-              <p className="text-center text-gray-500 py-8">No download links available.</p>
-            ) : (
-              downloadLinks.map((link, idx) => (
-                <LinkCard
-                  key={idx}
-                  link={link}
-                  isMovie={isMovie}
-                  onAction={() => window.open(link.url, '_blank')}
-                  actionIcon={<FaDownload />}
-                  actionLabel="Download"
-                />
-              ))
-            )}
-          </div>
-        )}
-
-        {/* Watch links */}
+        {/* Watch links - shown when activeTab === 'watch' */}
         {activeTab === 'watch' && (
           <div className="space-y-3">
             {watchLinks.length === 0 ? (
@@ -637,7 +606,6 @@ const DownloadLinkPage: React.FC = () => {
                   />
                   {selectedIndex === idx && (
                     <div className="mt-2 rounded-xl overflow-hidden shadow-2xl border border-purple-500/30 animate-fadeIn">
-                      {/* 👇 Only pass episode if it's NOT a movie */}
                       <VideoPlayer 
                         src={link.url} 
                         title={title} 
@@ -646,6 +614,26 @@ const DownloadLinkPage: React.FC = () => {
                     </div>
                   )}
                 </React.Fragment>
+              ))
+            )}
+          </div>
+        )}
+
+        {/* Download links - shown when activeTab === 'download' */}
+        {activeTab === 'download' && (
+          <div className="space-y-3">
+            {downloadLinks.length === 0 ? (
+              <p className="text-center text-gray-500 py-8">No download links available.</p>
+            ) : (
+              downloadLinks.map((link, idx) => (
+                <LinkCard
+                  key={idx}
+                  link={link}
+                  isMovie={isMovie}
+                  onAction={() => window.open(link.url, '_blank')}
+                  actionIcon={<FaDownload />}
+                  actionLabel="Download"
+                />
               ))
             )}
           </div>

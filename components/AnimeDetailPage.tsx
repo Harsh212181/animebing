@@ -1,4 +1,6 @@
  // components/AnimeDetailPage.tsx - FINAL FIXED VERSION + MULTIPLE DOWNLOAD PAGES PER EPISODE (DEV ONLY)
+// MODIFICATION: Changed button text from "Download" to "Watch" (functionality remains download)
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom'; // ✅ ADDED for internal navigation
 import type { Anime, Episode, Chapter, DownloadPage } from '../src/types'; // ✅ ADDED DownloadPage
@@ -889,7 +891,8 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     );
   };
 
-  // ✅ UPDATED: Download button component - NEW PROFESSIONAL DESIGN + MOBILE SIZING
+  // ✅ UPDATED: Download button component - TEXT CHANGED FROM "Download" TO "Watch"
+  // MODIFICATION: Changed button label from "Download" to "Watch" while keeping download functionality
   const DownloadButton: React.FC<{ 
     item: Episode | Chapter; 
     className?: string;
@@ -910,9 +913,9 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
             alert(`⚠️ No active download links available.`);
           }}
           className={`${className} opacity-70 cursor-not-allowed`}
-          title="Download links disabled"
+          title="Watch links disabled"
           disabled
-          aria-label="Download links disabled"
+          aria-label="Watch links disabled"
         >
           {showText ? 'Disabled' : <DownloadIcon className={iconClassName} />}
         </button>
@@ -923,9 +926,9 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
       <button
         onClick={() => handleDownloadClick(item)}
         className={`${className} ${downloadingItem === itemId ? 'animate-pulse' : ''} group`}
-        title="Download"
+        title="Watch now (download)"
         disabled={downloadingItem === itemId || linkSettingsLoading}
-        aria-label="Download"
+        aria-label="Watch now (download)"
       >
         {downloadingItem === itemId ? (
           showText ? (
@@ -940,7 +943,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
         ) : (
           <>
             <DownloadIcon className={`${iconClassName} group-hover:scale-110 transition-transform`} />
-            {showText && <span>Download</span>}
+            {showText && <span>Watch</span>}  {/* ✅ Changed from "Download" to "Watch" */}
           </>
         )}
       </button>
@@ -1176,7 +1179,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                               </h3>
                             </div>
                             <div className="flex gap-1 flex-shrink-0">
-                              {/* ✅ UPDATED: Mobile download button - larger size with text */}
+                              {/* ✅ UPDATED: Mobile download button - larger size with text (text changed to "Watch") */}
                               <DownloadButton
                                 item={item as Episode | Chapter}
                                 itemId={itemData._id}

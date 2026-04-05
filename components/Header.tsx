@@ -1,4 +1,6 @@
  // components/Header.tsx - UPDATED WITH TOP 100 LINK & SOCIAL LINKS IN MOBILE MENU
+// ADDED: YouTube-style auto-hide on scroll down, show on scroll up
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { FilterType, ContentType } from '../src/types';
 import { SearchIcon } from './icons/SearchIcon';
@@ -36,20 +38,51 @@ const Header: React.FC<HeaderProps> = ({
   const [localSearchQuery, setLocalSearchQuery] = useState('');
   const [socialLinks, setSocialLinks] = useState<SocialMedia[]>([]);
   
+  // ✅ YouTube-style header visibility state
+  const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+  
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
+  const lastScrollY = useRef(0);
 
   // ✅ API Base URL
   const API_BASE = 'https://animabing.onrender.com';
 
   useEffect(() => {
     const handleScroll = () => {
+      // Update background style (existing)
       setIsScrolled(window.scrollY > 20);
+      
+      // ✅ YouTube-style hide/show logic
+      const currentScrollY = window.scrollY;
+      const scrollDelta = currentScrollY - lastScrollY.current;
+      
+      // Always show header at the very top
+      if (currentScrollY <= 20) {
+        setIsHeaderVisible(true);
+        lastScrollY.current = currentScrollY;
+        return;
+      }
+      
+      // Hide header when scrolling down AND we've scrolled past a small threshold (30px)
+      if (scrollDelta > 5 && currentScrollY > 30 && isHeaderVisible) {
+        setIsHeaderVisible(false);
+        // Close mobile menu when header hides for better UX
+        if (isMenuOpen) setIsMenuOpen(false);
+        if (isMobileSearchOpen) setIsMobileSearchOpen(false);
+      } 
+      // Show header when scrolling up (any amount)
+      else if (scrollDelta < -5 && !isHeaderVisible) {
+        setIsHeaderVisible(true);
+      }
+      
+      lastScrollY.current = currentScrollY;
     };
-    window.addEventListener('scroll', handleScroll);
+    
+    window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  }, [isHeaderVisible, isMenuOpen, isMobileSearchOpen]);
 
   useEffect(() => {
     setLocalSearchQuery(searchQuery || '');
@@ -447,10 +480,12 @@ const Header: React.FC<HeaderProps> = ({
         }
       `}</style>
       
+      {/* ✅ Header with slide transition - YouTube style */}
       <header 
         ref={headerRef}
         className={`
           fixed top-0 left-0 right-0 z-40 transition-all duration-300 glow-green
+          transform ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'}
           ${isScrolled 
             ? 'bg-purple-900/95 backdrop-blur-xl shadow-lg shadow-black/20 py-2' 
             : 'bg-gradient-to-br from-purple-900 via-purple-800 to-purple-900 backdrop-blur-xl py-1'
@@ -830,6 +865,7 @@ const Header: React.FC<HeaderProps> = ({
         )}
       </header>
       
+      {/* Spacer div to prevent content jump - always present */}
       <div className="h-12 md:h-16"></div>
     </>
   );
