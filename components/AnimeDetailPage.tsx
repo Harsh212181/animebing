@@ -223,7 +223,7 @@ const generateAnimeStructuredData = (anime: Anime) => {
   
   const totalVotes = (anime.likes || 0) + (anime.dislikes || 0);
   
-  return {
+  const structuredData: any = {
     "@context": "https://schema.org",
     "@type": anime.contentType === 'Movie' ? "Movie" : "TVSeries",
     "name": anime.title,
@@ -231,16 +231,22 @@ const generateAnimeStructuredData = (anime: Anime) => {
     "image": anime.thumbnail,
     "genre": anime.genreList || ["Anime"],
     "dateCreated": anime.releaseYear ? `${anime.releaseYear}` : undefined,
-    "aggregateRating": {
-      "@type": "AggregateRating",
-      "ratingValue": anime.rating || 0,
-      "ratingCount": totalVotes
-    },
     "potentialAction": {
       "@type": "WatchAction",
       "target": window.location.href
     }
   };
+  
+  // ✅ FIX: Only add aggregateRating if there are votes
+  if (totalVotes > 0) {
+    structuredData.aggregateRating = {
+      "@type": "AggregateRating",
+      "ratingValue": anime.rating || 0,
+      "ratingCount": totalVotes
+    };
+  }
+  
+  return structuredData;
 };
 
 const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoading = false }) => {
