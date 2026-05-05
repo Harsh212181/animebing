@@ -1,4 +1,4 @@
- const express = require("express");
+const express = require("express");
 const router = express.Router();
 
 const Anime = require("../models/Anime.cjs");
@@ -103,62 +103,14 @@ router.get("/sitemap-anime.xml", async (req, res) => {
 });
 
 /* ================================================================
-   📌 EPISODE SITEMAP (sitemap-episodes.xml)
+   📌 EPISODE SITEMAP (sitemap-episodes.xml) - DISABLED
    ================================================================ */
-router.get("/sitemap-episodes.xml", async (req, res) => {
-  try {
-    const today = new Date().toISOString().split("T")[0];
-    
-    const episodes = await Episode.find({})
-      .select("animeId episodeNumber updatedAt")
-      .populate({
-        path: "animeId",
-        select: "slug",
-        model: "Anime"
-      })
-      .lean();
-
-    if (!episodes || episodes.length === 0) {
-      return res.send(`<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>`);
-    }
-
-    let xml = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-`;
-
-    episodes.forEach((ep) => {
-      if (!ep.animeId || !ep.animeId.slug) {
-        return;
-      }
-
-      const url = `https://animebing.in/detail/${ep.animeId.slug}/episode/${ep.episodeNumber}`;
-      const lastmod = ep.updatedAt 
-        ? new Date(ep.updatedAt).toISOString().split("T")[0] 
-        : today;
-
-      xml += `
-  <url>
-    <loc>${url}</loc>
-    <lastmod>${lastmod}</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>`;
-    });
-
-    xml += `
-</urlset>`;
-
-    res.set("Content-Type", "application/xml");
-    res.send(xml);
-  } catch (err) {
-    console.error("❌ Episode sitemap error:", err);
-    res.status(500).send("Internal Server Error");
-  }
+router.get("/sitemap-episodes.xml", (req, res) => {
+  res.status(404).send("Sitemap not available");
 });
 
 /* ================================================================
-   📌 MASTER SITEMAP INDEX (sitemap.xml)
+   📌 MASTER SITEMAP INDEX (sitemap.xml) - EPISODES REMOVED
    ================================================================ */
 router.get("/sitemap.xml", (req, res) => {
   const today = new Date().toISOString().split("T")[0];
@@ -173,11 +125,6 @@ router.get("/sitemap.xml", (req, res) => {
 
   <sitemap>
     <loc>https://animebing.in/sitemap-anime.xml</loc>
-    <lastmod>${today}</lastmod>
-  </sitemap>
-
-  <sitemap>
-    <loc>https://animebing.in/sitemap-episodes.xml</loc>
     <lastmod>${today}</lastmod>
   </sitemap>
 
