@@ -1,4 +1,4 @@
- // components/AnimeDetailPage.tsx - FINAL FIXED VERSION + MULTIPLE DOWNLOAD PAGES PER EPISODE (DEV ONLY)
+ // components/AnimeDetailPage.tsx - FINAL FIXED VERSION + TYPE ERRORS RESOLVED
 // MODIFICATION: Changed button text from "Download" to "Watch" (functionality remains download)
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -351,11 +351,9 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     if (!anime) return;
 
     try {
-      // Get anime ID
       const animeId = anime._id || anime.id;
       if (!animeId) return;
 
-      // ✅ FIXED: Fetch vote status without IP parameter
       const response = await fetch(`${API_BASE}/anime/${animeId}/vote-status`);
       if (response.ok) {
         const data = await response.json();
@@ -380,14 +378,13 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
       const animeId = anime._id || anime.id;
       if (!animeId) return;
 
-      // ✅ FIXED: Don't send IP address, server will get it from request
       const response = await fetch(`${API_BASE}/anime/${animeId}/vote`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          voteType // ✅ Only send voteType, no IP
+          voteType
         })
       });
 
@@ -398,15 +395,12 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
           setDislikes(data.data.dislikes);
           setUserVote(data.data.userVote);
           
-          // Show success message
           const message = voteType === 'like' 
             ? data.data.userVote === null ? 'Like removed' : 'Liked!'
             : data.data.userVote === null ? 'Dislike removed' : 'Disliked!';
           
-          // Optional: Show a toast notification
           console.log('✅ ' + message);
           
-          // Update anime data if available
           if (fullAnime) {
             setFullAnime({
               ...fullAnime,
@@ -441,22 +435,18 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
         url: window.location.href,
       };
       
-      // Try Web Share API first (works on mobile devices)
       if (navigator.share && navigator.canShare(shareData)) {
         await navigator.share(shareData);
       } else {
-        // Fallback: Copy to clipboard
         await navigator.clipboard.writeText(window.location.href);
         alert('Link copied to clipboard! 📋\nShare it with your friends!');
       }
     } catch (error) {
       console.error('Error sharing:', error);
-      // If user cancels share, don't show error
-      if (error.toString().includes('AbortError')) {
+      if (Error.toString().includes('AbortError')) {
         return;
       }
       
-      // Fallback to clipboard if share fails
       try {
         await navigator.clipboard.writeText(window.location.href);
         alert('Link copied to clipboard! 📋');
@@ -475,7 +465,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
       setLinkSettingsLoading(true);
       console.log('🔗 Fetching global link settings...');
       
-      // ✅ USE ABSOLUTE URL VIA API_BASE
       const url = `${API_BASE}/link-settings`;
       console.log('🌐 API URL:', url);
       
@@ -490,7 +479,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
       
-      // ✅ Verify response is JSON
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
         const text = await response.text();
@@ -514,7 +502,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     } catch (err: any) {
       console.error('❌ Error fetching link settings:', err);
       console.error('Error stack:', err.stack);
-      // Fallback to all links active
       setLinkSettings({
         link1: true,
         link2: true,
@@ -534,9 +521,8 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     try {
       setSimilarLoading(true);
       
-      // ✅ Fetch multiple pages to get a larger pool of content
       const pagePromises = [];
-      const pagesToFetch = 3; // Fetch 3 pages for more variety
+      const pagesToFetch = 3;
       
       for (let page = 1; page <= pagesToFetch; page++) {
         pagePromises.push(
@@ -551,13 +537,11 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
         const currentId = anime.id || anime._id;
         const contentType = anime.contentType;
         
-        // ✅ STEP 1: Filter by same content type and remove current anime
         const filteredByType = allAnime.filter(item => {
           const itemId = item.id || item._id;
           return itemId !== currentId && item.contentType === contentType;
         });
         
-        // ✅ STEP 2: Remove duplicates by ID
         const uniqueAnimeMap = new Map();
         filteredByType.forEach(item => {
           const itemId = item.id || item._id;
@@ -568,13 +552,10 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
         
         const uniqueAnime = Array.from(uniqueAnimeMap.values());
         
-        // ✅ STEP 3: Shuffle the array for randomness
         const shuffledAnime = shuffleArray(uniqueAnime);
         
-        // ✅ STEP 4: Take first 12 for PC and 6 for mobile
         const limitedAnime = shuffledAnime.slice(0, 12);
         
-        // ✅ STEP 5: If we don't have enough of same type, fetch other types as fallback
         if (limitedAnime.length < 6) {
           const otherContent = allAnime.filter(item => {
             const itemId = item.id || item._id;
@@ -622,10 +603,8 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     const fetchFullAnimeDetails = async () => {
       if (!anime) return;
 
-      // If the passed anime already has full data, use it immediately
       if (anime.description && anime.genreList && anime.genreList.length > 0) {
         setFullAnime(anime);
-        // Initialize likes/dislikes from anime data if available
         if (anime.likes !== undefined) setLikes(anime.likes);
         if (anime.dislikes !== undefined) setDislikes(anime.dislikes);
         setAnimeLoading(false);
@@ -648,7 +627,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
         
         if (fullAnimeData) {
           setFullAnime(fullAnimeData);
-          // Initialize likes/dislikes from fetched data
           if (fullAnimeData.likes !== undefined) setLikes(fullAnimeData.likes);
           if (fullAnimeData.dislikes !== undefined) setDislikes(fullAnimeData.dislikes);
         } else {
@@ -674,13 +652,12 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
         keywords: 'anime, watch anime online, hindi anime, english anime, anime download, anime streaming',
         ogImage: 'https://animebing.in/AnimeBinglogo.jpg',
         ogUrl: 'https://animebing.in/',
-        canonicalUrl: 'https://animebing.in/', // ✅ Fixed canonical for error state
+        canonicalUrl: 'https://animebing.in/',
         publishedTime: undefined,
         modifiedTime: undefined,
       };
     }
 
-    // Build title with episode count / movie indicator
     let titleWithSuffix = displayAnime.title;
     if (displayAnime.contentType === 'Movie') {
       titleWithSuffix += ' (Movie)';
@@ -701,7 +678,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
         displayAnime.contentType === 'Movie' ? 'Full movie available' : 'All episodes available'
       } in HD quality. Free streaming and downloads on AnimeBing.`;
     
-    // ✅ FIXED: Generate clean canonical URL without any parameters
     const cleanCanonicalUrl = `https://animebing.in/detail/${displayAnime.slug || displayAnime.id}`;
     
     return {
@@ -709,20 +685,17 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
       description: seoDescription,
       keywords: displayAnime.seoKeywords || generateAnimeKeywords(displayAnime),
       ogImage: displayAnime.thumbnail || 'https://animebing.in/AnimeBinglogo.jpg',
-      ogUrl: cleanCanonicalUrl, // ✅ Use clean URL for OG
-      canonicalUrl: cleanCanonicalUrl, // ✅ CRITICAL: Pass canonical URL
+      ogUrl: cleanCanonicalUrl,
+      canonicalUrl: cleanCanonicalUrl,
       publishedTime: displayAnime.createdAt,
       modifiedTime: displayAnime.updatedAt,
     };
   };
 
-  // Get SEO data
   const seoData = getSEOData();
   
-  // ✅ ADDED: Log SEO data to verify in console
   console.log('🔍 SEO Data for', displayAnime?.title, seoData);
   
-  // Optimize thumbnail URLs for different displays
   const mobileThumbnail = displayAnime?.thumbnail 
     ? optimizeImageUrl(displayAnime.thumbnail, 80, 112)
     : 'https://via.placeholder.com/80x112/1e293b/64748b?text=No+Image';
@@ -749,7 +722,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     return acc;
   }, {} as Record<number, any>) || {};
 
-  // Get available sessions
   const availableSessions = Object.keys(itemsBySession).map(Number).sort((a, b) => a - b);
 
   // ✅ UPDATED: EPISODES/CHAPTERS FETCH
@@ -793,7 +765,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
       const itemData = item as any;
       const downloadLinks: DownloadLink[] = itemData.downloadLinks || [];
       
-      // First get only active links based on global settings
       const activeLinks = getActiveDownloadLinks(downloadLinks, linkSettings);
       
       console.log(`📊 Download stats: ${activeLinks.length}/${downloadLinks.length} active links`);
@@ -805,7 +776,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
       
       setDownloadingItem(itemData._id);
       
-      // Randomly select from ACTIVE links only
       const randomIndex = Math.floor(Math.random() * activeLinks.length);
       const randomLink = activeLinks[randomIndex].url;
       
@@ -873,7 +843,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
           <span className="font-bold">{dislikes}</span>
         </button>
         
-        {/* ✅ UPDATED: Share Button - NOW SHOWS TEXT ON MOBILE TOO */}
+        {/* Share Button - NOW SHOWS TEXT ON MOBILE TOO */}
         <button
           onClick={handleShare}
           disabled={isSharing}
@@ -890,7 +860,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
           ) : (
             <ShareIcon className={buttonSize} />
           )}
-          {/* ✅ CHANGED: Now shows "Share" text on mobile too */}
           <span className="font-bold">Share</span>
         </button>
       </div>
@@ -898,18 +867,16 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
   };
 
   // ✅ UPDATED: Download button component - TEXT CHANGED FROM "Download" TO "Watch"
-  // MODIFICATION: Changed button label from "Download" to "Watch" while keeping download functionality
   const DownloadButton: React.FC<{ 
     item: Episode | Chapter; 
     className?: string;
     showText?: boolean;
     itemId: string;
-    iconClassName?: string; // ✅ NEW: Allow custom icon size
+    iconClassName?: string;
   }> = ({ item, className = '', showText = true, itemId, iconClassName = 'h-4 w-4' }) => {
     const episodeItem = item as any;
     const downloadLinks: DownloadLink[] = episodeItem.downloadLinks || [];
     
-    // Check how many links are active
     const activeLinks = getActiveDownloadLinks(downloadLinks, linkSettings);
     
     if (activeLinks.length === 0) {
@@ -949,7 +916,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
         ) : (
           <>
             <DownloadIcon className={`${iconClassName} group-hover:scale-110 transition-transform`} />
-            {showText && <span>Watch</span>}  {/* ✅ Changed from "Download" to "Watch" */}
+            {showText && <span>Watch</span>}
           </>
         )}
       </button>
@@ -974,7 +941,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
         url={seoData.ogUrl}
         canonicalUrl={seoData.canonicalUrl}
         type="video.tv_show"
-        structuredData={generateAnimeStructuredData(displayAnime)}
+        structuredData={generateAnimeStructuredData(displayAnime!)} // ✅ FIX: non-null assertion
         publishedTime={seoData.publishedTime}
         modifiedTime={seoData.modifiedTime}
       />
@@ -1078,9 +1045,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                     </div>
                   </div>
                   
-                  {/* ✅ MOVED: LIKE/DISLIKE/SHARE BUTTONS MOVED BELOW GENRES */}
-                  {/* First show genres, then buttons */}
-                  
+                  {/* Genres before buttons */}
                   <div>
                     <div className="flex flex-wrap gap-1">
                       {displayAnime?.genreList?.map((genre, index) => (
@@ -1094,7 +1059,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                     </div>
                   </div>
 
-                  {/* ✅ UPDATED: LIKE/DISLIKE/SHARE BUTTONS FOR MOBILE - NOW BELOW GENRES */}
+                  {/* LIKE/DISLIKE/SHARE BUTTONS FOR MOBILE - NOW BELOW GENRES */}
                   <VoteAndShareButtons isMobile={true} />
                 </div>
 
@@ -1129,7 +1094,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
             )}
 
             <div className="bg-slate-800/40 backdrop-blur-sm rounded-xl p-3 mt-0 border border-slate-700 shadow-xl">
-              {/* ✅ UPDATED: Removed episode count from heading */}
               <div className="flex justify-between items-center mb-3">
                 <h2 className="text-base font-bold text-white">
                   {getContentLabel()}
@@ -1162,14 +1126,14 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
               ) : (
                 <div className="space-y-2">
                   {currentSessionItems
-                    .sort((a, b) => {
+                    .sort((a: any, b: any) => { // ✅ FIX: typed sort params
                       if (isManga) {
                         return (a as any).chapterNumber - (b as any).chapterNumber;
                       } else {
                         return (a as any).episodeNumber - (b as any).episodeNumber;
                       }
                     })
-                    .map((item, index) => {
+                    .map((item: any, index: number) => { // ✅ FIX: typed map params
                       const itemData = item as any;
                       
                       return (
@@ -1185,7 +1149,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                               </h3>
                             </div>
                             <div className="flex gap-1 flex-shrink-0">
-                              {/* ✅ UPDATED: Mobile download button - larger size with text (text changed to "Watch") */}
                               <DownloadButton
                                 item={item as Episode | Chapter}
                                 itemId={itemData._id}
@@ -1249,7 +1212,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
             </div>
           </div>
 
-          {/* PC VIEW - UPDATED: BUTTONS MOVED BELOW GENRES */}
+          {/* PC VIEW */}
           <div className="hidden lg:block">
             <div className="bg-slate-800/40 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-slate-700 shadow-xl">
               <div className="flex flex-col lg:flex-row gap-8">
@@ -1273,7 +1236,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                 </div>
                 <div className="flex-1 space-y-6">
                   <div>
-                    {/* ✅ UPDATED: Dynamic font size for PC based on title length */}
                     <h1 className={`font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mb-1 ${
                       displayAnime?.title && displayAnime.title.length > 60 
                         ? 'text-xl lg:text-2xl' 
@@ -1341,7 +1303,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                     </div>
                   </div>
                   
-                  {/* ✅ UPDATED: LIKE/DISLIKE/SHARE BUTTONS FOR PC - NOW BELOW GENRES */}
                   <VoteAndShareButtons />
                 </div>
               </div>
@@ -1349,7 +1310,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
 
             <div className="bg-slate-800/40 backdrop-blur-sm rounded-2xl p-1 border border-slate-700 shadow-xl">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                {/* ✅ UPDATED: Removed episode count from heading */}
                 <h2 className="text-2xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent">
                   {getContentLabel()}
                 </h2>
@@ -1400,14 +1360,14 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                 <>
                   <div className="space-y-3">
                     {currentSessionItems
-                      .sort((a, b) => {
+                      .sort((a: any, b: any) => { // ✅ FIX: typed sort params for PC
                         if (isManga) {
                           return (a as any).chapterNumber - (b as any).chapterNumber;
                         } else {
                           return (a as any).episodeNumber - (b as any).episodeNumber;
                         }
                       })
-                      .map((item, index) => {
+                      .map((item: any, index: number) => { // ✅ FIX: typed map params for PC
                         const itemData = item as any;
                         
                         return (
@@ -1465,7 +1425,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                         );
                       })}
                   </div>
-                  {/* ✅ ADDED: Tips section for PC view - only for non-manga content */}
                   {!isManga && (
                     <div className="mt-6 p-4 bg-gradient-to-r from-blue-900/30 to-indigo-900/30 border border-blue-700/50 rounded-xl">
                       <h4 className="text-sm font-bold text-blue-300 mb-3 flex items-center gap-2">
@@ -1491,7 +1450,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
               )}
             </div>
 
-            {/* ✅ UPDATED: MORE LIKE THIS SECTION FOR PC VIEW - WITH RANDOM & UNIQUE CONTENT */}
+            {/* MORE LIKE THIS SECTION FOR PC VIEW */}
             <div className="mt-12">
               <h2 className="text-2xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mb-6">
                 More {displayAnime?.contentType === 'Movie' ? 'Movies' : displayAnime?.contentType === 'Manga' ? 'Manga' : 'Anime'}
@@ -1533,7 +1492,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
             </div>
           </div>
 
-          {/* ✅ UPDATED: MORE LIKE THIS SECTION FOR MOBILE VIEW - WITH RANDOM & UNIQUE CONTENT */}
+          {/* MORE LIKE THIS SECTION FOR MOBILE VIEW */}
           <div className="lg:hidden mt-8">
             <h2 className="text-xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mb-4">
               More {displayAnime?.contentType === 'Movie' ? 'Movies' : displayAnime?.contentType === 'Manga' ? 'Manga' : 'Anime'}

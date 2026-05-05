@@ -51,7 +51,6 @@ const getDeviceId = (): string => {
     }
     return deviceId;
   } catch (e) {
-    // Fallback if localStorage fails (e.g., incognito)
     return `fallback-${Math.random().toString(36).substring(2, 15)}`;
   }
 };
@@ -62,11 +61,8 @@ const deviceId = getDeviceId();
 const getDeviceType = (): 'mobile' | 'tablet' | 'desktop' | 'unknown' => {
   if (typeof window === 'undefined') return 'unknown';
   const ua = navigator.userAgent;
-  // Check for mobile first (most common)
   if (/mobile/i.test(ua)) return 'mobile';
-  // Check for tablet
   if (/tablet|ipad/i.test(ua) || (/(android|touch)/i.test(ua) && !/mobile/i.test(ua))) return 'tablet';
-  // Otherwise assume desktop
   return 'desktop';
 };
 
@@ -102,6 +98,37 @@ const setLocalVoteStatus = (pollId: string, optionId?: string) => {
   }
 };
 
+// ---------- Helper to make URLs clickable ----------
+const makeTextClickable = (text: string): React.ReactNode[] => {
+  if (!text) return [];
+  const urlRegex = /(https?:\/\/[^\s<]+)/gi;
+  const parts = text.split(urlRegex);
+
+  return parts.map((part, i) => {
+    if (part.match(urlRegex)) {
+      return (
+        <a
+          key={i}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-400 underline hover:text-blue-300 break-words"
+        >
+          {part}
+        </a>
+      );
+    }
+    return <React.Fragment key={i}>{part}</React.Fragment>;
+  });
+};
+
+// ---------- Avatar fallback (if image fails) ----------
+const AvatarFallback = () => (
+  <div className="w-8 h-8 rounded-full bg-gray-700 border border-gray-600 flex items-center justify-center text-xs font-bold text-gray-300">
+    A
+  </div>
+);
+
 // ---------- Component ----------
 interface PollCardProps {
   onVoteSuccess?: () => void;
@@ -116,6 +143,7 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
   const [error, setError] = useState<string | null>(null);
   const [isActive, setIsActive] = useState(false);
   const [userVoteOption, setUserVoteOption] = useState<string | null>(null);
+  const [avatarError, setAvatarError] = useState(false);
 
   // ---------- Load active poll ----------
   const loadPoll = async () => {
@@ -124,7 +152,6 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
       setError(null);
       const url = new URL(`${API_BASE_URL}/poll/active`);
       url.searchParams.append('deviceId', deviceId);
-      console.log('🔄 Fetching poll from:', url.toString());
 
       const res = await fetch(url.toString(), {
         headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'Cache-Control': 'no-cache' },
@@ -152,7 +179,6 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
         return;
       }
 
-      // Use server-provided vote status
       const userHasVoted = pollData.userHasVoted || false;
       const userVoteOption = pollData.userVoteOption || null;
 
@@ -167,7 +193,6 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
         setSelectedOption(null);
       }
 
-      // Calculate percentages
       const totalVotes = pollData.totalVotes || 0;
       const optionsWithPercentage = pollData.options.map((opt: any) => ({
         ...opt,
@@ -195,11 +220,10 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
     }
   }, [hasVoted, isActive]);
 
-  // ---------- Vote handler (now includes deviceType) ----------
+  // ---------- Vote handler ----------
   const handleVote = async (optionId: string) => {
     if (!poll || hasVoted || voting) return;
 
-    // Extra safety: deviceId should never be empty
     if (!deviceId || deviceId === 'server') {
       alert('Device identifier not available. Please refresh.');
       return;
@@ -216,7 +240,7 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
           pollId: poll._id,
           optionId,
           deviceId,
-          deviceType, // ✅ NEW: send device type
+          deviceType,
         }),
       });
 
@@ -226,13 +250,12 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
         if (result.message?.toLowerCase().includes('already voted')) {
           setHasVoted(true);
           setLocalVoteStatus(poll._id, optionId);
-          loadPoll(); // reload to get correct state
+          loadPoll();
           return;
         }
         throw new Error(result.message || 'Vote failed');
       }
 
-      // Update UI optimistically
       const updatedPoll = { ...poll };
       updatedPoll.totalVotes = result.totalVotes;
       updatedPoll.userHasVoted = true;
@@ -267,10 +290,35 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
 
   return (
     <div className="w-full bg-[#1a1a1a] rounded-lg border border-gray-700 overflow-hidden mb-4">
-      <div className="p-3 border-b border-gray-800">
-        <h3 className="text-sm font-semibold text-gray-100">{poll.question}</h3>
+      {/* 👤 Avatar + Admin header (highlighted) */}
+      <div className="flex items-center px-3 pt-2 pb-2 bg-gray-800/30 border-b border-gray-800 rounded-t-lg">
+        {avatarError ? (
+          <AvatarFallback />
+        ) : (
+          <img
+            src="/skull,logo.jpeg"
+            alt="Admin avatar"
+            className="w-8 h-8 rounded-full object-cover border border-gray-600"
+            onError={() => setAvatarError(true)}
+          />
+        )}
+        <div className="ml-2 flex items-center gap-2">
+          <span className="text-sm font-medium text-gray-200">Admin</span>
+          {/* Admin badge */}
+          <span className="text-[10px] px-2 py-0.5 bg-blue-600 text-white rounded-full font-semibold leading-none">
+            Creater
+          </span>
+        </div>
       </div>
 
+      {/* Question */}
+      <div className="px-3 pt-2 pb-3">
+        <h3 className="text-sm font-semibold text-gray-100 break-words whitespace-normal">
+          {makeTextClickable(poll.question)}
+        </h3>
+      </div>
+
+      {/* Options */}
       <div className="px-2 pb-3 space-y-2 pt-2">
         {poll.options.map(opt => {
           const percentage = opt.percentage || 0;
@@ -309,7 +357,9 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
                     />
                   </div>
                   <div className="ml-3 flex-1 min-w-0">
-                    <span className="text-xs md:text-sm font-medium truncate block text-gray-300">{opt.title}</span>
+                    <span className="text-xs md:text-sm font-medium text-gray-300 break-words whitespace-normal block">
+                      {makeTextClickable(opt.title)}
+                    </span>
                   </div>
                 </div>
 
@@ -336,6 +386,7 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
         })}
       </div>
 
+      {/* Footer */}
       <div className="px-3 py-2 border-t border-gray-800">
         <div className="flex justify-between items-center">
           <span className="text-xs text-gray-500">

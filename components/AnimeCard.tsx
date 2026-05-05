@@ -1,6 +1,6 @@
- // src/components/AnimeCard.tsx
+ // components/AnimeCard.tsx
 import React from 'react';
-import type { Anime } from '../src/types';
+import type { Anime } from '../src/types'; // correct relative path
 import { PlayIcon } from './icons/PlayIcon';
 
 interface AnimeCardProps {
@@ -47,11 +47,15 @@ const AnimeCard: React.FC<AnimeCardProps> = ({
 }) => {
   const displayWidth = compact ? 150 : 193;
   const displayHeight = compact ? 225 : 289;
-  const optimizedThumbnail = optimizeImageUrl(anime.thumbnail, displayWidth, displayHeight);
-  const thumbnailSrcSet = generateSrcSet(anime.thumbnail, displayWidth, displayHeight);
+  
+  // ✅ Safe thumbnail – fallback '' if undefined
+  const thumbnail = anime.thumbnail || '';
+  
+  const optimizedThumbnail = optimizeImageUrl(thumbnail, displayWidth, displayHeight);
+  const thumbnailSrcSet = generateSrcSet(thumbnail, displayWidth, displayHeight);
 
-  // Helper to get first 3 genres
-  const genreList = anime.genreList?.filter(g => g && g.trim()).slice(0, 3).join(', ') || '';
+  // ✅ Safe genreList
+  const genreList = (anime.genreList ?? []).filter((g: string) => g && g.trim()).slice(0, 3).join(', ') || '';
 
   return (
     <div
@@ -85,11 +89,15 @@ const AnimeCard: React.FC<AnimeCardProps> = ({
             ? "(max-width: 640px) 45vw, (max-width: 768px) 30vw, (max-width: 1024px) 22vw, (max-width: 1280px) 18vw, 150px" 
             : "(max-width: 640px) 48vw, (max-width: 768px) 32vw, (max-width: 1024px) 24vw, (max-width: 1280px) 20vw, 193px"
           }
-          onError={(e) => { e.currentTarget.src = anime.thumbnail; }}
+          onError={(e) => { 
+            const img = e.currentTarget as HTMLImageElement;
+            // ✅ Safe assignment with fallback if thumbnail undefined
+            img.src = anime.thumbnail || ''; 
+          }}
         />
 
-        {/* Episode badge (top right) */}
-        {anime.currentEpisode > 0 && (
+        {/* Episode badge – safe comparison */}
+        {(anime.currentEpisode ?? 0) > 0 && (
           <div className="absolute top-0.5 right-1 z-10">
             <span className="bg-gradient-to-r from-red-600 to-orange-600 text-white text-[11px] font-medium px-2 py-0.5 rounded-md shadow-md">
               EP {anime.currentEpisode}
@@ -106,7 +114,7 @@ const AnimeCard: React.FC<AnimeCardProps> = ({
           </div>
         )}
 
-        {/* Status badge (Complete/Ongoing) – top right but below episode? We'll put top center? Actually better to put top right next to episode? To avoid overlap, put below episode on right side */}
+        {/* Status badge */}
         {anime.status && !compact && (
           <div className="absolute top-7 right-1 z-10">
             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md shadow-md ${
@@ -134,7 +142,6 @@ const AnimeCard: React.FC<AnimeCardProps> = ({
 
             {!compact && (
               <>
-                {/* Year + SubDub row */}
                 <div className="flex justify-between items-center mb-1">
                   <p className="text-slate-300 text-xs">{anime.releaseYear}</p>
                   <span className="bg-purple-600 text-white text-[10px] font-medium px-1.5 py-0.5 rounded-md shadow-md">
@@ -142,7 +149,6 @@ const AnimeCard: React.FC<AnimeCardProps> = ({
                   </span>
                 </div>
 
-                {/* Genres row - NEW */}
                 {genreList && (
                   <p className="text-slate-300 text-[10px] truncate mt-0.5" title={anime.genreList?.join(', ')}>
                     {genreList}
@@ -153,7 +159,6 @@ const AnimeCard: React.FC<AnimeCardProps> = ({
           </div>
         </div>
 
-        {/* Play Icon Overlay */}
         {!compact && (
           <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-black/50">
             <div className="transform scale-75 sm:scale-90 group-hover:scale-100 transition-transform duration-300">
