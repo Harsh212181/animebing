@@ -1,4 +1,4 @@
- // App.tsx - FINAL FIXED VERSION (with HelmetProvider for dynamic meta tags)
+// App.tsx - FINAL FIXED VERSION (with HelmetProvider for dynamic meta tags)
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async'; // ✅ CRITICAL: For dynamic SEO tags
@@ -452,7 +452,8 @@ const MainApp: React.FC = () => {
           onContentTypeNavigate={dummyContentTypeFunction}
         />
         
-        <main className="container mx-auto px-2 py-2">
+        {/* ✅ FIX: container hatakar w-full kiya — ab full width har browser mein */}
+        <main className="w-full px-2 py-2">
           <div 
             className="rounded-xl"
             style={{

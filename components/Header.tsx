@@ -1,6 +1,4 @@
- // components/Header.tsx - UPDATED WITH TOP 100 LINK & SOCIAL LINKS IN MOBILE MENU
-// ADDED: YouTube-style auto-hide on scroll down, show on scroll up
-
+ // components/Header.tsx - FULL-WIDTH FIX + YouTube-style auto-hide
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { FilterType, ContentType } from '../src/types';
 import { SearchIcon } from './icons/SearchIcon';
@@ -496,7 +494,8 @@ const Header: React.FC<HeaderProps> = ({
           boxShadow: '0 4px 20px rgba(115, 245, 138, 0.2)'
         }}
       >
-        <div className="container mx-auto px-2 md:px-3 relative">
+        {/* ✅ FIX: Changed "container mx-auto" to "w-full px-2 md:px-4" for full width */}
+        <div className="w-full px-2 md:px-4 relative">
           <div className="flex justify-between items-center h-12 md:h-16">
             
             {/* Logo with Skull Emoji */}
@@ -712,7 +711,8 @@ const Header: React.FC<HeaderProps> = ({
                style={{ 
                  borderTop: '3px solid #73F58A'
                }}>
-            <div className="container mx-auto px-4 py-4">
+            {/* ✅ FIX: Changed "container mx-auto" to "w-full px-4" for full width */}
+            <div className="w-full px-4 py-4">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center space-x-2">
                   <span 

@@ -1,4 +1,4 @@
- // components/Footer.tsx - UPDATED TO MATCH HEADER WITH GREEN OUTLINE #73F58A - REMOVED APP DOWNLOAD SECTION
+ // components/Footer.tsx - FULL-WIDTH FIX (removed container to match header)
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
@@ -13,7 +13,6 @@ interface SocialMedia {
 
 const Footer: React.FC = () => {
   const [socialLinks, setSocialLinks] = useState<SocialMedia[]>([
-    // ✅ Default hardcoded links
     {
       platform: 'facebook',
       url: 'https://www.facebook.com/animebing',
@@ -43,18 +42,15 @@ const Footer: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // ✅ CORRECT API BASE URL
   const API_BASE = 'https://animabing.onrender.com';
 
   useEffect(() => {
-    // Try to fetch from API silently
     fetchSocialLinks();
   }, []);
 
   const fetchSocialLinks = async () => {
     try {
       setLoading(true);
-      
       const response = await axios.get(`${API_BASE}/api/social`, {
         timeout: 5000,
         headers: {
@@ -62,69 +58,42 @@ const Footer: React.FC = () => {
           'Content-Type': 'application/json'
         }
       });
-      
       if (response.data && Array.isArray(response.data) && response.data.length > 0) {
         const activeLinks = response.data.filter((link: SocialMedia) => link.isActive);
-        if (activeLinks.length > 0) {
-          setSocialLinks(activeLinks);
-        }
+        if (activeLinks.length > 0) setSocialLinks(activeLinks);
       }
     } catch (error: any) {
-      // Silently fall back to hardcoded links
       console.log('Using default social links');
     } finally {
       setLoading(false);
     }
   };
 
-  // ✅ FINAL FIX: DIRECT URL CHANGE FOR HOME PAGE LINKS
   const handleQuickLinkClick = async (type: string) => {
     if (isNavigating) return;
-   
     setIsNavigating(true);
-   
     let newUrl = window.location.origin;
-   
     switch(type) {
-      case 'home':
-        newUrl = window.location.origin + '/';
-        break;
-      case 'hindi-dub':
-        newUrl = window.location.origin + '/?filter=Hindi+Dub';
-        break;
-      case 'hindi-sub':
-        newUrl = window.location.origin + '/?filter=Hindi+Sub';
-        break;
-      case 'english-sub':
-        newUrl = window.location.origin + '/?filter=English+Sub';
-        break;
-      case 'movies':
-        newUrl = window.location.origin + '/?contentType=Movie';
-        break;
-      case 'manga':
-        newUrl = window.location.origin + '/?contentType=Manga';
-        break;
+      case 'home': newUrl += '/'; break;
+      case 'hindi-dub': newUrl += '/?filter=Hindi+Dub'; break;
+      case 'hindi-sub': newUrl += '/?filter=Hindi+Sub'; break;
+      case 'english-sub': newUrl += '/?filter=English+Sub'; break;
+      case 'movies': newUrl += '/?contentType=Movie'; break;
+      case 'manga': newUrl += '/?contentType=Manga'; break;
       case 'anime-list':
         navigate('/anime');
         setTimeout(() => setIsNavigating(false), 800);
         return;
-      default:
-        newUrl = window.location.origin + '/';
+      default: newUrl += '/';
     }
-    
     window.location.href = newUrl;
     setTimeout(() => setIsNavigating(false), 1500);
   };
 
   const handlePageNavigation = async (path: string) => {
     if (isNavigating) return;
-   
     setIsNavigating(true);
-   
-    if (location.pathname !== path) {
-      navigate(path);
-    }
-   
+    if (location.pathname !== path) navigate(path);
     setTimeout(() => setIsNavigating(false), 800);
   };
 
@@ -180,45 +149,26 @@ const Footer: React.FC = () => {
       {isNavigating && <NavigationLoader />}
      
       <style>{`
-        /* Green outline color matching header #73F58A */
-        .border-green-custom {
-          border-color: #73F58A;
-        }
-        .border-green-custom-30 {
-          border-color: rgba(115, 245, 138, 0.3);
-        }
-        .border-green-custom-50 {
-          border-color: rgba(115, 245, 138, 0.5);
-        }
-        .border-green-custom-20 {
-          border-color: rgba(115, 245, 138, 0.2);
-        }
-        .border-green-custom-70 {
-          border-color: rgba(115, 245, 138, 0.7);
-        }
-        
-        /* Enhanced glow effect matching header */
+        .border-green-custom { border-color: #73F58A; }
+        .border-green-custom-30 { border-color: rgba(115, 245, 138, 0.3); }
+        .border-green-custom-50 { border-color: rgba(115, 245, 138, 0.5); }
+        .border-green-custom-20 { border-color: rgba(115, 245, 138, 0.2); }
+        .border-green-custom-70 { border-color: rgba(115, 245, 138, 0.7); }
         .glow-green {
-          box-shadow: 
-            0 0 5px rgba(115, 245, 138, 0.5),
-            0 0 10px rgba(115, 245, 138, 0.3),
-            0 0 15px rgba(115, 245, 138, 0.1);
+          box-shadow: 0 0 5px rgba(115, 245, 138, 0.5),
+                      0 0 10px rgba(115, 245, 138, 0.3),
+                      0 0 15px rgba(115, 245, 138, 0.1);
         }
-        
         .hover-glow-green:hover {
-          box-shadow: 
-            0 0 10px rgba(115, 245, 138, 0.6),
-            0 0 20px rgba(115, 245, 138, 0.4),
-            0 0 30px rgba(115, 245, 138, 0.2);
+          box-shadow: 0 0 10px rgba(115, 245, 138, 0.6),
+                      0 0 20px rgba(115, 245, 138, 0.4),
+                      0 0 30px rgba(115, 245, 138, 0.2);
           transition: box-shadow 0.3s ease;
         }
-        
-        /* Footer specific button styles */
         .footer-button {
           border: 1px solid rgba(115, 245, 138, 0.3);
           transition: all 0.3s ease;
         }
-        
         .footer-button:hover {
           border: 1px solid #73F58A;
           box-shadow: 0 0 10px rgba(115, 245, 138, 0.4);
@@ -234,8 +184,8 @@ const Footer: React.FC = () => {
           boxShadow: '0 -4px 20px rgba(115, 245, 138, 0.3)'
         }}
       >
-        <div className="container mx-auto py-12 px-4">
-          {/* Main Footer Content - Changed to 2 columns */}
+        {/* ✅ FIX: container hata kar w-full kiya – full width like header */}
+        <div className="w-full px-4 py-12">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
             {/* Brand Section */}
             <div className="text-center lg:text-left">
@@ -258,7 +208,6 @@ const Footer: React.FC = () => {
                 Your ultimate destination for anime and movies. Watch, download, and enjoy your favorite content in high quality.
               </p>
               
-              {/* Social Media Links - ALWAYS SHOW ICONS */}
               <div className="flex justify-center lg:justify-start space-x-4">
                 {socialLinks.map(link => (
                   <a
@@ -283,102 +232,27 @@ const Footer: React.FC = () => {
             <div className="text-center lg:text-right">
               <h4 className="text-white font-semibold mb-4 text-lg">Quick Links</h4>
               <div className="grid grid-cols-2 gap-3 text-sm">
-                <button
-                  onClick={() => handleQuickLinkClick('home')}
-                  className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button"
-                  disabled={isNavigating}
-                >
-                  Home
-                </button>
-                <button
-                  onClick={() => handleQuickLinkClick('hindi-dub')}
-                  className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button"
-                  disabled={isNavigating}
-                >
-                  Hindi Dub
-                </button>
-                <button
-                  onClick={() => handleQuickLinkClick('hindi-sub')}
-                  className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button"
-                  disabled={isNavigating}
-                >
-                  Hindi Sub
-                </button>
-                <button
-                  onClick={() => handleQuickLinkClick('english-sub')}
-                  className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button"
-                  disabled={isNavigating}
-                >
-                  English Sub
-                </button>
-                <button
-                  onClick={() => handleQuickLinkClick('movies')}
-                  className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button"
-                  disabled={isNavigating}
-                >
-                  Movies
-                </button>
-                <button
-                  onClick={() => handleQuickLinkClick('manga')}
-                  className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button"
-                  disabled={isNavigating}
-                >
-                  Manga
-                </button>
-                <button
-                  onClick={() => handleQuickLinkClick('anime-list')}
-                  className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button"
-                  disabled={isNavigating}
-                >
-                  Anime List
-                </button>
-                <button
-                  onClick={() => handlePageNavigation('/contact')}
-                  className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button"
-                  disabled={isNavigating}
-                >
-                  Contact
-                </button>
+                <button onClick={() => handleQuickLinkClick('home')} className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button" disabled={isNavigating}>Home</button>
+                <button onClick={() => handleQuickLinkClick('hindi-dub')} className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button" disabled={isNavigating}>Hindi Dub</button>
+                <button onClick={() => handleQuickLinkClick('hindi-sub')} className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button" disabled={isNavigating}>Hindi Sub</button>
+                <button onClick={() => handleQuickLinkClick('english-sub')} className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button" disabled={isNavigating}>English Sub</button>
+                <button onClick={() => handleQuickLinkClick('movies')} className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button" disabled={isNavigating}>Movies</button>
+                <button onClick={() => handleQuickLinkClick('manga')} className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button" disabled={isNavigating}>Manga</button>
+                <button onClick={() => handleQuickLinkClick('anime-list')} className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button" disabled={isNavigating}>Anime List</button>
+                <button onClick={() => handlePageNavigation('/contact')} className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button" disabled={isNavigating}>Contact</button>
               </div>
             </div>
           </div>
           
-          {/* Bottom Section */}
           <div className="border-t border-green-custom-30 pt-8">
             <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
-              {/* Legal Links */}
               <div className="flex flex-wrap justify-center gap-6 text-sm">
-                <button
-                  onClick={() => handlePageNavigation('/terms')}
-                  className="text-purple-300 hover:text-green-400 transition-colors font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 py-1.5 px-3 rounded-lg footer-button"
-                  disabled={isNavigating}
-                >
-                  Terms & Conditions
-                </button>
-                <button
-                  onClick={() => handlePageNavigation('/privacy')}
-                  className="text-purple-300 hover:text-green-400 transition-colors font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 py-1.5 px-3 rounded-lg footer-button"
-                  disabled={isNavigating}
-                >
-                  Privacy Policy
-                </button>
-                <button
-                  onClick={() => handlePageNavigation('/dmca')}
-                  className="text-purple-300 hover:text-green-400 transition-colors font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 py-1.5 px-3 rounded-lg footer-button"
-                  disabled={isNavigating}
-                >
-                  DMCA
-                </button>
-                <button
-                  onClick={() => handlePageNavigation('/contact')}
-                  className="text-purple-300 hover:text-green-400 transition-colors font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 py-1.5 px-3 rounded-lg footer-button"
-                  disabled={isNavigating}
-                >
-                  Contact
-                </button>
+                <button onClick={() => handlePageNavigation('/terms')} className="text-purple-300 hover:text-green-400 transition-colors font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 py-1.5 px-3 rounded-lg footer-button" disabled={isNavigating}>Terms & Conditions</button>
+                <button onClick={() => handlePageNavigation('/privacy')} className="text-purple-300 hover:text-green-400 transition-colors font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 py-1.5 px-3 rounded-lg footer-button" disabled={isNavigating}>Privacy Policy</button>
+                <button onClick={() => handlePageNavigation('/dmca')} className="text-purple-300 hover:text-green-400 transition-colors font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 py-1.5 px-3 rounded-lg footer-button" disabled={isNavigating}>DMCA</button>
+                <button onClick={() => handlePageNavigation('/contact')} className="text-purple-300 hover:text-green-400 transition-colors font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 py-1.5 px-3 rounded-lg footer-button" disabled={isNavigating}>Contact</button>
               </div>
               
-              {/* Copyright */}
               <div className="text-center md:text-right">
                 <p className="text-purple-300 text-sm font-medium">
                   &copy; {new Date().getFullYear()} animebing.in. All Rights Reserved.

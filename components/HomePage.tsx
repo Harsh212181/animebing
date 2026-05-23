@@ -459,7 +459,8 @@ const HomePage: React.FC<Props> = ({
       <>
         <SEO title="Loading... | AnimeBing" description="Watch anime online for free in Hindi and English. HD quality streaming and downloads." keywords="anime, watch anime online, hindi anime, english anime" />
         <div className="min-h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-purple-900 p-4">
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+          {/* ✅ FIXED: lg:grid-cols-5 → lg:grid-cols-6 */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-6 gap-3">
             {Array.from({ length: 18 }).map((_, i) => <SkeletonLoader key={i} />)}
           </div>
         </div>
@@ -578,7 +579,8 @@ const HomePage: React.FC<Props> = ({
                 {headingData.emojiEnd && <span className="text-purple-300 ml-2">{headingData.emojiEnd}</span>}
               </h2>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
+              {/* ✅ FIXED: lg:grid-cols-5 → lg:grid-cols-6 */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-6 gap-2">
                 {filteredAnime.map((anime, i) => (
                   <div key={`${getAnimeId(anime)}-${i}`} className="group relative">
                     <div className={`absolute -inset-[1px] rounded-xl bg-gradient-to-br ${BORDER_COLORS[currentBorderColorIndex]} enhanced-glow border-transition`} style={{ backgroundImage: `linear-gradient(135deg, ${GLOW_COLORS[currentBorderColorIndex][0]}, ${GLOW_COLORS[currentBorderColorIndex][1]}, ${GLOW_COLORS[currentBorderColorIndex][2]})` }} />
@@ -615,7 +617,8 @@ const HomePage: React.FC<Props> = ({
 
               {/* Loading Skeletons for More */}
               {isLoadingMore && (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 mt-4">
+                // ✅ FIXED: lg:grid-cols-5 → lg:grid-cols-6
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-6 gap-2 mt-4">
                   {Array.from({ length: 12 }).map((_, i) => (
                     <div key={`skeleton-${i}`} className="relative rounded-xl border border-purple-700/40 p-1 bg-gradient-to-b from-purple-900/80 to-purple-800/70 overflow-hidden">
                       <div className="absolute inset-0 bg-gradient-to-r from-transparent via-purple-700/10 to-transparent animate-shimmer" />
