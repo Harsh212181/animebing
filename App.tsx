@@ -388,7 +388,7 @@ const LoadingScreen: React.FC = () => {
             boxShadow: '0 0 30px rgba(124,58,237,0.5), inset 0 0 20px rgba(192,132,252,0.15)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            <span style={{ fontSize: 34, filter: 'drop-shadow(0 0 8px rgba(192,132,252,0.8))' }}>⛩️</span>
+            <span style={{ fontSize: 34, filter: 'drop-shadow(0 0 8px rgba(192,132,252,0.8))' }}>☠️</span>
           </div>
 
           {/* % badge */}
