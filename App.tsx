@@ -1,4 +1,4 @@
-// App.tsx - FINAL FIXED VERSION (with HelmetProvider for dynamic meta tags)
+ // App.tsx - FINAL FIXED VERSION (with HelmetProvider + AnimeContext for no re-fetch)
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async'; // ✅ CRITICAL: For dynamic SEO tags
@@ -23,6 +23,9 @@ import Top100Page from './components/Top100Page';
 import EarnMoney from './components/EarnMoney';
 import WelcomePage from './components/WelcomePage';
 import DownloadLinkPage from './components/DownloadLinkPage';
+
+// ✅ ADDED: AnimeContext Provider import
+import { AnimeProvider } from './src/context/AnimeContext';
 
 // ✅ 404 ERROR PAGE COMPONENT
 const ErrorPage: React.FC = () => {
@@ -562,12 +565,14 @@ const MainApp: React.FC = () => {
   );
 };
 
-// ✅ FINAL APP WITH HELMETPROVIDER WRAPPER
+// ✅ FINAL APP WITH HELMETPROVIDER + ANIMEPROVIDER WRAPPER
 const App: React.FC = () => {
   return (
     <HelmetProvider>
       <Router>
-        <MainApp />
+        <AnimeProvider>   {/* ✅ ADDED: AnimeContext wraps the whole app */}
+          <MainApp />
+        </AnimeProvider>
       </Router>
     </HelmetProvider>
   );
