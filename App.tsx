@@ -117,6 +117,371 @@ const ScrollToTop: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return <>{children}</>;
 };
 
+// ✅ NEW LOADING SCREEN — Anime Portal Style
+const LoadingScreen: React.FC = () => {
+  const [progress, setProgress] = useState(0);
+  const [visible, setVisible] = useState(false);
+  const [loadingText, setLoadingText] = useState('Connecting to Anime World...');
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const animRef = useRef<number>(0);
+
+  const messages = [
+    'Connecting to Anime World...',
+    'Syncing Episode Library...',
+    'Loading Hindi Dubs...',
+    'Preparing Your Portal...',
+    'Entering Anime Universe...',
+  ];
+
+  // Speed lines canvas animation
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+    const lines: { angle: number; speed: number; len: number; opacity: number; color: string }[] = [];
+    const colors = ['#c084fc', '#a855f7', '#9333ea', '#d8b4fe', '#7c3aed'];
+
+    for (let i = 0; i < 80; i++) {
+      lines.push({
+        angle: (Math.PI * 2 * i) / 80 + Math.random() * 0.05,
+        speed: Math.random() * 4 + 2,
+        len: Math.random() * 120 + 40,
+        opacity: Math.random() * 0.4 + 0.05,
+        color: colors[Math.floor(Math.random() * colors.length)],
+      });
+    }
+
+    let tick = 0;
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      tick += 0.6;
+      lines.forEach(line => {
+        const dist = 80 + ((tick * line.speed) % (Math.max(canvas.width, canvas.height)));
+        const x1 = cx + Math.cos(line.angle) * (dist - line.len);
+        const y1 = cy + Math.sin(line.angle) * (dist - line.len);
+        const x2 = cx + Math.cos(line.angle) * dist;
+        const y2 = cy + Math.sin(line.angle) * dist;
+
+        const fade = Math.min(dist / 300, 1) * line.opacity;
+        ctx.strokeStyle = line.color;
+        ctx.globalAlpha = fade;
+        ctx.lineWidth = Math.random() > 0.8 ? 2 : 1;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+      });
+      ctx.globalAlpha = 1;
+      animRef.current = requestAnimationFrame(draw);
+    };
+    draw();
+
+    const handleResize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    window.addEventListener('resize', handleResize);
+    return () => {
+      cancelAnimationFrame(animRef.current);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
+  // Progress + text
+  useEffect(() => {
+    setTimeout(() => setVisible(true), 80);
+
+    let cur = 0;
+    const interval = setInterval(() => {
+      cur += Math.random() * 2.5 + 0.8;
+      if (cur >= 100) { cur = 100; clearInterval(interval); }
+      setProgress(Math.min(cur, 100));
+      const idx = Math.min(Math.floor((cur / 100) * messages.length), messages.length - 1);
+      setLoadingText(messages[idx]);
+    }, 40);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const r = 54; // circle radius
+  const circ = 2 * Math.PI * r;
+  const dashOffset = circ - (circ * progress) / 100;
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9999, overflow: 'hidden',
+      background: 'radial-gradient(ellipse at 50% 40%, #4c1d95 0%, #3b0764 40%, #1e0533 100%)',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      fontFamily: "'Segoe UI', system-ui, sans-serif",
+    }}>
+      <style>{`
+        @keyframes ls-fadeIn {
+          from { opacity: 0; transform: translateY(24px) scale(0.97); }
+          to   { opacity: 1; transform: translateY(0)    scale(1); }
+        }
+        @keyframes ls-glitch {
+          0%,100% { clip-path: inset(0 0 100% 0); opacity: 0; }
+          5%       { clip-path: inset(30% 0 50% 0); opacity: 1; transform: translateX(-4px); }
+          10%      { clip-path: inset(60% 0 10% 0); transform: translateX(4px); }
+          15%      { clip-path: inset(0 0 0 0); opacity: 1; transform: none; }
+          85%      { clip-path: inset(0 0 0 0); opacity: 1; }
+          90%      { clip-path: inset(10% 0 80% 0); transform: translateX(3px); }
+          95%      { clip-path: inset(70% 0 5% 0); transform: translateX(-3px); }
+        }
+        @keyframes ls-titleDrop {
+          0%  { opacity: 0; transform: translateY(-40px) skewX(-8deg); letter-spacing: 12px; }
+          60% { opacity: 1; transform: translateY(4px)  skewX(1deg);  letter-spacing: 1px; }
+          100%{ opacity: 1; transform: translateY(0)    skewX(0);     letter-spacing: -1px; }
+        }
+        @keyframes ls-subtitleFade {
+          from { opacity: 0; letter-spacing: 8px; }
+          to   { opacity: 1; letter-spacing: 4px; }
+        }
+        @keyframes ls-ring {
+          from { transform: rotate(0deg); }
+          to   { transform: rotate(360deg); }
+        }
+        @keyframes ls-ringRev {
+          from { transform: rotate(0deg); }
+          to   { transform: rotate(-360deg); }
+        }
+        @keyframes ls-portalPulse {
+          0%,100% { transform: scale(1);    opacity: 0.7; }
+          50%     { transform: scale(1.06); opacity: 1; }
+        }
+        @keyframes ls-sakura {
+          0%   { transform: translateY(-10px) rotate(0deg);   opacity: 0; }
+          10%  { opacity: 1; }
+          90%  { opacity: 0.6; }
+          100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
+        }
+        @keyframes ls-dot {
+          0%,80%,100% { transform: scale(0); opacity: 0; }
+          40%          { transform: scale(1); opacity: 1; }
+        }
+        @keyframes ls-progressGlow {
+          0%,100% { filter: drop-shadow(0 0 4px #c084fc); }
+          50%      { filter: drop-shadow(0 0 12px #c084fc) drop-shadow(0 0 24px #7c3aed); }
+        }
+        @keyframes ls-barShine {
+          0%   { background-position: -200% center; }
+          100% { background-position: 200% center; }
+        }
+        .ls-card {
+          animation: ls-fadeIn 0.7s cubic-bezier(0.22,1,0.36,1) both;
+        }
+        .ls-title {
+          animation: ls-titleDrop 0.9s cubic-bezier(0.22,1,0.36,1) 0.1s both;
+        }
+        .ls-subtitle {
+          animation: ls-subtitleFade 0.8s ease 0.7s both;
+          opacity: 0;
+        }
+        .ls-ring-a { animation: ls-ring    3.2s linear infinite; }
+        .ls-ring-b { animation: ls-ringRev 2.1s linear infinite; }
+        .ls-ring-c { animation: ls-ring    5s   linear infinite; }
+        .ls-portal { animation: ls-portalPulse 2.5s ease-in-out infinite; }
+        .ls-progress-svg { animation: ls-progressGlow 2s ease-in-out infinite; }
+        .ls-bar-shine {
+          background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.35) 50%, transparent 100%);
+          background-size: 200% 100%;
+          animation: ls-barShine 1.4s linear infinite;
+        }
+      `}</style>
+
+      {/* Speed-lines canvas */}
+      <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }} />
+
+      {/* Sakura / star petals */}
+      {Array.from({ length: 18 }).map((_, i) => (
+        <div key={i} style={{
+          position: 'absolute',
+          left: `${5 + (i * 5.5) % 92}%`,
+          top: `-${10 + (i * 7) % 20}px`,
+          fontSize: i % 3 === 0 ? 12 : i % 3 === 1 ? 9 : 7,
+          opacity: 0,
+          pointerEvents: 'none',
+          animation: `ls-sakura ${5 + (i % 5)}s linear ${(i * 0.4) % 4}s infinite`,
+          userSelect: 'none',
+        }}>
+          {i % 4 === 0 ? '🌸' : i % 4 === 1 ? '✦' : i % 4 === 2 ? '⋆' : '✿'}
+        </div>
+      ))}
+
+      {/* Vignette */}
+      <div style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none',
+        background: 'radial-gradient(ellipse at center, transparent 30%, rgba(10,0,20,0.55) 100%)',
+      }} />
+
+      {/* ── MAIN CARD ── */}
+      <div className="ls-card" style={{
+        position: 'relative', zIndex: 10,
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        padding: '44px 40px 36px',
+        background: 'rgba(255,255,255,0.04)',
+        border: '1px solid rgba(192,132,252,0.25)',
+        borderRadius: 28,
+        backdropFilter: 'blur(18px)',
+        boxShadow: '0 0 60px rgba(124,58,237,0.25), 0 0 120px rgba(124,58,237,0.1), inset 0 1px 0 rgba(255,255,255,0.08)',
+        maxWidth: 360, width: '90%',
+        opacity: visible ? 1 : 0,
+        transition: 'opacity 0.3s',
+      }}>
+
+        {/* ── PORTAL CIRCLE ── */}
+        <div style={{ position: 'relative', width: 140, height: 140, marginBottom: 28 }}>
+          {/* Outermost dashed ring */}
+          <div className="ls-ring-c" style={{
+            position: 'absolute', inset: -6, borderRadius: '50%',
+            border: '1px dashed rgba(192,132,252,0.2)',
+          }} />
+          {/* Outer spinner */}
+          <div className="ls-ring-a" style={{
+            position: 'absolute', inset: 0, borderRadius: '50%',
+            border: '2.5px solid transparent',
+            borderTopColor: '#c084fc',
+            borderRightColor: 'rgba(192,132,252,0.3)',
+          }} />
+          {/* Inner spinner */}
+          <div className="ls-ring-b" style={{
+            position: 'absolute', inset: 10, borderRadius: '50%',
+            border: '2px solid transparent',
+            borderBottomColor: '#7c3aed',
+            borderLeftColor: 'rgba(124,58,237,0.3)',
+          }} />
+
+          {/* SVG circular progress */}
+          <svg className="ls-progress-svg" style={{
+            position: 'absolute', inset: 18, width: 'calc(100% - 36px)', height: 'calc(100% - 36px)',
+            transform: 'rotate(-90deg)',
+          }} viewBox="0 0 120 120">
+            <circle cx="60" cy="60" r={r} fill="none" stroke="rgba(192,132,252,0.12)" strokeWidth="6" />
+            <circle
+              cx="60" cy="60" r={r} fill="none"
+              stroke="url(#progressGrad)" strokeWidth="6"
+              strokeLinecap="round"
+              strokeDasharray={circ}
+              strokeDashoffset={dashOffset}
+              style={{ transition: 'stroke-dashoffset 0.2s ease' }}
+            />
+            <defs>
+              <linearGradient id="progressGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#c084fc" />
+                <stop offset="100%" stopColor="#7c3aed" />
+              </linearGradient>
+            </defs>
+          </svg>
+
+          {/* Center portal glow + icon */}
+          <div className="ls-portal" style={{
+            position: 'absolute', inset: 26,
+            borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(124,58,237,0.35) 0%, rgba(76,29,149,0.6) 100%)',
+            boxShadow: '0 0 30px rgba(124,58,237,0.5), inset 0 0 20px rgba(192,132,252,0.15)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <span style={{ fontSize: 34, filter: 'drop-shadow(0 0 8px rgba(192,132,252,0.8))' }}>⛩️</span>
+          </div>
+
+          {/* % badge */}
+          <div style={{
+            position: 'absolute', bottom: -2, right: -2,
+            background: 'linear-gradient(135deg, #7c3aed, #a855f7)',
+            color: '#fff', fontSize: 11, fontWeight: 800,
+            borderRadius: 99, padding: '3px 8px',
+            boxShadow: '0 2px 8px rgba(124,58,237,0.5)',
+            letterSpacing: 0.5,
+            transition: 'all 0.2s',
+          }}>
+            {Math.round(progress)}%
+          </div>
+        </div>
+
+        {/* ── BRAND NAME ── */}
+        <h1 className="ls-title" style={{
+          margin: '0 0 6px', lineHeight: 1,
+          fontSize: 44, fontWeight: 900, letterSpacing: '-1px',
+        }}>
+          <span style={{ color: '#e9d5ff' }}>Anime</span>
+          <span style={{
+            background: 'linear-gradient(90deg, #c084fc, #a855f7, #7c3aed)',
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text',
+          }}>bing</span>
+        </h1>
+
+        {/* ── SUBTITLE ── */}
+        <p className="ls-subtitle" style={{
+          margin: '0 0 28px', color: 'rgba(196,181,253,0.55)',
+          fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 4,
+        }}>
+          アニメ • Hindi • English
+        </p>
+
+        {/* ── FLAT PROGRESS BAR ── */}
+        <div style={{ width: '100%', marginBottom: 10 }}>
+          <div style={{
+            width: '100%', height: 5, borderRadius: 99,
+            background: 'rgba(255,255,255,0.07)',
+            overflow: 'hidden', position: 'relative',
+          }}>
+            <div style={{
+              height: '100%', borderRadius: 99, position: 'relative', overflow: 'hidden',
+              width: `${progress}%`,
+              background: 'linear-gradient(90deg, #7c3aed, #c084fc)',
+              transition: 'width 0.2s ease',
+              boxShadow: '0 0 10px rgba(192,132,252,0.6)',
+            }}>
+              <div className="ls-bar-shine" style={{ position: 'absolute', inset: 0 }} />
+            </div>
+          </div>
+        </div>
+
+        {/* ── LOADING TEXT ── */}
+        <p style={{
+          margin: '0 0 24px', color: 'rgba(196,181,253,0.6)',
+          fontSize: 11, fontWeight: 500, letterSpacing: 0.5,
+          minHeight: 16, textAlign: 'center',
+          transition: 'color 0.3s',
+        }}>
+          {loadingText}
+        </p>
+
+
+
+        {/* ── DOTS LOADER ── */}
+        <div style={{ display: 'flex', gap: 6, marginTop: 24 }}>
+          {[0, 0.2, 0.4].map((delay, i) => (
+            <div key={i} style={{
+              width: 7, height: 7, borderRadius: '50%',
+              background: i === 1 ? '#c084fc' : 'rgba(192,132,252,0.4)',
+              animation: `ls-dot 1.2s ease-in-out ${delay}s infinite`,
+            }} />
+          ))}
+        </div>
+      </div>
+
+      {/* Bottom copyright */}
+      <p style={{
+        position: 'absolute', bottom: 18,
+        color: 'rgba(139,92,246,0.3)', fontSize: 10,
+        letterSpacing: 2, textTransform: 'uppercase',
+        animation: 'ls-fadeIn 0.5s ease 1.2s both', opacity: 0,
+      }}>
+        ✦ Animebing — Watch Free ✦
+      </p>
+    </div>
+  );
+};
+
 const MainApp: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -188,7 +553,7 @@ const MainApp: React.FC = () => {
   useEffect(() => {
     const initializeApp = async () => {
       try {
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        await new Promise(resolve => setTimeout(resolve, 2000));
        
         const token = localStorage.getItem('adminToken');
         const username = localStorage.getItem('adminUsername');
@@ -358,44 +723,9 @@ const MainApp: React.FC = () => {
     });
   };
 
+  // ✅ CINEMATIC LOADING SCREEN
   if (isAppLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-purple-900 flex flex-col items-center justify-center p-4">
-        <style>{`
-          @keyframes fadeInOut {
-            0%, 100% { opacity: 0.3; }
-            50% { opacity: 1; }
-          }
-          .glow-green-border {
-            border: 2px solid rgba(115, 245, 138, 0.5);
-            box-shadow: 0 0 20px rgba(115, 245, 138, 0.3);
-            margin: 0.1rem !important;
-          }
-        `}</style>
-        
-        <div className="text-center glow-green-border rounded-2xl p-8 bg-purple-800/50 backdrop-blur-sm">
-          <div className="relative mb-8">
-            <div 
-              className="text-6xl mb-4 animate-bounce"
-              style={{ textShadow: '0 0 10px rgba(115, 245, 138, 0.5)' }}
-            >🎬</div>
-            <h1 className="text-4xl font-bold text-white mb-2">
-              Anime<span className="text-green-400">bing</span>
-            </h1>
-            <p className="text-purple-300">Your ultimate anime destination</p>
-          </div>
-          <Spinner size="lg" text="Loading your anime world..." />
-          <div className="mt-8 bg-purple-800/50 rounded-lg p-4 max-w-md mx-auto border border-green-500/30">
-            <p className="text-purple-300 text-sm">
-              • Fast Downloads<br/>
-              • Hindi Dubbed & Subbed<br/>
-              • English Subbed<br/>
-              • High Quality Content
-            </p>
-          </div>
-        </div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   if (adminView === 'login') {
