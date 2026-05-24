@@ -1,4 +1,4 @@
-// routes/adminRoutes.cjs - AD FREE VERSION (UPDATED WITH EPISODE STATUS MANAGER & FIXED SORTING)
+ // routes/adminRoutes.cjs - AD FREE VERSION (UPDATED WITH EPISODE STATUS MANAGER & FIXED SORTING)
 const express = require('express');
 const router = express.Router();
 const Anime = require('../models/Anime.cjs');
@@ -74,11 +74,33 @@ router.delete('/delete-anime', async (req, res) => {
   try {
     const { id } = req.body;
     await Anime.findByIdAndDelete(id);
-    // Also delete associated episodes and reports
     await Episode.deleteMany({ animeId: id });
     await Report.deleteMany({ animeId: id });
     res.json({ success: true, message: 'Deleted successfully!' });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ TOGGLE HIDE/SHOW ANIME
+router.patch('/toggle-hide/:id', async (req, res) => {
+  try {
+    const anime = await Anime.findById(req.params.id);
+
+    if (!anime) {
+      return res.status(404).json({ error: 'Anime not found' });
+    }
+
+    anime.isHidden = !anime.isHidden;
+    await anime.save();
+
+    res.json({
+      success: true,
+      message: `Anime ${anime.isHidden ? 'hidden from users' : 'visible to users'} successfully`,
+      isHidden: anime.isHidden,
+    });
+  } catch (err) {
+    console.error('Toggle hide error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -103,7 +125,6 @@ router.patch('/anime/:id/episode-status', async (req, res) => {
       return res.status(404).json({ error: 'Anime not found' });
     }
 
-    // ✅ CRITICAL FIX: Update lastContentAdded so this anime moves to top on homepage
     await Anime.updateLastContent(id);
 
     res.json({
@@ -122,7 +143,6 @@ router.post('/anime/:id/sync-episode-count', async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Count episodes for this anime
     const episodeCount = await Episode.countDocuments({ animeId: id });
 
     const updatedAnime = await Anime.findByIdAndUpdate(
@@ -135,7 +155,6 @@ router.post('/anime/:id/sync-episode-count', async (req, res) => {
       return res.status(404).json({ error: 'Anime not found' });
     }
 
-    // ✅ Also update lastContentAdded when syncing
     await Anime.updateLastContent(id);
 
     res.json({

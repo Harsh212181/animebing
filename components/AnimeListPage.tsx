@@ -1,9 +1,9 @@
- // components/AnimeListPage.tsx - UPDATED (WITHOUT ANIME COUNT & KEYWORDS TIPS)
+ // components/AnimeListPage.tsx - FIXED (dangerouslySetInnerHTML for script tag)
 import React, { useState, useEffect, useMemo } from 'react';
 import type { Anime, FilterType } from '../src/types';
 import { getAllAnime } from '../services/animeService';
 import Spinner from './Spinner';
-import SEO from '../src/components/SEO'; // ✅ SEO IMPORT ADDED
+import SEO from '../src/components/SEO';
 
 interface AnimeListPageProps {
   onAnimeSelect: (anime: Anime) => void;
@@ -36,24 +36,21 @@ const AnimeListPage: React.FC<AnimeListPageProps> = ({ onAnimeSelect }) => {
 
   const sortedAndFilteredAnime = useMemo(() => {
     let result = allAnime;
-    
-    // Apply search filter
+
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
-      result = result.filter(anime => 
+      result = result.filter(anime =>
         anime.title.toLowerCase().includes(query)
       );
     }
-    
-    // Apply type filter - use LOCAL filter only
+
     if (localFilter !== 'All') {
       result = result.filter(anime => anime.subDubStatus === localFilter);
     }
-    
+
     return result.sort((a, b) => a.title.localeCompare(b.title));
   }, [allAnime, localFilter, searchQuery]);
 
-  // Effect to manage the filtering loading indicator for a smoother UX
   useEffect(() => {
     if (isFiltering) {
       const timer = setTimeout(() => setIsFiltering(false), 300);
@@ -80,42 +77,37 @@ const AnimeListPage: React.FC<AnimeListPageProps> = ({ onAnimeSelect }) => {
 
   const filterOptions: FilterType[] = ['All', 'Hindi Dub', 'Hindi Sub', 'English Sub'];
 
-  // ✅ GENERATE SEO DATA FOR ANIME LIST PAGE
   const getSEOData = () => {
     let title = 'Anime List | AnimeBing';
     let description = 'Browse complete list of anime available in Hindi Dub, Hindi Sub, and English Sub. Watch anime online for free.';
     let keywords = 'anime list, all anime, hindi anime list, english anime, anime in hindi, anime in english, anime collection';
-    
-    // Customize based on filter
+
     if (localFilter !== 'All') {
       title = `${localFilter} Anime List | AnimeBing`;
       description = `Browse complete list of ${localFilter} anime. Watch ${localFilter.toLowerCase()} anime online for free in HD quality.`;
       keywords = `${localFilter.toLowerCase()} anime list, ${localFilter.toLowerCase()} anime, anime in ${localFilter.toLowerCase()}, watch ${localFilter.toLowerCase()} anime online`;
     }
-    
-    // Customize based on search query
+
     if (searchQuery.trim()) {
       title = `Search Results for "${searchQuery}" | AnimeBing`;
       description = `Search results for "${searchQuery}". Find and watch anime matching your search.`;
       keywords = `${searchQuery} anime, search anime, find anime ${searchQuery}`;
     }
-    
-    // Generate canonical URL
-    let canonicalUrl = 'https://animebing.in/detail';
+
+    let canonicalUrl = 'https://animebing.in/anime';
     const params = new URLSearchParams();
-    
+
     if (localFilter !== 'All') {
       params.set('filter', localFilter);
     }
     if (searchQuery.trim()) {
       params.set('search', searchQuery.trim());
     }
-    
+
     if (params.toString()) {
       canonicalUrl += `?${params.toString()}`;
     }
-    
-    // Generate structured data for search results
+
     const structuredData = {
       "@context": "https://schema.org",
       "@type": "ItemList",
@@ -131,7 +123,7 @@ const AnimeListPage: React.FC<AnimeListPageProps> = ({ onAnimeSelect }) => {
         }
       }))
     };
-    
+
     return {
       title,
       description,
@@ -144,9 +136,27 @@ const AnimeListPage: React.FC<AnimeListPageProps> = ({ onAnimeSelect }) => {
 
   const seoData = getSEOData();
 
+  const breadcrumbData = JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {
+        "@type": "ListItem",
+        "position": 1,
+        "name": "Home",
+        "item": "https://animebing.in"
+      },
+      {
+        "@type": "ListItem",
+        "position": 2,
+        "name": "Anime List",
+        "item": window.location.href
+      }
+    ]
+  });
+
   return (
     <>
-      {/* ✅ SEO COMPONENT ADDED HERE */}
       <SEO
         title={seoData.title}
         description={seoData.description}
@@ -155,7 +165,7 @@ const AnimeListPage: React.FC<AnimeListPageProps> = ({ onAnimeSelect }) => {
         structuredData={seoData.structuredData}
         ogUrl={seoData.ogUrl}
       />
-    
+
       <div className="container mx-auto px-4 py-8 animate-fade-in">
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4">
           <h1 className="text-3xl font-bold text-purple-100 border-l-4 border-purple-500 pl-4">
@@ -163,7 +173,7 @@ const AnimeListPage: React.FC<AnimeListPageProps> = ({ onAnimeSelect }) => {
             {localFilter !== 'All' && <span className="text-purple-400 ml-2">({localFilter})</span>}
             {searchQuery && <span className="text-purple-400 ml-2">- Search: "{searchQuery}"</span>}
           </h1>
-          
+
           <div className="flex flex-col sm:flex-row gap-4 w-full lg:w-auto">
             {/* Search Bar */}
             <div className="relative w-full sm:w-64">
@@ -184,9 +194,9 @@ const AnimeListPage: React.FC<AnimeListPageProps> = ({ onAnimeSelect }) => {
               )}
             </div>
 
-            {/* Filter Buttons - Smaller buttons without scrollbar */}
-            <div className="flex overflow-x-auto gap-1 bg-purple-800/50 p-1 rounded-lg w-full sm:w-auto 
-                            [-ms-overflow-style:none] [scrollbar-width:none] 
+            {/* Filter Buttons */}
+            <div className="flex overflow-x-auto gap-1 bg-purple-800/50 p-1 rounded-lg w-full sm:w-auto
+                            [-ms-overflow-style:none] [scrollbar-width:none]
                             [&::-webkit-scrollbar]:hidden">
               {filterOptions.map(option => (
                 <button
@@ -204,21 +214,21 @@ const AnimeListPage: React.FC<AnimeListPageProps> = ({ onAnimeSelect }) => {
             </div>
           </div>
         </div>
-        
-        {/* ✅ SEO Description - Hidden from UI but visible to search engines */}
+
+        {/* SEO Hidden Metadata */}
         <div className="hidden" itemScope itemType="https://schema.org/ItemList">
           <meta itemProp="name" content={seoData.title} />
           <meta itemProp="description" content={seoData.description} />
           <meta itemProp="numberOfItems" content={sortedAndFilteredAnime.length.toString()} />
         </div>
-        
+
         {isLoading && (
           <div className="flex justify-center items-center h-64">
             <Spinner />
           </div>
         )}
         {error && <p className="text-center text-red-400">{error}</p>}
-        
+
         {!isLoading && !error && (
           <div className="bg-purple-800/50 rounded-lg shadow-lg relative min-h-[300px]">
             {isFiltering && (
@@ -230,18 +240,16 @@ const AnimeListPage: React.FC<AnimeListPageProps> = ({ onAnimeSelect }) => {
               {sortedAndFilteredAnime.length > 0 ? (
                 sortedAndFilteredAnime.map(anime => (
                   <li key={anime.id} itemScope itemType="https://schema.org/TVSeries">
-                    <button 
+                    <button
                       onClick={() => onAnimeSelect(anime)}
                       className="w-full text-left p-4 flex items-center hover:bg-purple-700/50 transition-colors duration-200 group"
                     >
-                      {/* Updated: Smaller font size and better word break for mobile */}
                       <span className="text-purple-200 group-hover:text-purple-300 transition-colors pr-2 text-sm md:text-base break-words flex-1 min-w-0">
                         {anime.title}
                       </span>
                       <span className="text-xs text-purple-400 bg-purple-700 px-2 py-1 rounded-full flex-shrink-0 ml-2">
                         {anime.subDubStatus}
                       </span>
-                      {/* Hidden SEO data */}
                       <meta itemProp="name" content={anime.title} />
                       <link itemProp="url" href={`https://animebing.in/detail/${anime.slug || anime.id}`} />
                     </button>
@@ -249,7 +257,7 @@ const AnimeListPage: React.FC<AnimeListPageProps> = ({ onAnimeSelect }) => {
                 ))
               ) : (
                 <li className="p-8 text-center text-purple-400">
-                  {searchQuery 
+                  {searchQuery
                     ? `No anime found matching "${searchQuery}"`
                     : 'No anime found for the selected filter.'
                   }
@@ -258,28 +266,12 @@ const AnimeListPage: React.FC<AnimeListPageProps> = ({ onAnimeSelect }) => {
             </ul>
           </div>
         )}
-        
-        {/* ✅ Structured Data for Breadcrumb */}
-        <script type="application/ld+json">
-          {JSON.stringify({
-            "@context": "https://schema.org",
-            "@type": "BreadcrumbList",
-            "itemListElement": [
-              {
-                "@type": "ListItem",
-                "position": 1,
-                "name": "Home",
-                "item": "https://animebing.in"
-              },
-              {
-                "@type": "ListItem",
-                "position": 2,
-                "name": "Anime List",
-                "item": window.location.href
-              }
-            ]
-          })}
-        </script>
+
+        {/* ✅ FIXED: dangerouslySetInnerHTML use kiya - React mein script tag ka sahi tarika */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: breadcrumbData }}
+        />
       </div>
     </>
   );

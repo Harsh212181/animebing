@@ -1,4 +1,4 @@
-// models/Anime.cjs - UPDATED WITH PARTNER ID, CURRENT EPISODE, AND STABLE SLUG (SEO FIX)
+ // models/Anime.cjs - UPDATED WITH PARTNER ID, CURRENT EPISODE, STABLE SLUG (SEO FIX) AND isHidden FIELD
 const mongoose = require('mongoose');
 
 // Schema for storing user votes
@@ -112,6 +112,12 @@ const animeSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Partner',
     default: null
+  },
+  
+  // ✅ NEW FIELD: isHidden - to hide/show anime on homepage
+  isHidden: {
+    type: Boolean,
+    default: false,
   },
   
   // LIKE/DISLIKE SYSTEM FIELDS
@@ -249,11 +255,9 @@ animeSchema.methods.updateTimeBasedCounts = function() {
 };
 
 // ✅ FIXED: Slug is now generated only ONCE (on creation) and NEVER changes on updates
-// This prevents broken URLs and duplicate canonical issues for SEO/sitemap
 animeSchema.pre('save', async function(next) {
   // Only generate slug for new documents (or if slug is missing and we explicitly want to create it)
   if (this.isNew && !this.slug) {
-    // Use the static generateSlug method to ensure uniqueness
     const generatedSlug = await this.constructor.generateSlug(this.title);
     this.slug = generatedSlug;
   }
@@ -275,17 +279,14 @@ animeSchema.pre('save', async function(next) {
   if (!this.seoKeywords) {
     const keywords = [];
     
-    // Title-based keywords
     keywords.push(`${this.title} anime`, `watch ${this.title} online`, `${this.title} ${this.subDubStatus.toLowerCase()}`);
     
-    // Genre-based keywords
     if (this.genreList && this.genreList.length > 0) {
       this.genreList.forEach(genre => {
         keywords.push(`${genre.toLowerCase()} anime`, `${this.title} ${genre.toLowerCase()}`);
       });
     }
     
-    // Language/Type based keywords
     if (this.subDubStatus.includes('Hindi Dub')) {
       keywords.push('hindi dubbed anime', 'anime in hindi', 'hindi dub');
     }
@@ -296,7 +297,6 @@ animeSchema.pre('save', async function(next) {
       keywords.push('english subbed anime', 'anime in english', 'english sub');
     }
     
-    // Content type keywords
     if (this.contentType === 'Movie') {
       keywords.push(`${this.title} movie`, 'anime movies', 'full anime movie');
     }
@@ -338,7 +338,7 @@ animeSchema.statics.generateSlug = async function(title) {
   return slug;
 };
 
-// STATIC METHOD: Get top anime by likes
+// ✅ FIXED: isHidden filter added - hidden anime top 100 mein nahi ayega
 animeSchema.statics.getTopAnime = async function(options = {}) {
   const { 
     type = 'all-time',
@@ -349,7 +349,8 @@ animeSchema.statics.getTopAnime = async function(options = {}) {
   
   const skip = (page - 1) * limit;
   
-  let query = {};
+  // ✅ UPDATED: isHidden: { $ne: true } add kiya
+  let query = { isHidden: { $ne: true } };
   
   if (contentType && contentType !== 'all') {
     query.contentType = contentType;
@@ -388,5 +389,8 @@ animeSchema.index({ 'votes.date': -1 });
 
 // ✅ NEW INDEX FOR PARTNER FILTERING
 animeSchema.index({ partnerId: 1 });
+
+// ✅ NEW INDEX FOR isHidden FILTERING (to quickly get visible anime)
+animeSchema.index({ isHidden: 1 });
 
 module.exports = mongoose.models.Anime || mongoose.model('Anime', animeSchema);

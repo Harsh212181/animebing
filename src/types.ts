@@ -1,4 +1,4 @@
- // src/types.ts – COMPLETE UPDATED VERSION WITH DEVICE-BASED POLL VOTING
+ // src/types.ts – COMPLETE UPDATED VERSION WITH DEVICE-BASED POLL VOTING & isHidden
 /* =========================
    DOWNLOAD / EPISODE / CHAPTER
 ========================= */
@@ -114,6 +114,9 @@ export interface Anime {
 
   /* ✅ NEW: Partner association (Partner Manager) */
   partnerId?: string | null;
+
+  /* ✅ NEW: Hide/Show toggle for admin */
+  isHidden?: boolean;
 }
 
 export interface FeaturedAnime extends Anime {

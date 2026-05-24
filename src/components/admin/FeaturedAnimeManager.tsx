@@ -451,7 +451,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
     setSearchTerm('');
   };
 
-  // ---------- JSX (unchanged) ----------
+  // ---------- JSX ----------
 
   if (loading) {
     return (
@@ -565,8 +565,9 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
             {featuredAnimes.map((anime, index) => {
-              const imgWidth = 150;
-              const imgHeight = 225;
+              // 🔁 Changed image size: larger for poster look
+              const imgWidth = 280;
+              const imgHeight = 420;
               const optimizedSrc = getOptimizedImageUrl(anime.thumbnail, imgWidth, imgHeight);
               
               return (
@@ -580,7 +581,8 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
                     </div>
                   </div>
 
-                  <div className="relative h-40 overflow-hidden">
+                  {/* 🔁 Changed from fixed height to aspect ratio */}
+                  <div className="relative aspect-[2/3] overflow-hidden">
                     <img
                       src={optimizedSrc}
                       alt={anime.title}
@@ -589,7 +591,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
                       width={imgWidth}
                       height={imgHeight}
                       onError={(e) => {
-                        e.currentTarget.src = getOptimizedImageUrl(anime.thumbnail || '', 150, 225);
+                        e.currentTarget.src = getOptimizedImageUrl(anime.thumbnail || '', 280, 420);
                       }}
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-transparent"></div>
@@ -720,8 +722,9 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
         {filteredAnimes.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4">
             {filteredAnimes.map(anime => {
-              const imgWidth = 120;
-              const imgHeight = 180;
+              // 🔁 Changed image size
+              const imgWidth = 200;
+              const imgHeight = 300;
               const optimizedSrc = getOptimizedImageUrl(anime.thumbnail, imgWidth, imgHeight);
               
               return (
@@ -729,7 +732,8 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
                   key={getAnimeId(anime)}
                   className="group bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-purple-900/40 backdrop-blur-sm border border-purple-700/40 rounded-xl overflow-hidden hover:border-amber-500/50 transition-all hover:shadow-lg hover:shadow-amber-500/10"
                 >
-                  <div className="relative h-36 overflow-hidden">
+                  {/* 🔁 Changed from fixed height to aspect ratio */}
+                  <div className="relative aspect-[2/3] overflow-hidden">
                     <img
                       src={optimizedSrc}
                       alt={anime.title}
@@ -738,7 +742,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
                       width={imgWidth}
                       height={imgHeight}
                       onError={(e) => {
-                        e.currentTarget.src = getOptimizedImageUrl(anime.thumbnail || '', 120, 180);
+                        e.currentTarget.src = getOptimizedImageUrl(anime.thumbnail || '', 200, 300);
                       }}
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-transparent"></div>

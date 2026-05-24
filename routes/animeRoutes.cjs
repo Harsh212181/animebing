@@ -1,4 +1,4 @@
-// routes/animeRoutes.cjs - FINAL FIXED VERSION (SORT BY lastContentAdded, NOT updatedAt/likes)
+ // routes/animeRoutes.cjs - FIXED ROUTE ORDER (hide before /:id)
 const express = require('express');
 const router = express.Router();
 const Anime = require('../models/Anime.cjs');
@@ -11,7 +11,7 @@ const DownloadPage = require('../models/DownloadPage.cjs');
 
 router.get('/featured', async (req, res) => {
   try {
-    const featuredAnime = await Anime.find({ featured: true })
+    const featuredAnime = await Anime.find({ featured: true, isHidden: { $ne: true } })
       .select('title thumbnail releaseYear subDubStatus contentType updatedAt createdAt bannerImage rating slug seoTitle likes dislikes monthlyLikes weeklyLikes currentEpisode')
       .sort({ featuredOrder: -1, createdAt: -1 })
       .limit(24)
@@ -34,7 +34,7 @@ router.get('/top100', async (req, res) => {
       page: parseInt(page)
     };
     const topAnime = await Anime.getTopAnime(options);
-    let countQuery = {};
+    let countQuery = { isHidden: { $ne: true } };
     if (contentType && contentType !== 'all') countQuery.contentType = contentType;
     const total = await Anime.countDocuments(countQuery);
     res.set({
@@ -208,7 +208,7 @@ router.get('/:id/statistics', async (req, res) => {
 });
 
 // ============================================
-// ✅ HOMEPAGE LISTING - SORT BY lastContentAdded (NOT updatedAt/likes)
+// ✅ HOMEPAGE LISTING - SORT BY lastContentAdded (filter out hidden anime)
 // ============================================
 router.get('/', async (req, res) => {
   try {
@@ -216,16 +216,14 @@ router.get('/', async (req, res) => {
     const limit = parseInt(req.query.limit) || 24;
     const skip = (page - 1) * limit;
 
-    // ✅ CRITICAL: Always sort by lastContentAdded (only changes on new content/episode)
-    // This ensures likes/dislikes do NOT affect position on homepage
-    const anime = await Anime.find()
+    const anime = await Anime.find({ isHidden: { $ne: true } })
       .select('title thumbnail releaseYear subDubStatus contentType updatedAt createdAt slug likes dislikes rating monthlyLikes weeklyLikes totalVotes currentEpisode lastContentAdded')
-      .sort({ lastContentAdded: -1 })   // <-- HARDCODED sort field
+      .sort({ lastContentAdded: -1 })
       .skip(skip)
       .limit(limit)
       .lean();
 
-    const total = await Anime.countDocuments();
+    const total = await Anime.countDocuments({ isHidden: { $ne: true } });
 
     res.set({
       'Cache-Control': 'public, max-age=300',
@@ -251,7 +249,7 @@ router.get('/', async (req, res) => {
 });
 
 // ============================================
-// SEARCH (separate, does not affect homepage)
+// SEARCH (filter out hidden anime)
 // ============================================
 router.get('/search', async (req, res) => {
   try {
@@ -260,6 +258,7 @@ router.get('/search', async (req, res) => {
     const limit = parseInt(req.query.limit) || 24;
     const skip = (page - 1) * limit;
     const searchQuery = {
+      isHidden: { $ne: true },
       $or: [
         { title: { $regex: q, $options: 'i' } },
         { seoKeywords: { $regex: q, $options: 'i' } },
@@ -302,7 +301,7 @@ router.get('/search', async (req, res) => {
 router.get('/filter/seo', async (req, res) => {
   try {
     const { language, type, genre, sortBy = 'popular' } = req.query;
-    const filter = {};
+    const filter = { isHidden: { $ne: true } };
     if (language === 'hindi') {
       filter.$or = [
         { subDubStatus: { $regex: 'Hindi', $options: 'i' } },
@@ -339,59 +338,29 @@ router.get('/filter/seo', async (req, res) => {
 });
 
 // ============================================
-// GET SINGLE ANIME (by ID or slug)
+// ✅ HIDE / UNHIDE ANIME (admin only)
 // ============================================
-router.get('/:id', async (req, res) => {
+router.patch('/:id/hide', adminAuth, async (req, res) => {
   try {
-    const { id } = req.params;
-    const isObjectId = /^[0-9a-fA-F]{24}$/.test(id);
-    let item;
-    if (isObjectId) {
-      item = await Anime.findById(id).populate('episodes').lean();
-    } else {
-      item = await Anime.findOne({ slug: id }).populate('episodes').lean();
-    }
-    if (!item) return res.status(404).json({ success: false, message: 'Anime not found' });
-    await Anime.findByIdAndUpdate(item._id, { $inc: { views: 1 } });
-    res.set({ 'Cache-Control': 'public, max-age=3600', 'Content-Type': 'application/json; charset=utf-8' });
-    res.json({ success: true, data: item });
-  } catch (err) {
-    if (err.name === 'CastError') return res.status(400).json({ success: false, error: 'Invalid anime ID format' });
-    console.error('Error fetching anime:', err);
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
+    const anime = await Anime.findById(req.params.id);
+    if (!anime) return res.status(404).json({ success: false, error: 'Anime not found' });
 
-router.put('/bulk/seo', async (req, res) => {
-  try {
-    const { animeList } = req.body;
-    if (!Array.isArray(animeList) || animeList.length === 0) {
-      return res.status(400).json({ success: false, error: 'animeList must be a non-empty array' });
-    }
-    const bulkOps = animeList.map(anime => ({
-      updateOne: {
-        filter: { _id: anime._id },
-        update: {
-          $set: {
-            seoTitle: anime.seoTitle || '',
-            seoDescription: anime.seoDescription || '',
-            seoKeywords: anime.seoKeywords || '',
-            slug: anime.slug || '',
-            updatedAt: new Date()
-          }
-        }
-      }
-    }));
-    const result = await Anime.bulkWrite(bulkOps);
-    res.json({ success: true, message: `Updated SEO data for ${result.modifiedCount} anime`, data: result });
+    anime.isHidden = !anime.isHidden;
+    await anime.save();
+
+    res.json({
+      success: true,
+      message: anime.isHidden ? 'Anime hidden from users' : 'Anime visible to users',
+      data: { isHidden: anime.isHidden }
+    });
   } catch (err) {
-    console.error('Error bulk updating SEO data:', err);
+    console.error('Error toggling hide:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // ============================================
-// FEATURED MANAGEMENT (admin only)
+// ✅ FEATURED MANAGEMENT (admin only)
 // ============================================
 router.post('/:id/featured', adminAuth, async (req, res) => {
   try {
@@ -436,6 +405,61 @@ router.put('/featured/order', adminAuth, async (req, res) => {
   }
 });
 
+router.put('/bulk/seo', async (req, res) => {
+  try {
+    const { animeList } = req.body;
+    if (!Array.isArray(animeList) || animeList.length === 0) {
+      return res.status(400).json({ success: false, error: 'animeList must be a non-empty array' });
+    }
+    const bulkOps = animeList.map(anime => ({
+      updateOne: {
+        filter: { _id: anime._id },
+        update: {
+          $set: {
+            seoTitle: anime.seoTitle || '',
+            seoDescription: anime.seoDescription || '',
+            seoKeywords: anime.seoKeywords || '',
+            slug: anime.slug || '',
+            updatedAt: new Date()
+          }
+        }
+      }
+    }));
+    const result = await Anime.bulkWrite(bulkOps);
+    res.json({ success: true, message: `Updated SEO data for ${result.modifiedCount} anime`, data: result });
+  } catch (err) {
+    console.error('Error bulk updating SEO data:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ============================================
+// GET SINGLE ANIME (by ID or slug)
+// ============================================
+router.get('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const isObjectId = /^[0-9a-fA-F]{24}$/.test(id);
+    let item;
+    if (isObjectId) {
+      item = await Anime.findById(id).populate('episodes').lean();
+    } else {
+      item = await Anime.findOne({ slug: id }).populate('episodes').lean();
+    }
+    if (!item) return res.status(404).json({ success: false, message: 'Anime not found' });
+    await Anime.findByIdAndUpdate(item._id, { $inc: { views: 1 } });
+    res.set({ 'Cache-Control': 'public, max-age=3600', 'Content-Type': 'application/json; charset=utf-8' });
+    res.json({ success: true, data: item });
+  } catch (err) {
+    if (err.name === 'CastError') return res.status(400).json({ success: false, error: 'Invalid anime ID format' });
+    console.error('Error fetching anime:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ============================================
+// DELETE ANIME (admin only)
+// ============================================
 router.delete('/:id', adminAuth, async (req, res) => {
   try {
     const anime = await Anime.findById(req.params.id);
