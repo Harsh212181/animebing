@@ -1,7 +1,7 @@
  // App.tsx - FINAL FIXED VERSION (with HelmetProvider + AnimeContext for no re-fetch)
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { HelmetProvider } from 'react-helmet-async'; // ✅ CRITICAL: For dynamic SEO tags
+import { HelmetProvider } from 'react-helmet-async';
 
 import type { Anime, FilterType, ContentType, ContentTypeFilter } from './src/types';
 import Header from './components/Header';
@@ -24,13 +24,12 @@ import EarnMoney from './components/EarnMoney';
 import WelcomePage from './components/WelcomePage';
 import DownloadLinkPage from './components/DownloadLinkPage';
 
-// ✅ ADDED: AnimeContext Provider import
 import { AnimeProvider } from './src/context/AnimeContext';
 
 // ✅ 404 ERROR PAGE COMPONENT
 const ErrorPage: React.FC = () => {
   const navigate = useNavigate();
-  
+
   return (
     <div className="min-h-[70vh] flex flex-col items-center justify-center p-4 text-center">
       <style>{`
@@ -42,22 +41,22 @@ const ErrorPage: React.FC = () => {
           100% { box-shadow: 0 0 25px rgba(220, 38, 38, 0.6); }
         }
       `}</style>
-      
+
       <div className="error-glow border-2 border-red-500/50 rounded-2xl p-8 bg-purple-900/40 backdrop-blur-sm max-w-md w-full">
         <div className="text-8xl mb-6 animate-bounce">
           <span className="text-red-400">4</span>
           <span className="text-purple-400">0</span>
           <span className="text-red-400">4</span>
         </div>
-        
+
         <h1 className="text-3xl font-bold text-white mb-4">
           Page Not Found
         </h1>
-        
+
         <p className="text-purple-300 mb-6">
           Oops! The page you're looking for doesn't exist or has been moved.
         </p>
-        
+
         <div className="space-y-4">
           <button
             onClick={() => navigate('/')}
@@ -66,7 +65,7 @@ const ErrorPage: React.FC = () => {
             <span className="text-xl">👾</span>
             <span>Go Back to Home</span>
           </button>
-          
+
           <button
             onClick={() => navigate(-1)}
             className="w-full bg-gradient-to-r from-purple-800 to-gray-800 hover:from-purple-700 hover:to-gray-700 text-white font-medium py-2 px-4 rounded-lg transition-all border border-purple-700/50"
@@ -74,7 +73,7 @@ const ErrorPage: React.FC = () => {
             ← Go Back to Previous Page
           </button>
         </div>
-        
+
         <div className="mt-8 pt-6 border-t border-purple-800/50">
           <p className="text-purple-400 text-sm">
             If you believe this is an error, please check the URL or contact support.
@@ -88,32 +87,19 @@ const ErrorPage: React.FC = () => {
 type ViewType = 'home' | 'list' | 'detail' | 'top100';
 type AdminViewType = 'login' | 'dashboard';
 
-// ✅ SCROLL TO TOP COMPONENT
+// ✅ FIXED ScrollToTop — back navigation par scroll to top NAHI karta
 const ScrollToTop: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
-  
+
   useEffect(() => {
-    window.scrollTo({
-      top: 0,
-      left: 0,
-      behavior: 'instant' as ScrollBehavior
-    });
-    
-    requestAnimationFrame(() => {
-      if (window.scrollY > 0) {
-        window.scrollTo(0, 0);
-      }
-    });
-    
-    const timer = setTimeout(() => {
-      if (window.scrollY > 0) {
-        window.scrollTo(0, 0);
-      }
-    }, 10);
-    
-    return () => clearTimeout(timer);
+    // ✅ Agar homeScrollPosition hai, user back aa raha hai
+    // Us case mein scroll restore HomePage khud karega — yahan kuch mat karo
+    const isComingBack = !!sessionStorage.getItem('homeScrollPosition');
+    if (isComingBack) return;
+
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
   }, [location.pathname, location.search]);
-  
+
   return <>{children}</>;
 };
 
@@ -133,7 +119,6 @@ const LoadingScreen: React.FC = () => {
     'Entering Anime Universe...',
   ];
 
-  // Speed lines canvas animation
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -194,7 +179,6 @@ const LoadingScreen: React.FC = () => {
     };
   }, []);
 
-  // Progress + text
   useEffect(() => {
     setTimeout(() => setVisible(true), 80);
 
@@ -210,7 +194,7 @@ const LoadingScreen: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const r = 54; // circle radius
+  const r = 54;
   const circ = 2 * Math.PI * r;
   const dashOffset = circ - (circ * progress) / 100;
 
@@ -225,15 +209,6 @@ const LoadingScreen: React.FC = () => {
         @keyframes ls-fadeIn {
           from { opacity: 0; transform: translateY(24px) scale(0.97); }
           to   { opacity: 1; transform: translateY(0)    scale(1); }
-        }
-        @keyframes ls-glitch {
-          0%,100% { clip-path: inset(0 0 100% 0); opacity: 0; }
-          5%       { clip-path: inset(30% 0 50% 0); opacity: 1; transform: translateX(-4px); }
-          10%      { clip-path: inset(60% 0 10% 0); transform: translateX(4px); }
-          15%      { clip-path: inset(0 0 0 0); opacity: 1; transform: none; }
-          85%      { clip-path: inset(0 0 0 0); opacity: 1; }
-          90%      { clip-path: inset(10% 0 80% 0); transform: translateX(3px); }
-          95%      { clip-path: inset(70% 0 5% 0); transform: translateX(-3px); }
         }
         @keyframes ls-titleDrop {
           0%  { opacity: 0; transform: translateY(-40px) skewX(-8deg); letter-spacing: 12px; }
@@ -274,16 +249,9 @@ const LoadingScreen: React.FC = () => {
           0%   { background-position: -200% center; }
           100% { background-position: 200% center; }
         }
-        .ls-card {
-          animation: ls-fadeIn 0.7s cubic-bezier(0.22,1,0.36,1) both;
-        }
-        .ls-title {
-          animation: ls-titleDrop 0.9s cubic-bezier(0.22,1,0.36,1) 0.1s both;
-        }
-        .ls-subtitle {
-          animation: ls-subtitleFade 0.8s ease 0.7s both;
-          opacity: 0;
-        }
+        .ls-card { animation: ls-fadeIn 0.7s cubic-bezier(0.22,1,0.36,1) both; }
+        .ls-title { animation: ls-titleDrop 0.9s cubic-bezier(0.22,1,0.36,1) 0.1s both; }
+        .ls-subtitle { animation: ls-subtitleFade 0.8s ease 0.7s both; opacity: 0; }
         .ls-ring-a { animation: ls-ring    3.2s linear infinite; }
         .ls-ring-b { animation: ls-ringRev 2.1s linear infinite; }
         .ls-ring-c { animation: ls-ring    5s   linear infinite; }
@@ -296,10 +264,8 @@ const LoadingScreen: React.FC = () => {
         }
       `}</style>
 
-      {/* Speed-lines canvas */}
       <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }} />
 
-      {/* Sakura / star petals */}
       {Array.from({ length: 18 }).map((_, i) => (
         <div key={i} style={{
           position: 'absolute',
@@ -315,13 +281,11 @@ const LoadingScreen: React.FC = () => {
         </div>
       ))}
 
-      {/* Vignette */}
       <div style={{
         position: 'absolute', inset: 0, pointerEvents: 'none',
         background: 'radial-gradient(ellipse at center, transparent 30%, rgba(10,0,20,0.55) 100%)',
       }} />
 
-      {/* ── MAIN CARD ── */}
       <div className="ls-card" style={{
         position: 'relative', zIndex: 10,
         display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -335,22 +299,17 @@ const LoadingScreen: React.FC = () => {
         opacity: visible ? 1 : 0,
         transition: 'opacity 0.3s',
       }}>
-
-        {/* ── PORTAL CIRCLE ── */}
         <div style={{ position: 'relative', width: 140, height: 140, marginBottom: 28 }}>
-          {/* Outermost dashed ring */}
           <div className="ls-ring-c" style={{
             position: 'absolute', inset: -6, borderRadius: '50%',
             border: '1px dashed rgba(192,132,252,0.2)',
           }} />
-          {/* Outer spinner */}
           <div className="ls-ring-a" style={{
             position: 'absolute', inset: 0, borderRadius: '50%',
             border: '2.5px solid transparent',
             borderTopColor: '#c084fc',
             borderRightColor: 'rgba(192,132,252,0.3)',
           }} />
-          {/* Inner spinner */}
           <div className="ls-ring-b" style={{
             position: 'absolute', inset: 10, borderRadius: '50%',
             border: '2px solid transparent',
@@ -358,7 +317,6 @@ const LoadingScreen: React.FC = () => {
             borderLeftColor: 'rgba(124,58,237,0.3)',
           }} />
 
-          {/* SVG circular progress */}
           <svg className="ls-progress-svg" style={{
             position: 'absolute', inset: 18, width: 'calc(100% - 36px)', height: 'calc(100% - 36px)',
             transform: 'rotate(-90deg)',
@@ -380,7 +338,6 @@ const LoadingScreen: React.FC = () => {
             </defs>
           </svg>
 
-          {/* Center portal glow + icon */}
           <div className="ls-portal" style={{
             position: 'absolute', inset: 26,
             borderRadius: '50%',
@@ -391,7 +348,6 @@ const LoadingScreen: React.FC = () => {
             <span style={{ fontSize: 34, filter: 'drop-shadow(0 0 8px rgba(192,132,252,0.8))' }}>☠️</span>
           </div>
 
-          {/* % badge */}
           <div style={{
             position: 'absolute', bottom: -2, right: -2,
             background: 'linear-gradient(135deg, #7c3aed, #a855f7)',
@@ -405,7 +361,6 @@ const LoadingScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* ── BRAND NAME ── */}
         <h1 className="ls-title" style={{
           margin: '0 0 6px', lineHeight: 1,
           fontSize: 44, fontWeight: 900, letterSpacing: '-1px',
@@ -418,7 +373,6 @@ const LoadingScreen: React.FC = () => {
           }}>bing</span>
         </h1>
 
-        {/* ── SUBTITLE ── */}
         <p className="ls-subtitle" style={{
           margin: '0 0 28px', color: 'rgba(196,181,253,0.55)',
           fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 4,
@@ -426,7 +380,6 @@ const LoadingScreen: React.FC = () => {
           アニメ • Hindi • English
         </p>
 
-        {/* ── FLAT PROGRESS BAR ── */}
         <div style={{ width: '100%', marginBottom: 10 }}>
           <div style={{
             width: '100%', height: 5, borderRadius: 99,
@@ -445,7 +398,6 @@ const LoadingScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* ── LOADING TEXT ── */}
         <p style={{
           margin: '0 0 24px', color: 'rgba(196,181,253,0.6)',
           fontSize: 11, fontWeight: 500, letterSpacing: 0.5,
@@ -455,9 +407,6 @@ const LoadingScreen: React.FC = () => {
           {loadingText}
         </p>
 
-
-
-        {/* ── DOTS LOADER ── */}
         <div style={{ display: 'flex', gap: 6, marginTop: 24 }}>
           {[0, 0.2, 0.4].map((delay, i) => (
             <div key={i} style={{
@@ -469,7 +418,6 @@ const LoadingScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* Bottom copyright */}
       <p style={{
         position: 'absolute', bottom: 18,
         color: 'rgba(139,92,246,0.3)', fontSize: 10,
@@ -486,14 +434,14 @@ const MainApp: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  
+
   const [adminView, setAdminView] = useState<AdminViewType | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<FilterType>('All');
   const [contentType, setContentType] = useState<ContentTypeFilter>('All');
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [isAppLoading, setIsAppLoading] = useState(true);
-  
+
   const [typedText, setTypedText] = useState('');
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
@@ -504,31 +452,14 @@ const MainApp: React.FC = () => {
   useEffect(() => {
     if (import.meta.env.DEV) {
       console.log('📍 URL Changed:', location.search);
-      
+
       const urlContentType = searchParams.get('contentType') as ContentTypeFilter | null;
       const urlFilter = searchParams.get('filter') as FilterType | null;
       const urlSearchQuery = searchParams.get('search') || '';
 
-      console.log('📋 URL Parameters:', {
-        contentType: urlContentType,
-        filter: urlFilter,
-        searchQuery: urlSearchQuery
-      });
-
-      if (urlContentType && urlContentType !== contentType) {
-        console.log('🔄 Updating contentType from URL:', urlContentType);
-        setContentType(urlContentType);
-      }
-
-      if (urlFilter && urlFilter !== filter) {
-        console.log('🔄 Updating filter from URL:', urlFilter);
-        setFilter(urlFilter);
-      }
-
-      if (urlSearchQuery && urlSearchQuery !== searchQuery) {
-        console.log('🔄 Updating searchQuery from URL:', urlSearchQuery);
-        setSearchQuery(urlSearchQuery);
-      }
+      if (urlContentType && urlContentType !== contentType) setContentType(urlContentType);
+      if (urlFilter && urlFilter !== filter) setFilter(urlFilter);
+      if (urlSearchQuery && urlSearchQuery !== searchQuery) setSearchQuery(urlSearchQuery);
     }
   }, [location.search, searchParams]);
 
@@ -537,24 +468,15 @@ const MainApp: React.FC = () => {
     const urlFilter = searchParams.get('filter') as FilterType | null;
     const urlSearchQuery = searchParams.get('search') || '';
 
-    if (urlContentType && urlContentType !== contentType) {
-      setContentType(urlContentType);
-    }
-    
-    if (urlFilter && urlFilter !== filter) {
-      setFilter(urlFilter);
-    }
-    
-    if (urlSearchQuery !== searchQuery) {
-      setSearchQuery(urlSearchQuery);
-    }
+    if (urlContentType && urlContentType !== contentType) setContentType(urlContentType);
+    if (urlFilter && urlFilter !== filter) setFilter(urlFilter);
+    if (urlSearchQuery !== searchQuery) setSearchQuery(urlSearchQuery);
   }, [location.search]);
 
   useEffect(() => {
     const initializeApp = async () => {
       try {
         await new Promise(resolve => setTimeout(resolve, 2000));
-       
         const token = localStorage.getItem('adminToken');
         const username = localStorage.getItem('adminUsername');
         if (token && username) {
@@ -576,18 +498,12 @@ const MainApp: React.FC = () => {
     const showAdminNotification = () => {
       const notification = document.createElement('div');
       notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
+        position: fixed; top: 20px; right: 20px;
         background: linear-gradient(135deg, #8b5cf6, #3b82f6);
-        color: white;
-        padding: 15px 20px;
-        border-radius: 10px;
-        font-weight: bold;
-        z-index: 99999;
+        color: white; padding: 15px 20px; border-radius: 10px;
+        font-weight: bold; z-index: 99999;
         box-shadow: 0 5px 15px rgba(139, 92, 246, 0.3);
-        animation: fadeInOut 3s ease-in-out;
-        font-size: 16px;
+        animation: fadeInOut 3s ease-in-out; font-size: 16px;
       `;
       notification.innerHTML = '✅ Admin Access Granted!';
       document.body.appendChild(notification);
@@ -596,9 +512,7 @@ const MainApp: React.FC = () => {
 
     const handleKeyPress = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
-        return;
-      }
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
 
       if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
         const newTypedText = (typedText + e.key).toLowerCase();
@@ -612,9 +526,7 @@ const MainApp: React.FC = () => {
         }
 
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-        typingTimeoutRef.current = setTimeout(() => {
-          setTypedText('');
-        }, 3000);
+        typingTimeoutRef.current = setTimeout(() => setTypedText(''), 3000);
       }
 
       if (e.ctrlKey && e.shiftKey && e.altKey) {
@@ -647,57 +559,40 @@ const MainApp: React.FC = () => {
     window.location.href = window.location.origin + '/';
   };
 
+  // ✅ FIXED handleAnimeSelect — scroll position pehle save, phir navigate
   const handleAnimeSelect = (anime: Anime) => {
     const identifier = anime.slug || anime.id || anime._id;
     if (identifier) {
+      // ✅ Pehle position save karo
+      sessionStorage.setItem('homeScrollPosition', String(window.scrollY));
+      // ✅ Phir navigate karo — scroll to top NAHI karna (ScrollToTop component handle karega)
       navigate(`/detail/${identifier}`);
-      
-      requestAnimationFrame(() => {
-        window.scrollTo({
-          top: 0,
-          left: 0,
-          behavior: 'instant' as ScrollBehavior
-        });
-      });
     }
   };
 
-  const handleBack = () => {
-    navigate(-1);
-  };
-
-  const handleBackToHome = () => {
-    navigate('/');
-  };
+  const handleBack = () => navigate(-1);
+  const handleBackToHome = () => navigate('/');
 
   const handleSearchChange = useCallback((query: string) => {
     setSearchQuery(query);
-    
-    if (searchDebounceRef.current) {
-      clearTimeout(searchDebounceRef.current);
-    }
-    
+
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+
     searchDebounceRef.current = setTimeout(() => {
       const params = new URLSearchParams(window.location.search);
-      
       if (query.trim()) {
         params.set('search', query.trim());
       } else {
         params.delete('search');
       }
-      
       const newUrl = `${window.location.pathname}${params.toString() ? '?' + params.toString() : ''}`;
       window.history.pushState({}, '', newUrl);
-      
-      if (import.meta.env.DEV) {
-        console.log('🔍 Search updated to:', query);
-      }
+
+      if (import.meta.env.DEV) console.log('🔍 Search updated to:', query);
     }, 400);
   }, []);
-  
-  const handleFilterChange = (newFilter: FilterType) => {
-    setFilter(newFilter);
-  };
+
+  const handleFilterChange = (newFilter: FilterType) => setFilter(newFilter);
 
   const handleNavigate = (destination: 'home' | 'list' | 'top100') => {
     if (destination === 'list') {
@@ -707,26 +602,19 @@ const MainApp: React.FC = () => {
     } else {
       navigate('/');
     }
-    
+
     if (destination === 'home') {
       setFilter('All');
       setContentType('All');
       setSearchQuery('');
     }
-    
+
     requestAnimationFrame(() => {
-      window.scrollTo({
-        top: 0,
-        left: 0,
-        behavior: 'instant' as ScrollBehavior
-      });
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
     });
   };
 
-  // ✅ CINEMATIC LOADING SCREEN
-  if (isAppLoading) {
-    return <LoadingScreen />;
-  }
+  if (isAppLoading) return <LoadingScreen />;
 
   if (adminView === 'login') {
     return (
@@ -760,34 +648,25 @@ const MainApp: React.FC = () => {
           box-shadow: 0 0 15px rgba(115, 245, 138, 0.5);
           border-color: rgba(115, 245, 138, 0.7);
         }
-        .border-green-custom {
-          border-color: #73F58A;
-        }
-        .border-green-custom-30 {
-          border-color: rgba(115, 245, 138, 0.3);
-        }
-        html {
-          scroll-behavior: auto !important;
-        }
-        body {
-          overflow-anchor: none;
-        }
+        .border-green-custom { border-color: #73F58A; }
+        .border-green-custom-30 { border-color: rgba(115, 245, 138, 0.3); }
+        html { scroll-behavior: auto !important; }
+        body { overflow-anchor: none; }
       `}</style>
-      
+
       <AnalyticsTracker />
-      
+
       <ScrollToTop>
-        <Header 
-          onSearchChange={handleSearchChange} 
+        <Header
+          onSearchChange={handleSearchChange}
           searchQuery={searchQuery}
           onNavigate={handleNavigate}
           onFilterAndNavigateHome={dummyFilterFunction}
           onContentTypeNavigate={dummyContentTypeFunction}
         />
-        
-        {/* ✅ FIX: container hatakar w-full kiya — ab full width har browser mein */}
+
         <main className="w-full px-2 py-2">
-          <div 
+          <div
             className="rounded-xl"
             style={{
               background: 'rgba(30, 41, 59, 0.5)',
@@ -797,36 +676,36 @@ const MainApp: React.FC = () => {
             <Routes>
               <Route path="/" element={
                 <div className="rounded-lg overflow-hidden">
-                  <HomePage 
-                    onAnimeSelect={handleAnimeSelect} 
-                    searchQuery={searchQuery} 
+                  <HomePage
+                    onAnimeSelect={handleAnimeSelect}
+                    searchQuery={searchQuery}
                     filter={filter}
                     contentType={contentType}
                   />
                 </div>
               } />
-              
+
               <Route path="/anime" element={
                 <div className="rounded-lg overflow-hidden">
                   <AnimeListPage onAnimeSelect={handleAnimeSelect} />
                 </div>
               } />
-              
+
               <Route path="/detail/:idOrSlug" element={
                 <div className="rounded-lg overflow-hidden">
                   <AnimeDetailWrapper />
                 </div>
               } />
-              
+
               <Route path="/top-100" element={
                 <div className="rounded-lg overflow-hidden">
-                  <Top100Page 
+                  <Top100Page
                     onAnimeSelect={handleAnimeSelect}
                     onBack={handleBackToHome}
                   />
                 </div>
               } />
-              
+
               <Route path="/download" element={
                 <div className="rounded-lg overflow-hidden">
                   <DownloadRedirectPage />
@@ -837,13 +716,13 @@ const MainApp: React.FC = () => {
                   <DownloadRedirectPage />
                 </div>
               } />
-              
+
               <Route path="/download/:slug" element={
                 <div className="rounded-lg overflow-hidden">
                   <DownloadLinkPage />
                 </div>
               } />
-              
+
               <Route path="/privacy" element={
                 <div className="rounded-lg overflow-hidden glow-green-border">
                   <PrivacyPolicy />
@@ -887,7 +766,7 @@ const MainApp: React.FC = () => {
             </Routes>
           </div>
         </main>
-        
+
         <Footer />
         <ScrollToTopButton />
       </ScrollToTop>
@@ -900,7 +779,7 @@ const App: React.FC = () => {
   return (
     <HelmetProvider>
       <Router>
-        <AnimeProvider>   {/* ✅ ADDED: AnimeContext wraps the whole app */}
+        <AnimeProvider>
           <MainApp />
         </AnimeProvider>
       </Router>

@@ -1,4 +1,4 @@
- // components/HomePage.tsx - FIX: Focus event no longer resets anime list
+ // components/HomePage.tsx
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import type { Anime, FilterType, ContentTypeFilter } from '../src/types';
 import AnimeCard from './AnimeCard';
@@ -53,8 +53,8 @@ const getAnimeId = (anime: Anime): string => {
 const HomePage: React.FC<Props> = ({
   onAnimeSelect,
   searchQuery,
-  filter,
-  contentType
+  filter: _filterProp,
+  contentType: _contentTypeProp
 }) => {
   const {
     animeList,
@@ -67,19 +67,50 @@ const HomePage: React.FC<Props> = ({
     loadInitialAnime,
     loadMoreAnime,
     fetchFeatured,
+    filter,
     setFilter,
+    contentType,
     setContentType,
     setSearchQuery
   } = useAnimeContext();
+
+  // ✅ useRef mein rakho — render ke beech stable rahe, re-render par reset na ho
+  const isComingBackRef = useRef(!!sessionStorage.getItem('homeScrollPosition'));
 
   const [currentBorderColorIndex, setCurrentBorderColorIndex] = useState(0);
   const [isPollActive, setIsPollActive] = useState(false);
   const [pollChecked, setPollChecked] = useState(false);
 
-  // Sync props → context
-  useEffect(() => { setFilter(filter); }, [filter, setFilter]);
-  useEffect(() => { setContentType(contentType); }, [contentType, setContentType]);
-  useEffect(() => { setSearchQuery(searchQuery); }, [searchQuery, setSearchQuery]);
+  // ✅ SCROLL RESTORATION — double rAF use karo, setTimeout nahi
+  useEffect(() => {
+    if (animeList.length === 0) return;
+
+    const savedPosition = sessionStorage.getItem('homeScrollPosition');
+    if (!savedPosition) return;
+
+    const position = parseInt(savedPosition, 10);
+
+    // ✅ Pehle sessionStorage clear karo
+    sessionStorage.removeItem('homeScrollPosition');
+    isComingBackRef.current = false;
+
+    // ✅ Animations skip karo — back aane par cards animate na hon
+    document.body.classList.add('skip-card-animations');
+
+    // ✅ Double requestAnimationFrame — guaranteed DOM paint ke baad scroll
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: position, behavior: 'instant' });
+        document.body.classList.remove('skip-card-animations');
+      });
+    });
+
+  }, [animeList.length]);
+
+  // Sync searchQuery to context
+  useEffect(() => {
+    setSearchQuery(searchQuery);
+  }, [searchQuery, setSearchQuery]);
 
   // Border color animation
   useEffect(() => {
@@ -119,13 +150,10 @@ const HomePage: React.FC<Props> = ({
     return () => clearTimeout(timer);
   }, [searchQuery, isSearching, checkPollStatus]);
 
-  // ✅ FIXED: Focus handler ONLY refreshes featured anime – does NOT reset anime list
+  // Focus handler
   useEffect(() => {
     const handleFocus = () => {
-      console.log('🔄 Tab focused – refreshing featured anime (list untouched)');
-      if (!searchQuery) {
-        fetchFeatured();  // Sirf featured refresh
-      }
+      if (!searchQuery) fetchFeatured();
     };
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
@@ -141,12 +169,29 @@ const HomePage: React.FC<Props> = ({
       description = `Search results for "${searchQuery}". Watch anime online in Hindi and English.`;
       keywords = `${searchQuery} anime, ${searchQuery} hindi dub, ${searchQuery} english sub`;
     } else if (filter !== 'All') {
-      if (filter === 'Hindi Dub') { title = 'Watch Hindi Dubbed Anime Online | AnimeBing'; description = 'Watch Hindi dubbed anime online for free.'; keywords = 'hindi dubbed anime, anime in hindi dub, free hindi anime'; }
-      else if (filter === 'Hindi Sub') { title = 'Watch Hindi Subbed Anime Online | AnimeBing'; description = 'Watch Hindi subbed anime online for free.'; keywords = 'hindi subbed anime, anime in hindi sub'; }
-      else if (filter === 'English Sub') { title = 'Watch English Subbed Anime Online | AnimeBing'; description = 'Watch English subbed anime online for free.'; keywords = 'english subbed anime, anime in english sub'; }
+      if (filter === 'Hindi Dub') {
+        title = 'Watch Hindi Dubbed Anime Online | AnimeBing';
+        description = 'Watch Hindi dubbed anime online for free.';
+        keywords = 'hindi dubbed anime, anime in hindi dub, free hindi anime';
+      } else if (filter === 'Hindi Sub') {
+        title = 'Watch Hindi Subbed Anime Online | AnimeBing';
+        description = 'Watch Hindi subbed anime online for free.';
+        keywords = 'hindi subbed anime, anime in hindi sub';
+      } else if (filter === 'English Sub') {
+        title = 'Watch English Subbed Anime Online | AnimeBing';
+        description = 'Watch English subbed anime online for free.';
+        keywords = 'english subbed anime, anime in english sub';
+      }
     } else if (contentType !== 'All') {
-      if (contentType === 'Movie') { title = 'Watch Anime Movies Online | AnimeBing'; description = 'Watch anime movies online for free in Hindi and English.'; keywords = 'anime movies, watch anime movies online'; }
-      else if (contentType === 'Manga') { title = 'Read Manga Online | AnimeBing'; description = 'Read manga online for free.'; keywords = 'read manga online, manga, free manga'; }
+      if (contentType === 'Movie') {
+        title = 'Watch Anime Movies Online | AnimeBing';
+        description = 'Watch anime movies online for free in Hindi and English.';
+        keywords = 'anime movies, watch anime movies online';
+      } else if (contentType === 'Manga') {
+        title = 'Read Manga Online | AnimeBing';
+        description = 'Read manga online for free.';
+        keywords = 'read manga online, manga, free manga';
+      }
     }
     let canonicalUrl = 'https://animebing.in';
     const params = new URLSearchParams();
@@ -179,7 +224,7 @@ const HomePage: React.FC<Props> = ({
 
   const handleFilterChange = (f: FilterType) => setFilter(f);
 
-  // Filtered list from context
+  // Filtered list
   const filteredAnime = useMemo(() => {
     if (!animeList.length) return [];
     let list = [...animeList];
@@ -203,8 +248,8 @@ const HomePage: React.FC<Props> = ({
     return () => window.removeEventListener('scroll', handleScroll);
   }, [isLoadingMore, hasMore, isSearching, loadMoreAnime]);
 
-  // Loading (only skeleton if no data)
-  if (isLoading && animeList.length === 0) {
+  // ✅ Fresh open — skeleton dikho (cache empty, back nahi aa raha)
+  if (isLoading && animeList.length === 0 && !isComingBackRef.current) {
     return (
       <>
         <SEO {...seoData} />
@@ -217,6 +262,17 @@ const HomePage: React.FC<Props> = ({
     );
   }
 
+  // ✅ Back aane par — cache se data aa raha hai, plain background dikho
+  // (animeList.length > 0 hoga cache se, toh yeh case bahut kam aayega)
+  if (isLoading && animeList.length === 0 && isComingBackRef.current) {
+    return (
+      <>
+        <SEO {...seoData} />
+        <div className="min-h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-purple-900" />
+      </>
+    );
+  }
+
   if (error && animeList.length === 0) {
     return (
       <>
@@ -224,7 +280,12 @@ const HomePage: React.FC<Props> = ({
         <div className="min-h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-purple-900 flex items-center justify-center p-4">
           <div className="text-center bg-purple-800/80 backdrop-blur rounded-2xl p-8 border border-purple-700">
             <p className="text-red-400 text-xl mb-4">{error}</p>
-            <button onClick={() => loadInitialAnime(false)} className="bg-purple-600 hover:bg-purple-700 text-white px-8 py-3 rounded-xl font-bold">Try Again</button>
+            <button
+              onClick={() => loadInitialAnime(false)}
+              className="bg-purple-600 hover:bg-purple-700 text-white px-8 py-3 rounded-xl font-bold"
+            >
+              Try Again
+            </button>
           </div>
         </div>
       </>
@@ -236,15 +297,38 @@ const HomePage: React.FC<Props> = ({
       <SEO {...seoData} />
       <div className="min-h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-purple-900">
         <style>{`
-          @keyframes subtle-glow { 0%,100% { opacity:0.4; filter:drop-shadow(0 0 10px currentColor); } 50% { opacity:0.6; filter:drop-shadow(0 0 25px currentColor); } }
-          @keyframes shimmer { 0% { transform:translateX(-100%) rotate(45deg); } 100% { transform:translateX(100%) rotate(45deg); } }
-          @keyframes float { 0%,100% { transform:translateY(0px); } 50% { transform:translateY(-3px); } }
-          @keyframes pulse-subtle { 0%,100% { opacity:0.5; transform:scale(1); } 50% { opacity:0.7; transform:scale(1.01); } }
+          body.skip-card-animations .card-load-animate {
+            opacity: 1 !important;
+            animation: none !important;
+          }
+          @keyframes subtle-glow {
+            0%,100% { opacity:0.4; filter:drop-shadow(0 0 10px currentColor); }
+            50% { opacity:0.6; filter:drop-shadow(0 0 25px currentColor); }
+          }
+          @keyframes shimmer {
+            0% { transform:translateX(-100%) rotate(45deg); }
+            100% { transform:translateX(100%) rotate(45deg); }
+          }
+          @keyframes float {
+            0%,100% { transform:translateY(0px); }
+            50% { transform:translateY(-3px); }
+          }
+          @keyframes pulse-subtle {
+            0%,100% { opacity:0.5; transform:scale(1); }
+            50% { opacity:0.7; transform:scale(1.01); }
+          }
           .enhanced-glow { animation:pulse-subtle 3s ease-in-out infinite; }
           .card-hover-effect:hover { transform:translateY(-4px) scale(1.01); transition:transform 0.3s ease-out; }
-          .shimmer-effect { position:absolute; top:-50%; left:-50%; width:200%; height:200%; background:linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent); animation:shimmer 3s infinite; }
+          .shimmer-effect {
+            position:absolute; top:-50%; left:-50%; width:200%; height:200%;
+            background:linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
+            animation:shimmer 3s infinite;
+          }
           .sparkle-effect { animation:sparkle 2s ease-in-out infinite; }
-          @keyframes sparkle { 0%,100% { opacity:0.2; transform:scale(0.8); } 50% { opacity:0.5; transform:scale(1.1); } }
+          @keyframes sparkle {
+            0%,100% { opacity:0.2; transform:scale(0.8); }
+            50% { opacity:0.5; transform:scale(1.1); }
+          }
           .border-transition { transition:background 0.8s ease-in-out; }
           .scrollbar-hide { -ms-overflow-style:none; scrollbar-width:none; }
           .scrollbar-hide::-webkit-scrollbar { display:none; }
@@ -252,6 +336,7 @@ const HomePage: React.FC<Props> = ({
         `}</style>
 
         <div className="homepage-content-container mx-auto px-2 sm:px-3 py-2 lg:py-4">
+
           {/* Sunday Special Banner */}
           {!searchQuery && !isSearching && (
             <div className="mb-6 transform hover:scale-[1.02] transition-transform duration-300">
@@ -261,9 +346,13 @@ const HomePage: React.FC<Props> = ({
                   <div className="flex items-center gap-2 sm:gap-3">
                     <span className="text-3xl sm:text-4xl animate-bounce">🎉</span>
                     <div>
-                      <h3 className="text-lg sm:text-xl lg:text-2xl font-extrabold bg-gradient-to-r from-yellow-300 to-pink-300 bg-clip-text text-transparent">Sunday Special!</h3>
+                      <h3 className="text-lg sm:text-xl lg:text-2xl font-extrabold bg-gradient-to-r from-yellow-300 to-pink-300 bg-clip-text text-transparent">
+                        Sunday Special!
+                      </h3>
                       <p className="text-xs sm:text-sm lg:text-base text-white">
-                        Download all anime & movies <span className="font-bold text-yellow-300">without any ads</span> – only on Sundays! Enjoy unlimited bing watch.
+                        Download all anime & movies{' '}
+                        <span className="font-bold text-yellow-300">without any ads</span>
+                        {' '}– only on Sundays! Enjoy unlimited bing watch.
                       </p>
                     </div>
                   </div>
@@ -275,7 +364,9 @@ const HomePage: React.FC<Props> = ({
           {/* Featured Carousel */}
           {!searchQuery && !isSearching && featuredAnimes.length > 0 && (
             <div className="mb-6">
-              <h2 className="text-2xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mb-4 text-left">Latest Content</h2>
+              <h2 className="text-2xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mb-4 text-left">
+                Latest Content
+              </h2>
               <FeaturedAnimeCarousel featuredAnimes={featuredAnimes} onAnimeSelect={onAnimeSelect} />
             </div>
           )}
@@ -297,10 +388,20 @@ const HomePage: React.FC<Props> = ({
             <div className="mb-2 lg:hidden">
               <div className="flex flex-nowrap gap-1 overflow-x-auto pb-1.5 scrollbar-hide px-1">
                 {filterButtons.map(btn => (
-                  <button key={btn.key} onClick={() => handleFilterChange(btn.key)} className={`
-                    px-4 py-2 rounded text-[10px] sm:text-[11px] font-medium transition-all duration-200 border whitespace-nowrap flex-shrink-0 min-w-[62px] sm:min-w-[68px]
-                    ${filter === btn.key ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white border-transparent shadow-lg shadow-blue-500/40' : 'bg-purple-800/90 text-purple-300 border-purple-700 hover:bg-purple-700/90'}
-                  `}>{btn.label}</button>
+                  <button
+                    key={btn.key}
+                    onClick={() => handleFilterChange(btn.key)}
+                    className={`
+                      px-4 py-2 rounded text-[10px] sm:text-[11px] font-medium transition-all duration-200
+                      border whitespace-nowrap flex-shrink-0 min-w-[62px] sm:min-w-[68px]
+                      ${filter === btn.key
+                        ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white border-transparent shadow-lg shadow-blue-500/40'
+                        : 'bg-purple-800/90 text-purple-300 border-purple-700 hover:bg-purple-700/90'
+                      }
+                    `}
+                  >
+                    {btn.label}
+                  </button>
                 ))}
               </div>
             </div>
@@ -311,36 +412,69 @@ const HomePage: React.FC<Props> = ({
             <div className="text-center py-16">
               <div className="bg-purple-800/60 backdrop-blur rounded-2xl p-8 max-w-md mx-auto border border-purple-700">
                 <div className="text-6xl mb-4">🔍</div>
-                <h2 className="text-2xl font-bold text-white mb-3">{searchQuery ? 'No Results Found' : 'No Content'}</h2>
+                <h2 className="text-2xl font-bold text-white mb-3">
+                  {searchQuery ? 'No Results Found' : 'No Content'}
+                </h2>
                 {!searchQuery && filter !== 'All' && (
-                  <button onClick={() => handleFilterChange('All')} className="mt-6 bg-gradient-to-r from-purple-600 to-blue-600 hover:shadow-lg hover:shadow-purple-500/40 text-white px-8 py-3 rounded-xl font-bold">Show All</button>
+                  <button
+                    onClick={() => handleFilterChange('All')}
+                    className="mt-6 bg-gradient-to-r from-purple-600 to-blue-600 hover:shadow-lg hover:shadow-purple-500/40 text-white px-8 py-3 rounded-xl font-bold"
+                  >
+                    Show All
+                  </button>
                 )}
               </div>
             </div>
           ) : (
             <>
               <h2 className="text-2xl lg:text-3xl font-bold mb-4 text-left">
-                <span className="bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent">{getHeading()}</span>
+                <span className="bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent">
+                  {getHeading()}
+                </span>
               </h2>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-6 gap-2">
                 {filteredAnime.map((anime, i) => (
                   <div key={`${getAnimeId(anime)}-${i}`} className="group relative">
-                    <div className={`absolute -inset-[1px] rounded-xl bg-gradient-to-br ${BORDER_COLORS[currentBorderColorIndex]} enhanced-glow border-transition`} style={{ backgroundImage: `linear-gradient(135deg, ${GLOW_COLORS[currentBorderColorIndex][0]}, ${GLOW_COLORS[currentBorderColorIndex][1]}, ${GLOW_COLORS[currentBorderColorIndex][2]})` }} />
-                    <div className="absolute -inset-0 rounded-xl opacity-30 blur-md transition-all duration-500 group-hover:opacity-50" style={{ backgroundImage: `linear-gradient(135deg, ${GLOW_COLORS[currentBorderColorIndex][0]}40, ${GLOW_COLORS[currentBorderColorIndex][1]}40, ${GLOW_COLORS[currentBorderColorIndex][2]}40)` }} />
+                    <div
+                      className={`absolute -inset-[1px] rounded-xl bg-gradient-to-br ${BORDER_COLORS[currentBorderColorIndex]} enhanced-glow border-transition`}
+                      style={{
+                        backgroundImage: `linear-gradient(135deg, ${GLOW_COLORS[currentBorderColorIndex][0]}, ${GLOW_COLORS[currentBorderColorIndex][1]}, ${GLOW_COLORS[currentBorderColorIndex][2]})`
+                      }}
+                    />
+                    <div
+                      className="absolute -inset-0 rounded-xl opacity-30 blur-md transition-all duration-500 group-hover:opacity-50"
+                      style={{
+                        backgroundImage: `linear-gradient(135deg, ${GLOW_COLORS[currentBorderColorIndex][0]}40, ${GLOW_COLORS[currentBorderColorIndex][1]}40, ${GLOW_COLORS[currentBorderColorIndex][2]}40)`
+                      }}
+                    />
                     <div className="card-hover-effect relative rounded-xl border border-purple-700/30 bg-gradient-to-b from-purple-900/95 to-purple-800/90 p-1 transition-all duration-300 overflow-hidden group-hover:border-transparent">
                       <div className="shimmer-effect" />
-                      <AnimeCard anime={anime} onClick={onAnimeSelect} index={i} showStatus={true} />
+                      <AnimeCard
+                        anime={anime}
+                        onClick={onAnimeSelect}
+                        index={i}
+                        showStatus={true}
+                      />
                     </div>
                   </div>
                 ))}
               </div>
 
-              {/* Load More */}
+              {/* Load More Button */}
               {hasMore && !isSearching && !searchQuery && (
                 <div className="text-center mt-8">
-                  <button onClick={loadMoreAnime} disabled={isLoadingMore} className="relative overflow-hidden bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-10 py-4 rounded-xl font-bold text-lg shadow-lg hover:shadow-xl hover:shadow-purple-500/30 disabled:opacity-60 transition-all duration-300">
-                    <span className="relative z-10">{isLoadingMore ? <><span className="inline-block animate-spin mr-2">⟳</span>Loading...</> : 'Load More'}</span>
+                  <button
+                    onClick={loadMoreAnime}
+                    disabled={isLoadingMore}
+                    className="relative overflow-hidden bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-10 py-4 rounded-xl font-bold text-lg shadow-lg hover:shadow-xl hover:shadow-purple-500/30 disabled:opacity-60 transition-all duration-300"
+                  >
+                    <span className="relative z-10">
+                      {isLoadingMore
+                        ? <><span className="inline-block animate-spin mr-2">⟳</span>Loading...</>
+                        : 'Load More'
+                      }
+                    </span>
                   </button>
                 </div>
               )}
@@ -349,7 +483,10 @@ const HomePage: React.FC<Props> = ({
               {isLoadingMore && (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-6 gap-2 mt-4">
                   {Array.from({ length: 12 }).map((_, i) => (
-                    <div key={`skeleton-${i}`} className="relative rounded-xl border border-purple-700/40 p-1 bg-gradient-to-b from-purple-900/80 to-purple-800/70 overflow-hidden">
+                    <div
+                      key={`skeleton-${i}`}
+                      className="relative rounded-xl border border-purple-700/40 p-1 bg-gradient-to-b from-purple-900/80 to-purple-800/70 overflow-hidden"
+                    >
                       <div className="absolute inset-0 bg-gradient-to-r from-transparent via-purple-700/10 to-transparent animate-shimmer" />
                       <SkeletonLoader />
                     </div>

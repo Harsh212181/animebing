@@ -1,6 +1,6 @@
  // components/AnimeCard.tsx
 import React from 'react';
-import type { Anime } from '../src/types'; // correct relative path
+import type { Anime } from '../src/types';
 import { PlayIcon } from './icons/PlayIcon';
 
 interface AnimeCardProps {
@@ -38,40 +38,44 @@ const generateSrcSet = (url: string, baseWidth: number, baseHeight: number): str
   }
 };
 
-const AnimeCard: React.FC<AnimeCardProps> = ({ 
-  anime, 
-  onClick, 
-  index, 
-  showStatus = false, 
+const AnimeCard: React.FC<AnimeCardProps> = ({
+  anime,
+  onClick,
+  index,
+  showStatus = false,
   compact = false
 }) => {
   const displayWidth = compact ? 150 : 193;
   const displayHeight = compact ? 225 : 289;
-  
-  // ✅ Safe thumbnail – fallback '' if undefined
+
   const thumbnail = anime.thumbnail || '';
-  
+
   const optimizedThumbnail = optimizeImageUrl(thumbnail, displayWidth, displayHeight);
   const thumbnailSrcSet = generateSrcSet(thumbnail, displayWidth, displayHeight);
 
-  // ✅ Safe genreList
   const genreList = (anime.genreList ?? []).filter((g: string) => g && g.trim()).slice(0, 3).join(', ') || '';
+
+  // ✅ Scroll save ka kaam ab sirf App.tsx ka handleAnimeSelect karta hai
+  // AnimeCard ka kaam sirf onClick call karna hai — koi side effect nahi
+  const handleClick = () => {
+    onClick(anime);
+  };
 
   return (
     <div
       className={`anime-card group relative overflow-hidden rounded-lg shadow-lg cursor-pointer transition-all duration-300 ${
-        compact 
-          ? 'opacity-100 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-purple-700/30 aspect-[2/3] w-full' 
+        compact
+          ? 'opacity-100 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-purple-700/30 aspect-[2/3] w-full'
           : 'card-load-animate opacity-0 hover:-translate-y-1 hover:shadow-2xl hover:shadow-purple-800/40 aspect-[2/3] w-full'
       }`}
       style={compact ? {} : { animationDelay: `${index * 50}ms` }}
-      onClick={() => onClick(anime)}
+      onClick={handleClick}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          onClick(anime);
+          handleClick();
         }
       }}
       aria-label={`View details for ${anime.title}`}
@@ -85,18 +89,17 @@ const AnimeCard: React.FC<AnimeCardProps> = ({
           loading="lazy"
           width={displayWidth}
           height={displayHeight}
-          sizes={compact 
-            ? "(max-width: 640px) 45vw, (max-width: 768px) 30vw, (max-width: 1024px) 22vw, (max-width: 1280px) 18vw, 150px" 
+          sizes={compact
+            ? "(max-width: 640px) 45vw, (max-width: 768px) 30vw, (max-width: 1024px) 22vw, (max-width: 1280px) 18vw, 150px"
             : "(max-width: 640px) 48vw, (max-width: 768px) 32vw, (max-width: 1024px) 24vw, (max-width: 1280px) 20vw, 193px"
           }
-          onError={(e) => { 
+          onError={(e) => {
             const img = e.currentTarget as HTMLImageElement;
-            // ✅ Safe assignment with fallback if thumbnail undefined
-            img.src = anime.thumbnail || ''; 
+            img.src = anime.thumbnail || '';
           }}
         />
 
-        {/* Episode badge – safe comparison */}
+        {/* Episode badge */}
         {(anime.currentEpisode ?? 0) > 0 && (
           <div className="absolute top-0.5 right-1 z-10">
             <span className="bg-gradient-to-r from-red-600 to-orange-600 text-white text-[11px] font-medium px-2 py-0.5 rounded-md shadow-md">
@@ -118,8 +121,8 @@ const AnimeCard: React.FC<AnimeCardProps> = ({
         {anime.status && !compact && (
           <div className="absolute top-7 right-1 z-10">
             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md shadow-md ${
-              anime.status === 'Ongoing' 
-                ? 'bg-gradient-to-r from-yellow-500 to-orange-500 text-white' 
+              anime.status === 'Ongoing'
+                ? 'bg-gradient-to-r from-yellow-500 to-orange-500 text-white'
                 : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white'
             }`}>
               {anime.status}
@@ -133,8 +136,8 @@ const AnimeCard: React.FC<AnimeCardProps> = ({
         }`}>
           <div className="transform transition-transform duration-300 group-hover:-translate-y-1">
             <h3 className={`text-white font-bold line-clamp-2 mb-1 ${
-              compact 
-                ? 'text-xs sm:text-xs md:text-sm leading-tight' 
+              compact
+                ? 'text-xs sm:text-xs md:text-sm leading-tight'
                 : 'text-xs sm:text-sm md:text-base leading-tight'
             } drop-shadow-md`}>
               {anime.title}
