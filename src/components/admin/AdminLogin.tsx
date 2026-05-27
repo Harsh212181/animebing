@@ -1,8 +1,8 @@
-// src/components/admin/AdminLogin.tsx - YEH NAYI FILE BANAYEIN
-import React, { useState } from 'react';
+ import React, { useState } from 'react';
 import axios from 'axios';
 
-const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
+const API_BASE = import.meta.env.VITE_API_BASE || 
+  'https://animabing-backend.animabingwatch.workers.dev/api';
 
 interface AdminLoginProps {
   onLogin: (token: string, username: string) => void;
@@ -50,6 +50,8 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
             </label>
             <input
               type="text"
+              id="username"
+              name="username"
               value={form.username}
               onChange={(e) => setForm({ ...form, username: e.target.value })}
               className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 focus:ring-purple-500 focus:border-purple-500 transition"
@@ -64,6 +66,8 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
             </label>
             <input
               type="password"
+              id="password"
+              name="password"
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
               className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 focus:ring-purple-500 focus:border-purple-500 transition"

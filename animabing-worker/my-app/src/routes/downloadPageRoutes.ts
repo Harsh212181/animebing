@@ -36,11 +36,48 @@ downloadPageRoutes.get('/anime/:animeId', async (c) => {
   }
 })
 
-// GET ALL (admin)
+// GET ALL (admin) — anime details ke saath populate
 downloadPageRoutes.get('/', adminAuth, async (c) => {
   try {
-    const pages = await findMany<IDownloadPage>('downloadpages', {}, { sort: { createdAt: -1 } }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    return c.json(pages)
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    // Step 1: Saare download pages fetch karo
+    const pages = await findMany<IDownloadPage>(
+      'downloadpages', {},
+      { sort: { createdAt: -1 } },
+      c.env.MONGODB_URI, c.env.MONGODB_DB
+    )
+
+    if (!pages || pages.length === 0) return c.json([])
+
+    // Step 2: Unique animeIds collect karo
+    const animeIds = [...new Set(
+      pages
+        .map((p: any) => p.animeId?.toString())
+        .filter(Boolean)
+    )]
+
+    // Step 3: Ek baar mein saare anime fetch karo (toObjectId use kar rahe hain — NO direct ObjectId import)
+    const animes = await db
+      .collection('animes')
+      .find(
+        { _id: { $in: animeIds.map((id: string) => toObjectId(id)) } },
+        { projection: { title: 1, contentType: 1, subDubStatus: 1, status: 1, thumbnail: 1 } }
+      )
+      .toArray()
+
+    // Step 4: Lookup map banao
+    const animeMap = new Map(
+      animes.map((a: any) => [a._id.toString(), a])
+    )
+
+    // Step 5: Pages mein animeId ko populated object se replace karo
+    const populatedPages = pages.map((page: any) => ({
+      ...page,
+      animeId: animeMap.get(page.animeId?.toString()) || page.animeId
+    }))
+
+    return c.json(populatedPages)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }

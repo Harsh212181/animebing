@@ -1,16 +1,8 @@
-import { MongoClient, Db, ObjectId, Filter, Document } from 'mongodb'
-
-let client: MongoClient | null = null
-let isConnected = false
+ import { MongoClient, Db, ObjectId, Filter, Document } from 'mongodb'
 
 export async function getDb(mongoUri: string, dbName: string): Promise<Db> {
-  if (!client) {
-    client = new MongoClient(mongoUri)
-  }
-  if (!isConnected) {
-    await client.connect()
-    isConnected = true
-  }
+  const client = new MongoClient(mongoUri)
+  await client.connect()
   return client.db(dbName)
 }
 
