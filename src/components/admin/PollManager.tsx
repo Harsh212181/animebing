@@ -1,4 +1,4 @@
- // src/components/admin/PollManager.tsx - UPDATED WITH DEVICE TYPE BREAKDOWN
+ // src/components/admin/PollManager.tsx - UPDATED WITH CORRECT API ROUTE
 
 import React, { useState, useEffect } from 'react';
 import { Poll, CreatePollData, Anime } from '../../types';
@@ -78,9 +78,9 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
   const fetchPolls = async () => {
     try {
       setLoading(true);
-      console.log(`📡 Fetching polls from: ${apiBase}/poll/admin/all`);
+      console.log(`📡 Fetching polls from: ${apiBase}/polls/admin/all`);
       
-      const res = await fetch(`${apiBase}/poll/admin/all`, {
+      const res = await fetch(`${apiBase}/polls/admin/all`, {
         headers: { 
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}` 
@@ -131,9 +131,9 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
 
   const fetchPollDetails = async (pollId: string) => {
     try {
-      console.log(`📡 Fetching poll details: ${apiBase}/poll/admin/${pollId}`);
+      console.log(`📡 Fetching poll details: ${apiBase}/polls/admin/${pollId}`);
       
-      const res = await fetch(`${apiBase}/poll/admin/${pollId}`, {
+      const res = await fetch(`${apiBase}/polls/admin/${pollId}`, {
         headers: { 
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}` 
@@ -418,7 +418,7 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
 
       console.log('📤 Creating poll with data:', pollData);
 
-      const res = await fetch(`${apiBase}/poll/admin/create`, {
+      const res = await fetch(`${apiBase}/polls/admin/create`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -548,7 +548,7 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
 
       console.log('📤 Updating poll with data:', pollData);
 
-      const res = await fetch(`${apiBase}/poll/admin/${editingPollId}`, {
+      const res = await fetch(`${apiBase}/polls/admin/${editingPollId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -618,7 +618,7 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
 
   const togglePollStatus = async (id: string) => {
     try {
-      const res = await fetch(`${apiBase}/poll/admin/${id}/toggle`, {
+      const res = await fetch(`${apiBase}/polls/admin/${id}/toggle`, {
         method: 'PUT',
         headers: { 
           'Content-Type': 'application/json',
@@ -639,7 +639,7 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
     if (!confirm('Are you sure you want to delete this poll? This action cannot be undone.')) return;
     
     try {
-      const res = await fetch(`${apiBase}/poll/admin/${id}`, {
+      const res = await fetch(`${apiBase}/polls/admin/${id}`, {
         method: 'DELETE',
         headers: { 
           'Content-Type': 'application/json',
@@ -660,7 +660,7 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
     if (!confirm('Are you sure you want to delete all expired polls? This action cannot be undone.')) return;
     
     try {
-      const res = await fetch(`${apiBase}/poll/admin/cleanup/expired`, {
+      const res = await fetch(`${apiBase}/polls/admin/cleanup/expired`, {
         method: 'DELETE',
         headers: { 
           'Content-Type': 'application/json',

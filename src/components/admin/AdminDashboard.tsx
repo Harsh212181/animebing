@@ -15,14 +15,8 @@ import Spinner from '../Spinner';
 import axios from 'axios';
 
 // ✅ FIXED: Production पर हमेशा full URL use करें
-const getApiBase = () => {
-  if (typeof window === 'undefined') return 'https://animabing.onrender.com/api';
-  const isLocal = window.location.hostname === 'localhost' || 
-                  window.location.hostname === '127.0.0.1';
-  return isLocal ? 'http://localhost:3000/api' : 'https://animabing.onrender.com/api';
-};
-
-const API_BASE = getApiBase();
+const API_BASE = import.meta.env.VITE_API_BASE || 
+  'https://animabing-backend.animabingwatch.workers.dev/api';
 
 interface AdminDashboardProps {
   onLogout?: () => void;
@@ -187,7 +181,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     setLoading(true);
     setError('');
     try {
-      console.log('📡 Loading admin data from:', `${API_BASE}/admin/protected/user-info`);
+      console.log('📡 Loading admin data from:', `${API_BASE}/admin/user-info`);
       
       const axiosInstance = axios.create({
         timeout: 10000,
@@ -197,11 +191,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         }
       });
 
-      const userResponse = await axiosInstance.get(`${API_BASE}/admin/protected/user-info`);
+      // ✅ FIXED: /admin/protected/ → /admin/
+      const userResponse = await axiosInstance.get(`${API_BASE}/admin/user-info`);
       setUser(userResponse.data);
       console.log('✅ User info loaded:', userResponse.data);
 
-      const analyticsResponse = await axiosInstance.get(`${API_BASE}/admin/protected/analytics`);
+      // ✅ FIXED: /admin/protected/ → /admin/
+      const analyticsResponse = await axiosInstance.get(`${API_BASE}/admin/analytics`);
       setAnalytics(analyticsResponse.data);
       console.log('✅ Analytics loaded:', analyticsResponse.data);
 

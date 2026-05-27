@@ -1,10 +1,10 @@
-  // src/components/admin/AddAnimeForm.tsx - FULL SCREEN VERSION
+// src/components/admin/AddAnimeForm.tsx - FULL SCREEN VERSION
 import React, { useState } from 'react';
 import axios from 'axios';
 import type { SubDubStatus } from '../../types';
 import Spinner from '../Spinner';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'https://animabing.onrender.com/api';
+const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
 const token = localStorage.getItem('adminToken') || '';
 
 // Genre options array
@@ -89,7 +89,8 @@ const AddAnimeForm: React.FC = () => {
         }
       }
       
-      const response = await axios.post(`${API_BASE}/admin/protected/add-anime`, formData, {
+      // ✅ FIXED: /admin/protected/ → /admin/
+      const response = await axios.post(`${API_BASE}/admin/add-anime`, formData, {
         headers: { Authorization: `Bearer ${token}` }
       });
       

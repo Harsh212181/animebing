@@ -1,11 +1,7 @@
- import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE ||
-  (import.meta.env.PROD
-    ? 'https://animabing.onrender.com/api'
-    : 'http://localhost:3000/api');
+const API_BASE_URL = 'https://animabing-backend.animabingwatch.workers.dev/api';
 
 interface PollOption {
   _id: string;
@@ -40,7 +36,6 @@ interface VoteResponse {
   userVoteOption?: string;
 }
 
-// ---------- Device ID (persistent) ----------
 const getDeviceId = (): string => {
   if (typeof window === 'undefined') return 'server';
   try {
@@ -57,7 +52,6 @@ const getDeviceId = (): string => {
 
 const deviceId = getDeviceId();
 
-// ---------- Device type detection ----------
 const getDeviceType = (): 'mobile' | 'tablet' | 'desktop' | 'unknown' => {
   if (typeof window === 'undefined') return 'unknown';
   const ua = navigator.userAgent;
@@ -68,7 +62,6 @@ const getDeviceType = (): 'mobile' | 'tablet' | 'desktop' | 'unknown' => {
 
 const deviceType = getDeviceType();
 
-// ---------- Local storage fallback (optional) ----------
 interface VoteStatus {
   voted: boolean;
   optionId?: string;
@@ -98,22 +91,14 @@ const setLocalVoteStatus = (pollId: string, optionId?: string) => {
   }
 };
 
-// ---------- Helper to make URLs clickable ----------
 const makeTextClickable = (text: string): React.ReactNode[] => {
   if (!text) return [];
   const urlRegex = /(https?:\/\/[^\s<]+)/gi;
   const parts = text.split(urlRegex);
-
   return parts.map((part, i) => {
     if (part.match(urlRegex)) {
       return (
-        <a
-          key={i}
-          href={part}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-blue-400 underline hover:text-blue-300 break-words"
-        >
+        <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="text-blue-400 underline hover:text-blue-300 break-words">
           {part}
         </a>
       );
@@ -122,14 +107,12 @@ const makeTextClickable = (text: string): React.ReactNode[] => {
   });
 };
 
-// ---------- Avatar fallback (if image fails) ----------
 const AvatarFallback = () => (
   <div className="w-8 h-8 rounded-full bg-gray-700 border border-gray-600 flex items-center justify-center text-xs font-bold text-gray-300">
     A
   </div>
 );
 
-// ---------- Component ----------
 interface PollCardProps {
   onVoteSuccess?: () => void;
 }
@@ -145,15 +128,12 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
   const [userVoteOption, setUserVoteOption] = useState<string | null>(null);
   const [avatarError, setAvatarError] = useState(false);
 
-  // ---------- Load active poll ----------
   const loadPoll = async () => {
     try {
       setLoading(true);
       setError(null);
-      const url = new URL(`${API_BASE_URL}/poll/active`);
-      url.searchParams.append('deviceId', deviceId);
 
-      const res = await fetch(url.toString(), {
+      const res = await fetch(`${API_BASE_URL}/polls/active?deviceId=${encodeURIComponent(deviceId)}`, {
         headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'Cache-Control': 'no-cache' },
         cache: 'no-cache',
       });
@@ -220,10 +200,8 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
     }
   }, [hasVoted, isActive]);
 
-  // ---------- Vote handler ----------
   const handleVote = async (optionId: string) => {
     if (!poll || hasVoted || voting) return;
-
     if (!deviceId || deviceId === 'server') {
       alert('Device identifier not available. Please refresh.');
       return;
@@ -233,15 +211,10 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
     setSelectedOption(optionId);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/poll/vote`, {
+      const res = await fetch(`${API_BASE_URL}/polls/vote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({
-          pollId: poll._id,
-          optionId,
-          deviceId,
-          deviceType,
-        }),
+        body: JSON.stringify({ pollId: poll._id, optionId, deviceId, deviceType }),
       });
 
       const result: VoteResponse = await res.json();
@@ -280,7 +253,6 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
     }
   };
 
-  // ---------- Render ----------
   if (!isActive) return null;
   if (loading) return <div className="p-4 bg-[#1a1a1a] rounded-lg border border-gray-700 animate-pulse">Loading...</div>;
   if (error || !poll) return null;
@@ -290,7 +262,6 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
 
   return (
     <div className="w-full bg-[#1a1a1a] rounded-lg border border-gray-700 overflow-hidden mb-4">
-      {/* 👤 Avatar + Admin header (highlighted) */}
       <div className="flex items-center px-3 pt-2 pb-2 bg-gray-800/30 border-b border-gray-800 rounded-t-lg">
         {avatarError ? (
           <AvatarFallback />
@@ -304,21 +275,18 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
         )}
         <div className="ml-2 flex items-center gap-2">
           <span className="text-sm font-medium text-gray-200">Admin</span>
-          {/* Admin badge */}
           <span className="text-[10px] px-2 py-0.5 bg-blue-600 text-white rounded-full font-semibold leading-none">
             Creater
           </span>
         </div>
       </div>
 
-      {/* Question */}
       <div className="px-3 pt-2 pb-3">
         <h3 className="text-sm font-semibold text-gray-100 break-words whitespace-normal">
           {makeTextClickable(poll.question)}
         </h3>
       </div>
 
-      {/* Options */}
       <div className="px-2 pb-3 space-y-2 pt-2">
         {poll.options.map(opt => {
           const percentage = opt.percentage || 0;
@@ -386,7 +354,6 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
         })}
       </div>
 
-      {/* Footer */}
       <div className="px-3 py-2 border-t border-gray-800">
         <div className="flex justify-between items-center">
           <span className="text-xs text-gray-500">

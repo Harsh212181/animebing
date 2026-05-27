@@ -32,7 +32,7 @@ interface Report {
   responseDate?: string;
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'https://animabing.onrender.com/api';
+const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
 const token = localStorage.getItem('adminToken') || '';
 
 const ReportsManager: React.FC = () => {

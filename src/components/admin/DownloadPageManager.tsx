@@ -3,12 +3,8 @@ import { DownloadPage, DownloadPageLink, ContentType, SubDubStatus } from '../..
 import SearchableDropdown from './SearchableDropdown';
 import Spinner from '../Spinner';
 
-const getApiBase = () => {
-  if (typeof window === 'undefined') return 'https://animabing.onrender.com/api';
-  const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  return isLocal ? 'http://localhost:3000/api' : 'https://animabing.onrender.com/api';
-};
-const API_BASE = getApiBase();
+const API_BASE = import.meta.env.VITE_API_BASE || 
+  'https://animabing-backend.animabingwatch.workers.dev/api';
 
 const getFrontendBase = () => {
   if (typeof window === 'undefined') return 'https://animebing.in';

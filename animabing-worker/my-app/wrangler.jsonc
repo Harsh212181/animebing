@@ -1,0 +1,11 @@
+{
+  "name": "animabing-backend",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+  
+  "vars": {
+    "MONGODB_DB": "animabing",
+    "ALLOWED_ORIGIN": "*"
+  }
+}

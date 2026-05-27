@@ -21,10 +21,8 @@ const DEFAULT_LINK_NAMES = [
   'Link 5'
 ];
 
-const API_BASE =
-  window.location.hostname === 'localhost'
-    ? 'http://localhost:3000/api'
-    : 'https://animabing.onrender.com/api';
+const API_BASE = import.meta.env.VITE_API_BASE || 
+  'https://animabing-backend.animabingwatch.workers.dev/api';
 
 const getToken = () => localStorage.getItem('adminToken') || '';
 

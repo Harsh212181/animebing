@@ -37,12 +37,9 @@ const GLOW_COLORS = [
   ['#059669', '#047857', '#059669'],
 ];
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE ||
-  (import.meta.env.MODE === 'production'
-    ? 'https://animabing.onrender.com/api'
-    : 'http://localhost:3000/api');
+const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev';
 
-const POLL_API_URL = `${API_BASE_URL}/poll`;
+const POLL_API_URL = `${API_BASE}/api/polls`;
 
 const getAnimeId = (anime: Anime): string => {
   if (anime.id) return anime.id;

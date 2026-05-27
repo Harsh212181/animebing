@@ -12,12 +12,12 @@ export default defineConfig(({ mode }) => {
       host: true,
       proxy: {
         '/api': {
-          target: 'http://localhost:3000',
+          target: 'http://127.0.0.1:8787',
           changeOrigin: true,
           secure: false,
         },
         '/anime': {
-          target: 'http://localhost:3000',
+          target: 'http://127.0.0.1:8787',
           changeOrigin: true,
           secure: false,
         }

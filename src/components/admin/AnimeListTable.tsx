@@ -4,7 +4,7 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import { clearAnimeCache } from '../../../services/animeService';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'https://animabing.onrender.com/api';
+const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
 const token = localStorage.getItem('adminToken') || '';
 
 interface AnimeListTableProps {

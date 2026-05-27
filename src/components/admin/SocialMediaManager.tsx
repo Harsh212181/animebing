@@ -12,7 +12,7 @@ interface SocialMedia {
   displayName: string;
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'https://animabing.onrender.com/api';
+const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
 
 const SocialMediaManager: React.FC = () => {
   // Default list includes all five platforms, Twitter & YouTube inactive

@@ -1,8 +1,9 @@
  // services/animeService.ts - FIXED URLSearchParams + ALL OTHER FUNCTIONS INTACT
 import type { Anime, Episode, Chapter } from '../src/types';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000/api';
-
+const API_BASE = window.location.hostname === 'localhost'
+  ? 'https://animabing-backend.animabingwatch.workers.dev/api'
+  : 'https://animabing-backend.animabingwatch.workers.dev/api';
 const cache = new Map();
 const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
 

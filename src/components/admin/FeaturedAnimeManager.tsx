@@ -1,11 +1,14 @@
- // src/components/admin/FeaturedAnimeManager.tsx – FINAL VERSION (Auth Token + Cache‑Busting)
+ // src/components/admin/FeaturedAnimeManager.tsx – FINAL VERSION (Fixed thumbnail type)
 import React, { useState, useEffect } from 'react';
 import { Anime } from '../../types';
 
+// ✅ CORRECT API BASE (Cloudflare Workers)
+const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev';
+
 interface FeaturedAnimeManagerProps {}
 
-// Helper to get optimized image URL with proper dimensions
-const getOptimizedImageUrl = (url: string, width: number, height: number): string => {
+// ✅ UPDATED: accepts string | undefined to avoid TS errors
+const getOptimizedImageUrl = (url: string | undefined, width: number, height: number): string => {
   if (!url) return 'https://images.unsplash.com/photo-1518709268805-4e9042af2176?w=400&h=600&fit=crop';
   
   // Fix broken Unsplash URLs (e.g., "w-400" → "w=400")
@@ -13,7 +16,6 @@ const getOptimizedImageUrl = (url: string, width: number, height: number): strin
   
   // If it's an Unsplash URL, append size parameters
   if (cleanUrl.includes('unsplash.com')) {
-    // Remove existing query params and add our own
     const baseUrl = cleanUrl.split('?')[0];
     return `${baseUrl}?w=${width}&h=${height}&fit=crop&auto=format`;
   }
@@ -33,7 +35,7 @@ const getOptimizedImageUrl = (url: string, width: number, height: number): strin
   return cleanUrl;
 };
 
-// Helper to get admin authentication token (adjust key if needed)
+// Helper to get admin authentication token
 const getAdminToken = (): string | null => {
   return localStorage.getItem('adminToken') || localStorage.getItem('token');
 };
@@ -54,85 +56,55 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
   const fetchAnimes = async (): Promise<void> => {
     setApiStatus('Fetching animes...');
     setLoading(true);
-    
+
     try {
-      console.log('🔄 Fetching all animes...');
-      
       const endpoints = [
-        '/api/anime?limit=100',
-        '/api/animes?limit=100',
-        'https://animabing.onrender.com/api/anime?limit=100',
-        'https://animabing.onrender.com/api/animes?limit=100'
+        `${API_BASE}/api/anime?limit=100`,
+        `${API_BASE}/api/animes?limit=100`,
       ];
 
-      let success = false;
       let fetchedAnimes: Anime[] = [];
-      
+
       for (const endpoint of endpoints) {
         try {
           console.log(`Trying endpoint: ${endpoint}`);
           const response = await fetch(endpoint);
-          
-          if (!response.ok) {
-            console.log(`❌ Endpoint ${endpoint} returned status: ${response.status}`);
-            continue;
-          }
-          
+          if (!response.ok) continue;
           const result = await response.json();
-          console.log(`✅ Response from ${endpoint}:`, result);
 
-          if (Array.isArray(result)) {
-            fetchedAnimes = result;
-          } else if (result.data && Array.isArray(result.data)) {
-            fetchedAnimes = result.data;
-          } else if (result.success && Array.isArray(result.data)) {
-            fetchedAnimes = result.data;
-          } else if (result.animes && Array.isArray(result.animes)) {
-            fetchedAnimes = result.animes;
-          } else if (result.content && Array.isArray(result.content)) {
-            fetchedAnimes = result.content;
-          }
+          if (Array.isArray(result)) fetchedAnimes = result;
+          else if (result.data) fetchedAnimes = result.data;
+          else if (result.success && result.data) fetchedAnimes = result.data;
+          else if (result.animes) fetchedAnimes = result.animes;
+          else if (result.content) fetchedAnimes = result.content;
 
           if (fetchedAnimes.length > 0) {
-            console.log(`✅ Successfully loaded ${fetchedAnimes.length} animes from ${endpoint}`);
             setAllAnimes(fetchedAnimes);
             localStorage.setItem('animeList', JSON.stringify(fetchedAnimes));
             setApiStatus(`✅ Loaded ${fetchedAnimes.length} animes`);
-            success = true;
-            break;
-          } else {
-            console.log(`⚠️ Endpoint ${endpoint} returned empty data`);
+            return; // success – exit function
           }
         } catch (error) {
-          console.log(`❌ Failed with ${endpoint}:`, error);
-          continue;
+          console.log(`Failed with ${endpoint}:`, error);
         }
       }
-      
-      if (!success) {
-        setApiStatus('❌ All API endpoints failed. Trying localStorage...');
-        try {
-          const stored = localStorage.getItem('animeList');
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              setAllAnimes(parsed);
-              setApiStatus(`✅ Loaded ${parsed.length} animes from localStorage`);
-              success = true;
-            }
-          }
-        } catch (storageError) {
-          console.error('Error loading from localStorage:', storageError);
+
+      // Fallback to localStorage
+      const stored = localStorage.getItem('animeList');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setAllAnimes(parsed);
+          setApiStatus(`✅ Loaded ${parsed.length} animes from localStorage`);
+          return;
         }
       }
-      
-      if (!success && allAnimes.length === 0) {
-        setApiStatus('⚠️ No data found. Using sample data for testing.');
-        const sampleData = getSampleAnimes();
-        setAllAnimes(sampleData);
-        localStorage.setItem('animeList', JSON.stringify(sampleData));
-      }
-      
+
+      // Ultimate fallback: sample data
+      const sampleData = getSampleAnimes();
+      setAllAnimes(sampleData);
+      localStorage.setItem('animeList', JSON.stringify(sampleData));
+      setApiStatus('⚠️ Using sample data (no API connection)');
     } catch (error) {
       console.error('Error fetching animes:', error);
       setApiStatus('❌ Error loading animes');
@@ -156,7 +128,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
       },
       {
         id: '2',
-        _id: '2', 
+        _id: '2',
         title: 'Naruto',
         thumbnail: 'https://images.unsplash.com/photo-1518709268805-4e9042af2176?w=400&h=600&fit=crop',
         releaseYear: 2002,
@@ -212,65 +184,48 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
     ];
   };
 
-  // ✅ UPDATED: Added cache‑busting timestamp to avoid 10‑minute browser caching
+  // ✅ UPDATED: Uses correct API base and cache-busting
   const fetchFeaturedAnimes = async (): Promise<void> => {
     try {
-      console.log('Fetching featured animes...');
-      
       const endpoints = [
-        '/api/anime/featured',
-        '/api/featured',
-        'https://animabing.onrender.com/api/anime/featured'
+        `${API_BASE}/api/anime/featured`,
+        `${API_BASE}/api/featured`,
       ];
 
-      let success = false;
       let fetchedFeatured: Anime[] = [];
-      
+
       for (const endpoint of endpoints) {
         try {
-          // Build URL with cache‑busting timestamp
-          const url = new URL(endpoint, window.location.origin);
+          const url = new URL(endpoint);
           url.searchParams.set('_', Date.now().toString());
-          
           const response = await fetch(url.toString());
           if (!response.ok) continue;
-          
           const result = await response.json();
-          console.log(`✅ Featured response from ${endpoint}:`, result);
 
-          if (Array.isArray(result)) {
-            fetchedFeatured = result;
-          } else if (result.data && Array.isArray(result.data)) {
-            fetchedFeatured = result.data;
-          } else if (result.featured && Array.isArray(result.featured)) {
-            fetchedFeatured = result.featured;
-          }
+          if (Array.isArray(result)) fetchedFeatured = result;
+          else if (result.data) fetchedFeatured = result.data;
+          else if (result.featured) fetchedFeatured = result.featured;
 
           if (fetchedFeatured.length > 0) {
             setFeaturedAnimes(fetchedFeatured);
             localStorage.setItem('featuredAnimes', JSON.stringify(fetchedFeatured));
-            success = true;
-            break;
+            return;
           }
         } catch (error) {
-          console.log(`❌ Featured failed with ${endpoint}:`, error);
-          continue;
+          console.log(`Featured failed with ${endpoint}:`, error);
         }
       }
-      
-      if (!success) {
-        const stored = localStorage.getItem('featuredAnimes');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setFeaturedAnimes(parsed);
-          } else {
-            setFeaturedAnimes([]);
-          }
-        } else {
-          setFeaturedAnimes([]);
+
+      // Fallback to localStorage
+      const stored = localStorage.getItem('featuredAnimes');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setFeaturedAnimes(parsed);
+          return;
         }
       }
+      setFeaturedAnimes([]);
     } catch (error) {
       console.error('Error fetching featured animes:', error);
       setFeaturedAnimes([]);
@@ -281,15 +236,11 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
     return anime._id || anime.id || '';
   };
 
-  // ✅ UPDATED: Added Authorization header with admin token
+  // ✅ UPDATED: Added Authorization header and correct API base
   const addToFeatured = async (anime: Anime): Promise<void> => {
     try {
       const animeId = getAnimeId(anime);
-      
-      const alreadyFeatured = featuredAnimes.some(feat => 
-        getAnimeId(feat) === animeId
-      );
-      
+      const alreadyFeatured = featuredAnimes.some(feat => getAnimeId(feat) === animeId);
       if (alreadyFeatured) {
         console.log('⚠️ Anime already in featured list');
         return;
@@ -303,19 +254,17 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
       
       const updatedFeatured = [...featuredAnimes, newFeaturedAnime];
       setFeaturedAnimes(updatedFeatured);
-      
       localStorage.setItem('featuredAnimes', JSON.stringify(updatedFeatured));
       
       console.log(`✅ Added "${anime.title}" to featured. Total: ${updatedFeatured.length}`);
       
-      // Get admin token
       const token = getAdminToken();
       if (!token) {
         console.warn('No admin token found – changes will only be saved locally.');
       }
 
       try {
-        const response = await fetch(`https://animabing.onrender.com/api/anime/${animeId}/featured`, {
+        const response = await fetch(`${API_BASE}/api/anime/${animeId}/featured`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -338,14 +287,11 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
     }
   };
 
-  // ✅ UPDATED: Added Authorization header
+  // ✅ UPDATED: Correct API base
   const removeFromFeatured = async (animeId: string): Promise<void> => {
     try {
-      const updated = featuredAnimes.filter(anime => 
-        getAnimeId(anime) !== animeId
-      );
+      const updated = featuredAnimes.filter(anime => getAnimeId(anime) !== animeId);
       setFeaturedAnimes(updated);
-      
       localStorage.setItem('featuredAnimes', JSON.stringify(updated));
       
       console.log(`✅ Removed anime from featured. Remaining: ${updated.length}`);
@@ -356,7 +302,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
       }
 
       try {
-        const response = await fetch(`https://animabing.onrender.com/api/anime/${animeId}/featured`, {
+        const response = await fetch(`${API_BASE}/api/anime/${animeId}/featured`, {
           method: 'DELETE',
           headers: {
             ...(token && { 'Authorization': `Bearer ${token}` })
@@ -377,7 +323,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
     }
   };
 
-  // ✅ UPDATED: Added Authorization header
+  // ✅ UPDATED: Correct API base
   const reorderFeatured = (fromIndex: number, toIndex: number): void => {
     const updated = [...featuredAnimes];
     const [moved] = updated.splice(fromIndex, 1);
@@ -392,7 +338,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
     localStorage.setItem('featuredAnimes', JSON.stringify(withUpdatedOrder));
     
     const token = getAdminToken();
-    fetch('https://animabing.onrender.com/api/anime/featured/order', {
+    fetch(`${API_BASE}/api/anime/featured/order`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -416,19 +362,12 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
 
   const filteredAnimes = allAnimes.filter(anime => {
     if (!anime.title) return false;
-    
     const animeId = getAnimeId(anime);
-    
-    const isFeatured = featuredAnimes.some(featured => 
-      getAnimeId(featured) === animeId
-    );
-    
+    const isFeatured = featuredAnimes.some(featured => getAnimeId(featured) === animeId);
     if (isFeatured) return false;
-    
     if (searchTerm.trim()) {
       return anime.title.toLowerCase().includes(searchTerm.toLowerCase());
     }
-    
     return true;
   });
 
@@ -452,7 +391,6 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
   };
 
   // ---------- JSX ----------
-
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-16 bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-purple-900/40 backdrop-blur-sm border border-purple-700/40 rounded-2xl">
@@ -565,10 +503,9 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
             {featuredAnimes.map((anime, index) => {
-              // 🔁 Changed image size: larger for poster look
               const imgWidth = 280;
               const imgHeight = 420;
-              const optimizedSrc = getOptimizedImageUrl(anime.thumbnail, imgWidth, imgHeight);
+              const optimizedSrc = getOptimizedImageUrl(anime.thumbnail, imgWidth, imgHeight); // red line gone
               
               return (
                 <div
@@ -581,7 +518,6 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
                     </div>
                   </div>
 
-                  {/* 🔁 Changed from fixed height to aspect ratio */}
                   <div className="relative aspect-[2/3] overflow-hidden">
                     <img
                       src={optimizedSrc}
@@ -722,17 +658,15 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
         {filteredAnimes.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4">
             {filteredAnimes.map(anime => {
-              // 🔁 Changed image size
               const imgWidth = 200;
               const imgHeight = 300;
-              const optimizedSrc = getOptimizedImageUrl(anime.thumbnail, imgWidth, imgHeight);
+              const optimizedSrc = getOptimizedImageUrl(anime.thumbnail, imgWidth, imgHeight); // red line gone
               
               return (
                 <div
                   key={getAnimeId(anime)}
                   className="group bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-purple-900/40 backdrop-blur-sm border border-purple-700/40 rounded-xl overflow-hidden hover:border-amber-500/50 transition-all hover:shadow-lg hover:shadow-amber-500/10"
                 >
-                  {/* 🔁 Changed from fixed height to aspect ratio */}
                   <div className="relative aspect-[2/3] overflow-hidden">
                     <img
                       src={optimizedSrc}
