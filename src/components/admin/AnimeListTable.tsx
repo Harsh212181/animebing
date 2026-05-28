@@ -1,4 +1,5 @@
- import React, { useState, useEffect, useMemo } from 'react';
+ // src/components/admin/AnimeListTable.tsx – FIXED KEY WARNING
+import React, { useState, useEffect, useMemo } from 'react';
 import type { Anime } from '../../types';
 import axios from 'axios';
 import toast from 'react-hot-toast';
@@ -26,7 +27,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // ✅ NEW: download page counts per animeId
+  // download page counts per animeId
   const [downloadPageCounts, setDownloadPageCounts] = useState<Record<string, number>>({});
 
   const [contentTypeFilter, setContentTypeFilter] = useState<'all' | 'Anime' | 'Movie' | 'Manga'>('all');
@@ -57,7 +58,9 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
 
   useEffect(() => {
     if (isPartnerMode && propAnimeList) {
-      setAnimes(propAnimeList as AnimeWithId[]);
+      // ensure _id is used as id for partner mode items
+      const list = propAnimeList.map((a: any) => ({ ...a, id: a._id || a.id }));
+      setAnimes(list as AnimeWithId[]);
       setLoading(false);
       setError('');
     }
@@ -94,7 +97,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
     fetchAnimes();
   }, [isPartnerMode]);
 
-  // ✅ NEW: Fetch all download pages and count per animeId
+  // Fetch download page counts
   useEffect(() => {
     if (isPartnerMode) return;
     const fetchDownloadPageCounts = async () => {
@@ -103,17 +106,13 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
         const { data } = await axios.get(`${API_BASE}/download-pages`, {
           headers: { Authorization: `Bearer ${authToken}` },
         });
-        // data = array of download pages, each has animeId._id (populated)
         const counts: Record<string, number> = {};
         data.forEach((page: any) => {
           const id = page.animeId?._id || page.animeId;
-          if (id) {
-            counts[id] = (counts[id] || 0) + 1;
-          }
+          if (id) counts[id] = (counts[id] || 0) + 1;
         });
         setDownloadPageCounts(counts);
       } catch (err) {
-        // Silent fail — counts just show 0
         console.error('Could not fetch download page counts:', err);
       }
     };
@@ -234,21 +233,10 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
     try {
       const authToken = localStorage.getItem('adminToken') || '';
       const hideUrl = `${API_BASE}/admin/protected/toggle-hide/${anime.id}`;
-
-      await axios.patch(hideUrl, {}, {
-        headers: { Authorization: `Bearer ${authToken}` }
-      });
-
-      setAnimes(prev => prev.map(a =>
-        a.id === anime.id ? { ...a, isHidden: !a.isHidden } : a
-      ));
-
+      await axios.patch(hideUrl, {}, { headers: { Authorization: `Bearer ${authToken}` } });
+      setAnimes(prev => prev.map(a => a.id === anime.id ? { ...a, isHidden: !a.isHidden } : a));
       clearAnimeCache();
-
-      toast.success(
-        anime.isHidden ? '✅ Anime is now visible!' : '🔒 Anime hidden from users!',
-        { id: toastId }
-      );
+      toast.success(anime.isHidden ? '✅ Anime is now visible!' : '🔒 Anime hidden from users!', { id: toastId });
     } catch (err: any) {
       console.error('❌ Hide error:', err.response?.status, err.response?.data);
       toast.error(err.response?.data?.error || `Error ${err.response?.status}: Action failed`, { id: toastId });
@@ -405,7 +393,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
               ))}
             </div>
           </div>
-          {/* ✅ NEW: Visibility filter — sirf admin mode mein */}
+          {/* Visibility filter — only in admin mode */}
           {!isPartnerMode && (
             <div className="flex items-center gap-2">
               <span className="text-xs font-medium text-white/60">Visibility:</span>
@@ -455,7 +443,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
                 <th className="px-3 py-3 text-left text-xs font-medium text-white/50 uppercase">Year</th>
                 <th className="px-3 py-3 text-left text-xs font-medium text-white/50 uppercase">Status</th>
                 <th className="px-3 py-3 text-left text-xs font-medium text-white/50 uppercase">Sub/Dub</th>
-                {/* ✅ NEW: Download Pages column — sirf admin mode mein */}
+                {/* Download Pages column — only in admin mode */}
                 {!isPartnerMode && (
                   <th className="px-3 py-3 text-left text-xs font-medium text-white/50 uppercase">DL Pages</th>
                 )}
@@ -473,12 +461,13 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
                 </tr>
               ) : (
                 filteredAnimes.map(anime => {
+                  // ✅ Fix: use _id || id for stable, unique keys
+                  const uniqueKey = anime._id || anime.id;
                   const seoStatus = !isPartnerMode ? getSEOStatus(anime) : null;
-                  // ✅ NEW: is anime ke liye kitne download pages hain
                   const dlCount = downloadPageCounts[anime.id] || 0;
                   return (
-                    <React.Fragment key={anime.id}>
-                      <tr className={`hover:bg-white/5 transition ${editingAnimeId === anime.id ? 'bg-white/10' : ''}`}>
+                    <React.Fragment key={uniqueKey}>
+                      <tr key={`row-${uniqueKey}`} className={`hover:bg-white/5 transition ${editingAnimeId === anime.id ? 'bg-white/10' : ''}`}>
 
                         {/* Image */}
                         <td className="px-3 py-3">
@@ -529,7 +518,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
                           </span>
                         </td>
 
-                        {/* ✅ NEW: Download Pages count cell */}
+                        {/* Download Pages count */}
                         {!isPartnerMode && (
                           <td className="px-3 py-3 whitespace-nowrap">
                             <span className={`px-1.5 py-0.5 rounded text-xs font-semibold ${
@@ -619,7 +608,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
 
                       {/* Edit Form Row */}
                       {!isPartnerMode && editingAnimeId === anime.id && (
-                        <tr className="bg-white/5">
+                        <tr key={`edit-${uniqueKey}`} className="bg-white/5">
                           <td colSpan={10} className="p-4">
                             <div className="border-l-4 border-blue-500 pl-4 py-2">
                               <div className="flex justify-between items-center mb-3">

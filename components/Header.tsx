@@ -1,4 +1,4 @@
- // components/Header.tsx - HOME RESET + SAFE CONTEXT
+ // components/Header.tsx - HOME RESET + SAFE CONTEXT + MUTUAL FILTER RESET
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { FilterType, ContentType } from '../src/types';
@@ -182,18 +182,25 @@ const Header: React.FC<HeaderProps> = ({
     setTimeout(() => setIsNavigating(false), 800);
   };
 
-  // ✅ Filter button: try context first, else fallback to prop
+  // ✅ Filter button: set filter + RESET content type
   const handleFilterClick = (filter: FilterType) => {
     if (isNavigating) return;
     setIsNavigating(true);
     
+    // Mutual reset: language filter always resets content type
     if (setFilter) {
       setFilter(filter);
-    } else if (onFilterAndNavigateHome) {
+      if (setContentType) setContentType('All');
+    } else if (
+      onFilterAndNavigateHome &&
+      (filter === 'Hindi Dub' || filter === 'Hindi Sub' || filter === 'English Sub')
+    ) {
       onFilterAndNavigateHome(filter);
+      // also reset content type via navigation query
+      window.location.href = `/?filter=${encodeURIComponent(filter)}&contentType=All`;
     } else {
       // ultimate fallback
-      window.location.href = `/?filter=${encodeURIComponent(filter)}`;
+      window.location.href = `/?filter=${encodeURIComponent(filter)}&contentType=All`;
     }
     
     setIsMenuOpen(false);
@@ -203,17 +210,20 @@ const Header: React.FC<HeaderProps> = ({
     setTimeout(() => setIsNavigating(false), 300);
   };
 
-  // ✅ Content type button: same logic
+  // ✅ Content type button: set contentType + RESET filter
   const handleContentTypeClick = (contentType: ContentType) => {
     if (isNavigating) return;
     setIsNavigating(true);
     
+    // Mutual reset: content type always resets language filter
     if (setContentType) {
       setContentType(contentType);
+      if (setFilter) setFilter('All');
     } else if (onContentTypeNavigate) {
       onContentTypeNavigate(contentType);
+      window.location.href = `/?contentType=${encodeURIComponent(contentType)}&filter=All`;
     } else {
-      window.location.href = `/?contentType=${encodeURIComponent(contentType)}`;
+      window.location.href = `/?contentType=${encodeURIComponent(contentType)}&filter=All`;
     }
     
     setIsMenuOpen(false);

@@ -1,15 +1,20 @@
- // src/components/admin/SearchableDropdown.tsx
+ // src/components/admin/SearchableDropdown.tsx – NO PURPLE GLOW
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import axios from 'axios';
 
-// Generic option type that at least has _id and title
 export interface BaseOption {
   _id: string;
   title: string;
+  thumbnail?: string;
+  posterImage?: string;
+  coverImage?: string;
+  status?: string;
+  contentType?: string;
+  episodes?: any[];
   [key: string]: any;
 }
 
-// Props for local mode (options provided)
+// Local mode props
 interface LocalModeProps<T extends BaseOption> {
   options: T[];
   value: T | null;
@@ -17,14 +22,13 @@ interface LocalModeProps<T extends BaseOption> {
   placeholder?: string;
   disabled?: boolean;
   autoFocus?: boolean;
-  // async mode not used
   fetchUrl?: never;
   apiBase?: never;
   token?: never;
   onSelect?: never;
 }
 
-// Props for async mode (fetchUrl provided)
+// Async mode props
 interface AsyncModeProps {
   onSelect: (item: BaseOption) => void;
   placeholder?: string;
@@ -33,7 +37,6 @@ interface AsyncModeProps {
   apiBase?: string;
   token?: string;
   autoFocus?: boolean;
-  // local mode not used
   options?: never;
   value?: never;
   onChange?: never;
@@ -43,7 +46,6 @@ type SearchableDropdownProps<T extends BaseOption = BaseOption> =
   | LocalModeProps<T>
   | AsyncModeProps;
 
-// Helper to check if in async mode
 const isAsyncMode = (props: SearchableDropdownProps): props is AsyncModeProps => {
   return 'onSelect' in props;
 };
@@ -60,23 +62,19 @@ const debounce = (fn: Function, delay: number) => {
 };
 
 function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps<T>) {
-  const asyncMode = isAsyncMode(props);
+  const asyncMode = isAsyncMode(props as SearchableDropdownProps);
 
-  // Common state
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Local mode state
   const localSelected = !asyncMode ? props.value : null;
 
-  // Async mode state
   const [asyncResults, setAsyncResults] = useState<BaseOption[]>([]);
   const [asyncLoading, setAsyncLoading] = useState(false);
   const [asyncError, setAsyncError] = useState<string | null>(null);
   const [selectedAsync, setSelectedAsync] = useState<BaseOption | null>(null);
 
-  // Filtered options for local mode – guard against undefined options
   const filteredOptions = !asyncMode
     ? (props.options || []).filter(opt =>
         opt.title.toLowerCase().includes(searchTerm.toLowerCase())
@@ -93,7 +91,6 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Async search
   const fetchAsyncResults = useCallback(
     debounce(async (query: string) => {
       if (!query.trim()) {
@@ -106,7 +103,10 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
       try {
         const base = asyncMode ? props.apiBase || DEFAULT_API_BASE : '';
         const authToken = asyncMode ? props.token || getToken() : '';
-        const url = new URL(props.fetchUrl, base || window.location.origin).toString();
+        const url = new URL(
+          (props as AsyncModeProps).fetchUrl,
+          base || window.location.origin
+        ).toString();
         const response = await axios.get(url, {
           params: { search: query },
           headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
@@ -133,8 +133,7 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
     setSearchTerm(e.target.value);
     setIsOpen(true);
     if (!asyncMode && props.onChange) {
-      // Clear selection when typing
-      props.onChange(null);
+      (props as LocalModeProps<T>).onChange(null);
     }
   };
 
@@ -142,10 +141,10 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
     if (asyncMode) {
       setSelectedAsync(option);
       setSearchTerm(option.title);
-      props.onSelect(option);
+      (props as AsyncModeProps).onSelect(option);
       setIsOpen(false);
     } else {
-      props.onChange(option as T);
+      (props as LocalModeProps<T>).onChange(option as T);
       setSearchTerm(option.title);
       setIsOpen(false);
     }
@@ -155,10 +154,8 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
     if (asyncMode) {
       setSelectedAsync(null);
       setSearchTerm('');
-      // No onSelect with null – we can't unselect in async mode? But we'll allow
-      // but async mode typically expects a selection. We'll just clear.
     } else {
-      props.onChange(null);
+      (props as LocalModeProps<T>).onChange(null);
       setSearchTerm('');
     }
     setIsOpen(false);
@@ -174,6 +171,10 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
 
   const disabled = asyncMode ? props.disabled : props.disabled;
 
+  const getImageSrc = (option: BaseOption): string | undefined => {
+    return option.thumbnail || option.posterImage || option.coverImage;
+  };
+
   return (
     <div className="relative w-full max-w-md" ref={dropdownRef}>
       <div className="relative">
@@ -185,12 +186,12 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
           placeholder={placeholderText}
           disabled={disabled}
           autoFocus={asyncMode ? props.autoFocus : props.autoFocus}
-          className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors pr-10 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-4 py-3 focus:outline-none transition-colors pr-10 disabled:opacity-50 disabled:cursor-not-allowed"
         />
         {currentSelected && (
           <button
             onClick={clearSelection}
-            className="absolute right-2 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-white transition-colors"
+            className="absolute right-2 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-red-400 transition-colors"
             type="button"
           >
             ✕
@@ -202,7 +203,8 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
         <div className="absolute z-50 w-full mt-1 bg-slate-800 border border-slate-600 rounded-lg shadow-lg max-h-60 overflow-y-auto">
           {isLoading ? (
             <div className="p-4 text-center text-slate-400">
-              <div className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-purple-500 mr-2"></div>
+              {/* ✅ No purple, using slate instead */}
+              <div className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-slate-400 mr-2"></div>
               Loading...
             </div>
           ) : asyncError ? (
@@ -216,51 +218,33 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
               <button
                 key={option._id}
                 onClick={() => handleSelect(option)}
-                className={`w-full text-left px-4 py-3 hover:bg-slate-700 transition-colors ${
+                className={`w-full text-left px-4 py-3 hover:bg-slate-700 transition-colors flex items-center gap-3 ${
                   currentSelected?._id === option._id
-                    ? 'bg-purple-600 text-white'
+                    ? 'bg-slate-700 text-white'        // ✅ No purple, using slate
                     : 'text-slate-300'
                 }`}
                 type="button"
               >
-                <div className="font-medium">{option.title}</div>
-                {/* Optionally show extra info if present */}
-                {option.episodes && (
-                  <div className="text-sm text-slate-400">
-                    {option.episodes.length} episodes
-                  </div>
+                {getImageSrc(option) && (
+                  <img
+                    src={getImageSrc(option)}
+                    alt={option.title}
+                    className="w-10 h-14 object-cover rounded flex-shrink-0"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
                 )}
-                {option.status && (
-                  <div className="text-sm text-slate-400">{option.status}</div>
-                )}
+                <div>
+                  <div className="font-medium">{option.title}</div>
+                  {option.status && (
+                    <div className="text-xs text-slate-400">{option.status}</div>
+                  )}
+                  {option.contentType && (
+                    <div className="text-xs text-slate-400">{option.contentType}</div>
+                  )}
+                </div>
               </button>
             ))
           )}
-        </div>
-      )}
-
-      {currentSelected && !isOpen && (
-        <div className="mt-2 p-3 bg-slate-700/50 rounded-lg border border-slate-600">
-          <div className="flex justify-between items-start">
-            <div>
-              <h4 className="font-semibold text-white">{currentSelected.title}</h4>
-              {currentSelected.episodes && (
-                <p className="text-slate-300 text-sm">
-                  {currentSelected.episodes.length} episodes
-                </p>
-              )}
-              {currentSelected.status && (
-                <p className="text-slate-300 text-sm">{currentSelected.status}</p>
-              )}
-            </div>
-            <button
-              onClick={clearSelection}
-              className="text-slate-400 hover:text-white transition-colors text-sm"
-              type="button"
-            >
-              Change
-            </button>
-          </div>
         </div>
       )}
     </div>

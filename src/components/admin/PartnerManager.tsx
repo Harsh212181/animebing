@@ -324,7 +324,7 @@ const PartnerManager: React.FC<PartnerManagerProps> = ({ token, apiBase }) => {
         <form onSubmit={handleCreatePartner} className="flex flex-col sm:flex-row gap-3">
           <input
             type="text"
-            placeholder="e.g. Crunchyroll, Funimation"
+            placeholder="e.g.animebing"
             value={newPartnerName}
             onChange={(e) => setNewPartnerName(e.target.value)}
             className="flex-1 px-5 py-3 bg-gray-800/60 border border-gray-700/80 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"

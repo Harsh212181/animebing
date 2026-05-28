@@ -1,4 +1,4 @@
- // src/components/admin/EpisodesManager.tsx - UPDATED VERSION
+ // src/components/admin/EpisodesManager.tsx - Updated Selected Content Info with Image
 import React, { useState, useEffect } from 'react';
 import type { Anime, Episode, Chapter } from '../../types';
 import axios from 'axios';
@@ -51,7 +51,6 @@ const EpisodesManager: React.FC = () => {
     downloadLinks: [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }] as DownloadLink[]
   });
 
-  // ✅ State for delete confirmation modal
   const [deleteConfirm, setDeleteConfirm] = useState<{ itemId: string; itemNumber: number; session: number } | null>(null);
 
   const isManga = selectedAnime?.contentType === 'Manga';
@@ -78,7 +77,8 @@ const EpisodesManager: React.FC = () => {
       });
       setAnimes(data.map((a: any) => ({
         ...a,
-        id: a._id || a.id
+        id: a._id || a.id,
+        _id: a._id || a.id  // ensure _id is always present
       })));
     } catch (err: any) {
       console.error('❌ Animes load error:', err.response?.data || err.message);
@@ -97,15 +97,16 @@ const EpisodesManager: React.FC = () => {
       });
       const updatedAnimes = data.map((a: any) => ({
         ...a,
-        id: a._id || a.id
+        id: a._id || a.id,
+        _id: a._id || a.id
       }));
       setAnimes(updatedAnimes);
 
       if (selectedAnime) {
-        const updatedSelectedAnime = updatedAnimes.find((a: Anime) => a.id === selectedAnime.id);
+        const updatedSelectedAnime = updatedAnimes.find((a: Anime) => a._id === selectedAnime._id);
         if (updatedSelectedAnime) {
           setSelectedAnime(updatedSelectedAnime);
-          await fetchContent(updatedSelectedAnime.id);
+          await fetchContent(updatedSelectedAnime._id);
         } else {
           setSelectedAnime(null);
           setEpisodes([]);
@@ -124,7 +125,7 @@ const EpisodesManager: React.FC = () => {
 
   useEffect(() => {
     if (selectedAnime) {
-      fetchContent(selectedAnime.id);
+      fetchContent(selectedAnime._id);
     } else {
       setEpisodes([]);
       setChapters([]);
@@ -209,6 +210,8 @@ const EpisodesManager: React.FC = () => {
     const numbers = filteredItems.map(item => isManga ? (item as Chapter).chapterNumber : (item as Episode).episodeNumber);
     return Math.max(...numbers) + 1;
   };
+
+  // ... (all other handler functions remain identical to previous version)
 
   const handleAddDownloadLink = () => {
     if (newItem.downloadLinks.length >= 5) {
@@ -315,7 +318,7 @@ const EpisodesManager: React.FC = () => {
       const endpoint = isManga ? '/chapters' : '/episodes';
       const requestBody = isManga
         ? {
-            mangaId: selectedAnime.id,
+            mangaId: selectedAnime._id,
             chapterNumber: newItem.number,
             title: newItem.title || `Chapter ${newItem.number}`,
             session: newItem.session,
@@ -323,7 +326,7 @@ const EpisodesManager: React.FC = () => {
             downloadLinks: newItem.downloadLinks
           }
         : {
-            animeId: selectedAnime.id,
+            animeId: selectedAnime._id,
             episodeNumber: newItem.number,
             title: newItem.title || `Episode ${newItem.number}`,
             session: newItem.session,
@@ -371,7 +374,7 @@ const EpisodesManager: React.FC = () => {
       const endpoint = isManga ? '/chapters' : '/episodes';
       const requestBody = isManga
         ? {
-            mangaId: selectedAnime.id,
+            mangaId: selectedAnime._id,
             chapterNumber: editForm.number,
             title: editForm.title || `Chapter ${editForm.number}`,
             session: editForm.session,
@@ -379,7 +382,7 @@ const EpisodesManager: React.FC = () => {
             downloadLinks: editForm.downloadLinks
           }
         : {
-            animeId: selectedAnime.id,
+            animeId: selectedAnime._id,
             episodeNumber: editForm.number,
             title: editForm.title || `Episode ${editForm.number}`,
             session: editForm.session,
@@ -396,16 +399,15 @@ const EpisodesManager: React.FC = () => {
 
       toast.success(`${isManga ? 'Chapter' : 'Episode'} updated successfully!`);
       setEditingItemId(null);
-      await fetchContent(selectedAnime.id);
+      await fetchContent(selectedAnime._id);
     } catch (err: any) {
       console.error('❌ Update error:', err.response?.data || err.message);
       toast.error(`Failed to update ${isManga ? 'chapter' : 'episode'}: ${err.response?.data?.error || err.message}`);
     }
   };
 
-  // ✅ New function to actually delete after confirmation
   const confirmDelete = async () => {
-    if (!deleteConfirm) return;
+    if (!deleteConfirm || !selectedAnime) return;
     const { itemId, itemNumber, session } = deleteConfirm;
     try {
       const token = getToken();
@@ -413,18 +415,18 @@ const EpisodesManager: React.FC = () => {
       await axios.delete(`${API_BASE}${endpoint}`, {
         headers: { Authorization: `Bearer ${token}` },
         data: {
-          [isManga ? 'mangaId' : 'animeId']: selectedAnime?.id,
+          [isManga ? 'mangaId' : 'animeId']: selectedAnime._id,
           [isManga ? 'chapterNumber' : 'episodeNumber']: itemNumber,
           session: session
         }
       });
       toast.success(`${isManga ? 'Chapter' : 'Episode'} deleted successfully!`);
-      if (selectedAnime) await fetchContent(selectedAnime.id);
+      await fetchContent(selectedAnime._id);
     } catch (err: any) {
       console.error('❌ Delete error:', err.response?.data || err.message);
       toast.error(err.response?.data?.error || `Failed to delete ${isManga ? 'chapter' : 'episode'}`);
     } finally {
-      setDeleteConfirm(null); // Close modal
+      setDeleteConfirm(null);
     }
   };
 
@@ -487,16 +489,30 @@ const EpisodesManager: React.FC = () => {
         />
       </div>
 
-      {/* Selected Content Info */}
+      {/* ✅ UPDATED: Selected Content Info with Image */}
       {selectedAnime && (
         <div className="bg-slate-800/30 rounded-lg p-4 border border-slate-700">
-          <h3 className="text-lg font-semibold text-white mb-2">
-            Selected: {selectedAnime.title}
-          </h3>
-          <div className="flex gap-4 text-sm text-slate-300">
-            <span>Type: {selectedAnime.contentType}</span>
-            <span>Status: {selectedAnime.status}</span>
-            <span>Total {isManga ? 'Chapters' : 'Episodes'}: {isManga ? chapters.length : episodes.length}</span>
+          <div className="flex items-center gap-4">
+            {/* Anime Image */}
+            {(selectedAnime.thumbnail || selectedAnime.posterImage || selectedAnime.coverImage) && (
+              <img
+                src={selectedAnime.thumbnail || selectedAnime.posterImage || selectedAnime.coverImage}
+                alt={selectedAnime.title}
+                className="w-16 h-22 object-cover rounded-lg flex-shrink-0"
+                style={{ height: '88px' }}
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+              />
+            )}
+            <div>
+              <h3 className="text-lg font-semibold text-white mb-2">
+                Selected: {selectedAnime.title}
+              </h3>
+              <div className="flex flex-wrap gap-4 text-sm text-slate-300">
+                <span>Type: {selectedAnime.contentType}</span>
+                <span>Status: {selectedAnime.status}</span>
+                <span>Total {isManga ? 'Chapters' : 'Episodes'}: {isManga ? chapters.length : episodes.length}</span>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -683,9 +699,10 @@ const EpisodesManager: React.FC = () => {
         </form>
       )}
 
-      {/* Items List */}
+      {/* Items List (unchanged) */}
       {selectedAnime && (
         <div className="bg-slate-800/50 rounded-lg p-6">
+          {/* ... rest of the table unchanged ... */}
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-semibold text-white">
               {isManga ? 'Chapters' : 'Episodes'} List {getAvailableSessions().length > 1 && `(Session ${selectedSession})`}
@@ -766,6 +783,7 @@ const EpisodesManager: React.FC = () => {
                         {isEditing && (
                           <tr className="bg-slate-800/70 border-b border-slate-700">
                             <td colSpan={6} className="p-4">
+                              {/* Edit form unchanged */}
                               <div className="border-l-4 border-yellow-500 pl-4 py-3">
                                 <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
                                   <svg className="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
@@ -782,12 +800,10 @@ const EpisodesManager: React.FC = () => {
                                       <input type="number" value={editForm.session} onChange={(e) => setEditForm({...editForm, session: Math.max(1, parseInt(e.target.value)||1)})} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-3 py-2 text-sm" />
                                     </div>
                                   </div>
-                                  {/* Main Link edit */}
                                   <div className="bg-slate-800/70 p-4 rounded-lg border-l-4 border-yellow-500">
                                     <label className="block text-sm font-medium text-yellow-300">Main Link (Admin)</label>
                                     <input type="text" value={editForm.mainLink} onChange={(e) => setEditForm({...editForm, mainLink: e.target.value})} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-3 py-2 text-sm mt-2" />
                                   </div>
-                                  {/* Download Links edit */}
                                   <div>
                                     <div className="flex justify-between items-center">
                                       <label className="text-sm text-slate-300">User Download Links</label>

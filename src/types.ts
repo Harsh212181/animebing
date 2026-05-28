@@ -18,7 +18,6 @@ export interface Episode {
   downloadLinks: DownloadLink[];
   secureFileReference?: string;
   session?: number;
-  // ✅ ADDED: Main link for admin internal use only
   mainLink?: string;
 }
 
@@ -30,7 +29,6 @@ export interface Chapter {
   downloadLinks: DownloadLink[];
   secureFileReference?: string;
   session?: number;
-  // ✅ ADDED: Main link for admin internal use only
   mainLink?: string;
 }
 
@@ -69,7 +67,7 @@ export interface Anime {
   thumbnail?: string;
   posterImage?: string;
   coverImage?: string;
-  bannerImage?: string; // ✅ For carousel/featured display
+  bannerImage?: string;
   releaseYear?: number;
   subDubStatus: SubDubStatus;
   contentType: ContentType;
@@ -87,7 +85,6 @@ export interface Anime {
   createdAt?: string;
   updatedAt?: string;
 
-  /* ✅ LIKE/DISLIKE SYSTEM FIELDS */
   likes?: number;
   dislikes?: number;
   votes?: Vote[];
@@ -96,26 +93,20 @@ export interface Anime {
   weeklyLikes?: number;
   totalVotes?: number;
 
-  /* SEO */
   seoTitle?: string;
   seoDescription?: string;
   seoKeywords?: string;
   slug?: string;
 
-  /* Optional */
   language?: string;
   rating?: number;
   views?: number;
   episodeCount?: number;
   totalEpisodes?: number;
-  // ✅ NEW: Current released episode (for episode badge)
   currentEpisode?: number;
   lastContentAdded?: Date | string;
 
-  /* ✅ NEW: Partner association (Partner Manager) */
   partnerId?: string | null;
-
-  /* ✅ NEW: Hide/Show toggle for admin */
   isHidden?: boolean;
 }
 
@@ -209,7 +200,6 @@ export interface EditEpisodeData {
   downloadLinks?: DownloadLink[];
   secureFileReference?: string;
   session?: number;
-  // ✅ ADDED: Main link for admin edit
   mainLink?: string;
 }
 
@@ -218,7 +208,6 @@ export interface EditChapterData {
   downloadLinks?: DownloadLink[];
   secureFileReference?: string;
   session?: number;
-  // ✅ ADDED: Main link for admin edit
   mainLink?: string;
 }
 
@@ -230,18 +219,15 @@ export interface SEODetails {
 }
 
 /* =====================================================
-   ✅ POLL SYSTEM (FRONTEND + BACKEND SYNCED)
+   POLL SYSTEM
 ===================================================== */
 
 export interface PollOption {
   _id: string;
   animeId?: string;
   title: string;
-
-  /* ✅ BOTH SUPPORTED */
-  image?: string;          // backend generic
-  thumbnailUrl?: string;   // frontend usage
-
+  image?: string;
+  thumbnailUrl?: string;
   votes: number;
   percentage?: number;
   order?: number;
@@ -250,13 +236,11 @@ export interface PollOption {
   anime?: Anime;
 }
 
-// Device type for poll voting
 export type DeviceType = 'mobile' | 'tablet' | 'desktop' | 'unknown';
 
-// Voter information for tracking – now uses deviceId and deviceType
 export interface VoterInfo {
-  deviceId: string;        // ✅ Changed from ip to deviceId
-  deviceType: DeviceType;  // ✅ NEW: device type (phone, tablet, PC)
+  deviceId: string;
+  deviceType: DeviceType;
   votedAt: string;
   optionId: string;
 }
@@ -268,25 +252,23 @@ export interface Poll {
   options: PollOption[];
   isActive: boolean;
   totalVotes: number;
-  
-  // ✅ Voters tracking
-  votersCount?: number;              // Number of unique voters
-  voters?: VoterInfo[];             // Array of voter information (admin only)
-  
-  // ✅ User voting status (frontend only)
-  userHasVoted?: boolean;           // Whether current user has voted
-  userVoteOption?: string;          // Option ID that user voted for
-  
+
+  // ✅ FIX: voters any[] allow karta hai flexible access ke liye
+  votersCount?: number;
+  voters?: VoterInfo[] | any[];
+
+  userHasVoted?: boolean;
+  userVoteOption?: string;
+
   createdAt: string;
   expiresAt?: string;
   updatedAt?: string;
   createdBy?: string;
 
-  /* backend virtuals */
   hasExpired?: boolean;
   daysRemaining?: number;
-  
-  /* ✅ frontend calculated expiry status */
+
+  // ✅ FIX: isExpired boolean force karne ke liye
   isExpired?: boolean;
 }
 
@@ -300,8 +282,8 @@ export interface PollVoteResponse {
   optionVotes: number;
   percentage?: number;
   message?: string;
-  userHasVoted?: boolean;      // User voting status
-  userVoteOption?: string;     // User's vote option
+  userHasVoted?: boolean;
+  userVoteOption?: string;
 }
 
 export interface PollApiResponse {
@@ -374,117 +356,81 @@ export interface ExportPollData {
 }
 
 /* =====================================================
-   ✅ PARTNER MANAGER – NEW TYPES (ADDED)
+   PARTNER MANAGER
 ===================================================== */
 
-/**
- * Partner – represents a content partner / contributor
- * Partners can have anime assigned to them.
- */
 export interface Partner {
   _id: string;
   name: string;
-  createdAt: string;          // ISO date string
-
-  // Frontend computed / API enriched fields
-  animeCount?: number;        // Number of anime assigned to this partner
+  createdAt: string;
+  animeCount?: number;
 }
 
-/**
- * Partner API request payloads
- */
 export interface CreatePartnerData {
   name: string;
 }
 
-/**
- * Assign anime to partner – request body
- */
 export interface AssignAnimeToPartnerData {
   animeId: string;
 }
 
-/**
- * Partner with populated anime list (for modal view)
- */
 export interface PartnerWithAnime extends Partner {
-  animeList?: Anime[];        // Full anime objects assigned to partner
+  animeList?: Anime[];
 }
 
-/**
- * API response for GET /api/partners
- */
 export interface PartnersApiResponse {
-  success?: boolean;          // Not always present, but we can include
-  data?: Partner[];           // Some APIs wrap in data
+  success?: boolean;
+  data?: Partner[];
   message?: string;
-  // Direct array response is also possible
 }
 
-/**
- * API response for GET /api/partners/:id/anime
- */
 export interface PartnerAnimeApiResponse {
   success?: boolean;
   data?: Anime[];
   message?: string;
 }
 
-/**
- * API response for partner creation
- */
 export interface CreatePartnerApiResponse {
   success?: boolean;
   partner?: Partner;
   message?: string;
 }
 
-/**
- * API response for assign/remove operations
- */
 export interface AnimeAssignmentResponse {
   success?: boolean;
-  anime?: Anime;             // Updated anime document
+  anime?: Anime;
   message?: string;
 }
 
 /* =====================================================
-   ✅ DOWNLOAD PAGES TYPES – UPDATED WITH EPISODE NUMBER
+   DOWNLOAD PAGES TYPES
 ===================================================== */
 
-/**
- * Represents a single link on a download page.
- * Renamed from DownloadLink to avoid conflict with episode/chapter links.
- */
 export interface DownloadPageLink {
   episode: number;
   url: string;
   quality?: string;
   language?: string;
-  type: 'download' | 'watch';   // ✅ distinguishes download vs watch
+  type: 'download' | 'watch';
 }
 
-/**
- * Download Page – now includes episodeNumber field.
- * This is the episode number where the page button should appear.
- */
 export interface DownloadPage {
   _id: string;
   animeId:
     | {
         _id: string;
         title: string;
-        contentType?: ContentType;        // optional but often populated
-        subDubStatus?: SubDubStatus;       // ✅ ADDED: sub/dub status
-        status?: string;                   // optional: Ongoing/Complete
-        releaseYear?: number;               // optional: release year
+        contentType?: ContentType;
+        subDubStatus?: SubDubStatus;
+        status?: string;
+        releaseYear?: number;
       }
-    | string; // can be just the ID in some contexts
+    | string;
   slug: string;
   title: string;
-  buttonTitle?: string;        // optional custom button text
-  episodeNumber: number;       // ✅ NEW: required episode number this page belongs to
+  buttonTitle?: string;
+  episodeNumber: number;
   links: DownloadPageLink[];
   createdAt: string;
-  updatedAt?: string;          // optional timestamp
+  updatedAt?: string;
 }

@@ -1,103 +1,160 @@
-export async function onRequest(context) {
-  const { request, next } = context;
+ interface Env {
+  API_URL?: string;
+}
+
+interface CFContext {
+  request: Request;
+  next: () => Promise<Response>;
+  env: Env;
+  params: Record<string, string>;
+  waitUntil: (promise: Promise<unknown>) => void;
+  passThroughOnException: () => void;
+}
+
+export async function onRequest(context: CFContext): Promise<Response> {
+  const { request, next, env } = context;
   const url = new URL(request.url);
 
-  // ========== TEST ENDPOINT ==========
-  // Visit https://animebing.in/function-test to check if the function is running
   if (url.pathname === '/function-test') {
     return new Response('✅ Function is working!', {
       headers: { 'Content-Type': 'text/plain' }
     });
   }
-  // ===================================
 
-  console.log('🚀 SEO function triggered for:', context.request.url);
-
-  // Only handle detail pages
   if (!url.pathname.startsWith('/detail/')) {
-    console.log('➡️ Not a detail page, passing through');
     return next();
   }
 
-  const slug = url.pathname.split('/detail/')[1];
-  console.log('🔍 Extracted slug:', slug);
+  const slug = url.pathname.split('/detail/')[1]?.split('?')[0]?.split('#')[0];
+  if (!slug) return next();
+
+  const API_BASE = env.API_URL || 'https://animabing-backend.animabing.workers.dev';
 
   try {
-    // 1. Fetch original HTML
-    console.log('📥 Fetching original HTML...');
-    const response = await next();
-    let html = await response.text();
-    console.log('✅ Original HTML fetched, length:', html.length);
+    const [pageResponse, apiResponse] = await Promise.all([
+      next(),
+      fetch(`${API_BASE}/api/anime/${slug}`, {
+        headers: { 'Accept': 'application/json' }
+      })
+    ]);
 
-    // 2. Fetch anime data from API
-    const apiUrl = `https://animabing.onrender.com/api/anime/${slug}?fields=title,seoTitle,seoDescription,seoKeywords,thumbnail,description,contentType,subDubStatus`;
-    console.log('🌐 Fetching API data from:', apiUrl);
-    const apiResponse = await fetch(apiUrl);
+    let html = await pageResponse.text();
 
     if (!apiResponse.ok) {
-      console.error('❌ API request failed with status:', apiResponse.status);
-      const errorText = await apiResponse.text();
-      console.error('Response body:', errorText.substring(0, 200));
-      // Return original HTML with index header
+      console.error(`API failed for slug "${slug}": ${apiResponse.status}`);
       return new Response(html, {
-        headers: {
-          'Content-Type': 'text/html',
-          'X-Robots-Tag': 'index'
-        }
+        status: pageResponse.status,
+        headers: { 'Content-Type': 'text/html;charset=UTF-8', 'X-Robots-Tag': 'index' }
       });
     }
 
-    const animeData = await apiResponse.json();
-    console.log('✅ API response received:', animeData.success ? 'success' : 'failure');
+    const animeData = await apiResponse.json() as {
+      success: boolean;
+      data?: {
+        title?: string;
+        slug?: string;
+        seoTitle?: string;
+        seoDescription?: string;
+        description?: string;
+        seoKeywords?: string;
+        thumbnail?: string;
+        contentType?: string;
+        currentEpisode?: number;
+        totalEpisodes?: number;
+      };
+    };
 
     if (animeData.success && animeData.data) {
       const anime = animeData.data;
-      console.log('📦 Anime title:', anime.title);
 
-      // Build SEO tags
-      const seoTitle = anime.seoTitle || `${anime.title} | AnimeBing`;
-      const seoDescription = anime.seoDescription || anime.description || `Watch ${anime.title} online in HD`;
-      const seoKeywords = anime.seoKeywords || '';
-      const canonicalUrl = `https://animebing.in/detail/${anime.slug || slug}`;
+      // HTML escape function
+      const esc = (input: unknown): string =>
+        String(input || '')
+          .replace(/&/g, '&amp;')
+          .replace(/"/g, '&quot;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/\n/g, ' ')
+          .trim();
 
-      // Replace meta tags
-      html = html.replace(/<title>.*?<\/title>/, `<title>${seoTitle}</title>`);
-      html = html.replace(/<meta name="description".*?>/, `<meta name="description" content="${seoDescription.substring(0, 155)}" />`);
-      html = html.replace(/<meta name="keywords".*?>/, `<meta name="keywords" content="${seoKeywords}" />`);
-
-      // Canonical URL
-      if (html.includes('<link rel="canonical"')) {
-        html = html.replace(/<link rel="canonical".*?>/, `<link rel="canonical" href="${canonicalUrl}" />`);
+      let titleText = anime.title || slug.replace(/-/g, ' ');
+      if (anime.contentType === 'Movie') {
+        titleText += ' (Movie)';
+      } else if (anime.contentType === 'Manga') {
+        titleText += ' Manga';
       } else {
-        html = html.replace('</head>', `  <link rel="canonical" href="${canonicalUrl}" />\n</head>`);
+        const ep = anime.currentEpisode || anime.totalEpisodes;
+        if (ep && ep > 0) titleText += ` EP ${ep}`;
       }
 
-      // Open Graph tags (this is what WhatsApp needs)
-      const ogTags = `
+      const seoTitle = esc(anime.seoTitle || `${titleText} | AnimeBing`);
+      const rawDesc  = anime.seoDescription || anime.description || `Watch ${anime.title} online in HD quality. Free streaming.`;
+      const seoDesc  = esc(rawDesc.substring(0, 160));
+      const keywords = esc(anime.seoKeywords || '');
+      const canonical = `https://animebing.in/detail/${anime.slug || slug}`;
+      const imageUrl  = anime.thumbnail || 'https://animebing.in/AnimeBinglogo.jpg';
+      const ogType    = anime.contentType === 'Movie' ? 'video.movie' : 'video.tv_show';
+
+      // Purane OG/Twitter tags hataao
+      html = html.replace(/<meta\s+property="og:[^"]*"[^>]*\/?>/gi, '');
+      html = html.replace(/<meta\s+name="twitter:[^"]*"[^>]*\/?>/gi, '');
+
+      // Title update
+      html = html.replace(/<title>[\s\S]*?<\/title>/, `<title>${seoTitle}</title>`);
+
+      // Description update
+      if (/<meta\s[^>]*name="description"[^>]*>/i.test(html)) {
+        html = html.replace(
+          /<meta\s[^>]*name="description"[^>]*>/i,
+          `<meta name="description" content="${seoDesc}" />`
+        );
+      }
+
+      // Keywords update (multiline bhi handle hoga)
+      if (/<meta[\s\S]*?name="keywords"[\s\S]*?>/i.test(html)) {
+        html = html.replace(
+          /<meta[\s\S]*?name="keywords"[\s\S]*?>/i,
+          `<meta name="keywords" content="${keywords}" />`
+        );
+      }
+
+      // Canonical update
+      if (html.includes('rel="canonical"')) {
+        html = html.replace(/<link\s+rel="canonical"[^>]*>/i, `<link rel="canonical" href="${canonical}" />`);
+      }
+
+      // OG + Twitter tags inject
+      const metaTags = `
+  <link rel="canonical" href="${canonical}" />
   <meta property="og:title" content="${seoTitle}" />
-  <meta property="og:description" content="${seoDescription.substring(0, 155)}" />
-  <meta property="og:url" content="${canonicalUrl}" />
-  <meta property="og:image" content="${anime.thumbnail || 'https://animebing.in/AnimeBinglogo.jpg'}" />
-  <meta property="og:type" content="${anime.contentType === 'Movie' ? 'video.movie' : 'video.tv_show'}" />
+  <meta property="og:description" content="${seoDesc}" />
+  <meta property="og:url" content="${canonical}" />
+  <meta property="og:image" content="${imageUrl}" />
+  <meta property="og:image:secure_url" content="${imageUrl}" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:type" content="${ogType}" />
+  <meta property="og:site_name" content="AnimeBing" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="${seoTitle}" />
-  <meta name="twitter:description" content="${seoDescription.substring(0, 155)}" />
-  <meta name="twitter:image" content="${anime.thumbnail || 'https://animebing.in/AnimeBinglogo.jpg'}" />
-`;
-      html = html.replace('</head>', ogTags + '\n</head>');
+  <meta name="twitter:description" content="${seoDesc}" />
+  <meta name="twitter:image" content="${imageUrl}" />`;
 
-      console.log('✅ HTML modified successfully with OG tags');
+      html = html.replace('</head>', metaTags + '\n</head>');
+      console.log(`✅ OG tags injected for: ${anime.title}`);
     }
 
-    // Return modified HTML with index header
     return new Response(html, {
       headers: {
-        'Content-Type': 'text/html',
-        'X-Robots-Tag': 'index'
+        'Content-Type': 'text/html;charset=UTF-8',
+        'X-Robots-Tag': 'index',
+        'Cache-Control': 'public, max-age=300, s-maxage=600'
       }
     });
+
   } catch (error) {
-    console.error('❌ Worker error:', error);
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error('❌ Middleware error:', msg);
     return next();
   }
 }
