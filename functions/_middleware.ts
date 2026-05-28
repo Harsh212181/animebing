@@ -15,11 +15,46 @@ export async function onRequest(context: CFContext): Promise<Response> {
   const { request, next, env } = context;
   const url = new URL(request.url);
 
+  // ========== TEST ENDPOINTS ==========
   if (url.pathname === '/function-test') {
     return new Response('✅ Function is working!', {
       headers: { 'Content-Type': 'text/plain' }
     });
   }
+
+  // 🔍 API DEBUG — browser mein kholo: https://animebing.in/api-debug
+  if (url.pathname === '/api-debug') {
+    const API_BASE = env.API_URL || 'MISSING';
+    const testSlug = 'the-beginning-after-the-end-season-2-hindi-sub';
+    let apiResult = '';
+    let apiStatus = 0;
+
+    if (API_BASE !== 'MISSING') {
+      try {
+        const r = await fetch(`${API_BASE}/api/anime/${testSlug}`, {
+          headers: { 'Accept': 'application/json' }
+        });
+        apiStatus = r.status;
+        const text = await r.text();
+        apiResult = text.substring(0, 500);
+      } catch (e: unknown) {
+        apiResult = 'FETCH ERROR: ' + (e instanceof Error ? e.message : String(e));
+      }
+    }
+
+    const info = {
+      API_URL_ENV: env.API_URL || '❌ NOT SET',
+      API_BASE_USED: API_BASE,
+      TEST_URL: API_BASE !== 'MISSING' ? `${API_BASE}/api/anime/${testSlug}` : 'N/A',
+      API_STATUS: apiStatus,
+      API_RESPONSE_PREVIEW: apiResult || 'N/A'
+    };
+
+    return new Response(JSON.stringify(info, null, 2), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  // ====================================
 
   if (!url.pathname.startsWith('/detail/')) {
     return next();
@@ -28,7 +63,9 @@ export async function onRequest(context: CFContext): Promise<Response> {
   const slug = url.pathname.split('/detail/')[1]?.split('?')[0]?.split('#')[0];
   if (!slug) return next();
 
-  const API_BASE = env.API_URL || 'https://animabing-backend.animabing.workers.dev';
+  // ✅ Apna actual Worker URL yahan daalo
+  // Cloudflare Dashboard → Workers → animabing-backend → URL copy karo
+  const API_BASE = env.API_URL || 'https://animabing-backend.animabingwatch.workers.dev';
 
   try {
     const [pageResponse, apiResponse] = await Promise.all([
@@ -41,7 +78,7 @@ export async function onRequest(context: CFContext): Promise<Response> {
     let html = await pageResponse.text();
 
     if (!apiResponse.ok) {
-      console.error(`API failed for slug "${slug}": ${apiResponse.status}`);
+      console.error(`API failed for "${slug}": status=${apiResponse.status}, url=${API_BASE}/api/anime/${slug}`);
       return new Response(html, {
         status: pageResponse.status,
         headers: { 'Content-Type': 'text/html;charset=UTF-8', 'X-Robots-Tag': 'index' }
@@ -67,7 +104,6 @@ export async function onRequest(context: CFContext): Promise<Response> {
     if (animeData.success && animeData.data) {
       const anime = animeData.data;
 
-      // HTML escape function
       const esc = (input: unknown): string =>
         String(input || '')
           .replace(/&/g, '&amp;')
@@ -87,43 +123,34 @@ export async function onRequest(context: CFContext): Promise<Response> {
         if (ep && ep > 0) titleText += ` EP ${ep}`;
       }
 
-      const seoTitle = esc(anime.seoTitle || `${titleText} | AnimeBing`);
-      const rawDesc  = anime.seoDescription || anime.description || `Watch ${anime.title} online in HD quality. Free streaming.`;
-      const seoDesc  = esc(rawDesc.substring(0, 160));
-      const keywords = esc(anime.seoKeywords || '');
+      const seoTitle  = esc(anime.seoTitle || `${titleText} | AnimeBing`);
+      const rawDesc   = anime.seoDescription || anime.description || `Watch ${anime.title} online in HD quality. Free streaming.`;
+      const seoDesc   = esc(rawDesc.substring(0, 160));
+      const keywords  = esc(anime.seoKeywords || '');
       const canonical = `https://animebing.in/detail/${anime.slug || slug}`;
       const imageUrl  = anime.thumbnail || 'https://animebing.in/AnimeBinglogo.jpg';
       const ogType    = anime.contentType === 'Movie' ? 'video.movie' : 'video.tv_show';
 
-      // Purane OG/Twitter tags hataao
       html = html.replace(/<meta\s+property="og:[^"]*"[^>]*\/?>/gi, '');
       html = html.replace(/<meta\s+name="twitter:[^"]*"[^>]*\/?>/gi, '');
-
-      // Title update
       html = html.replace(/<title>[\s\S]*?<\/title>/, `<title>${seoTitle}</title>`);
 
-      // Description update
       if (/<meta\s[^>]*name="description"[^>]*>/i.test(html)) {
         html = html.replace(
           /<meta\s[^>]*name="description"[^>]*>/i,
           `<meta name="description" content="${seoDesc}" />`
         );
       }
-
-      // Keywords update (multiline bhi handle hoga)
       if (/<meta[\s\S]*?name="keywords"[\s\S]*?>/i.test(html)) {
         html = html.replace(
           /<meta[\s\S]*?name="keywords"[\s\S]*?>/i,
           `<meta name="keywords" content="${keywords}" />`
         );
       }
-
-      // Canonical update
       if (html.includes('rel="canonical"')) {
         html = html.replace(/<link\s+rel="canonical"[^>]*>/i, `<link rel="canonical" href="${canonical}" />`);
       }
 
-      // OG + Twitter tags inject
       const metaTags = `
   <link rel="canonical" href="${canonical}" />
   <meta property="og:title" content="${seoTitle}" />
@@ -141,7 +168,6 @@ export async function onRequest(context: CFContext): Promise<Response> {
   <meta name="twitter:image" content="${imageUrl}" />`;
 
       html = html.replace('</head>', metaTags + '\n</head>');
-      console.log(`✅ OG tags injected for: ${anime.title}`);
     }
 
     return new Response(html, {
