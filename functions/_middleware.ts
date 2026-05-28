@@ -30,15 +30,7 @@ function esc(input: unknown): string {
     .trim();
 }
 
-// Cloudinary image ko 1200x630 OG size mein convert karo (sabhi platforms ke liye)
-function toOgImage(url: string): string {
-  if (!url || url === LOGO_URL) return LOGO_URL;
-  if (url.includes('cloudinary.com')) {
-    // c_fill = crop to exact size, g_center = center focus, f_jpg = JPEG (not webp)
-    return url.replace(/\/upload\/[^/]+\//, '/upload/c_fill,f_jpg,g_center,h_630,q_auto,w_1200/');
-  }
-  return url;
-}
+// OG + Twitter tags string banao
 function buildMetaTags(data: {
   title: string;
   description: string;
@@ -187,10 +179,16 @@ export async function onRequest(context: CFContext): Promise<Response> {
           if (ep && ep > 0) titleText += ` EP ${ep}`;
         }
 
+        // ✅ Cloudinary thumbnail badi size mein serve karo
+        const rawThumb = String(anime.thumbnail || LOGO_URL);
+        const detailImage = rawThumb.includes('cloudinary.com')
+          ? rawThumb.replace(/\/upload\/[^/]+\//, '/upload/f_jpg,q_auto,w_800/')
+          : rawThumb;
+
         html = injectMeta(html, {
           title:       String(anime.seoTitle || `${titleText} | ${SITE_NAME}`),
           description: String(anime.seoDescription || anime.description || `Watch ${anime.title} online in HD quality.`),
-          image:       toOgImage(String(anime.thumbnail || LOGO_URL)),
+          image:       detailImage,
           url:         `${SITE_URL}/detail/${String(anime.slug || slug)}`,
           type:        anime.contentType === 'Movie' ? 'video.movie' : 'video.tv_show'
         });
@@ -250,11 +248,14 @@ export async function onRequest(context: CFContext): Promise<Response> {
           : `Download ${String(page.title || slug)} in HD quality. Free on ${SITE_NAME}.`;
 
         const rawImage = anime ? String(anime.thumbnail || LOGO_URL) : LOGO_URL;
+        const image = rawImage.includes('cloudinary.com')
+          ? rawImage.replace(/\/upload\/[^/]+\//, '/upload/f_jpg,q_auto,w_800/')
+          : rawImage;
 
         html = injectMeta(html, {
           title:       ogTitle,
           description: description,
-          image:       toOgImage(rawImage),
+          image:       image,
           url:         `${SITE_URL}/download/${rawSlug}`,
           type:        'website'
         });
