@@ -179,10 +179,16 @@ export async function onRequest(context: CFContext): Promise<Response> {
           if (ep && ep > 0) titleText += ` EP ${ep}`;
         }
 
+        // ✅ Cloudinary thumbnail badi size mein serve karo
+        const rawThumb = String(anime.thumbnail || LOGO_URL);
+        const detailImage = rawThumb.includes('cloudinary.com')
+          ? rawThumb.replace(/\/upload\/[^/]+\//, '/upload/f_jpg,q_auto,w_800/')
+          : rawThumb;
+
         html = injectMeta(html, {
           title:       String(anime.seoTitle || `${titleText} | ${SITE_NAME}`),
           description: String(anime.seoDescription || anime.description || `Watch ${anime.title} online in HD quality.`),
-          image:       String(anime.thumbnail || LOGO_URL),
+          image:       detailImage,
           url:         `${SITE_URL}/detail/${String(anime.slug || slug)}`,
           type:        anime.contentType === 'Movie' ? 'video.movie' : 'video.tv_show'
         });
@@ -225,27 +231,35 @@ export async function onRequest(context: CFContext): Promise<Response> {
       if (data.success && data.data) {
         const page  = data.data;
 
-        // Download page mein anime ka populated data ho sakta hai
+        // animeId populated object hai ya sirf ID
         const anime = (page.animeId && typeof page.animeId === 'object')
           ? page.animeId as Record<string, unknown>
           : null;
 
-        const animeName  = anime
-          ? String(anime.title || '')
-          : String(page.title || slug);
+        // ✅ FIX 1: Anime title use karo, page.title (jo "1" jaise episode number hota hai) nahi
+        const animeName = anime
+          ? String(anime.title || '').trim()
+          : '';
 
-        const pageTitle  = String(page.title || `${animeName} Download | ${SITE_NAME}`);
-        const ogTitle    = `${pageTitle} | ${SITE_NAME}`;
+        const epNum = page.episodeNumber || page.episodeNumber === 0 ? ` - Episode ${page.episodeNumber}` : '';
 
-        // Description: episode info ya anime description
+        // OG title: "My Gift Lvl.9999 - Episode 1 Download | AnimeBing"
+        const ogTitle = animeName
+          ? `${animeName}${epNum} Download | ${SITE_NAME}`
+          : `${String(page.title || slug)} | ${SITE_NAME}`;
+
         const description = anime
           ? String(anime.seoDescription || anime.description || `Download ${animeName} in HD quality. Free on ${SITE_NAME}.`)
-          : `Download ${animeName} in HD quality. Free streaming and downloads on ${SITE_NAME}.`;
+          : `Download ${String(page.title || slug)} in HD quality. Free on ${SITE_NAME}.`;
 
-        // Image: anime thumbnail prefer karo
-        const image = anime
+        // ✅ FIX 2: Cloudinary URL mein w_193 hatao — badi image serve karo WhatsApp ke liye
+        const rawImage = anime
           ? String(anime.thumbnail || LOGO_URL)
           : LOGO_URL;
+
+        const image = rawImage.includes('cloudinary.com')
+          ? rawImage.replace(/\/upload\/[^/]+\//, '/upload/f_jpg,q_auto,w_800/')
+          : rawImage;
 
         html = injectMeta(html, {
           title:       ogTitle,
