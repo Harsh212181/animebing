@@ -19,7 +19,6 @@ function getApiBase(env: Env): string {
   return env.API_URL || 'https://animabing-backend.animabingwatch.workers.dev';
 }
 
-// HTML special chars escape
 function esc(input: unknown): string {
   return String(input || '')
     .replace(/&/g, '&amp;')
@@ -30,7 +29,6 @@ function esc(input: unknown): string {
     .trim();
 }
 
-// OG + Twitter tags string banao
 function buildMetaTags(data: {
   title: string;
   description: string;
@@ -61,7 +59,6 @@ function buildMetaTags(data: {
   <meta name="twitter:image" content="${img}" />`;
 }
 
-// HTML mein meta tags inject karo
 function injectMeta(html: string, meta: {
   title: string;
   description: string;
@@ -69,17 +66,13 @@ function injectMeta(html: string, meta: {
   url: string;
   type?: string;
 }): string {
-  const t   = esc(meta.title);
-  const d   = esc(meta.description.substring(0, 160));
+  const t = esc(meta.title);
+  const d = esc(meta.description.substring(0, 160));
 
-  // Purane OG/Twitter tags remove karo (duplicate nahi ayenge)
   html = html.replace(/<meta\s+property="og:[^"]*"[^>]*\/?>/gi, '');
   html = html.replace(/<meta\s+name="twitter:[^"]*"[^>]*\/?>/gi, '');
-
-  // Title update
   html = html.replace(/<title>[\s\S]*?<\/title>/, `<title>${t}</title>`);
 
-  // Description update (single ya multiline)
   if (/<meta\s[^>]*name="description"[^>]*>/i.test(html)) {
     html = html.replace(
       /<meta\s[^>]*name="description"[^>]*>/i,
@@ -87,7 +80,6 @@ function injectMeta(html: string, meta: {
     );
   }
 
-  // Keywords update (multiline bhi handle hoga)
   if (/<meta[\s\S]*?name="keywords"[\s\S]*?>/i.test(html)) {
     html = html.replace(
       /<meta[\s\S]*?name="keywords"[\s\S]*?>/i,
@@ -95,14 +87,11 @@ function injectMeta(html: string, meta: {
     );
   }
 
-  // Canonical update
   if (html.includes('rel="canonical"')) {
     html = html.replace(/<link\s+rel="canonical"[^>]*>/i, `<link rel="canonical" href="${meta.url}" />`);
   }
 
-  // New meta tags inject
   html = html.replace('</head>', buildMetaTags(meta) + '\n</head>');
-
   return html;
 }
 
@@ -120,8 +109,8 @@ export async function onRequest(context: CFContext): Promise<Response> {
 
   // ========== DEBUG ==========
   if (path === '/api-debug') {
-    const API_BASE  = getApiBase(env);
-    const testSlug  = 'the-beginning-after-the-end-season-2-hindi-sub';
+    const API_BASE   = getApiBase(env);
+    const testSlug   = 'the-beginning-after-the-end-season-2-hindi-sub';
     const testDlSlug = 'My%20Gift%20Lvl.9999%20Unlimited%20Gacha%20wekjbjwefcfwa3';
     let animeResult = '', animeStatus = 0;
     let dlResult = '', dlStatus = 0;
@@ -149,7 +138,72 @@ export async function onRequest(context: CFContext): Promise<Response> {
       download_test: { status: dlStatus,    preview: dlResult }
     }, null, 2), { headers: { 'Content-Type': 'application/json' } });
   }
-  // ===========================
+
+  // ========================================================
+  // ✅ SITEMAP PROXY — Worker se fetch karke return karo
+  // Ye ZAROORI hai kyunki Pages static files mein sitemap
+  // nahi hai — Worker hi actual data deta hai
+  // ========================================================
+  const SITEMAP_PATHS = [
+    '/sitemap.xml',
+    '/sitemap-static.xml',
+    '/sitemap-anime.xml',
+    '/sitemap-episodes.xml',
+  ];
+
+  if (SITEMAP_PATHS.includes(path)) {
+    const API_BASE = getApiBase(env);
+    try {
+      const workerRes = await fetch(`${API_BASE}${path}`, {
+        headers: { Accept: 'application/xml' }
+      });
+
+      const xml = await workerRes.text();
+
+      return new Response(xml, {
+        status: workerRes.status,
+        headers: {
+          'Content-Type':  'application/xml; charset=utf-8',
+          'Cache-Control': 'public, max-age=3600, s-maxage=7200',
+          'X-Sitemap-Source': 'worker-proxy'
+        }
+      });
+    } catch (e) {
+      console.error('Sitemap proxy error:', e);
+      // Fallback: empty valid sitemap return karo, 503 nahi
+      const today = new Date().toISOString().split('T')[0];
+      const fallback = path === '/sitemap.xml'
+        ? `<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <sitemap><loc>https://animebing.in/sitemap-static.xml</loc><lastmod>${today}</lastmod></sitemap>\n  <sitemap><loc>https://animebing.in/sitemap-anime.xml</loc><lastmod>${today}</lastmod></sitemap>\n</sitemapindex>`
+        : `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>`;
+
+      return new Response(fallback, {
+        status: 200,
+        headers: { 'Content-Type': 'application/xml; charset=utf-8' }
+      });
+    }
+  }
+
+  // ========== ROBOTS.TXT PROXY ==========
+  // robots.txt bhi Worker se fetch karo taaki consistent rahe
+  if (path === '/robots.txt') {
+    const API_BASE = getApiBase(env);
+    try {
+      const robotsRes = await fetch(`${API_BASE}/robots.txt`);
+      const txt = await robotsRes.text();
+      return new Response(txt, {
+        headers: {
+          'Content-Type':  'text/plain; charset=utf-8',
+          'Cache-Control': 'public, max-age=86400'
+        }
+      });
+    } catch (e) {
+      // Fallback robots.txt
+      return new Response(
+        `User-agent: *\nAllow: /\nDisallow: /admin/\nDisallow: /api/admin/\nSitemap: https://animebing.in/sitemap.xml`,
+        { headers: { 'Content-Type': 'text/plain' } }
+      );
+    }
+  }
 
   // ========== DETAIL PAGE /detail/:slug ==========
   if (path.startsWith('/detail/')) {
@@ -179,7 +233,6 @@ export async function onRequest(context: CFContext): Promise<Response> {
           if (ep && ep > 0) titleText += ` EP ${ep}`;
         }
 
-        // ✅ Cloudinary thumbnail badi size mein serve karo
         const rawThumb = String(anime.thumbnail || LOGO_URL);
         const detailImage = rawThumb.includes('cloudinary.com')
           ? rawThumb.replace(/\/upload\/[^/]+\//, '/upload/f_jpg,q_auto,w_800/')
@@ -210,7 +263,7 @@ export async function onRequest(context: CFContext): Promise<Response> {
   // ========== DOWNLOAD PAGE /download/:slug ==========
   if (path.startsWith('/download/')) {
     const rawSlug = path.split('/download/')[1]?.split('?')[0]?.split('#')[0] || '';
-    const slug    = decodeURIComponent(rawSlug); // spaces/special chars decode
+    const slug    = decodeURIComponent(rawSlug);
     if (!slug) return next();
 
     const API_BASE = getApiBase(env);
@@ -226,10 +279,7 @@ export async function onRequest(context: CFContext): Promise<Response> {
       let html = await pageRes.text();
       if (!apiRes.ok) return new Response(html, { headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
 
-      // ✅ API ab direct page object return karta hai (no success/data wrapper)
       const page = await apiRes.json() as Record<string, unknown>;
-
-      // animeId populated object hai (thumbnail ke liye)
       const anime = (page.animeId && typeof page.animeId === 'object')
         ? page.animeId as Record<string, unknown>
         : null;
@@ -238,7 +288,6 @@ export async function onRequest(context: CFContext): Promise<Response> {
         const animeName = anime ? String(anime.title || '').trim() : '';
         const epNum = page.episodeNumber ? ` - Episode ${page.episodeNumber}` : '';
 
-        // ✅ Anime title use karo — page.title ("1" jaise) nahi
         const ogTitle = animeName
           ? `${animeName}${epNum} Download | ${SITE_NAME}`
           : `${String(page.title || slug)} | ${SITE_NAME}`;
