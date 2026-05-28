@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+ import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
 import { findMany, findOne, insertOne, updateOne, deleteOne, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
@@ -41,7 +41,6 @@ downloadPageRoutes.get('/', adminAuth, async (c) => {
   try {
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    // Step 1: Saare download pages fetch karo
     const pages = await findMany<IDownloadPage>(
       'downloadpages', {},
       { sort: { createdAt: -1 } },
@@ -50,14 +49,12 @@ downloadPageRoutes.get('/', adminAuth, async (c) => {
 
     if (!pages || pages.length === 0) return c.json([])
 
-    // Step 2: Unique animeIds collect karo
     const animeIds = [...new Set(
       pages
         .map((p: any) => p.animeId?.toString())
         .filter(Boolean)
     )]
 
-    // Step 3: Ek baar mein saare anime fetch karo (toObjectId use kar rahe hain — NO direct ObjectId import)
     const animes = await db
       .collection('animes')
       .find(
@@ -66,12 +63,10 @@ downloadPageRoutes.get('/', adminAuth, async (c) => {
       )
       .toArray()
 
-    // Step 4: Lookup map banao
     const animeMap = new Map(
       animes.map((a: any) => [a._id.toString(), a])
     )
 
-    // Step 5: Pages mein animeId ko populated object se replace karo
     const populatedPages = pages.map((page: any) => ({
       ...page,
       animeId: animeMap.get(page.animeId?.toString()) || page.animeId
@@ -171,13 +166,40 @@ downloadPageRoutes.delete('/:id', adminAuth, async (c) => {
   }
 })
 
-// GET BY SLUG
+// ✅ GET BY SLUG — anime thumbnail + title bhi return karo (middleware ke liye zaruri)
 downloadPageRoutes.get('/:slug', async (c) => {
   try {
     const slug = c.req.param('slug')
-    const page = await findOne<IDownloadPage>('downloadpages', { slug }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const page = await findOne<IDownloadPage>(
+      'downloadpages',
+      { slug },
+      c.env.MONGODB_URI,
+      c.env.MONGODB_DB
+    )
     if (!page) return c.json({ error: 'Page not found' }, 404)
-    return c.json(page)
+
+    // ✅ animeId se anime fetch karo — thumbnail aur description ke liye
+    let animeData = null
+    const animeIdStr = (page as any).animeId?.toString()
+
+    if (animeIdStr && isValidObjectId(animeIdStr)) {
+      const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+      animeData = await db
+        .collection('animes')
+        .findOne(
+          { _id: toObjectId(animeIdStr) },
+          { projection: { title: 1, thumbnail: 1, description: 1, seoDescription: 1, contentType: 1 } }
+        )
+    }
+
+    // ✅ Page object mein animeId ko populated object se replace karo
+    const populatedPage = {
+      ...(page as any),
+      animeId: animeData || (page as any).animeId
+    }
+
+    return c.json({ success: true, data: populatedPage })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
