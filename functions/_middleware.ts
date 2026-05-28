@@ -226,24 +226,19 @@ export async function onRequest(context: CFContext): Promise<Response> {
       let html = await pageRes.text();
       if (!apiRes.ok) return new Response(html, { headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
 
-      const data = await apiRes.json() as { success: boolean; data?: Record<string, unknown> };
+      // ✅ API ab direct page object return karta hai (no success/data wrapper)
+      const page = await apiRes.json() as Record<string, unknown>;
 
-      if (data.success && data.data) {
-        const page  = data.data;
+      // animeId populated object hai (thumbnail ke liye)
+      const anime = (page.animeId && typeof page.animeId === 'object')
+        ? page.animeId as Record<string, unknown>
+        : null;
 
-        // animeId populated object hai ya sirf ID
-        const anime = (page.animeId && typeof page.animeId === 'object')
-          ? page.animeId as Record<string, unknown>
-          : null;
+      if (anime || page.title) {
+        const animeName = anime ? String(anime.title || '').trim() : '';
+        const epNum = page.episodeNumber ? ` - Episode ${page.episodeNumber}` : '';
 
-        // ✅ FIX 1: Anime title use karo, page.title (jo "1" jaise episode number hota hai) nahi
-        const animeName = anime
-          ? String(anime.title || '').trim()
-          : '';
-
-        const epNum = page.episodeNumber || page.episodeNumber === 0 ? ` - Episode ${page.episodeNumber}` : '';
-
-        // OG title: "My Gift Lvl.9999 - Episode 1 Download | AnimeBing"
+        // ✅ Anime title use karo — page.title ("1" jaise) nahi
         const ogTitle = animeName
           ? `${animeName}${epNum} Download | ${SITE_NAME}`
           : `${String(page.title || slug)} | ${SITE_NAME}`;
@@ -252,11 +247,7 @@ export async function onRequest(context: CFContext): Promise<Response> {
           ? String(anime.seoDescription || anime.description || `Download ${animeName} in HD quality. Free on ${SITE_NAME}.`)
           : `Download ${String(page.title || slug)} in HD quality. Free on ${SITE_NAME}.`;
 
-        // ✅ FIX 2: Cloudinary URL mein w_193 hatao — badi image serve karo WhatsApp ke liye
-        const rawImage = anime
-          ? String(anime.thumbnail || LOGO_URL)
-          : LOGO_URL;
-
+        const rawImage = anime ? String(anime.thumbnail || LOGO_URL) : LOGO_URL;
         const image = rawImage.includes('cloudinary.com')
           ? rawImage.replace(/\/upload\/[^/]+\//, '/upload/f_jpg,q_auto,w_800/')
           : rawImage;

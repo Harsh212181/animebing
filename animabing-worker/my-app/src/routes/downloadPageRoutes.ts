@@ -193,13 +193,12 @@ downloadPageRoutes.get('/:slug', async (c) => {
         )
     }
 
-    // ✅ Page object mein animeId ko populated object se replace karo
-    const populatedPage = {
+    // ✅ Backward compatible format — React component ke liye same structure
+    // animeId ko populated object se replace karo (thumbnail ke liye)
+    return c.json({
       ...(page as any),
       animeId: animeData || (page as any).animeId
-    }
-
-    return c.json({ success: true, data: populatedPage })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
