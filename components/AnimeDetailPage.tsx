@@ -56,6 +56,7 @@ interface Props {
 
 // API base
 const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
+
 // Shuffle array
 const shuffleArray = <T,>(array: T[]): T[] => {
   const shuffled = [...array];
@@ -108,7 +109,7 @@ const getActiveDownloadLinks = (downloadLinks: DownloadLink[], linkSettings: Lin
   return activeLinks;
 };
 
-// SEO helpers
+// SEO keywords helper
 const generateAnimeKeywords = (anime: Anime): string => {
   if (!anime) return 'anime, watch anime online, hindi anime, english anime';
   let keywords: string[] = [];
@@ -129,31 +130,8 @@ const generateAnimeKeywords = (anime: Anime): string => {
   return [...new Set(keywords)].join(', ');
 };
 
-const generateAnimeStructuredData = (anime: Anime) => {
-  if (!anime) return null;
-  const totalVotes = (anime.likes || 0) + (anime.dislikes || 0);
-  const structuredData: any = {
-    "@context": "https://schema.org",
-    "@type": anime.contentType === 'Movie' ? "Movie" : "TVSeries",
-    "name": anime.title,
-    "description": anime.description || `Watch ${anime.title} online in high quality`,
-    "image": anime.thumbnail,
-    "genre": anime.genreList || ["Anime"],
-    "dateCreated": anime.releaseYear ? `${anime.releaseYear}` : undefined,
-    "potentialAction": {
-      "@type": "WatchAction",
-      "target": window.location.href
-    }
-  };
-  if (totalVotes > 0) {
-    structuredData.aggregateRating = {
-      "@type": "AggregateRating",
-      "ratingValue": anime.rating || 0,
-      "ratingCount": totalVotes
-    };
-  }
-  return structuredData;
-};
+// ✅ FIX: generateAnimeStructuredData HATA DIYA
+// Middleware ab sahi structured data inject karta hai — React se duplicate nahi banana
 
 const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoading = false }) => {
   const [episodesLoading, setEpisodesLoading] = useState(true);
@@ -399,9 +377,10 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     fetchFullAnimeDetails();
   }, [anime]);
 
+  // ✅ FIX: description pehle, seoDescription baad mein (middleware ke saath consistent)
   const seoData = {
     title: displayAnime?.seoTitle || `${displayAnime?.title || 'Anime'} | AnimeBing`,
-    description: displayAnime?.seoDescription || displayAnime?.description || 'Watch anime online in high quality',
+    description: displayAnime?.description || displayAnime?.seoDescription || 'Watch anime online in high quality',
     keywords: displayAnime?.seoKeywords || generateAnimeKeywords(displayAnime!),
     ogImage: displayAnime?.thumbnail || 'https://animebing.in/AnimeBinglogo.jpg',
     ogUrl: `https://animebing.in/detail/${displayAnime?.slug || displayAnime?.id}`,
@@ -512,6 +491,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
 
   return (
     <>
+      {/* ✅ FIX: structuredData prop HATA DIYA - middleware inject karta hai, duplicate nahi banana */}
       <SEO
         title={seoData.title}
         description={seoData.description}
@@ -520,13 +500,11 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
         url={seoData.ogUrl}
         canonicalUrl={seoData.canonicalUrl}
         type="video.tv_show"
-        structuredData={generateAnimeStructuredData(displayAnime!)}
         publishedTime={seoData.publishedTime}
         modifiedTime={seoData.modifiedTime}
       />
       
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-        {/* ✅ FIX: "container mx-auto" hata kar "w-full px-3 py-4" kiya — ab full width */}
         <div className="w-full px-3 py-4">
           {/* Back Button */}
           <button
@@ -540,7 +518,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
 
           {/* MOBILE VIEW */}
           <div className="lg:hidden">
-            {/* Mobile Anime Card */}
             <div className="bg-slate-800/40 backdrop-blur-sm rounded-xl p-4 border border-slate-700 shadow-xl mb-0">
               <div className="flex flex-col">
                 <div className="flex gap-2 mb-0">
@@ -580,7 +557,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                     </div>
                   </div>
                 </div>
-                
                 <div className="space-y-2 mt-2">
                   <div className="flex flex-wrap gap-2">
                     <div className="text-xs text-slate-300"><span className="font-semibold">Year:</span> {displayAnime?.releaseYear || 'N/A'}</div>
@@ -782,9 +758,9 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                     <div className="mt-6 p-4 bg-gradient-to-r from-blue-900/30 to-indigo-900/30 border border-blue-700/50 rounded-xl">
                       <h4 className="text-sm font-bold text-blue-300 mb-3 flex items-center gap-2"><span className="text-blue-400">💡</span> Important Tips for Download and watching:</h4>
                       <ul className="space-y-2 text-sm text-blue-300">
-                     <li className="flex items-start gap-2"><span className="text-blue-400 mt-0.5">•</span><span>1. Download at least 1 and at most 4 files or movies at a time. This helps keep your download speed fast. If you download more than 4 files at once, the speed will slow down. Once these files finish downloading, you can start downloading more.</span></li>
-                     <li className="flex items-start gap-2"><span className="text-blue-400 mt-0.5">•</span><span>2. If Wrong Audio you can Fix: Open MX Player → click Audio → Change track to Hindi / Tamil / Telugu / English / Japanese.</span></li>
-                     <li className="flex items-start gap-2"><span className="text-blue-400 mt-0.5">•</span><span>3. If you see an ad before download: Complete the short ad (if any) to unlock the download link. After the download finishes, you can watch the movie/episode offline in any media player (MX Player, VLC, etc.) without interruptions.</span></li>
+                        <li className="flex items-start gap-2"><span className="text-blue-400 mt-0.5">•</span><span>1. Download at least 1 and at most 4 files or movies at a time. This helps keep your download speed fast. If you download more than 4 files at once, the speed will slow down. Once these files finish downloading, you can start downloading more.</span></li>
+                        <li className="flex items-start gap-2"><span className="text-blue-400 mt-0.5">•</span><span>2. If Wrong Audio you can Fix: Open MX Player → click Audio → Change track to Hindi / Tamil / Telugu / English / Japanese.</span></li>
+                        <li className="flex items-start gap-2"><span className="text-blue-400 mt-0.5">•</span><span>3. If you see an ad before download: Complete the short ad (if any) to unlock the download link. After the download finishes, you can watch the movie/episode offline in any media player (MX Player, VLC, etc.) without interruptions.</span></li>
                       </ul>
                     </div>
                   )}

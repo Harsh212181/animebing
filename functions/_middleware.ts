@@ -114,13 +114,13 @@ function buildStructuredData(anime: Record<string, unknown>, url: string, maxEp:
     }
   };
 
-  // Episode info add karo
+  // Episode info
   if (!isMovie && !isManga && maxEp > 0) {
     data.numberOfEpisodes = maxEp;
     data.numberOfSeasons = 1;
   }
 
-  // Genre add karo
+  // Genre
   if (Array.isArray(anime.genreList) && (anime.genreList as any[]).length > 0) {
     data.genre = anime.genreList;
   }
@@ -130,22 +130,25 @@ function buildStructuredData(anime: Record<string, unknown>, url: string, maxEp:
     data.dateCreated = String(anime.releaseYear);
   }
 
-  // Rating
+  // ✅ FIX: Rating — sirf tab add karo jab ratingValue valid ho (1-10 range)
   const likes = Number(anime.likes || 0);
   const dislikes = Number(anime.dislikes || 0);
   const totalVotes = likes + dislikes;
-  if (totalVotes > 10) {
-    const rating = ((likes / totalVotes) * 9 + 1).toFixed(1);
+  if (totalVotes > 10 && likes > 0) {
+    // Rating 1-10 range mein rakho
+    const rawRating = (likes / totalVotes) * 9 + 1;
+    const ratingValue = Math.min(10, Math.max(1, parseFloat(rawRating.toFixed(1))));
     data.aggregateRating = {
       "@type": "AggregateRating",
-      "ratingValue": rating,
-      "bestRating": "10",
-      "worstRating": "1",
+      "ratingValue": ratingValue,
+      "bestRating": 10,
+      "worstRating": 1,
       "ratingCount": totalVotes
     };
   }
 
-  return `<script type="application/ld+json">${JSON.stringify(data)}</script>`;
+  // ✅ FIX: JSON mein special chars properly escape karo
+  return `<script type="application/ld+json">${JSON.stringify(data, null, 0)}</script>`;
 }
 
 function injectMeta(html: string, meta: {
@@ -159,9 +162,10 @@ function injectMeta(html: string, meta: {
   const t = esc(meta.title);
   const d = esc(meta.description.substring(0, 900));
 
-  // ✅ Step 1: Saare existing OG / Twitter tags remove karo
+  // ✅ Step 1: Saare existing OG / Twitter / ld+json tags remove karo
   html = html.replace(/<meta\s+property="og:[^"]*"[^>]*\/?>/gi, '');
   html = html.replace(/<meta\s+name="twitter:[^"]*"[^>]*\/?>/gi, '');
+  html = html.replace(/<script\s+type="application\/ld\+json">[\s\S]*?<\/script>/gi, '');
 
   // ✅ Step 2: <title> replace karo
   html = html.replace(/<title>[\s\S]*?<\/title>/, `<title>${t}</title>`);
