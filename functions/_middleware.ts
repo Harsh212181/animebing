@@ -78,12 +78,83 @@ function buildMetaTags(data: {
   <meta name="twitter:image" content="${img}" />`;
 }
 
+function buildStructuredData(anime: Record<string, unknown>, url: string, maxEp: number): string {
+  const title = String(anime.title || '');
+  const description = String(anime.description || (anime as any).seoDescription || '').substring(0, 900);
+  const image = String(anime.thumbnail || LOGO_URL);
+  const isMovie = anime.contentType === 'Movie';
+  const isManga = anime.contentType === 'Manga';
+
+  const data: any = {
+    "@context": "https://schema.org",
+    "@type": isMovie ? "Movie" : isManga ? "Book" : "TVSeries",
+    "name": title,
+    "description": description,
+    "url": url,
+    "image": {
+      "@type": "ImageObject",
+      "url": image,
+      "contentUrl": image,
+      "name": `${title} Poster`,
+      "description": `${title} anime poster image`
+    },
+    "thumbnailUrl": image,
+    "publisher": {
+      "@type": "Organization",
+      "name": SITE_NAME,
+      "url": SITE_URL,
+      "logo": {
+        "@type": "ImageObject",
+        "url": LOGO_URL
+      }
+    },
+    "potentialAction": {
+      "@type": "WatchAction",
+      "target": url
+    }
+  };
+
+  // Episode info add karo
+  if (!isMovie && !isManga && maxEp > 0) {
+    data.numberOfEpisodes = maxEp;
+    data.numberOfSeasons = 1;
+  }
+
+  // Genre add karo
+  if (Array.isArray(anime.genreList) && (anime.genreList as any[]).length > 0) {
+    data.genre = anime.genreList;
+  }
+
+  // Release year
+  if (anime.releaseYear) {
+    data.dateCreated = String(anime.releaseYear);
+  }
+
+  // Rating
+  const likes = Number(anime.likes || 0);
+  const dislikes = Number(anime.dislikes || 0);
+  const totalVotes = likes + dislikes;
+  if (totalVotes > 10) {
+    const rating = ((likes / totalVotes) * 9 + 1).toFixed(1);
+    data.aggregateRating = {
+      "@type": "AggregateRating",
+      "ratingValue": rating,
+      "bestRating": "10",
+      "worstRating": "1",
+      "ratingCount": totalVotes
+    };
+  }
+
+  return `<script type="application/ld+json">${JSON.stringify(data)}</script>`;
+}
+
 function injectMeta(html: string, meta: {
   title: string;
   description: string;
   image: string;
   url: string;
   type?: string;
+  structuredData?: string;
 }): string {
   const t = esc(meta.title);
   const d = esc(meta.description.substring(0, 900));
@@ -112,9 +183,9 @@ function injectMeta(html: string, meta: {
     html = html.replace(/<link\s+rel="canonical"[^>]*>/i, `<link rel="canonical" href="${meta.url}" />`);
   }
 
-  // ✅ Step 5: Fresh OG + Twitter tags </head> se PEHLE inject karo
-  // (description already inject ho chuki hai Step 3 mein, isliye buildMetaTags se description bhi aayegi as backup)
-  html = html.replace('</head>', buildMetaTags(meta) + '\n</head>');
+  // ✅ Step 5: Fresh OG + Twitter tags + Structured Data </head> se PEHLE inject karo
+  const sdTag = meta.structuredData || '';
+  html = html.replace('</head>', buildMetaTags(meta) + '\n' + sdTag + '\n</head>');
 
   return html;
 }
@@ -283,11 +354,12 @@ export async function onRequest(context: CFContext): Promise<Response> {
         ).trim();
 
         html = injectMeta(html, {
-          title:       ogTitle,
-          description: rawDesc,
-          image:       toOgImage(String(anime.thumbnail || LOGO_URL)),
-          url:         `${SITE_URL}/detail/${String(anime.slug || slug)}`,
-          type:        anime.contentType === 'Movie' ? 'video.movie' : 'video.tv_show'
+          title:          ogTitle,
+          description:    rawDesc,
+          image:          toOgImage(String(anime.thumbnail || LOGO_URL)),
+          url:            `${SITE_URL}/detail/${String(anime.slug || slug)}`,
+          type:           anime.contentType === 'Movie' ? 'video.movie' : 'video.tv_show',
+          structuredData: buildStructuredData(anime, `${SITE_URL}/detail/${String(anime.slug || slug)}`, maxEp)
         });
       }
 
