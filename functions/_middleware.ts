@@ -1,4 +1,4 @@
- interface Env {
+interface Env {
   API_URL?: string;
 }
 
@@ -19,6 +19,7 @@ function getApiBase(env: Env): string {
   return env.API_URL || 'https://animabing-backend.animabingwatch.workers.dev';
 }
 
+// HTML special chars escape
 function esc(input: unknown): string {
   return String(input || '')
     .replace(/&/g, '&amp;')
@@ -27,6 +28,29 @@ function esc(input: unknown): string {
     .replace(/>/g, '&gt;')
     .replace(/\n/g, ' ')
     .trim();
+}
+
+// Image URL as-is return karo — koi transformation nahi
+function toOgImage(url: string): string {
+  return url || LOGO_URL;
+}
+
+// links array se unique sorted episode numbers nikalo
+function getEpisodeList(links: unknown): number[] {
+  if (!Array.isArray(links)) return [];
+  const nums = links
+    .map((l: any) => parseInt(String(l?.episode || ''), 10))
+    .filter(n => !isNaN(n));
+  return [...new Set(nums)].sort((a, b) => a - b);
+}
+
+// Episode list se title suffix banao: "EP 1-6" ya "EP 1, 3, 5"
+function epSuffix(episodes: number[]): string {
+  if (episodes.length === 0) return '';
+  if (episodes.length === 1) return ` - EP ${episodes[0]}`;
+  const isRange = episodes[episodes.length - 1] - episodes[0] === episodes.length - 1;
+  if (isRange) return ` - EP ${episodes[0]}-${episodes[episodes.length - 1]}`;
+  return ` - EP ${episodes.join(', ')}`;
 }
 
 function buildMetaTags(data: {
@@ -79,14 +103,12 @@ function injectMeta(html: string, meta: {
       `<meta name="description" content="${d}" />`
     );
   }
-
   if (/<meta[\s\S]*?name="keywords"[\s\S]*?>/i.test(html)) {
     html = html.replace(
       /<meta[\s\S]*?name="keywords"[\s\S]*?>/i,
       `<meta name="keywords" content="${esc(meta.title)}" />`
     );
   }
-
   if (html.includes('rel="canonical"')) {
     html = html.replace(/<link\s+rel="canonical"[^>]*>/i, `<link rel="canonical" href="${meta.url}" />`);
   }
@@ -122,7 +144,6 @@ export async function onRequest(context: CFContext): Promise<Response> {
     } catch (e: unknown) {
       animeResult = 'ERROR: ' + (e instanceof Error ? e.message : String(e));
     }
-
     try {
       const r2 = await fetch(`${API_BASE}/api/download-pages/${testDlSlug}`);
       dlStatus = r2.status;
@@ -139,69 +160,38 @@ export async function onRequest(context: CFContext): Promise<Response> {
     }, null, 2), { headers: { 'Content-Type': 'application/json' } });
   }
 
-  // ========================================================
-  // ✅ SITEMAP PROXY — Worker se fetch karke return karo
-  // Ye ZAROORI hai kyunki Pages static files mein sitemap
-  // nahi hai — Worker hi actual data deta hai
-  // ========================================================
-  const SITEMAP_PATHS = [
-    '/sitemap.xml',
-    '/sitemap-static.xml',
-    '/sitemap-anime.xml',
-    '/sitemap-episodes.xml',
-  ];
-
+  // ========== SITEMAP PROXY ==========
+  const SITEMAP_PATHS = ['/sitemap.xml', '/sitemap-static.xml', '/sitemap-anime.xml', '/sitemap-episodes.xml'];
   if (SITEMAP_PATHS.includes(path)) {
     const API_BASE = getApiBase(env);
     try {
-      const workerRes = await fetch(`${API_BASE}${path}`, {
-        headers: { Accept: 'application/xml' }
-      });
-
+      const workerRes = await fetch(`${API_BASE}${path}`, { headers: { Accept: 'application/xml' } });
       const xml = await workerRes.text();
-
       return new Response(xml, {
         status: workerRes.status,
         headers: {
           'Content-Type':  'application/xml; charset=utf-8',
           'Cache-Control': 'public, max-age=3600, s-maxage=7200',
-          'X-Sitemap-Source': 'worker-proxy'
         }
       });
     } catch (e) {
-      console.error('Sitemap proxy error:', e);
-      // Fallback: empty valid sitemap return karo, 503 nahi
       const today = new Date().toISOString().split('T')[0];
       const fallback = path === '/sitemap.xml'
-        ? `<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <sitemap><loc>https://animebing.in/sitemap-static.xml</loc><lastmod>${today}</lastmod></sitemap>\n  <sitemap><loc>https://animebing.in/sitemap-anime.xml</loc><lastmod>${today}</lastmod></sitemap>\n</sitemapindex>`
+        ? `<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <sitemap><loc>${SITE_URL}/sitemap-static.xml</loc><lastmod>${today}</lastmod></sitemap>\n  <sitemap><loc>${SITE_URL}/sitemap-anime.xml</loc><lastmod>${today}</lastmod></sitemap>\n</sitemapindex>`
         : `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>`;
-
-      return new Response(fallback, {
-        status: 200,
-        headers: { 'Content-Type': 'application/xml; charset=utf-8' }
-      });
+      return new Response(fallback, { status: 200, headers: { 'Content-Type': 'application/xml; charset=utf-8' } });
     }
   }
 
-  // ========== ROBOTS.TXT PROXY ==========
-  // robots.txt bhi Worker se fetch karo taaki consistent rahe
+  // ========== ROBOTS.TXT ==========
   if (path === '/robots.txt') {
     const API_BASE = getApiBase(env);
     try {
-      const robotsRes = await fetch(`${API_BASE}/robots.txt`);
-      const txt = await robotsRes.text();
-      return new Response(txt, {
-        headers: {
-          'Content-Type':  'text/plain; charset=utf-8',
-          'Cache-Control': 'public, max-age=86400'
-        }
-      });
+      const r = await fetch(`${API_BASE}/robots.txt`);
+      const txt = await r.text();
+      return new Response(txt, { headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=86400' } });
     } catch (e) {
-      // Fallback robots.txt
-      return new Response(
-        `User-agent: *\nAllow: /\nDisallow: /admin/\nDisallow: /api/admin/\nSitemap: https://animebing.in/sitemap.xml`,
-        { headers: { 'Content-Type': 'text/plain' } }
-      );
+      return new Response(`User-agent: *\nAllow: /\nDisallow: /admin/\nDisallow: /api/admin/\nSitemap: ${SITE_URL}/sitemap.xml`, { headers: { 'Content-Type': 'text/plain' } });
     }
   }
 
@@ -211,7 +201,6 @@ export async function onRequest(context: CFContext): Promise<Response> {
     if (!slug) return next();
 
     const API_BASE = getApiBase(env);
-
     try {
       const [pageRes, apiRes] = await Promise.all([
         next(),
@@ -226,33 +215,24 @@ export async function onRequest(context: CFContext): Promise<Response> {
         const anime = data.data;
 
         let titleText = String(anime.title || slug.replace(/-/g, ' '));
-        if (anime.contentType === 'Movie')       titleText += ' (Movie)';
-        else if (anime.contentType === 'Manga')  titleText += ' Manga';
+        if (anime.contentType === 'Movie')      titleText += ' (Movie)';
+        else if (anime.contentType === 'Manga') titleText += ' Manga';
         else {
           const ep = (anime.currentEpisode || anime.totalEpisodes) as number;
           if (ep && ep > 0) titleText += ` EP ${ep}`;
         }
 
-        const rawThumb = String(anime.thumbnail || LOGO_URL);
-        const detailImage = rawThumb.includes('cloudinary.com')
-          ? rawThumb.replace(/\/upload\/[^/]+\//, '/upload/f_jpg,q_auto,w_800/')
-          : rawThumb;
-
         html = injectMeta(html, {
           title:       String(anime.seoTitle || `${titleText} | ${SITE_NAME}`),
-          description: String(anime.seoDescription || anime.description || `Watch ${anime.title} online in HD quality.`),
-          image:       detailImage,
+          description: String(anime.seoDescription || anime.description || `Watch ${anime.title} online in HD quality on ${SITE_NAME}.`),
+          image:       toOgImage(String(anime.thumbnail || LOGO_URL)),
           url:         `${SITE_URL}/detail/${String(anime.slug || slug)}`,
           type:        anime.contentType === 'Movie' ? 'video.movie' : 'video.tv_show'
         });
       }
 
       return new Response(html, {
-        headers: {
-          'Content-Type':  'text/html;charset=UTF-8',
-          'X-Robots-Tag':  'index',
-          'Cache-Control': 'public, max-age=300, s-maxage=600'
-        }
+        headers: { 'Content-Type': 'text/html;charset=UTF-8', 'X-Robots-Tag': 'index', 'Cache-Control': 'public, max-age=300, s-maxage=600' }
       });
     } catch (e) {
       console.error('Detail middleware error:', e);
@@ -267,7 +247,6 @@ export async function onRequest(context: CFContext): Promise<Response> {
     if (!slug) return next();
 
     const API_BASE = getApiBase(env);
-
     try {
       const [pageRes, apiRes] = await Promise.all([
         next(),
@@ -285,37 +264,39 @@ export async function onRequest(context: CFContext): Promise<Response> {
         : null;
 
       if (anime || page.title) {
-        const animeName = anime ? String(anime.title || '').trim() : '';
-        const epNum = page.episodeNumber ? ` - Episode ${page.episodeNumber}` : '';
+        const animeName = anime ? String(anime.title || '').trim() : String(page.title || slug);
 
-        const ogTitle = animeName
-          ? `${animeName}${epNum} Download | ${SITE_NAME}`
-          : `${String(page.title || slug)} | ${SITE_NAME}`;
+        // ✅ links se unique sorted episode numbers nikalo
+        const episodes = getEpisodeList(page.links);
+        const suffix   = epSuffix(episodes); // e.g. " - EP 1-6"
 
-        const description = anime
-          ? String(anime.seoDescription || anime.description || `Download ${animeName} in HD quality. Free on ${SITE_NAME}.`)
-          : `Download ${String(page.title || slug)} in HD quality. Free on ${SITE_NAME}.`;
+        // ✅ Title: "Let This Grieving Soul Retire S2 - EP 1-6 Watch & Download | AnimeBing"
+        const ogTitle = `${animeName}${suffix} Watch & Download | ${SITE_NAME}`;
 
-        const rawImage = anime ? String(anime.thumbnail || LOGO_URL) : LOGO_URL;
-        const image = rawImage.includes('cloudinary.com')
-          ? rawImage.replace(/\/upload\/[^/]+\//, '/upload/f_jpg,q_auto,w_800/')
-          : rawImage;
+        // ✅ Description: episode list + watch/download info
+        const epListStr = episodes.length > 0
+          ? `Episodes ${episodes.join(', ')} available`
+          : 'Episodes available';
+
+        const animeDesc = anime
+          ? String(anime.seoDescription || anime.description || '').trim()
+          : '';
+
+        const description = animeDesc
+          ? `${epListStr} for Watch & Download. ${animeDesc}`.substring(0, 160)
+          : `${epListStr} for Watch & Download on ${SITE_NAME}. ${animeName} HD quality free streaming.`;
 
         html = injectMeta(html, {
           title:       ogTitle,
           description: description,
-          image:       image,
+          image:       toOgImage(anime ? String(anime.thumbnail || LOGO_URL) : LOGO_URL),
           url:         `${SITE_URL}/download/${rawSlug}`,
           type:        'website'
         });
       }
 
       return new Response(html, {
-        headers: {
-          'Content-Type':  'text/html;charset=UTF-8',
-          'X-Robots-Tag':  'index',
-          'Cache-Control': 'public, max-age=300, s-maxage=600'
-        }
+        headers: { 'Content-Type': 'text/html;charset=UTF-8', 'X-Robots-Tag': 'index', 'Cache-Control': 'public, max-age=300, s-maxage=600' }
       });
     } catch (e) {
       console.error('Download middleware error:', e);
