@@ -12,7 +12,29 @@
 
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AnimeBing - Watch Anime in Hindi & English Online Free</title>
+
+    <!-- ✅ FIX 1: Title - middleware replace karega per-page title se -->
+    <title>AnimeBing - Watch Anime in Hindi &amp; English Online Free</title>
+
+    <!-- ✅ FIX 2: Description tag ADD kiya - middleware ab ise replace kar payega -->
+    <meta name="description" content="Watch and Download latest anime series and movies in Hindi Dub, Hindi Sub and English Sub for free. Stream and download your favorite anime on AnimeBing." />
+
+    <!-- ✅ FIX 3: Canonical placeholder - middleware replace karega -->
+    <link rel="canonical" href="https://animebing.in" />
+
+    <!-- ✅ FIX 4: OG tags placeholder - middleware replace karega -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="AnimeBing - Watch Anime in Hindi &amp; English Online Free" />
+    <meta property="og:description" content="Watch and Download latest anime series and movies in Hindi Dub, Hindi Sub and English Sub for free. Stream and download your favorite anime on AnimeBing." />
+    <meta property="og:image" content="https://animebing.in/AnimeBinglogo.jpg" />
+    <meta property="og:url" content="https://animebing.in" />
+    <meta property="og:site_name" content="AnimeBing" />
+
+    <!-- ✅ FIX 5: Twitter tags placeholder - middleware replace karega -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="AnimeBing - Watch Anime in Hindi &amp; English Online Free" />
+    <meta name="twitter:description" content="Watch and Download latest anime series and movies in Hindi Dub, Hindi Sub and English Sub for free. Stream and download your favorite anime on AnimeBing." />
+    <meta name="twitter:image" content="https://animebing.in/AnimeBinglogo.jpg" />
 
     <!-- Google AdSense -->
     <script
@@ -27,14 +49,9 @@
       window.dataLayer = window.dataLayer || [];
       function gtag(){dataLayer.push(arguments);}
       gtag('js', new Date());
-
-      // IMPORTANT: SPA website ke liye auto page_view OFF
-      gtag('config', 'G-SCZXQXKFQD', {
-        send_page_view: false
-      });
+      gtag('config', 'G-SCZXQXKFQD', { send_page_view: false });
     </script>
 
-    <!-- Meta tags for SEO - description & keywords will be set dynamically by React/SEO component -->
     <meta name="author" content="Animebing" />
 
     <style>
@@ -45,104 +62,29 @@
         padding: 0;
         font-family: system-ui, -apple-system, sans-serif;
       }
-
-      ::-webkit-scrollbar {
-        width: 8px;
-      }
-      ::-webkit-scrollbar-track {
-        background: #0a0c1c;
-      }
-      ::-webkit-scrollbar-thumb {
-        background: linear-gradient(180deg, #8b5cf6, #6d28d9);
-        border-radius: 10px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: linear-gradient(180deg, #7c3aed, #5b21b6);
-      }
-
-      html {
-        scroll-behavior: smooth;
-      }
-
-      @keyframes fade-in {
-        from { opacity: 0; }
-        to { opacity: 1; }
-      }
-      .animate-fade-in {
-        animation: fade-in 0.3s ease-in-out;
-      }
-
-      @keyframes fade-in-down {
-        from { opacity: 0; transform: translateY(-10px); }
-        to { opacity: 1; transform: translateY(0); }
-      }
-      .animate-fade-in-down {
-        animation: fade-in-down 0.3s ease-in-out;
-      }
-
-      @keyframes card-load {
-        from { opacity: 0; transform: translateY(20px); }
-        to { opacity: 1; transform: translateY(0); }
-      }
-      .card-load-animate {
-        animation: card-load 0.5s ease-out forwards;
-      }
-
-      @keyframes scale-in {
-        from { opacity: 0; transform: scale(0.9); }
-        to { opacity: 1; transform: scale(1); }
-      }
-      .animate-scale-in {
-        animation: scale-in 0.3s ease-out;
-      }
-
-      @keyframes bounce-soft {
-        0%, 100% { transform: translateY(0); }
-        50% { transform: translateY(-5px); }
-      }
-      .animate-bounce-soft {
-        animation: bounce-soft 2s infinite;
-      }
-
-      @keyframes pulse-soft {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.7; }
-      }
-      .animate-pulse-soft {
-        animation: pulse-soft 2s infinite;
-      }
-
-      .scrollbar-hide {
-        -ms-overflow-style: none;
-        scrollbar-width: none;
-      }
-      .scrollbar-hide::-webkit-scrollbar {
-        display: none;
-      }
-
-      .line-clamp-2 {
-        display: -webkit-box;
-        -webkit-line-clampl: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-      }
-
-      .line-clamp-3 {
-        display: -webkit-box;
-        -webkit-line-clampl: 3;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-      }
-
-      @keyframes shimmer {
-        0% { background-position: -468px 0; }
-        100% { background-position: 468px 0; }
-      }
-      .animate-shimmer {
-        animation: shimmer 2s infinite linear;
-        background: linear-gradient(to right, #1e293b 8%, #334155 18%, #1e293b 33%);
-        background-size: 800px 104px;
-      }
+      ::-webkit-scrollbar { width: 8px; }
+      ::-webkit-scrollbar-track { background: #0a0c1c; }
+      ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #8b5cf6, #6d28d9); border-radius: 10px; }
+      ::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #7c3aed, #5b21b6); }
+      html { scroll-behavior: smooth; }
+      @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+      .animate-fade-in { animation: fade-in 0.3s ease-in-out; }
+      @keyframes fade-in-down { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+      .animate-fade-in-down { animation: fade-in-down 0.3s ease-in-out; }
+      @keyframes card-load { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+      .card-load-animate { animation: card-load 0.5s ease-out forwards; }
+      @keyframes scale-in { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+      .animate-scale-in { animation: scale-in 0.3s ease-out; }
+      @keyframes bounce-soft { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+      .animate-bounce-soft { animation: bounce-soft 2s infinite; }
+      @keyframes pulse-soft { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+      .animate-pulse-soft { animation: pulse-soft 2s infinite; }
+      .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+      .scrollbar-hide::-webkit-scrollbar { display: none; }
+      .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+      .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+      @keyframes shimmer { 0% { background-position: -468px 0; } 100% { background-position: 468px 0; } }
+      .animate-shimmer { animation: shimmer 2s infinite linear; background: linear-gradient(to right, #1e293b 8%, #334155 18%, #1e293b 33%); background-size: 800px 104px; }
     </style>
 
     <!-- React CDN imports -->

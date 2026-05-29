@@ -1,4 +1,4 @@
- interface Env {
+interface Env {
   API_URL?: string;
 }
 
@@ -19,7 +19,6 @@ function getApiBase(env: Env): string {
   return env.API_URL || 'https://animabing-backend.animabingwatch.workers.dev';
 }
 
-// HTML special chars escape
 function esc(input: unknown): string {
   return String(input || '')
     .replace(/&/g, '&amp;')
@@ -30,12 +29,10 @@ function esc(input: unknown): string {
     .trim();
 }
 
-// Image URL as-is return karo — koi transformation nahi
 function toOgImage(url: string): string {
   return url || LOGO_URL;
 }
 
-// links array se unique sorted episode numbers nikalo
 function getEpisodeList(links: unknown): number[] {
   if (!Array.isArray(links)) return [];
   const nums = links
@@ -44,7 +41,6 @@ function getEpisodeList(links: unknown): number[] {
   return [...new Set(nums)].sort((a, b) => a - b);
 }
 
-// Episode list se title suffix banao: "EP 1-6" ya "EP 1, 3, 5"
 function epSuffix(episodes: number[]): string {
   if (episodes.length === 0) return '';
   if (episodes.length === 1) return ` - EP ${episodes[0]}`;
@@ -67,6 +63,7 @@ function buildMetaTags(data: {
   const typ = data.type || 'website';
 
   return `
+  <meta name="description" content="${d}" />
   <link rel="canonical" href="${u}" />
   <meta property="og:title" content="${t}" />
   <meta property="og:description" content="${d}" />
@@ -93,27 +90,34 @@ function injectMeta(html: string, meta: {
   const t = esc(meta.title);
   const d = esc(meta.description.substring(0, 160));
 
+  // ✅ Step 1: Saare existing OG / Twitter tags remove karo
   html = html.replace(/<meta\s+property="og:[^"]*"[^>]*\/?>/gi, '');
   html = html.replace(/<meta\s+name="twitter:[^"]*"[^>]*\/?>/gi, '');
+
+  // ✅ Step 2: <title> replace karo
   html = html.replace(/<title>[\s\S]*?<\/title>/, `<title>${t}</title>`);
 
+  // ✅ Step 3: <meta name="description"> replace karo
+  // index.html mein ab yeh tag hai, toh replace hoga
   if (/<meta\s[^>]*name="description"[^>]*>/i.test(html)) {
     html = html.replace(
       /<meta\s[^>]*name="description"[^>]*>/i,
       `<meta name="description" content="${d}" />`
     );
+  } else {
+    // Fallback: agar tag nahi mila toh inject karo
+    html = html.replace('<head>', `<head>\n  <meta name="description" content="${d}" />`);
   }
-  if (/<meta[\s\S]*?name="keywords"[\s\S]*?>/i.test(html)) {
-    html = html.replace(
-      /<meta[\s\S]*?name="keywords"[\s\S]*?>/i,
-      `<meta name="keywords" content="${esc(meta.title)}" />`
-    );
-  }
+
+  // ✅ Step 4: <link rel="canonical"> replace karo
   if (html.includes('rel="canonical"')) {
     html = html.replace(/<link\s+rel="canonical"[^>]*>/i, `<link rel="canonical" href="${meta.url}" />`);
   }
 
+  // ✅ Step 5: Fresh OG + Twitter tags </head> se PEHLE inject karo
+  // (description already inject ho chuki hai Step 3 mein, isliye buildMetaTags se description bhi aayegi as backup)
   html = html.replace('</head>', buildMetaTags(meta) + '\n</head>');
+
   return html;
 }
 
@@ -158,6 +162,27 @@ export async function onRequest(context: CFContext): Promise<Response> {
       anime_test:    { status: animeStatus, preview: animeResult },
       download_test: { status: dlStatus,    preview: dlResult }
     }, null, 2), { headers: { 'Content-Type': 'application/json' } });
+  }
+
+  // ========== META DEBUG — live check karo ==========
+  if (path === '/meta-debug') {
+    const testSlug = url.searchParams.get('slug') || 'naruto';
+    const API_BASE = getApiBase(env);
+    try {
+      const r = await fetch(`${API_BASE}/api/anime/${testSlug}`, { headers: { Accept: 'application/json' } });
+      const data = await r.json() as any;
+      return new Response(JSON.stringify({
+        status: r.status,
+        success: data.success,
+        title: data.data?.title,
+        description: data.data?.description,
+        seoDescription: data.data?.seoDescription,
+        thumbnail: data.data?.thumbnail,
+        slug: data.data?.slug,
+      }, null, 2), { headers: { 'Content-Type': 'application/json' } });
+    } catch (e: any) {
+      return new Response(JSON.stringify({ error: e.message }), { headers: { 'Content-Type': 'application/json' } });
+    }
   }
 
   // ========== SITEMAP PROXY ==========
@@ -214,14 +239,13 @@ export async function onRequest(context: CFContext): Promise<Response> {
       if (data.success && data.data) {
         const anime = data.data;
 
-        // ✅ Episodes array se max nikalo
+        // Episodes array se max nikalo
         const episodesArr = Array.isArray(anime.episodes) ? anime.episodes as any[] : [];
         let maxEp = episodesArr.length > 0
           ? Math.max(...episodesArr.map((e: any) => Number(e.episodeNumber || e.number || 0)))
           : Number(anime.currentEpisode || 0);
 
-        // ✅ Download pages se bhi max episode check karo
-        // (episodes collection se zyada accurate hota hai jab admin wahan update karta hai)
+        // Download pages se bhi max episode check karo
         try {
           const animeId = String((anime as any)._id || '');
           if (animeId) {
@@ -244,7 +268,7 @@ export async function onRequest(context: CFContext): Promise<Response> {
           }
         } catch (_) { /* fallback */ }
 
-        // ✅ Title: hamesha dynamic
+        // Title: hamesha dynamic
         let titleText = String(anime.title || slug.replace(/-/g, ' '));
         if (anime.contentType === 'Movie')      titleText += ' (Movie)';
         else if (anime.contentType === 'Manga') titleText += ' Manga';
@@ -252,9 +276,11 @@ export async function onRequest(context: CFContext): Promise<Response> {
         else if (maxEp > 1)                     titleText += ` EP 1-${maxEp}`;
         const ogTitle = `${titleText} | ${SITE_NAME}`;
 
-        // ✅ Description: story/plot pehle
+        // ✅ Description: seoDescription > description > synopsis > fallback
         const rawDesc = String(
-          anime.description || anime.seoDescription || anime.synopsis ||
+          (anime as any).seoDescription ||
+          anime.description ||
+          (anime as any).synopsis ||
           `Watch ${anime.title} online in HD quality on ${SITE_NAME}.`
         ).trim();
 
@@ -268,7 +294,12 @@ export async function onRequest(context: CFContext): Promise<Response> {
       }
 
       return new Response(html, {
-        headers: { 'Content-Type': 'text/html;charset=UTF-8', 'X-Robots-Tag': 'index', 'Cache-Control': 'public, max-age=300, s-maxage=600' }
+        headers: {
+          'Content-Type': 'text/html;charset=UTF-8',
+          'X-Robots-Tag': 'index',
+          // ✅ Cache kam karo taaki description update jaldi reflect ho
+          'Cache-Control': 'public, max-age=60, s-maxage=120',
+        }
       });
     } catch (e) {
       console.error('Detail middleware error:', e);
@@ -302,14 +333,11 @@ export async function onRequest(context: CFContext): Promise<Response> {
       if (anime || page.title) {
         const animeName = anime ? String(anime.title || '').trim() : String(page.title || slug);
 
-        // ✅ links se unique sorted episode numbers nikalo
         const episodes = getEpisodeList(page.links);
-        const suffix   = epSuffix(episodes); // e.g. " - EP 1-6"
+        const suffix   = epSuffix(episodes);
 
-        // ✅ Title: "Let This Grieving Soul Retire S2 - EP 1-6 Watch & Download | AnimeBing"
         const ogTitle = `${animeName}${suffix} Watch & Download | ${SITE_NAME}`;
 
-        // ✅ Episode range format: "Episodes 1-12" (1,2,3... ki jagah)
         const epRange = episodes.length === 0
           ? 'Episodes'
           : episodes.length === 1
@@ -317,7 +345,7 @@ export async function onRequest(context: CFContext): Promise<Response> {
             : `Episodes ${episodes[0]}-${episodes[episodes.length - 1]}`;
 
         const animeDesc = anime
-          ? String(anime.description || anime.seoDescription || '').trim()
+          ? String((anime as any).seoDescription || anime.description || (anime as any).synopsis || '').trim()
           : '';
 
         const description = animeDesc
@@ -337,7 +365,6 @@ export async function onRequest(context: CFContext): Promise<Response> {
         headers: {
           'Content-Type':  'text/html;charset=UTF-8',
           'X-Robots-Tag':  'index',
-          // ✅ no-store — har request fresh fetch karo, cache mix nahi hoga
           'Cache-Control': 'no-store',
           'Vary':          'Accept-Encoding'
         }
