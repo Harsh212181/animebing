@@ -57,7 +57,7 @@ function buildMetaTags(data: {
   type?: string;
 }): string {
   const t   = esc(data.title);
-  const d   = esc(data.description.substring(0, 160));
+  const d   = esc(data.description.substring(0, 900));
   const img = data.image || LOGO_URL;
   const u   = data.url;
   const typ = data.type || 'website';
@@ -86,7 +86,7 @@ function injectMeta(html: string, meta: {
   type?: string;
 }): string {
   const t = esc(meta.title);
-  const d = esc(meta.description.substring(0, 160));
+  const d = esc(meta.description.substring(0, 900));
 
   // ✅ Step 1: Saare existing OG / Twitter tags remove karo
   html = html.replace(/<meta\s+property="og:[^"]*"[^>]*\/?>/gi, '');
