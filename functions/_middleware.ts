@@ -63,8 +63,6 @@ function buildMetaTags(data: {
   const typ = data.type || 'website';
 
   return `
-  <meta name="description" content="${d}" />
-  <link rel="canonical" href="${u}" />
   <meta property="og:title" content="${t}" />
   <meta property="og:description" content="${d}" />
   <meta property="og:url" content="${u}" />
@@ -276,10 +274,10 @@ export async function onRequest(context: CFContext): Promise<Response> {
         else if (maxEp > 1)                     titleText += ` EP 1-${maxEp}`;
         const ogTitle = `${titleText} | ${SITE_NAME}`;
 
-        // ✅ Description: seoDescription > description > synopsis > fallback
+        // ✅ Description: description > seoDescription > synopsis > fallback
         const rawDesc = String(
-          (anime as any).seoDescription ||
           anime.description ||
+          (anime as any).seoDescription ||
           (anime as any).synopsis ||
           `Watch ${anime.title} online in HD quality on ${SITE_NAME}.`
         ).trim();
@@ -345,7 +343,7 @@ export async function onRequest(context: CFContext): Promise<Response> {
             : `Episodes ${episodes[0]}-${episodes[episodes.length - 1]}`;
 
         const animeDesc = anime
-          ? String((anime as any).seoDescription || anime.description || (anime as any).synopsis || '').trim()
+          ? String((anime as any).description || (anime as any).seoDescription || (anime as any).synopsis || '').trim()
           : '';
 
         const description = animeDesc
