@@ -7,13 +7,5 @@
   "vars": {
     "MONGODB_DB": "animabing",
     "ALLOWED_ORIGIN": "*"
-  },
-
-  "services": [
-    {
-      "binding": "ASSETS",
-      "service": "your-pages-project-name",
-      "environment": "production"
-    }
-  ]
+  }
 }

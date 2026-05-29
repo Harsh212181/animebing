@@ -23,13 +23,16 @@ export type Env = {
   JWT_SECRET: string
   ADMIN_USER: string
   ADMIN_PASS: string
-  ASSETS: Fetcher   // ✅ Cloudflare Pages ka service binding
+  // ✅ ASSETS binding ki zaroorat nahi – direct fetch se Pages serve karenge
 }
 
 export type Variables = {
   admin: any
   user: any
 }
+
+// ============ PAGES BASE URL ============
+const PAGES_URL = 'https://animabing.pages.dev'  // apna actual Pages domain
 
 // ============ BOT DETECTION ============
 function isBot(userAgent: string): boolean {
@@ -102,6 +105,16 @@ function generateMetaHTML(meta: {
 </html>`
 }
 
+// ============ Helper: request ko Pages par proxy karo ============
+function proxyToPages(request: Request): Promise<Response> {
+  const url = new URL(request.url)
+  // Pages ka exactly wahi path aur query string serve karega
+  const pagesRequestUrl = `${PAGES_URL}${url.pathname}${url.search}`
+  // Original request ke headers, method, body ke saath naya Request banao
+  const newRequest = new Request(pagesRequestUrl, request)
+  return fetch(newRequest)
+}
+
 const app = new Hono<{ Bindings: Env, Variables: Variables }>()
 
 // ============ OPTIONS PREFLIGHT ============
@@ -134,10 +147,9 @@ app.get('/detail/:slug', async (c) => {
   const forceBot = c.req.query('bot') === 'true'
   const slug = c.req.param('slug')
 
-  // ✅ Agar bot nahi hai, toh Pages se React app serve karo (nahi redirect)
+  // ✅ Agar bot nahi hai, toh Pages se React app serve karo (direct proxy)
   if (!isBot(userAgent) && !forceBot) {
-    // Cloudflare Pages ka static asset serve karo – ASSETS binding ke through
-    return c.env.ASSETS.fetch(c.req.raw)
+    return proxyToPages(c.req.raw)
   }
 
   // Bot request — database se meta fetch karo
@@ -252,9 +264,9 @@ app.get('/health', (c) => {
   })
 })
 
-// ✅ CATCH-ALL — baki sab frontend routes Cloudflare Pages se serve karo
+// ✅ CATCH-ALL — baaki sab frontend routes Pages se direct proxy
 app.all('*', async (c) => {
-  return c.env.ASSETS.fetch(c.req.raw)
+  return proxyToPages(c.req.raw)
 })
 
 export default app
