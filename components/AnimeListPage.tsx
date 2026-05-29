@@ -1,4 +1,4 @@
- // components/AnimeListPage.tsx - FIXED (dangerouslySetInnerHTML for script tag)
+// components/AnimeListPage.tsx - FIXED (dangerouslySetInnerHTML for script tag)
 import React, { useState, useEffect, useMemo } from 'react';
 import type { Anime, FilterType } from '../src/types';
 import { getAllAnime } from '../services/animeService';

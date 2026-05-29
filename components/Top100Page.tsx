@@ -1,4 +1,4 @@
- // components/Top100Page.tsx - FINAL: Tier Legend at bottom + A/B/C colors + 100 items
+// components/Top100Page.tsx - FINAL: Tier Legend at bottom + A/B/C colors + 100 items
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import type { Anime } from '../src/types';
 import { getTopAnime } from '../services/animeService';
