@@ -13,8 +13,6 @@ import pollRoutes from './routes/pollRoutes'
 import reportRoutes from './routes/reportRoutes'
 import sitemapRoutes from './routes/sitemapRoutes'
 import socialRoutes from './routes/socialRoutes'
-import { findOne } from './services/mongoService'
-import { IAnime } from './models/types'
 
 export type Env = {
   MONGODB_URI: string
@@ -23,7 +21,6 @@ export type Env = {
   JWT_SECRET: string
   ADMIN_USER: string
   ADMIN_PASS: string
-  // ✅ ASSETS binding ki zaroorat nahi – direct fetch se Pages serve karenge
 }
 
 export type Variables = {
@@ -31,93 +28,9 @@ export type Variables = {
   user: any
 }
 
-// ============ PAGES BASE URL ============
-const PAGES_URL = 'https://animabing.pages.dev'  // apna actual Pages domain
-
-// ============ BOT DETECTION ============
-function isBot(userAgent: string): boolean {
-  if (!userAgent) return false
-  const botPatterns = [
-    'googlebot', 'bingbot', 'slurp', 'duckduckbot', 'baiduspider',
-    'yandexbot', 'sogou', 'exabot', 'facebot', 'facebookexternalhit',
-    'twitterbot', 'whatsapp', 'telegrambot', 'discordbot', 'slackbot',
-    'linkedinbot', 'pinterestbot', 'applebot', 'semrushbot', 'ahrefsbot',
-    'mj12bot', 'dotbot', 'rogerbot', 'screaming frog', 'sitebulb',
-    'crawler', 'spider', 'bot/', 'bot;', '+http', 'mediapartners',
-    'adsbot', 'feedfetcher', 'ia_archiver', 'curl', 'wget', 'python-requests',
-    'axios', 'lighthouse', 'pagespeed', 'chrome-lighthouse',
-    'headlesschrome', 'phantomjs', 'selenium'
-  ]
-  const ua = userAgent.toLowerCase()
-  return botPatterns.some(p => ua.includes(p))
-}
-
-// ============ HTML ESCAPE ============
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .slice(0, 155)
-}
-
-// ============ META HTML GENERATOR ============
-function generateMetaHTML(meta: {
-  title: string
-  description: string
-  image: string
-  url: string
-  type: string
-}): string {
-  const safeTitle = escapeHtml(meta.title)
-  const safeDesc = escapeHtml(meta.description)
-  const safeImage = meta.image || 'https://animebing.in/AnimeBinglogo.jpg'
-  const safeUrl = meta.url
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${safeTitle}</title>
-<meta name="description" content="${safeDesc}">
-<meta property="og:type" content="${meta.type}">
-<meta property="og:url" content="${safeUrl}">
-<meta property="og:title" content="${safeTitle}">
-<meta property="og:description" content="${safeDesc}">
-<meta property="og:image" content="${safeImage}">
-<meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">
-<meta property="og:site_name" content="AnimeBing">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="${safeTitle}">
-<meta name="twitter:description" content="${safeDesc}">
-<meta name="twitter:image" content="${safeImage}">
-<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
-<link rel="canonical" href="${safeUrl}">
-<link rel="icon" href="/favicon.ico">
-</head>
-<body>
-<div id="root"></div>
-<script>window.location.href="${safeUrl}";</script>
-</body>
-</html>`
-}
-
-// ============ Helper: request ko Pages par proxy karo ============
-function proxyToPages(request: Request): Promise<Response> {
-  const url = new URL(request.url)
-  // Pages ka exactly wahi path aur query string serve karega
-  const pagesRequestUrl = `${PAGES_URL}${url.pathname}${url.search}`
-  // Original request ke headers, method, body ke saath naya Request banao
-  const newRequest = new Request(pagesRequestUrl, request)
-  return fetch(newRequest)
-}
-
 const app = new Hono<{ Bindings: Env, Variables: Variables }>()
 
-// ============ OPTIONS PREFLIGHT ============
+// OPTIONS preflight — sabse pehle
 app.options('*', (c) => {
   return new Response(null, {
     status: 204,
@@ -130,7 +43,7 @@ app.options('*', (c) => {
   })
 })
 
-// ============ CORS ============
+// CORS
 app.use('*', async (c, next) => {
   const corsMiddleware = cors({
     origin: '*',
@@ -141,103 +54,9 @@ app.use('*', async (c, next) => {
   return corsMiddleware(c, next)
 })
 
-// ============ BOT HANDLER — /detail/:slug ============
-app.get('/detail/:slug', async (c) => {
-  const userAgent = c.req.header('user-agent') || ''
-  const forceBot = c.req.query('bot') === 'true'
-  const slug = c.req.param('slug')
-
-  // ✅ Agar bot nahi hai, toh Pages se React app serve karo (direct proxy)
-  if (!isBot(userAgent) && !forceBot) {
-    return proxyToPages(c.req.raw)
-  }
-
-  // Bot request — database se meta fetch karo
-  try {
-    const anime = await findOne<IAnime>(
-      'animes',
-      { slug },
-      c.env.MONGODB_URI,
-      c.env.MONGODB_DB
-    )
-
-    if (anime) {
-      // Description priority: seoDescription > description > generated
-      let description = anime.seoDescription || anime.description || ''
-
-      if (!description || description.trim().length < 20) {
-        const genre = Array.isArray(anime.genreList)
-          ? anime.genreList.slice(0, 2).join(', ')
-          : ''
-        const year = anime.releaseYear ? ` (${anime.releaseYear})` : ''
-        const lang = anime.subDubStatus ? ` in ${anime.subDubStatus}` : ' in Hindi & English'
-        description = `Watch ${anime.title}${year}${lang} online for free.${genre ? ' ' + genre + ' anime.' : ''} HD quality streaming and download on AnimeBing.`
-      }
-
-      // Title build karo
-      let titleWithSuffix = anime.title
-      if (anime.contentType === 'Movie') {
-        titleWithSuffix += ' (Movie)'
-      } else if (anime.contentType === 'Manga') {
-        titleWithSuffix += ' Manga'
-      } else {
-        const epCount = anime.currentEpisode || anime.totalEpisodes
-        if (epCount && epCount > 0) titleWithSuffix += ` EP ${epCount}`
-      }
-
-      const meta = {
-        title: `${titleWithSuffix} | AnimeBing`,
-        description,
-        image: anime.thumbnail || 'https://animebing.in/AnimeBinglogo.jpg',
-        url: `https://animebing.in/detail/${slug}`,
-        type: anime.contentType === 'Movie' ? 'video.movie' : 'video.tv_show',
-      }
-
-      return new Response(generateMetaHTML(meta), {
-        headers: {
-          'Content-Type': 'text/html; charset=utf-8',
-          'Cache-Control': 'public, max-age=3600',
-          'X-Bot-Handler': 'cloudflare-worker',
-        }
-      })
-    }
-
-    // Anime not found — slug se fallback title banao
-    const fallbackTitle = slug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
-    const meta = {
-      title: `${fallbackTitle} | AnimeBing`,
-      description: `Watch ${fallbackTitle} online in Hindi & English for free. HD quality streaming and download on AnimeBing.`,
-      image: 'https://animebing.in/AnimeBinglogo.jpg',
-      url: `https://animebing.in/detail/${slug}`,
-      type: 'video.tv_show',
-    }
-
-    return new Response(generateMetaHTML(meta), {
-      headers: {
-        'Content-Type': 'text/html; charset=utf-8',
-        'Cache-Control': 'no-cache',
-        'X-Bot-Handler': 'fallback',
-      }
-    })
-
-  } catch (err) {
-    console.error('Bot handler error:', err)
-    const meta = {
-      title: 'Watch Anime Online | AnimeBing',
-      description: 'Watch anime online in Hindi and English for free. HD quality streaming on AnimeBing.',
-      image: 'https://animebing.in/AnimeBinglogo.jpg',
-      url: `https://animebing.in/detail/${slug}`,
-      type: 'video.tv_show',
-    }
-    return new Response(generateMetaHTML(meta), {
-      headers: { 'Content-Type': 'text/html; charset=utf-8', 'X-Bot-Handler': 'error-fallback' }
-    })
-  }
-})
-
-// ============ API ROUTES ============
+// ROUTES
 app.route('/api/admin', adminRoutes)
-app.route('/api/admin/protected', adminRoutes)
+app.route('/api/admin/protected', adminRoutes) 
 app.route('/api/anime', animeRoutes)
 app.route('/api/episodes', episodeRoutes)
 app.route('/api/chapters', chapterRoutes)
@@ -251,22 +70,12 @@ app.route('/api/reports', reportRoutes)
 app.route('/', sitemapRoutes)
 app.route('/api/social', socialRoutes)
 
-// ============ HEALTH CHECK ============
+// TEST ROUTE
 app.get('/health', (c) => {
   return c.json({
-    message: 'Animabing Cloudflare Worker Working! 🚀',
-    status: 'ok',
-    features: {
-      botMetaTags: 'enabled for /detail/:slug',
-      seo: 'active',
-      timestamp: new Date().toISOString()
-    }
+    message: 'Animabing Backend Working! 🚀',
+    status: 'ok'
   })
-})
-
-// ✅ CATCH-ALL — baaki sab frontend routes Pages se direct proxy
-app.all('*', async (c) => {
-  return proxyToPages(c.req.raw)
 })
 
 export default app
