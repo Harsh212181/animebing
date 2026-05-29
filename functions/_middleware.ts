@@ -220,19 +220,21 @@ export async function onRequest(context: CFContext): Promise<Response> {
           ? Math.max(...episodesArr.map((e: any) => Number(e.episodeNumber || e.number || 0)))
           : Number(anime.currentEpisode || anime.totalEpisodes || 0);
 
+        // ✅ Title: hamesha dynamic — seoTitle ignore (woh "Watch X online..." jaise hota hai)
         let titleText = String(anime.title || slug.replace(/-/g, ' '));
         if (anime.contentType === 'Movie')      titleText += ' (Movie)';
         else if (anime.contentType === 'Manga') titleText += ' Manga';
         else if (maxEp > 0)                     titleText += ` EP ${maxEp}`;
+        const ogTitle = `${titleText} | ${SITE_NAME}`;
 
-        // ✅ Description: seoDescription → description → fallback
+        // ✅ Description: description (story/plot) pehle, seoDescription baad mein
         const rawDesc = String(
-          anime.seoDescription || anime.description || anime.synopsis ||
+          anime.description || anime.seoDescription || anime.synopsis ||
           `Watch ${anime.title} online in HD quality on ${SITE_NAME}.`
         ).trim();
 
         html = injectMeta(html, {
-          title:       String(anime.seoTitle || `${titleText} | ${SITE_NAME}`),
+          title:       ogTitle,
           description: rawDesc,
           image:       toOgImage(String(anime.thumbnail || LOGO_URL)),
           url:         `${SITE_URL}/detail/${String(anime.slug || slug)}`,
@@ -288,7 +290,7 @@ export async function onRequest(context: CFContext): Promise<Response> {
           : 'Episodes available';
 
         const animeDesc = anime
-          ? String(anime.seoDescription || anime.description || '').trim()
+          ? String(anime.description || anime.seoDescription || '').trim()
           : '';
 
         const description = animeDesc
