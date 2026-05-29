@@ -214,20 +214,43 @@ export async function onRequest(context: CFContext): Promise<Response> {
       if (data.success && data.data) {
         const anime = data.data;
 
-        // ✅ Episodes array se max episode number nikalo
+        // ✅ Episodes array se max nikalo
         const episodesArr = Array.isArray(anime.episodes) ? anime.episodes as any[] : [];
-        const maxEp = episodesArr.length > 0
+        let maxEp = episodesArr.length > 0
           ? Math.max(...episodesArr.map((e: any) => Number(e.episodeNumber || e.number || 0)))
-          : Number(anime.currentEpisode || anime.totalEpisodes || 0);
+          : Number(anime.currentEpisode || 0);
 
-        // ✅ Title: hamesha dynamic — seoTitle ignore (woh "Watch X online..." jaise hota hai)
+        // ✅ Download pages se bhi max episode check karo (agar episodes collection mein kam entries hain)
+        try {
+          const animeId = String((anime as any)._id || '');
+          if (animeId) {
+            const dlRes = await fetch(`${API_BASE}/api/download-pages/anime/${animeId}`, {
+              headers: { Accept: 'application/json' }
+            });
+            if (dlRes.ok) {
+              const dlPages = await dlRes.json() as any[];
+              if (Array.isArray(dlPages) && dlPages.length > 0) {
+                const allEpNums = dlPages.flatMap((p: any) =>
+                  Array.isArray(p.links)
+                    ? p.links.map((l: any) => parseInt(String(l?.episode || '0'), 10)).filter((n: number) => !isNaN(n) && n > 0)
+                    : []
+                );
+                if (allEpNums.length > 0) {
+                  maxEp = Math.max(maxEp, ...allEpNums);
+                }
+              }
+            }
+          }
+        } catch (_) { /* fallback to episodes array max */ }
+
+        // ✅ Title: hamesha dynamic
         let titleText = String(anime.title || slug.replace(/-/g, ' '));
         if (anime.contentType === 'Movie')      titleText += ' (Movie)';
         else if (anime.contentType === 'Manga') titleText += ' Manga';
         else if (maxEp > 0)                     titleText += ` EP ${maxEp}`;
         const ogTitle = `${titleText} | ${SITE_NAME}`;
 
-        // ✅ Description: description (story/plot) pehle, seoDescription baad mein
+        // ✅ Description: story/plot pehle
         const rawDesc = String(
           anime.description || anime.seoDescription || anime.synopsis ||
           `Watch ${anime.title} online in HD quality on ${SITE_NAME}.`
@@ -284,18 +307,20 @@ export async function onRequest(context: CFContext): Promise<Response> {
         // ✅ Title: "Let This Grieving Soul Retire S2 - EP 1-6 Watch & Download | AnimeBing"
         const ogTitle = `${animeName}${suffix} Watch & Download | ${SITE_NAME}`;
 
-        // ✅ Description: episode list + watch/download info
-        const epListStr = episodes.length > 0
-          ? `Episodes ${episodes.join(', ')} available`
-          : 'Episodes available';
+        // ✅ Episode range format: "Episodes 1-12" (1,2,3... ki jagah)
+        const epRange = episodes.length === 0
+          ? 'Episodes'
+          : episodes.length === 1
+            ? `Episode ${episodes[0]}`
+            : `Episodes ${episodes[0]}-${episodes[episodes.length - 1]}`;
 
         const animeDesc = anime
           ? String(anime.description || anime.seoDescription || '').trim()
           : '';
 
         const description = animeDesc
-          ? `${epListStr} for Watch & Download. ${animeDesc}`.substring(0, 160)
-          : `${epListStr} for Watch & Download on ${SITE_NAME}. ${animeName} HD quality free streaming.`;
+          ? `${epRange} available for Watch & Download. ${animeDesc}`.substring(0, 160)
+          : `${epRange} available for Watch & Download on ${SITE_NAME}. ${animeName} HD quality free streaming.`;
 
         html = injectMeta(html, {
           title:       ogTitle,
