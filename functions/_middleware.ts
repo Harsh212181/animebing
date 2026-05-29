@@ -220,10 +220,12 @@ export async function onRequest(context: CFContext): Promise<Response> {
           ? Math.max(...episodesArr.map((e: any) => Number(e.episodeNumber || e.number || 0)))
           : Number(anime.currentEpisode || 0);
 
-        // ✅ Download pages se bhi max episode check karo (agar episodes collection mein kam entries hain)
+        // ✅ Download pages se max episode check karo
+        // SIRF tab jab episodes collection bilkul empty ho (0 entries)
+        // Agar episodes collection mein data hai toh wahi ground truth hai
         try {
           const animeId = String((anime as any)._id || '');
-          if (animeId) {
+          if (animeId && maxEp === 0) {
             const dlRes = await fetch(`${API_BASE}/api/download-pages/anime/${animeId}`, {
               headers: { Accept: 'application/json' }
             });
@@ -236,18 +238,19 @@ export async function onRequest(context: CFContext): Promise<Response> {
                     : []
                 );
                 if (allEpNums.length > 0) {
-                  maxEp = Math.max(maxEp, ...allEpNums);
+                  maxEp = Math.max(...allEpNums);
                 }
               }
             }
           }
-        } catch (_) { /* fallback to episodes array max */ }
+        } catch (_) { /* fallback */ }
 
         // ✅ Title: hamesha dynamic
         let titleText = String(anime.title || slug.replace(/-/g, ' '));
         if (anime.contentType === 'Movie')      titleText += ' (Movie)';
         else if (anime.contentType === 'Manga') titleText += ' Manga';
-        else if (maxEp > 0)                     titleText += ` EP ${maxEp}`;
+        else if (maxEp === 1)                   titleText += ` EP 1`;
+        else if (maxEp > 1)                     titleText += ` EP 1-${maxEp}`;
         const ogTitle = `${titleText} | ${SITE_NAME}`;
 
         // ✅ Description: story/plot pehle
