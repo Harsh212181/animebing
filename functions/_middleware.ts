@@ -1,4 +1,4 @@
-interface Env {
+ interface Env {
   API_URL?: string;
 }
 
@@ -214,17 +214,26 @@ export async function onRequest(context: CFContext): Promise<Response> {
       if (data.success && data.data) {
         const anime = data.data;
 
+        // ✅ Episodes array se max episode number nikalo
+        const episodesArr = Array.isArray(anime.episodes) ? anime.episodes as any[] : [];
+        const maxEp = episodesArr.length > 0
+          ? Math.max(...episodesArr.map((e: any) => Number(e.episodeNumber || e.number || 0)))
+          : Number(anime.currentEpisode || anime.totalEpisodes || 0);
+
         let titleText = String(anime.title || slug.replace(/-/g, ' '));
         if (anime.contentType === 'Movie')      titleText += ' (Movie)';
         else if (anime.contentType === 'Manga') titleText += ' Manga';
-        else {
-          const ep = (anime.currentEpisode || anime.totalEpisodes) as number;
-          if (ep && ep > 0) titleText += ` EP ${ep}`;
-        }
+        else if (maxEp > 0)                     titleText += ` EP ${maxEp}`;
+
+        // ✅ Description: seoDescription → description → fallback
+        const rawDesc = String(
+          anime.seoDescription || anime.description || anime.synopsis ||
+          `Watch ${anime.title} online in HD quality on ${SITE_NAME}.`
+        ).trim();
 
         html = injectMeta(html, {
           title:       String(anime.seoTitle || `${titleText} | ${SITE_NAME}`),
-          description: String(anime.seoDescription || anime.description || `Watch ${anime.title} online in HD quality on ${SITE_NAME}.`),
+          description: rawDesc,
           image:       toOgImage(String(anime.thumbnail || LOGO_URL)),
           url:         `${SITE_URL}/detail/${String(anime.slug || slug)}`,
           type:        anime.contentType === 'Movie' ? 'video.movie' : 'video.tv_show'
@@ -296,7 +305,13 @@ export async function onRequest(context: CFContext): Promise<Response> {
       }
 
       return new Response(html, {
-        headers: { 'Content-Type': 'text/html;charset=UTF-8', 'X-Robots-Tag': 'index', 'Cache-Control': 'public, max-age=300, s-maxage=600' }
+        headers: {
+          'Content-Type':  'text/html;charset=UTF-8',
+          'X-Robots-Tag':  'index',
+          // ✅ no-store — har request fresh fetch karo, cache mix nahi hoga
+          'Cache-Control': 'no-store',
+          'Vary':          'Accept-Encoding'
+        }
       });
     } catch (e) {
       console.error('Download middleware error:', e);
