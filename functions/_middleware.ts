@@ -220,12 +220,11 @@ export async function onRequest(context: CFContext): Promise<Response> {
           ? Math.max(...episodesArr.map((e: any) => Number(e.episodeNumber || e.number || 0)))
           : Number(anime.currentEpisode || 0);
 
-        // ✅ Download pages se max episode check karo
-        // SIRF tab jab episodes collection bilkul empty ho (0 entries)
-        // Agar episodes collection mein data hai toh wahi ground truth hai
+        // ✅ Download pages se bhi max episode check karo
+        // (episodes collection se zyada accurate hota hai jab admin wahan update karta hai)
         try {
           const animeId = String((anime as any)._id || '');
-          if (animeId && maxEp === 0) {
+          if (animeId) {
             const dlRes = await fetch(`${API_BASE}/api/download-pages/anime/${animeId}`, {
               headers: { Accept: 'application/json' }
             });
@@ -238,7 +237,7 @@ export async function onRequest(context: CFContext): Promise<Response> {
                     : []
                 );
                 if (allEpNums.length > 0) {
-                  maxEp = Math.max(...allEpNums);
+                  maxEp = Math.max(maxEp, ...allEpNums);
                 }
               }
             }
