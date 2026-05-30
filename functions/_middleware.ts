@@ -293,6 +293,107 @@ export async function onRequest(context: CFContext): Promise<Response> {
     }
   }
 
+  // ========== STATIC PAGES SEO ==========
+  const STATIC_PAGES: Record<string, { title: string; description: string; type?: string }> = {
+    '/': {
+      title: 'AnimeBing - Watch Anime in Hindi & English Online Free',
+      description: 'Watch and Download latest anime series and movies in Hindi Dub, Hindi Sub and English Sub for free. Stream your favorite anime in HD quality on AnimeBing.',
+    },
+    '/anime': {
+      title: 'All Anime List - Watch Hindi Dub & Sub Anime | AnimeBing',
+      description: 'Browse complete list of anime series and movies available in Hindi Dub, Hindi Sub and English Sub. Find and watch your favorite anime for free on AnimeBing.',
+    },
+    '/top-100': {
+      title: 'Top 100 Anime - Most Popular Anime in Hindi | AnimeBing',
+      description: 'Discover the Top 100 most popular anime series and movies on AnimeBing. Ranked by popularity, likes and views. Watch all top anime in Hindi Dub and Sub for free.',
+    },
+    '/contact': {
+      title: 'Contact Us | AnimeBing',
+      description: 'Get in touch with AnimeBing team. Report issues, suggest anime, or send feedback. We are here to help you with any questions about our anime streaming platform.',
+    },
+    '/dmca': {
+      title: 'DMCA Policy | AnimeBing',
+      description: 'AnimeBing DMCA Policy. Learn about our copyright policy and how to submit a DMCA takedown request for copyrighted content on our platform.',
+    },
+    '/privacy': {
+      title: 'Privacy Policy | AnimeBing',
+      description: 'Read AnimeBing Privacy Policy. Learn how we collect, use and protect your personal information when you use our anime streaming and download platform.',
+    },
+    '/terms': {
+      title: 'Terms and Conditions | AnimeBing',
+      description: 'Read AnimeBing Terms and Conditions. Understand the rules and guidelines for using our anime streaming platform, including content usage and user responsibilities.',
+    },
+    '/earn': {
+      title: 'Earn Money with AnimeBing | Partner Program',
+      description: 'Join AnimeBing partner program and earn money by sharing anime content. Learn how to become a partner and start earning with our referral and promotion program.',
+    },
+  };
+
+  if (STATIC_PAGES[path]) {
+    const page = STATIC_PAGES[path];
+    try {
+      let html = await next().then(r => r.text());
+
+      // WebSite structured data for homepage
+      let structuredData = '';
+      if (path === '/') {
+        structuredData = `<script type="application/ld+json">${JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "WebSite",
+          "name": SITE_NAME,
+          "url": SITE_URL,
+          "description": page.description,
+          "potentialAction": {
+            "@type": "SearchAction",
+            "target": `${SITE_URL}/anime?search={search_term_string}`,
+            "query-input": "required name=search_term_string"
+          },
+          "publisher": {
+            "@type": "Organization",
+            "name": SITE_NAME,
+            "url": SITE_URL,
+            "logo": { "@type": "ImageObject", "url": LOGO_URL }
+          }
+        })}</script>`;
+      }
+
+      // ItemList structured data for /anime and /top-100
+      if (path === '/anime' || path === '/top-100') {
+        structuredData = `<script type="application/ld+json">${JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "CollectionPage",
+          "name": page.title,
+          "description": page.description,
+          "url": `${SITE_URL}${path}`,
+          "publisher": {
+            "@type": "Organization",
+            "name": SITE_NAME,
+            "url": SITE_URL,
+            "logo": { "@type": "ImageObject", "url": LOGO_URL }
+          }
+        })}</script>`;
+      }
+
+      html = injectMeta(html, {
+        title:          page.title,
+        description:    page.description,
+        image:          LOGO_URL,
+        url:            `${SITE_URL}${path}`,
+        type:           'website',
+        structuredData: structuredData || undefined,
+      });
+
+      return new Response(html, {
+        headers: {
+          'Content-Type':  'text/html;charset=UTF-8',
+          'Cache-Control': 'public, max-age=3600, s-maxage=7200',
+        }
+      });
+    } catch (e) {
+      return next();
+    }
+  }
+
   // ========== DETAIL PAGE /detail/:slug ==========
   if (path.startsWith('/detail/')) {
     const slug = path.split('/detail/')[1]?.split('?')[0]?.split('#')[0];
