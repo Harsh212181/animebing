@@ -56,7 +56,10 @@ app.use('*', async (c, next) => {
 
 // ROUTES
 app.route('/api/admin', adminRoutes)
-app.route('/api/admin/protected', adminRoutes) 
+// ✅ /api/admin/protected HATA DIYA — ab /api/admin directly use hoga
+// ReportsManager.tsx mein URLs update karo:
+//   /api/admin/protected/reports  →  /api/admin/reports
+//   /api/admin/protected/reports/:id  →  /api/admin/reports/:id
 app.route('/api/anime', animeRoutes)
 app.route('/api/episodes', episodeRoutes)
 app.route('/api/chapters', chapterRoutes)

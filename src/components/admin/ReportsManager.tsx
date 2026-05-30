@@ -1,4 +1,4 @@
- // src/components/admin/ReportManager.tsx - UPDATED VERSION
+// src/components/admin/ReportManager.tsx - UPDATED VERSION
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Spinner from '../Spinner';
@@ -55,7 +55,8 @@ const ReportsManager: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const { data } = await axios.get(`${API_BASE}/admin/protected/reports`, {
+      // ✅ FIXED: /admin/protected/reports → /admin/reports
+      const { data } = await axios.get(`${API_BASE}/admin/reports`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setReports(data);
@@ -69,14 +70,15 @@ const ReportsManager: React.FC = () => {
   const handleDeleteReport = async (reportId: string) => {
     try {
       console.log('🗑️ Deleting report:', reportId);
-      
-      await axios.delete(`${API_BASE}/admin/protected/reports/${reportId}`, {
+
+      // ✅ FIXED: /admin/protected/reports/:id → /admin/reports/:id
+      await axios.delete(`${API_BASE}/admin/reports/${reportId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
       setDeleteConfirm({ show: false, report: null });
       fetchReports();
-      
+
       alert('✅ Report deleted successfully!');
     } catch (err: any) {
       console.error('❌ Delete report error:', err);
@@ -96,11 +98,12 @@ const ReportsManager: React.FC = () => {
     }
 
     try {
-      await axios.post(`${API_BASE}/admin/protected/reports/bulk-delete`, 
+      // ✅ FIXED: /admin/protected/reports/bulk-delete → /admin/reports/bulk-delete
+      await axios.post(`${API_BASE}/admin/reports/bulk-delete`,
         { reportIds: selectedReports },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      
+
       setBulkDeleteMode(false);
       setSelectedReports([]);
       fetchReports();
@@ -110,8 +113,8 @@ const ReportsManager: React.FC = () => {
   };
 
   const toggleReportSelection = (reportId: string) => {
-    setSelectedReports(prev => 
-      prev.includes(reportId) 
+    setSelectedReports(prev =>
+      prev.includes(reportId)
         ? prev.filter(id => id !== reportId)
         : [...prev, reportId]
     );
@@ -126,8 +129,8 @@ const ReportsManager: React.FC = () => {
   };
 
   const toggleReportExpansion = (reportId: string) => {
-    setExpandedReports(prev => 
-      prev.includes(reportId) 
+    setExpandedReports(prev =>
+      prev.includes(reportId)
         ? prev.filter(id => id !== reportId)
         : [...prev, reportId]
     );
@@ -144,17 +147,18 @@ const ReportsManager: React.FC = () => {
     try {
       const updateData: any = { status };
       const response = adminResponses[reportId];
-      
+
       if (response && status === 'Fixed') {
         updateData.adminResponse = response;
         updateData.responseDate = new Date();
       }
-      
+
       if (status === 'Fixed') {
         updateData.resolvedAt = new Date();
       }
 
-      await axios.put(`${API_BASE}/admin/protected/reports/${reportId}`,
+      // ✅ FIXED: /admin/protected/reports/:id → /admin/reports/:id
+      await axios.put(`${API_BASE}/admin/reports/${reportId}`,
         updateData,
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -174,7 +178,8 @@ const ReportsManager: React.FC = () => {
 
   const quickUpdateStatus = async (reportId: string, status: Report['status']) => {
     try {
-      await axios.put(`${API_BASE}/admin/protected/reports/${reportId}`,
+      // ✅ FIXED: /admin/protected/reports/:id → /admin/reports/:id
+      await axios.put(`${API_BASE}/admin/reports/${reportId}`,
         { status },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -282,8 +287,8 @@ const ReportsManager: React.FC = () => {
             <button
               onClick={() => setBulkDeleteMode(!bulkDeleteMode)}
               className={`px-4 py-2 rounded-lg text-sm transition ${
-                bulkDeleteMode 
-                  ? 'bg-red-600 hover:bg-red-500 text-white' 
+                bulkDeleteMode
+                  ? 'bg-red-600 hover:bg-red-500 text-white'
                   : 'bg-slate-600 hover:bg-slate-500 text-white'
               }`}
             >
@@ -334,7 +339,7 @@ const ReportsManager: React.FC = () => {
             <h3 className="text-lg font-bold text-red-400 mb-4">
               🗑️ Delete Report
             </h3>
-            
+
             {deleteConfirm.report.type === 'contact' ? (
               <>
                 <p className="text-slate-300 mb-2">
@@ -359,7 +364,7 @@ const ReportsManager: React.FC = () => {
                 </p>
               </>
             )}
-            
+
             <p className="text-red-300 text-sm mb-4">
               Are you sure you want to delete this report? This action cannot be undone.
             </p>
@@ -431,7 +436,7 @@ const ReportsManager: React.FC = () => {
                           />
                         </td>
                       )}
-                      
+
                       {/* Type */}
                       <td className="p-4">
                         <span className={`px-2 py-1 rounded text-xs font-semibold ${getTypeColor(report.type)}`}>
@@ -662,7 +667,7 @@ const ReportsManager: React.FC = () => {
                                     <span className="text-yellow-400">💬</span> Message
                                   </h4>
                                   <p className="text-slate-300 text-sm p-3 bg-slate-900/50 rounded-lg whitespace-pre-wrap">
-                                    {report.type === 'episode' 
+                                    {report.type === 'episode'
                                       ? report.description || 'No description provided'
                                       : report.message || 'No message provided'
                                     }
