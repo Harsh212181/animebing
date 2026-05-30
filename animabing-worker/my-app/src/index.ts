@@ -13,6 +13,7 @@ import pollRoutes from './routes/pollRoutes'
 import reportRoutes from './routes/reportRoutes'
 import sitemapRoutes from './routes/sitemapRoutes'
 import socialRoutes from './routes/socialRoutes'
+import shortenerRoutes from './routes/shortenerRoutes'
 
 export type Env = {
   MONGODB_URI: string
@@ -56,10 +57,6 @@ app.use('*', async (c, next) => {
 
 // ROUTES
 app.route('/api/admin', adminRoutes)
-// ✅ /api/admin/protected HATA DIYA — ab /api/admin directly use hoga
-// ReportsManager.tsx mein URLs update karo:
-//   /api/admin/protected/reports  →  /api/admin/reports
-//   /api/admin/protected/reports/:id  →  /api/admin/reports/:id
 app.route('/api/anime', animeRoutes)
 app.route('/api/episodes', episodeRoutes)
 app.route('/api/chapters', chapterRoutes)
@@ -72,6 +69,7 @@ app.route('/api/polls', pollRoutes)
 app.route('/api/reports', reportRoutes)
 app.route('/', sitemapRoutes)
 app.route('/api/social', socialRoutes)
+app.route('/go', shortenerRoutes)
 
 // TEST ROUTE
 app.get('/health', (c) => {
