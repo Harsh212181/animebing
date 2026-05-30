@@ -14,6 +14,7 @@ import reportRoutes from './routes/reportRoutes'
 import sitemapRoutes from './routes/sitemapRoutes'
 import socialRoutes from './routes/socialRoutes'
 import shortenerRoutes from './routes/shortenerRoutes'
+import shortUserRoutes from './routes/shortUserRoutes'
 
 export type Env = {
   MONGODB_URI: string
@@ -27,6 +28,7 @@ export type Env = {
 export type Variables = {
   admin: any
   user: any
+  shortUser: any
 }
 
 const app = new Hono<{ Bindings: Env, Variables: Variables }>()
@@ -69,11 +71,13 @@ app.route('/api/polls', pollRoutes)
 app.route('/api/reports', reportRoutes)
 app.route('/api/social', socialRoutes)
 
+// ============ SHORT USERS ============
+app.route('/api/short-users', shortUserRoutes)
+
 // ============ SITEMAP ============
 app.route('/', sitemapRoutes)
 
 // ============ URL SHORTENER ============
-// go.animebing.in domain pe root pe handle hoga
 app.route('/', shortenerRoutes)
 
 // ============ HEALTH CHECK ============

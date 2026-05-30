@@ -239,3 +239,58 @@ export interface IAnalytics {
   createdAt?: Date
   updatedAt?: Date
 }
+
+// ============ SHORT USER ============
+export interface IShortUser {
+  _id?: ObjectId
+  username: string
+  password: string
+  realName: string
+  ratePerThousand: number
+  isActive: boolean
+  totalClicks: number
+  totalEarnings: number
+  unpaidEarnings: number
+  paidEarnings: number
+  createdAt?: Date
+  updatedAt?: Date
+}
+
+// ============ SHORT LINK ============
+export interface IShortLink {
+  _id?: ObjectId
+  code: string
+  url: string
+  label: string
+  userId?: ObjectId
+  clicks: number
+  todayClicks: number
+  lastClicked: Date | null
+  createdAt?: Date
+  updatedAt?: Date
+}
+
+// ============ SHORT CLICK ============
+export interface IShortClick {
+  _id?: ObjectId
+  code: string
+  userId?: ObjectId
+  ip: string
+  country?: string
+  city?: string
+  device?: string
+  browser?: string
+  referrer?: string
+  clickedAt: Date
+}
+
+// ============ PAYMENT ============
+export interface IPayment {
+  _id?: ObjectId
+  userId: ObjectId
+  username: string
+  realName: string
+  amount: number
+  note?: string
+  paidAt: Date
+}
