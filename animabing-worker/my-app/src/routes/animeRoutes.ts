@@ -2,425 +2,364 @@ import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
 import {
-  findMany, findOne, insertOne, updateOne,
-  deleteOne, deleteMany, countDocuments,
-  toObjectId, isValidObjectId, getDb
+  findMany, findOne, updateOne, deleteOne,
+  deleteMany, countDocuments, toObjectId, isValidObjectId, getDb
 } from '../services/mongoService'
-import { IAnime, IEpisode, IChapter, IReport, ISocialMedia } from '../models/types'
-import { ObjectId } from 'mongodb'  // ✅ NEW: ObjectId import add kiya thumbnail ke liye
+import { IAnime } from '../models/types'
 
-const adminRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
+const animeRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
-// ============ JWT CREATE ============
-async function createJWT(payload: object, secret: string): Promise<string> {
-  const encoder = new TextEncoder()
-  const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
-  const body = btoa(JSON.stringify({
-    ...payload,
-    exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60)
-  }))
-  const keyData = encoder.encode(secret)
-  const cryptoKey = await crypto.subtle.importKey(
-    'raw', keyData, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
-  )
-  const signature = await crypto.subtle.sign('HMAC', cryptoKey, encoder.encode(`${header}.${body}`))
-  const sigB64 = btoa(String.fromCharCode(...new Uint8Array(signature)))
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
-  return `${header}.${body}.${sigB64}`
-}
-
-// ============ LOGIN ============
-adminRoutes.post('/login', async (c) => {
+// ============ FEATURED ============
+animeRoutes.get('/featured', async (c) => {
   try {
-    const { username, password } = await c.req.json()
-    if (username !== c.env.ADMIN_USER || password !== c.env.ADMIN_PASS) {
-      return c.json({ success: false, error: 'Invalid credentials' }, 401)
-    }
-    const token = await createJWT({ id: 'admin', username }, c.env.JWT_SECRET)
-    return c.json({ success: true, token })
+    const animes = await findMany<IAnime>(
+      'animes',
+      { featured: true, isHidden: { $ne: true } },
+      {
+        sort: { featuredOrder: -1, createdAt: -1 },
+        limit: 24,
+        projection: { title: 1, thumbnail: 1, releaseYear: 1, subDubStatus: 1, contentType: 1, updatedAt: 1, createdAt: 1, bannerImage: 1, rating: 1, slug: 1, seoTitle: 1, likes: 1, dislikes: 1, monthlyLikes: 1, weeklyLikes: 1, currentEpisode: 1 }
+      },
+      c.env.MONGODB_URI, c.env.MONGODB_DB
+    )
+    return c.json({ success: true, data: animes })
   } catch (err: any) {
-    return c.json({ success: false, error: 'Login failed' }, 500)
+    return c.json({ success: false, error: err.message }, 500)
   }
 })
 
-// ============ ME ============
-adminRoutes.get('/me', adminAuth, (c) => {
-  const admin = c.get('admin')
-  return c.json({ success: true, admin })
-})
-
-// ============ USER INFO ============
-adminRoutes.get('/user-info', adminAuth, (c) => {
-  return c.json({ username: c.env.ADMIN_USER, email: '' })
-})
-
-// ============ ANIME LIST ============
-adminRoutes.get('/anime-list', adminAuth, async (c) => {
+// ============ TOP 100 ============
+animeRoutes.get('/top100', async (c) => {
   try {
-    const status = c.req.query('status')
-    const contentType = c.req.query('contentType')
-    const filter: any = {}
-    if (status && status !== 'All') filter.status = status
-    if (contentType && contentType !== 'All') filter.contentType = contentType
-    const animes = await findMany<IAnime>('animes', filter, { sort: { createdAt: -1 } }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    return c.json(animes)
-  } catch (err: any) {
-    return c.json({ error: err.message }, 500)
-  }
-})
+    const type = c.req.query('type') || 'all-time'
+    const contentType = c.req.query('contentType') || 'all'
+    const limit = parseInt(c.req.query('limit') || '100')
+    const page = parseInt(c.req.query('page') || '1')
+    const skip = (page - 1) * limit
 
-// ============ ADD ANIME ============
-adminRoutes.post('/add-anime', adminAuth, async (c) => {
-  try {
-    const { title, description, thumbnail, status, subDubStatus, genreList, releaseYear, contentType } = await c.req.json()
+    let filter: any = { isHidden: { $ne: true } }
+    if (contentType && contentType !== 'all') filter.contentType = contentType
 
-    const existing = await findOne('animes', { title }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    if (existing) return c.json({ error: 'Anime/Movie already exists' }, 400)
+    let sortField = 'likes'
+    if (type === 'monthly') sortField = 'monthlyLikes'
+    else if (type === 'weekly') sortField = 'weeklyLikes'
 
-    let slug = title.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').trim()
-    const slugExists = await findOne('animes', { slug }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    if (slugExists) slug = `${slug}-${Date.now()}`
+    const animes = await findMany<IAnime>(
+      'animes', filter,
+      {
+        sort: { [sortField]: -1, title: 1 },
+        skip, limit,
+        projection: { title: 1, thumbnail: 1, likes: 1, dislikes: 1, monthlyLikes: 1, weeklyLikes: 1, contentType: 1, slug: 1, rating: 1 }
+      },
+      c.env.MONGODB_URI, c.env.MONGODB_DB
+    )
+    const total = await countDocuments('animes', filter, c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    const seoTitle = `Watch ${title} Online in ${subDubStatus} | AnimeBing`
-    const seoDescription = `Watch ${title} online in ${subDubStatus}. HD quality streaming and downloads.`
-
-    const anime = {
-      title, description, thumbnail,
-      status: status || 'Ongoing',
-      subDubStatus, genreList, releaseYear,
-      contentType: contentType || 'Anime',
-      slug, seoTitle, seoDescription,
-      likes: 0, dislikes: 0, views: 0,
-      totalVotes: 0, monthlyLikes: 0, weeklyLikes: 0,
-      featured: false, featuredOrder: 0,
-      isHidden: false, lastContentAdded: new Date()
-    }
-
-    await insertOne('animes', anime, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    return c.json({ success: true, message: `${contentType || 'Anime'} added!`, anime })
-  } catch (err: any) {
-    return c.json({ error: err.message }, 500)
-  }
-})
-
-// ============ EDIT ANIME ============
-adminRoutes.put('/edit-anime/:id', adminAuth, async (c) => {
-  try {
-    const id = c.req.param('id')
-    if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
-    const updateData = await c.req.json()
-    const anime = await updateOne('animes', { _id: toObjectId(id) }, updateData, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    if (!anime) return c.json({ error: 'Anime not found' }, 404)
-    return c.json({ success: true, message: 'Updated successfully!', anime })
-  } catch (err: any) {
-    return c.json({ error: err.message }, 500)
-  }
-})
-
-// ============ DELETE ANIME ============
-adminRoutes.delete('/delete-anime', adminAuth, async (c) => {
-  try {
-    const { id } = await c.req.json()
-    if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
-    await deleteOne('animes', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    await deleteMany('episodes', { animeId: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    await deleteMany('reports', { animeId: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    return c.json({ success: true, message: 'Deleted successfully!' })
-  } catch (err: any) {
-    return c.json({ error: err.message }, 500)
-  }
-})
-
-// ============ TOGGLE HIDE ============
-adminRoutes.patch('/toggle-hide/:id', adminAuth, async (c) => {
-  try {
-    const id = c.req.param('id')
-    if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
-    const anime = await findOne<IAnime>('animes', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    if (!anime) return c.json({ error: 'Anime not found' }, 404)
-    const newHidden = !anime.isHidden
-    await updateOne('animes', { _id: toObjectId(id) }, { isHidden: newHidden }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    return c.json({ success: true, message: `Anime ${newHidden ? 'hidden' : 'visible'} successfully`, isHidden: newHidden })
-  } catch (err: any) {
-    return c.json({ error: err.message }, 500)
-  }
-})
-
-// ============ EPISODE STATUS ============
-adminRoutes.patch('/anime/:id/episode-status', adminAuth, async (c) => {
-  try {
-    const id = c.req.param('id')
-    const { totalEpisodes, currentEpisode } = await c.req.json()
-    if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
-    const updateData: any = { lastContentAdded: new Date() }
-    if (totalEpisodes !== undefined) updateData.totalEpisodes = totalEpisodes
-    if (currentEpisode !== undefined) updateData.currentEpisode = currentEpisode
-    const anime = await updateOne('animes', { _id: toObjectId(id) }, updateData, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    if (!anime) return c.json({ error: 'Anime not found' }, 404)
-    return c.json({ success: true, message: 'Episode status updated!', anime })
-  } catch (err: any) {
-    return c.json({ error: err.message }, 500)
-  }
-})
-
-// ============ SYNC EPISODE COUNT ============
-adminRoutes.post('/anime/:id/sync-episode-count', adminAuth, async (c) => {
-  try {
-    const id = c.req.param('id')
-    if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
-    const episodeCount = await countDocuments('episodes', { animeId: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const anime = await updateOne('animes', { _id: toObjectId(id) }, { currentEpisode: episodeCount, lastContentAdded: new Date() }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    if (!anime) return c.json({ error: 'Anime not found' }, 404)
-    return c.json({ success: true, message: `Synced to ${episodeCount} episodes`, anime })
-  } catch (err: any) {
-    return c.json({ error: err.message }, 500)
-  }
-})
-
-// ============ EDIT EPISODE ============
-adminRoutes.put('/edit-episode/:id', adminAuth, async (c) => {
-  try {
-    const id = c.req.param('id')
-    if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
-    const { title, downloadLinks, secureFileReference, session } = await c.req.json()
-
-    if (downloadLinks !== undefined) {
-      if (!Array.isArray(downloadLinks) || downloadLinks.length === 0) return c.json({ error: 'At least one download link required' }, 400)
-      if (downloadLinks.length > 5) return c.json({ error: 'Maximum 5 download links allowed' }, 400)
-      for (let i = 0; i < downloadLinks.length; i++) {
-        if (!downloadLinks[i].name || !downloadLinks[i].url) return c.json({ error: `Link ${i + 1} needs name and url` }, 400)
-      }
-    }
-
-    const updateData: any = {}
-    if (typeof title !== 'undefined') updateData.title = title
-    if (typeof secureFileReference !== 'undefined') updateData.secureFileReference = secureFileReference
-    if (typeof session !== 'undefined') updateData.session = session
-    if (downloadLinks !== undefined) {
-      updateData.downloadLinks = downloadLinks.map((link: any, i: number) => ({
-        name: link.name || `Download Link ${i + 1}`,
-        url: link.url, quality: link.quality || '', type: link.type || 'direct'
-      }))
-    }
-
-    const episode = await updateOne('episodes', { _id: toObjectId(id) }, updateData, c.env.MONGODB_URI, c.env.MONGODB_DB) as IEpisode | null
-    if (!episode) return c.json({ error: 'Episode not found' }, 404)
-    await updateOne('animes', { _id: episode.animeId }, { lastContentAdded: new Date() }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    return c.json({ success: true, message: 'Episode updated!', episode })
-  } catch (err: any) {
-    return c.json({ error: err.message }, 500)
-  }
-})
-
-// ============ EDIT CHAPTER ============
-adminRoutes.put('/edit-chapter/:id', adminAuth, async (c) => {
-  try {
-    const id = c.req.param('id')
-    if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
-    const { title, downloadLinks, secureFileReference, session } = await c.req.json()
-
-    if (downloadLinks !== undefined) {
-      if (!Array.isArray(downloadLinks) || downloadLinks.length === 0) return c.json({ error: 'At least one download link required' }, 400)
-      if (downloadLinks.length > 5) return c.json({ error: 'Maximum 5 download links allowed' }, 400)
-      for (let i = 0; i < downloadLinks.length; i++) {
-        if (!downloadLinks[i].name || !downloadLinks[i].url) return c.json({ error: `Link ${i + 1} needs name and url` }, 400)
-      }
-    }
-
-    const updateData: any = {}
-    if (typeof title !== 'undefined') updateData.title = title
-    if (typeof secureFileReference !== 'undefined') updateData.secureFileReference = secureFileReference
-    if (typeof session !== 'undefined') updateData.session = session
-    if (downloadLinks !== undefined) {
-      updateData.downloadLinks = downloadLinks.map((link: any, i: number) => ({
-        name: link.name || `Download Link ${i + 1}`,
-        url: link.url, quality: link.quality || '', type: link.type || 'direct'
-      }))
-    }
-
-    const chapter = await updateOne('chapters', { _id: toObjectId(id) }, updateData, c.env.MONGODB_URI, c.env.MONGODB_DB) as IChapter | null
-    if (!chapter) return c.json({ error: 'Chapter not found' }, 404)
-    await updateOne('animes', { _id: chapter.mangaId }, { lastContentAdded: new Date() }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    return c.json({ success: true, message: 'Chapter updated!', chapter })
-  } catch (err: any) {
-    return c.json({ error: err.message }, 500)
-  }
-})
-
-// ============ GET EPISODE ============
-adminRoutes.get('/episode/:id', adminAuth, async (c) => {
-  try {
-    const id = c.req.param('id')
-    if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
-    const episode = await findOne<IEpisode>('episodes', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    if (!episode) return c.json({ error: 'Episode not found' }, 404)
-    return c.json({ success: true, episode })
-  } catch (err: any) {
-    return c.json({ error: err.message }, 500)
-  }
-})
-
-// ============ GET CHAPTER ============
-adminRoutes.get('/chapter/:id', adminAuth, async (c) => {
-  try {
-    const id = c.req.param('id')
-    if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
-    const chapter = await findOne<IChapter>('chapters', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    if (!chapter) return c.json({ error: 'Chapter not found' }, 404)
-    return c.json({ success: true, chapter })
-  } catch (err: any) {
-    return c.json({ error: err.message }, 500)
-  }
-})
-
-// ============ REPORTS - WITH ANIME THUMBNAIL ✅ UPDATED ============
-adminRoutes.get('/reports', adminAuth, async (c) => {
-  try {
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-
-    // Step 1: Saare reports fetch karo
-    const reports = await db.collection('reports')
-      .find({})
-      .sort({ createdAt: -1 })
-      .toArray()
-
-    // Step 2: Episode reports ke animeIds collect karo
-    const animeIds = reports
-      .filter((r: any) => r.type === 'episode' && r.animeId)
-      .map((r: any) => {
-        try { return new ObjectId(r.animeId.toString()) }
-        catch { return null }
-      })
-      .filter(Boolean)
-
-    // Step 3: Ek query mein saare animes fetch karo (N+1 problem avoid)
-    const animeMap: Record<string, { _id: any; title: string; thumbnail: string }> = {}
-
-    if (animeIds.length > 0) {
-      const animes = await db.collection('animes')
-        .find(
-          { _id: { $in: animeIds as any } },
-          { projection: { title: 1, thumbnail: 1 } }
-        )
-        .toArray()
-
-      // Map banao: animeId string => anime object
-      animes.forEach((anime: any) => {
-        animeMap[anime._id.toString()] = {
-          _id: anime._id,
-          title: anime.title,
-          thumbnail: anime.thumbnail || null
-        }
-      })
-    }
-
-    // Step 4: Reports mein anime data inject karo
-    const enrichedReports = reports.map((report: any) => {
-      if (report.type === 'episode' && report.animeId) {
-        const animeIdStr = report.animeId.toString()
-        const anime = animeMap[animeIdStr]
-        return {
-          ...report,
-          animeId: anime
-            ? { _id: anime._id, title: anime.title, thumbnail: anime.thumbnail }
-            : { _id: report.animeId, title: 'Unknown Anime', thumbnail: null }
-        }
-      }
-      return report
-    })
-
-    return c.json(enrichedReports)
-  } catch (err: any) {
-    return c.json({ error: err.message }, 500)
-  }
-})
-
-adminRoutes.put('/reports/:id', adminAuth, async (c) => {
-  try {
-    const id = c.req.param('id')
-    if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
-    const { status, adminResponse } = await c.req.json()
-    const admin = c.get('admin')
-    const updateData: any = { status }
-    if (adminResponse) { updateData.adminResponse = adminResponse; updateData.responseDate = new Date() }
-    if (status === 'Fixed') { updateData.resolvedAt = new Date(); updateData.resolvedBy = admin.id }
-    const report = await updateOne('reports', { _id: toObjectId(id) }, updateData, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    return c.json({ success: true, message: 'Report updated!', report })
-  } catch (err: any) {
-    return c.json({ error: err.message }, 500)
-  }
-})
-
-adminRoutes.delete('/reports/:id', adminAuth, async (c) => {
-  try {
-    const id = c.req.param('id')
-    if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
-    const report = await findOne('reports', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    if (!report) return c.json({ error: 'Report not found' }, 404)
-    await deleteOne('reports', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    return c.json({ success: true, message: 'Report deleted!' })
-  } catch (err: any) {
-    return c.json({ error: err.message }, 500)
-  }
-})
-
-adminRoutes.post('/reports/bulk-delete', adminAuth, async (c) => {
-  try {
-    const { reportIds } = await c.req.json()
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    await db.collection('reports').deleteMany({
-      _id: { $in: reportIds.map((rid: string) => toObjectId(rid)) }
-    })
-    return c.json({ success: true, message: `${reportIds.length} reports deleted!` })
-  } catch (err: any) {
-    return c.json({ error: err.message }, 500)
-  }
-})
-
-// ============ SOCIAL MEDIA ============
-adminRoutes.get('/social-media', adminAuth, async (c) => {
-  try {
-    const links = await findMany<ISocialMedia>('socialmedia', {}, {}, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    return c.json(links)
-  } catch (err: any) {
-    return c.json({ error: err.message }, 500)
-  }
-})
-
-adminRoutes.put('/social-media/:platform', adminAuth, async (c) => {
-  try {
-    const platform = c.req.param('platform')
-    const { url, isActive } = await c.req.json()
-    const link = await updateOne('socialmedia', { platform }, { url, isActive }, c.env.MONGODB_URI, c.env.MONGODB_DB, true)
-    return c.json(link)
-  } catch (err: any) {
-    return c.json({ error: err.message }, 500)
-  }
-})
-
-// ============ ANALYTICS ============
-adminRoutes.get('/analytics', adminAuth, async (c) => {
-  try {
-    const [totalAnimes, totalMovies, totalManga, totalEpisodes, totalChapters, totalReports, pendingReports] = await Promise.all([
-      countDocuments('animes', { contentType: 'Anime' }, c.env.MONGODB_URI, c.env.MONGODB_DB),
-      countDocuments('animes', { contentType: 'Movie' }, c.env.MONGODB_URI, c.env.MONGODB_DB),
-      countDocuments('animes', { contentType: 'Manga' }, c.env.MONGODB_URI, c.env.MONGODB_DB),
-      countDocuments('episodes', {}, c.env.MONGODB_URI, c.env.MONGODB_DB),
-      countDocuments('chapters', {}, c.env.MONGODB_URI, c.env.MONGODB_DB),
-      countDocuments('reports', {}, c.env.MONGODB_URI, c.env.MONGODB_DB),
-      countDocuments('reports', { status: 'Pending' }, c.env.MONGODB_URI, c.env.MONGODB_DB),
-    ])
     return c.json({
-      totalAnimes, totalMovies, totalManga,
-      totalEpisodes, totalChapters,
-      totalReports, pendingReports,
-      todayUsers: 0, totalUsers: 0,
-      todayEarnings: 0, totalEarnings: 0,
-      todayPageViews: 0, totalPageViews: 0
+      success: true,
+      data: animes,
+      pagination: {
+        current: page,
+        totalPages: Math.ceil(total / limit),
+        hasMore: page < Math.ceil(total / limit),
+        totalItems: total
+      },
+      ranking: {
+        type,
+        contentType,
+        period: type === 'all-time' ? 'All Time' : type === 'monthly' ? 'Last 30 Days' : 'Last 7 Days'
+      }
     })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
   }
 })
 
-export default adminRoutes
+// ============ SLUG ============
+animeRoutes.get('/slug/:slug', async (c) => {
+  try {
+    const slug = c.req.param('slug')
+    if (!slug) return c.json({ success: false, error: 'Slug required' }, 400)
+
+    const anime = await findOne<IAnime>('animes', { slug }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    if (!anime) return c.json({ success: false, message: 'Anime not found' }, 404)
+
+    // increment views
+    await updateOne('animes', { slug }, { views: (anime.views || 0) + 1 }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    // get episodes
+    const episodes = await findMany('episodes', { animeId: anime._id }, { sort: { session: 1, episodeNumber: 1 } }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    return c.json({ success: true, data: { ...anime, episodes } })
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 500)
+  }
+})
+
+// ============ SEARCH ============
+animeRoutes.get('/search', async (c) => {
+  try {
+    const q = c.req.query('query') || ''
+    const page = parseInt(c.req.query('page') || '1')
+    const limit = parseInt(c.req.query('limit') || '24')
+    const skip = (page - 1) * limit
+
+    const filter: any = {
+      isHidden: { $ne: true },
+      $or: [
+        { title: { $regex: q, $options: 'i' } },
+        { seoKeywords: { $regex: q, $options: 'i' } },
+        { seoTitle: { $regex: q, $options: 'i' } },
+        { seoDescription: { $regex: q, $options: 'i' } }
+      ]
+    }
+
+    const animes = await findMany<IAnime>('animes', filter, { sort: { likes: -1, updatedAt: -1 }, skip, limit }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const total = await countDocuments('animes', filter, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    return c.json({
+      success: true,
+      data: animes,
+      pagination: {
+        current: page,
+        totalPages: Math.ceil(total / limit),
+        hasMore: page < Math.ceil(total / limit),
+        totalItems: total
+      },
+      searchInfo: { query: q, resultsFound: total }
+    })
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 500)
+  }
+})
+
+// ============ UNASSIGNED (admin) ============
+animeRoutes.get('/unassigned', adminAuth, async (c) => {
+  try {
+    const search = c.req.query('search') || ''
+    const filter: any = { partnerId: null }
+    if (search.trim()) filter.title = { $regex: search.trim(), $options: 'i' }
+
+    const animes = await findMany<IAnime>('animes', filter, { limit: 20, projection: { title: 1, thumbnail: 1, status: 1, contentType: 1 } }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    return c.json(animes)
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============ VOTE ============
+animeRoutes.post('/:id/vote', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const { voteType } = await c.req.json()
+    const ip = c.req.header('x-forwarded-for') || c.req.header('cf-connecting-ip') || 'unknown'
+
+    if (!['like', 'dislike'].includes(voteType)) {
+      return c.json({ success: false, error: 'Invalid vote type' }, 400)
+    }
+
+    if (!isValidObjectId(id)) return c.json({ success: false, error: 'Invalid ID' }, 400)
+
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const anime = await db.collection('animes').findOne({ _id: toObjectId(id) }) as IAnime | null
+    if (!anime) return c.json({ success: false, error: 'Anime not found' }, 404)
+
+    const existingVote = anime.votes?.find((v: any) => v.ipAddress === ip)
+
+    if (existingVote && existingVote.voteType === voteType) {
+      // Remove vote
+      await db.collection('animes').updateOne(
+        { _id: toObjectId(id) },
+        {
+          $pull: { votes: { ipAddress: ip } } as any,
+          $inc: {
+            likes: voteType === 'like' ? -1 : 0,
+            dislikes: voteType === 'dislike' ? -1 : 0,
+            weeklyLikes: voteType === 'like' ? -1 : 0,
+            monthlyLikes: voteType === 'like' ? -1 : 0,
+            totalVotes: -1
+          }
+        }
+      )
+      return c.json({ success: true, message: 'Vote removed', data: { userVote: null, hasVoted: false } })
+    }
+
+    // Add/change vote
+    const incData: any = {}
+    if (existingVote) {
+      // Change vote - remove old
+      await db.collection('animes').updateOne(
+        { _id: toObjectId(id) },
+        { $pull: { votes: { ipAddress: ip } } as any }
+      )
+      incData[existingVote.voteType === 'like' ? 'likes' : 'dislikes'] = -1
+      if (existingVote.voteType === 'like') { incData.weeklyLikes = -1; incData.monthlyLikes = -1 }
+    }
+
+    incData[voteType === 'like' ? 'likes' : 'dislikes'] = (incData[voteType === 'like' ? 'likes' : 'dislikes'] || 0) + 1
+    if (voteType === 'like') { incData.weeklyLikes = (incData.weeklyLikes || 0) + 1; incData.monthlyLikes = (incData.monthlyLikes || 0) + 1 }
+    if (!existingVote) incData.totalVotes = 1
+
+    await db.collection('animes').updateOne(
+      { _id: toObjectId(id) },
+      {
+        $push: { votes: { ipAddress: ip, voteType, date: new Date() } } as any,
+        $inc: incData
+      }
+    )
+
+    const updated = await db.collection('animes').findOne({ _id: toObjectId(id) }) as IAnime
+    return c.json({
+      success: true,
+      message: `Vote ${voteType}d successfully`,
+      data: {
+        likes: updated.likes, dislikes: updated.dislikes,
+        totalVotes: updated.totalVotes, userVote: voteType, hasVoted: true,
+        monthlyLikes: updated.monthlyLikes, weeklyLikes: updated.weeklyLikes
+      }
+    })
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 500)
+  }
+})
+
+// ============ VOTE STATUS ============
+animeRoutes.get('/:id/vote-status', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const ip = c.req.header('x-forwarded-for') || c.req.header('cf-connecting-ip') || 'unknown'
+
+    if (!isValidObjectId(id)) return c.json({ success: false, error: 'Invalid ID' }, 400)
+
+    const anime = await findOne<IAnime>('animes', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    if (!anime) return c.json({ success: false, error: 'Anime not found' }, 404)
+
+    const vote = anime.votes?.find((v: any) => v.ipAddress === ip)
+    return c.json({
+      success: true,
+      data: {
+        hasVoted: !!vote, userVote: vote?.voteType || null,
+        likes: anime.likes, dislikes: anime.dislikes,
+        totalVotes: anime.totalVotes, monthlyLikes: anime.monthlyLikes, weeklyLikes: anime.weeklyLikes
+      }
+    })
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 500)
+  }
+})
+
+// ============ HOMEPAGE LIST ============
+animeRoutes.get('/', async (c) => {
+  try {
+    const page = parseInt(c.req.query('page') || '1')
+    const limit = parseInt(c.req.query('limit') || '24')
+    const skip = (page - 1) * limit
+
+    const animes = await findMany<IAnime>(
+      'animes', { isHidden: { $ne: true } },
+      {
+        sort: { lastContentAdded: -1 }, skip, limit,
+        projection: { title: 1, thumbnail: 1, releaseYear: 1, subDubStatus: 1, contentType: 1, updatedAt: 1, createdAt: 1, slug: 1, likes: 1, dislikes: 1, rating: 1, monthlyLikes: 1, weeklyLikes: 1, totalVotes: 1, currentEpisode: 1, lastContentAdded: 1 }
+      },
+      c.env.MONGODB_URI, c.env.MONGODB_DB
+    )
+    const total = await countDocuments('animes', { isHidden: { $ne: true } }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    return c.json({
+      success: true, data: animes,
+      pagination: {
+        current: page,
+        totalPages: Math.ceil(total / limit),
+        hasMore: page < Math.ceil(total / limit),
+        totalItems: total
+      }
+    })
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 500)
+  }
+})
+
+// ============ HIDE/UNHIDE (admin) ============
+animeRoutes.patch('/:id/hide', adminAuth, async (c) => {
+  try {
+    const id = c.req.param('id')
+    if (!isValidObjectId(id)) return c.json({ success: false, error: 'Invalid ID' }, 400)
+
+    const anime = await findOne<IAnime>('animes', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    if (!anime) return c.json({ success: false, error: 'Anime not found' }, 404)
+
+    const newHidden = !anime.isHidden
+    await updateOne('animes', { _id: toObjectId(id) }, { isHidden: newHidden }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    return c.json({ success: true, message: newHidden ? 'Anime hidden' : 'Anime visible', data: { isHidden: newHidden } })
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 500)
+  }
+})
+
+// ============ FEATURED ADD/REMOVE (admin) ============
+animeRoutes.post('/:id/featured', adminAuth, async (c) => {
+  try {
+    const id = c.req.param('id')
+    const count = await countDocuments('animes', { featured: true }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const anime = await updateOne('animes', { _id: toObjectId(id) }, { featured: true, featuredOrder: count + 1 }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    if (!anime) return c.json({ success: false, error: 'Anime not found' }, 404)
+    return c.json({ success: true, message: 'Added to featured', data: anime })
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 500)
+  }
+})
+
+animeRoutes.delete('/:id/featured', adminAuth, async (c) => {
+  try {
+    const id = c.req.param('id')
+    const anime = await updateOne('animes', { _id: toObjectId(id) }, { featured: false, featuredOrder: 0 }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    if (!anime) return c.json({ success: false, error: 'Anime not found' }, 404)
+    return c.json({ success: true, message: 'Removed from featured', data: anime })
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 500)
+  }
+})
+
+// ============ GET SINGLE ANIME ============
+animeRoutes.get('/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const isObjectId = isValidObjectId(id)
+
+    const anime = await findOne<IAnime>(
+      'animes',
+      isObjectId ? { _id: toObjectId(id) } : { slug: id },
+      c.env.MONGODB_URI, c.env.MONGODB_DB
+    )
+    if (!anime) return c.json({ success: false, message: 'Anime not found' }, 404)
+
+    await updateOne('animes', { _id: anime._id }, { views: (anime.views || 0) + 1 }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const episodes = await findMany('episodes', { animeId: anime._id }, { sort: { session: 1, episodeNumber: 1 } }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    return c.json({ success: true, data: { ...anime, episodes } })
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 500)
+  }
+})
+
+// ============ DELETE ANIME (admin) ============
+animeRoutes.delete('/:id', adminAuth, async (c) => {
+  try {
+    const id = c.req.param('id')
+    if (!isValidObjectId(id)) return c.json({ success: false, error: 'Invalid ID' }, 400)
+
+    const anime = await findOne<IAnime>('animes', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    if (!anime) return c.json({ success: false, error: 'Anime not found' }, 404)
+
+    await deleteOne('animes', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    await deleteMany('downloadpages', { animeId: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    return c.json({ success: true, message: 'Anime deleted successfully' })
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 500)
+  }
+})
+
+export default animeRoutes

@@ -7,6 +7,7 @@ import {
   toObjectId, isValidObjectId, getDb
 } from '../services/mongoService'
 import { IAnime, IEpisode, IChapter, IReport, ISocialMedia } from '../models/types'
+import { ObjectId } from 'mongodb'  // ✅ NEW: ObjectId import add kiya thumbnail ke liye
 
 const adminRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
@@ -272,11 +273,63 @@ adminRoutes.get('/chapter/:id', adminAuth, async (c) => {
   }
 })
 
-// ============ REPORTS ============
+// ============ REPORTS - WITH ANIME THUMBNAIL ✅ UPDATED ============
 adminRoutes.get('/reports', adminAuth, async (c) => {
   try {
-    const reports = await findMany<IReport>('reports', {}, { sort: { createdAt: -1 } }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    return c.json(reports)
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    // Step 1: Saare reports fetch karo
+    const reports = await db.collection('reports')
+      .find({})
+      .sort({ createdAt: -1 })
+      .toArray()
+
+    // Step 2: Episode reports ke animeIds collect karo
+    const animeIds = reports
+      .filter((r: any) => r.type === 'episode' && r.animeId)
+      .map((r: any) => {
+        try { return new ObjectId(r.animeId.toString()) }
+        catch { return null }
+      })
+      .filter(Boolean)
+
+    // Step 3: Ek query mein saare animes fetch karo (N+1 problem avoid)
+    const animeMap: Record<string, { _id: any; title: string; thumbnail: string }> = {}
+
+    if (animeIds.length > 0) {
+      const animes = await db.collection('animes')
+        .find(
+          { _id: { $in: animeIds as any } },
+          { projection: { title: 1, thumbnail: 1 } }
+        )
+        .toArray()
+
+      // Map banao: animeId string => anime object
+      animes.forEach((anime: any) => {
+        animeMap[anime._id.toString()] = {
+          _id: anime._id,
+          title: anime.title,
+          thumbnail: anime.thumbnail || null
+        }
+      })
+    }
+
+    // Step 4: Reports mein anime data inject karo
+    const enrichedReports = reports.map((report: any) => {
+      if (report.type === 'episode' && report.animeId) {
+        const animeIdStr = report.animeId.toString()
+        const anime = animeMap[animeIdStr]
+        return {
+          ...report,
+          animeId: anime
+            ? { _id: anime._id, title: anime.title, thumbnail: anime.thumbnail }
+            : { _id: report.animeId, title: 'Unknown Anime', thumbnail: null }
+        }
+      }
+      return report
+    })
+
+    return c.json(enrichedReports)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
