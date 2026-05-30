@@ -6,40 +6,9 @@ import {
   deleteMany, toObjectId, isValidObjectId, getDb
 } from '../services/mongoService'
 import { IReport } from '../models/types'
+import { ObjectId } from 'mongodb'
 
 const reportRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
-
-// ============ Helper: Anime data manually fetch karo ============
-async function enrichReportsWithAnime(reports: any[], mongoUri: string, mongoDb: string) {
-  const db = await getDb(mongoUri, mongoDb)
-
-  const enriched = await Promise.all(
-    reports.map(async (report: any) => {
-      if (report.type === 'episode' && report.animeId) {
-        try {
-          const anime = await db.collection('animes').findOne(
-            { _id: toObjectId(report.animeId.toString()) },
-            { projection: { title: 1, thumbnail: 1 } }
-          )
-          return {
-            ...report,
-            animeId: anime
-              ? { _id: anime._id, title: anime.title, thumbnail: anime.thumbnail }
-              : { _id: report.animeId, title: 'Unknown Anime', thumbnail: null }
-          }
-        } catch {
-          return {
-            ...report,
-            animeId: { _id: report.animeId, title: 'Unknown Anime', thumbnail: null }
-          }
-        }
-      }
-      return report
-    })
-  )
-
-  return enriched
-}
 
 // ============ CREATE REPORT (public) ============
 reportRoutes.post('/', async (c) => {
@@ -65,9 +34,7 @@ reportRoutes.post('/', async (c) => {
       type: 'episode',
       userIP: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || 'unknown',
       userAgent: c.req.header('user-agent') || 'Unknown',
-      status: 'Pending',
-      createdAt: new Date(),
-      updatedAt: new Date()
+      status: 'Pending'
     }
 
     await insertOne('reports', report, c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -81,15 +48,62 @@ reportRoutes.post('/', async (c) => {
 // ============ GET ALL REPORTS - anime thumbnail ke saath (admin) ============
 reportRoutes.get('/', async (c) => {
   try {
-    const reports = await findMany<IReport>(
-      'reports',
-      {},
-      { sort: { createdAt: -1 } },
-      c.env.MONGODB_URI, c.env.MONGODB_DB
-    )
+    // Step 1: Ek hi db connection lo
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    // ✅ Yahan anime title + thumbnail manually join ho raha hai
-    const enrichedReports = await enrichReportsWithAnime(reports, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    // Step 2: Saare reports fetch karo
+    const reports = await db.collection('reports')
+      .find({})
+      .sort({ createdAt: -1 })
+      .toArray()
+
+    // Step 3: Episode reports ke animeIds collect karo
+    const animeIds = reports
+      .filter((r: any) => r.type === 'episode' && r.animeId)
+      .map((r: any) => {
+        try {
+          return new ObjectId(r.animeId.toString())
+        } catch {
+          return null
+        }
+      })
+      .filter(Boolean)
+
+    // Step 4: Ek query mein saare animes fetch karo (N+1 problem avoid)
+    const animeMap: Record<string, { _id: any; title: string; thumbnail: string }> = {}
+
+    if (animeIds.length > 0) {
+      const animes = await db.collection('animes')
+        .find(
+          { _id: { $in: animeIds as any } },
+          { projection: { title: 1, thumbnail: 1 } }
+        )
+        .toArray()
+
+      // Map banao: animeId string => anime object
+      animes.forEach((anime: any) => {
+        animeMap[anime._id.toString()] = {
+          _id: anime._id,
+          title: anime.title,
+          thumbnail: anime.thumbnail || null
+        }
+      })
+    }
+
+    // Step 5: Reports mein anime data inject karo
+    const enrichedReports = reports.map((report: any) => {
+      if (report.type === 'episode' && report.animeId) {
+        const animeIdStr = report.animeId.toString()
+        const anime = animeMap[animeIdStr]
+        return {
+          ...report,
+          animeId: anime
+            ? { _id: anime._id, title: anime.title, thumbnail: anime.thumbnail }
+            : { _id: report.animeId, title: 'Unknown Anime', thumbnail: null }
+        }
+      }
+      return report
+    })
 
     return c.json(enrichedReports)
   } catch (err: any) {
@@ -121,10 +135,7 @@ reportRoutes.put('/:id', adminAuth, async (c) => {
 
     const body = await c.req.json()
 
-    const updateData: any = {
-      ...body,
-      updatedAt: new Date()
-    }
+    const updateData: any = { ...body }
 
     if (body.status === 'Fixed' && !body.resolvedAt) {
       updateData.resolvedAt = new Date()
