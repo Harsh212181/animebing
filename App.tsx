@@ -1,4 +1,4 @@
- // App.tsx - FINAL FIXED VERSION (with HelmetProvider + AnimeContext for no re-fetch)
+// App.tsx - FINAL FIXED VERSION (with HelmetProvider + AnimeContext for no re-fetch)
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
@@ -529,7 +529,8 @@ const MainApp: React.FC = () => {
         typingTimeoutRef.current = setTimeout(() => setTypedText(''), 3000);
       }
 
-      if (e.ctrlKey && e.shiftKey && e.altKey) {
+      // ✅ CHANGED: Ctrl + Shift + Alt + H combo to trigger admin login
+      if (e.ctrlKey && e.shiftKey && e.altKey && (e.key === 'h' || e.key === 'H')) {
         e.preventDefault();
         setAdminView('login');
         showAdminNotification();
