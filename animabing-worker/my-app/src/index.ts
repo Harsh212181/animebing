@@ -55,7 +55,7 @@ app.use('*', async (c, next) => {
   return corsMiddleware(c, next)
 })
 
-// ROUTES
+// ============ API ROUTES ============
 app.route('/api/admin', adminRoutes)
 app.route('/api/anime', animeRoutes)
 app.route('/api/episodes', episodeRoutes)
@@ -67,11 +67,16 @@ app.route('/api/link-settings', linkSettingsRoutes)
 app.route('/api/partners', partnerRoutes)
 app.route('/api/polls', pollRoutes)
 app.route('/api/reports', reportRoutes)
-app.route('/', sitemapRoutes)
 app.route('/api/social', socialRoutes)
-app.route('/go', shortenerRoutes)
 
-// TEST ROUTE
+// ============ SITEMAP ============
+app.route('/', sitemapRoutes)
+
+// ============ URL SHORTENER ============
+// go.animebing.in domain pe root pe handle hoga
+app.route('/', shortenerRoutes)
+
+// ============ HEALTH CHECK ============
 app.get('/health', (c) => {
   return c.json({
     message: 'Animabing Backend Working! 🚀',

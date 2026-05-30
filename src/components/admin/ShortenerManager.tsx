@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
-const SHORTENER_BASE = 'https://go.animebing.in/go';
+const SHORTENER_BASE = 'https://go.animebing.in';
 const getToken = () => localStorage.getItem('adminToken') || '';
 
 interface ShortLink {
