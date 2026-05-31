@@ -23,6 +23,7 @@ import Top100Page from './components/Top100Page';
 import EarnMoney from './components/EarnMoney';
 import WelcomePage from './components/WelcomePage';
 import DownloadLinkPage from './components/DownloadLinkPage';
+import UserDashboard from './components/UserDashboard'; // ✅ NEW IMPORT
 
 import { AnimeProvider } from './src/context/AnimeContext';
 
@@ -721,6 +722,13 @@ const MainApp: React.FC = () => {
               <Route path="/download/:slug" element={
                 <div className="rounded-lg overflow-hidden">
                   <DownloadLinkPage />
+                </div>
+              } />
+
+              {/* ✅ NEW USER DASHBOARD ROUTE */}
+              <Route path="/dashboard" element={
+                <div className="rounded-lg overflow-hidden glow-green-border">
+                  <UserDashboard />
                 </div>
               } />
 
