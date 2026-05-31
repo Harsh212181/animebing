@@ -61,20 +61,20 @@ const userAuth = async (c: any, next: any) => {
   await next()
 }
 
-// ============ USER LOGIN ============
+// ============ USER LOGIN (username + password) ============
 shortUserRoutes.post('/login', async (c) => {
   try {
     const { username, password } = await c.req.json()
     if (!username || !password) {
-      return c.json({ error: 'Username aur password required hai' }, 400)
+      return c.json({ error: 'Username and password are required' }, 400)
     }
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
     const user = await db.collection('shortusers').findOne({ username }) as IShortUser | null
     if (!user || user.password !== password) {
-      return c.json({ error: 'Invalid username ya password' }, 401)
+      return c.json({ error: 'Invalid username or password' }, 401)
     }
     if (!user.isActive) {
-      return c.json({ error: 'Account inactive hai. Admin se contact karo.' }, 403)
+      return c.json({ error: 'Account is inactive. Please contact admin.' }, 403)
     }
     const token = await createJWT(
       { id: user._id!.toString(), username: user.username, role: 'shortuser' },
@@ -89,7 +89,65 @@ shortUserRoutes.post('/login', async (c) => {
         totalClicks: user.totalClicks,
         totalEarnings: user.totalEarnings,
         unpaidEarnings: user.unpaidEarnings,
-        ratePerThousand: user.ratePerThousand
+        ratePerThousand: user.ratePerThousand,
+        profile: user.profile || {}
+      }
+    })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============ GMAIL LOGIN ============
+// User apni gmail se login kar sakta hai agar gmail account se linked ho
+shortUserRoutes.post('/login/gmail', async (c) => {
+  try {
+    const { gmail } = await c.req.json()
+    if (!gmail) {
+      return c.json({ error: 'Gmail address is required' }, 400)
+    }
+
+    const normalizedGmail = gmail.toLowerCase().trim()
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    // Check gmailLinked field ya profile.gmail dono mein search karo
+    const user = await db.collection('shortusers').findOne({
+      $or: [
+        { gmailLinked: normalizedGmail },
+        { 'profile.gmail': normalizedGmail }
+      ]
+    }) as IShortUser | null
+
+    if (!user) {
+      return c.json({ error: 'No account linked with this Gmail address. Please login with username and password.' }, 404)
+    }
+    if (!user.isActive) {
+      return c.json({ error: 'Account is inactive. Please contact admin.' }, 403)
+    }
+
+    // Gmail linked nahi hai to profile.gmail se link kar do automatically
+    if (!user.gmailLinked && (user.profile as any)?.gmail === normalizedGmail) {
+      await db.collection('shortusers').updateOne(
+        { _id: user._id },
+        { $set: { gmailLinked: normalizedGmail, updatedAt: new Date() } }
+      )
+    }
+
+    const token = await createJWT(
+      { id: user._id!.toString(), username: user.username, role: 'shortuser' },
+      c.env.JWT_SECRET
+    )
+    return c.json({
+      success: true,
+      token,
+      user: {
+        username: user.username,
+        realName: user.realName,
+        totalClicks: user.totalClicks,
+        totalEarnings: user.totalEarnings,
+        unpaidEarnings: user.unpaidEarnings,
+        ratePerThousand: user.ratePerThousand,
+        profile: user.profile || {}
       }
     })
   } catch (err: any) {
@@ -106,24 +164,20 @@ shortUserRoutes.get('/dashboard', userAuth, async (c) => {
     const user = await db.collection('shortusers').findOne(
       { _id: new ObjectId(id) }
     ) as IShortUser | null
-    if (!user) return c.json({ error: 'User nahi mila' }, 404)
+    if (!user) return c.json({ error: 'User not found' }, 404)
 
-    // User ke saare links
     const links = await db.collection('shortlinks')
       .find({ userId: new ObjectId(id) })
       .sort({ createdAt: -1 })
       .toArray()
 
-    // Aaj ke clicks
     const todayStart = new Date()
     todayStart.setHours(0, 0, 0, 0)
-
     const todayClicks = await db.collection('shortclicks').countDocuments({
       userId: new ObjectId(id),
       clickedAt: { $gte: todayStart }
     })
 
-    // Last 7 days clicks
     const last7Days = []
     for (let i = 6; i >= 0; i--) {
       const dayStart = new Date()
@@ -131,25 +185,43 @@ shortUserRoutes.get('/dashboard', userAuth, async (c) => {
       dayStart.setHours(0, 0, 0, 0)
       const dayEnd = new Date(dayStart)
       dayEnd.setHours(23, 59, 59, 999)
-
       const count = await db.collection('shortclicks').countDocuments({
         userId: new ObjectId(id),
         clickedAt: { $gte: dayStart, $lte: dayEnd }
       })
-
       last7Days.push({
         date: dayStart.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
         clicks: count
       })
     }
 
-    // Top countries
     const topCountries = await db.collection('shortclicks').aggregate([
       { $match: { userId: new ObjectId(id) } },
       { $group: { _id: '$country', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
       { $limit: 5 }
     ]).toArray()
+
+    // Unread messages count
+    const unreadMessages = await db.collection('shortmessages').countDocuments({
+      userId: new ObjectId(id),
+      fromAdmin: true,
+      readByUser: false
+    })
+
+    // Pending payment request
+    const pendingPaymentRequest = await db.collection('shortrequests').findOne({
+      userId: new ObjectId(id),
+      type: 'payment',
+      status: 'pending'
+    })
+
+    // Pending link request
+    const pendingLinkRequest = await db.collection('shortrequests').findOne({
+      userId: new ObjectId(id),
+      type: 'link',
+      status: 'pending'
+    })
 
     return c.json({
       user: {
@@ -160,49 +232,197 @@ shortUserRoutes.get('/dashboard', userAuth, async (c) => {
         totalEarnings: user.totalEarnings || 0,
         unpaidEarnings: user.unpaidEarnings || 0,
         paidEarnings: user.paidEarnings || 0,
-        ratePerThousand: user.ratePerThousand || 0
+        ratePerThousand: user.ratePerThousand || 0,
+        gmailLinked: user.gmailLinked || '',
+        profile: user.profile || {}
       },
       links,
       last7Days,
-      topCountries
+      topCountries,
+      unreadMessages,
+      pendingPaymentRequest: !!pendingPaymentRequest,
+      pendingLinkRequest: !!pendingLinkRequest
     })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// ============ ADMIN — USER BANAO ============
-shortUserRoutes.post('/admin/users', adminAuth, async (c) => {
+// ============ USER PROFILE UPDATE ============
+shortUserRoutes.put('/profile', userAuth, async (c) => {
   try {
-    const { username, password, realName, ratePerThousand } = await c.req.json()
-    if (!username || !password || !realName) {
-      return c.json({ error: 'username, password aur realName required hain' }, 400)
-    }
+    const { id } = c.get('shortUser')
+    const { mobile, gmail, upiId, upiPhone, age, gender } = await c.req.json()
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const existing = await db.collection('shortusers').findOne({ username })
-    if (existing) return c.json({ error: 'Yeh username already exist karta hai' }, 400)
 
-    const newUser = {
-      username,
-      password,
-      realName,
-      ratePerThousand: ratePerThousand || 10,
-      isActive: true,
-      totalClicks: 0,
-      totalEarnings: 0,
-      unpaidEarnings: 0,
-      paidEarnings: 0,
-      createdAt: new Date(),
-      updatedAt: new Date()
+    const profileData: any = {}
+    if (mobile !== undefined) profileData['profile.mobile'] = mobile
+    if (gmail !== undefined) profileData['profile.gmail'] = gmail
+    if (upiId !== undefined) profileData['profile.upiId'] = upiId
+    if (upiPhone !== undefined) profileData['profile.upiPhone'] = upiPhone
+    if (age !== undefined) profileData['profile.age'] = age
+    if (gender !== undefined) profileData['profile.gender'] = gender
+
+    // Gmail update hone par gmailLinked bhi update karo for login support
+    if (gmail) {
+      profileData['gmailLinked'] = gmail.toLowerCase().trim()
     }
-    await db.collection('shortusers').insertOne(newUser)
-    return c.json({ success: true, message: 'User ban gaya!', user: { ...newUser, password: '***' } })
+
+    profileData['updatedAt'] = new Date()
+
+    await db.collection('shortusers').updateOne(
+      { _id: new ObjectId(id) },
+      { $set: profileData }
+    )
+    return c.json({ success: true, message: 'Profile updated successfully!' })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// ============ ADMIN — SAARE USERS DEKHO ============
+// ============ PAYMENT REQUEST — USER ============
+shortUserRoutes.post('/request/payment', userAuth, async (c) => {
+  try {
+    const { id, username } = c.get('shortUser')
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const user = await db.collection('shortusers').findOne(
+      { _id: new ObjectId(id) }
+    ) as IShortUser | null
+    if (!user) return c.json({ error: 'User not found' }, 404)
+
+    if ((user.totalClicks || 0) < 1000) {
+      return c.json({
+        error: `You have ${user.totalClicks || 0} clicks. 1000 clicks are required to request payment.`
+      }, 400)
+    }
+
+    if ((user.unpaidEarnings || 0) <= 0) {
+      return c.json({ error: 'No pending payment available.' }, 400)
+    }
+
+    // Profile check — UPI details required
+    const profile = (user as any).profile || {}
+    if (!profile.upiId && !profile.upiPhone) {
+      return c.json({ error: 'Please update your UPI ID or UPI Phone in your profile before requesting payment.' }, 400)
+    }
+
+    // Check existing pending request
+    const existing = await db.collection('shortrequests').findOne({
+      userId: new ObjectId(id),
+      type: 'payment',
+      status: 'pending'
+    })
+    if (existing) {
+      return c.json({ error: 'A payment request is already pending.' }, 400)
+    }
+
+    await db.collection('shortrequests').insertOne({
+      userId: new ObjectId(id),
+      username,
+      realName: user.realName,
+      type: 'payment',
+      status: 'pending',
+      amount: user.unpaidEarnings,
+      profile: (user as any).profile || {},
+      createdAt: new Date()
+    })
+
+    return c.json({ success: true, message: 'Payment request sent! Admin will process it soon.' })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============ LINK REQUEST — USER ============
+shortUserRoutes.post('/request/link', userAuth, async (c) => {
+  try {
+    const { id, username } = c.get('shortUser')
+    const { message } = await c.req.json()
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const user = await db.collection('shortusers').findOne(
+      { _id: new ObjectId(id) }
+    ) as IShortUser | null
+    if (!user) return c.json({ error: 'User not found' }, 404)
+
+    const existing = await db.collection('shortrequests').findOne({
+      userId: new ObjectId(id),
+      type: 'link',
+      status: 'pending'
+    })
+    if (existing) {
+      return c.json({ error: 'A link request is already pending.' }, 400)
+    }
+
+    await db.collection('shortrequests').insertOne({
+      userId: new ObjectId(id),
+      username,
+      realName: user.realName,
+      type: 'link',
+      status: 'pending',
+      message: message || 'I need more links',
+      createdAt: new Date()
+    })
+
+    return c.json({ success: true, message: 'Link request sent! Admin will process it soon.' })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============ MESSAGES — USER VIEW ============
+shortUserRoutes.get('/messages', userAuth, async (c) => {
+  try {
+    const { id } = c.get('shortUser')
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const messages = await db.collection('shortmessages')
+      .find({ userId: new ObjectId(id) })
+      .sort({ createdAt: 1 })
+      .limit(50)
+      .toArray()
+
+    // Mark admin messages as read
+    await db.collection('shortmessages').updateMany(
+      { userId: new ObjectId(id), fromAdmin: true, readByUser: false },
+      { $set: { readByUser: true } }
+    )
+
+    return c.json(messages)
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============ MESSAGES — USER SEND ============
+shortUserRoutes.post('/messages', userAuth, async (c) => {
+  try {
+    const { id, username } = c.get('shortUser')
+    const { text } = await c.req.json()
+    if (!text?.trim()) return c.json({ error: 'Message cannot be empty' }, 400)
+
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const user = await db.collection('shortusers').findOne({ _id: new ObjectId(id) }) as IShortUser | null
+
+    await db.collection('shortmessages').insertOne({
+      userId: new ObjectId(id),
+      username,
+      realName: user?.realName || username,
+      text: text.trim(),
+      fromAdmin: false,
+      readByAdmin: false,
+      readByUser: true,
+      createdAt: new Date()
+    })
+
+    return c.json({ success: true, message: 'Message sent!' })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============ ADMIN — ALL USERS ============
 shortUserRoutes.get('/admin/users', adminAuth, async (c) => {
   try {
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -210,13 +430,44 @@ shortUserRoutes.get('/admin/users', adminAuth, async (c) => {
       .find({})
       .sort({ createdAt: -1 })
       .toArray()
-    return c.json(users.map((u: any) => ({ ...u, password: '***' })))
+    return c.json(users)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// ============ ADMIN — USER UPDATE KARO ============
+// ============ ADMIN — CREATE USER ============
+shortUserRoutes.post('/admin/users', adminAuth, async (c) => {
+  try {
+    const { username, password, realName, ratePerThousand } = await c.req.json()
+    if (!username || !password || !realName) {
+      return c.json({ error: 'username, password and realName are required' }, 400)
+    }
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const existing = await db.collection('shortusers').findOne({ username })
+    if (existing) return c.json({ error: 'This username already exists' }, 400)
+
+    const newUser = {
+      username, password, realName,
+      ratePerThousand: ratePerThousand || 10,
+      isActive: true,
+      totalClicks: 0,
+      totalEarnings: 0,
+      unpaidEarnings: 0,
+      paidEarnings: 0,
+      gmailLinked: '',
+      profile: {},
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }
+    await db.collection('shortusers').insertOne(newUser)
+    return c.json({ success: true, message: 'User created!', user: newUser })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============ ADMIN — UPDATE USER ============
 shortUserRoutes.put('/admin/users/:id', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
@@ -233,13 +484,13 @@ shortUserRoutes.put('/admin/users/:id', adminAuth, async (c) => {
       { _id: new ObjectId(id) },
       { $set: updateData }
     )
-    return c.json({ success: true, message: 'User update ho gaya!' })
+    return c.json({ success: true, message: 'User updated!' })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// ============ ADMIN — PAYMENT MARK KARO ============
+// ============ ADMIN — MARK PAYMENT DONE ============
 shortUserRoutes.post('/admin/users/:id/pay', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
@@ -249,20 +500,16 @@ shortUserRoutes.post('/admin/users/:id/pay', adminAuth, async (c) => {
     const user = await db.collection('shortusers').findOne(
       { _id: new ObjectId(id) }
     ) as IShortUser | null
-    if (!user) return c.json({ error: 'User nahi mila' }, 404)
+    if (!user) return c.json({ error: 'User not found' }, 404)
 
     await db.collection('shortusers').updateOne(
       { _id: new ObjectId(id) },
       {
-        $inc: {
-          paidEarnings: amount,
-          unpaidEarnings: -amount
-        },
+        $inc: { paidEarnings: amount, unpaidEarnings: -amount },
         $set: { updatedAt: new Date() }
       }
     )
 
-    // Payment history save karo
     await db.collection('payments').insertOne({
       userId: new ObjectId(id),
       username: user.username,
@@ -272,13 +519,187 @@ shortUserRoutes.post('/admin/users/:id/pay', adminAuth, async (c) => {
       paidAt: new Date()
     })
 
-    return c.json({ success: true, message: `₹${amount} payment mark ho gaya!` })
+    // Close pending payment request
+    await db.collection('shortrequests').updateMany(
+      { userId: new ObjectId(id), type: 'payment', status: 'pending' },
+      { $set: { status: 'done', updatedAt: new Date() } }
+    )
+
+    // Notify user via message
+    await db.collection('shortmessages').insertOne({
+      userId: new ObjectId(id),
+      username: user.username,
+      realName: user.realName,
+      text: `✅ Your ₹${amount} payment has been processed! ${note ? `Note: ${note}` : ''}`,
+      fromAdmin: true,
+      readByAdmin: true,
+      readByUser: false,
+      createdAt: new Date()
+    })
+
+    return c.json({ success: true, message: `₹${amount} payment marked!` })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// ============ ADMIN — SAARE STATS ============
+// ============ ADMIN — ALL REQUESTS ============
+shortUserRoutes.get('/admin/requests', adminAuth, async (c) => {
+  try {
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const requests = await db.collection('shortrequests')
+      .find({})
+      .sort({ createdAt: -1 })
+      .toArray()
+    return c.json(requests)
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============ ADMIN — UPDATE REQUEST STATUS ============
+shortUserRoutes.put('/admin/requests/:id', adminAuth, async (c) => {
+  try {
+    const id = c.req.param('id')
+    const { status } = await c.req.json()
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    await db.collection('shortrequests').updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { status, updatedAt: new Date() } }
+    )
+    return c.json({ success: true, message: 'Request updated!' })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============ ADMIN — MESSAGES FOR A USER ============
+shortUserRoutes.get('/admin/messages/:userId', adminAuth, async (c) => {
+  try {
+    const userId = c.req.param('userId')
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const messages = await db.collection('shortmessages')
+      .find({ userId: new ObjectId(userId) })
+      .sort({ createdAt: 1 })
+      .toArray()
+
+    // Mark user messages as read by admin
+    await db.collection('shortmessages').updateMany(
+      { userId: new ObjectId(userId), fromAdmin: false, readByAdmin: false },
+      { $set: { readByAdmin: true } }
+    )
+
+    return c.json(messages)
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============ ADMIN — SEND MESSAGE TO USER ============
+shortUserRoutes.post('/admin/messages/:userId', adminAuth, async (c) => {
+  try {
+    const userId = c.req.param('userId')
+    const { text } = await c.req.json()
+    if (!text?.trim()) return c.json({ error: 'Message cannot be empty' }, 400)
+
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const user = await db.collection('shortusers').findOne(
+      { _id: new ObjectId(userId) }
+    ) as IShortUser | null
+    if (!user) return c.json({ error: 'User not found' }, 404)
+
+    await db.collection('shortmessages').insertOne({
+      userId: new ObjectId(userId),
+      username: user.username,
+      realName: user.realName,
+      text: text.trim(),
+      fromAdmin: true,
+      readByAdmin: true,
+      readByUser: false,
+      createdAt: new Date()
+    })
+
+    return c.json({ success: true, message: 'Message sent!' })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============ ADMIN — CREATE LINK FOR USER ============
+shortUserRoutes.post('/admin/users/:id/create-link', adminAuth, async (c) => {
+  try {
+    const userId = c.req.param('id')
+    const { code, url, label } = await c.req.json()
+
+    if (!code || !url) {
+      return c.json({ error: 'code and url are required' }, 400)
+    }
+    if (!/^[a-zA-Z0-9-_]+$/.test(code)) {
+      return c.json({ error: 'Code can only contain letters, numbers, - and _' }, 400)
+    }
+
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const user = await db.collection('shortusers').findOne(
+      { _id: new ObjectId(userId) }
+    ) as IShortUser | null
+    if (!user) return c.json({ error: 'User not found' }, 404)
+
+    const existing = await db.collection('shortlinks').findOne({ code })
+    if (existing) return c.json({ error: `"${code}" already exists` }, 400)
+
+    const newLink = {
+      code,
+      url,
+      label: label || code,
+      userId: new ObjectId(userId),
+      clicks: 0,
+      createdAt: new Date(),
+      lastClicked: null
+    }
+
+    await db.collection('shortlinks').insertOne(newLink)
+
+    // Close pending link request
+    await db.collection('shortrequests').updateMany(
+      { userId: new ObjectId(userId), type: 'link', status: 'pending' },
+      { $set: { status: 'done', updatedAt: new Date() } }
+    )
+
+    // Notify user
+    await db.collection('shortmessages').insertOne({
+      userId: new ObjectId(userId),
+      username: user.username,
+      realName: user.realName,
+      text: `🔗 New link assigned: go.animebing.in/${code} — Label: ${label || code}`,
+      fromAdmin: true,
+      readByAdmin: true,
+      readByUser: false,
+      createdAt: new Date()
+    })
+
+    return c.json({ success: true, message: `Link created and assigned to ${user.realName}!`, link: newLink })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============ ADMIN — UNREAD MESSAGE COUNT ============
+shortUserRoutes.get('/admin/messages-count', adminAuth, async (c) => {
+  try {
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const unread = await db.collection('shortmessages').countDocuments({
+      fromAdmin: false,
+      readByAdmin: false
+    })
+    return c.json({ unread })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============ ADMIN — OVERALL STATS ============
 shortUserRoutes.get('/admin/stats', adminAuth, async (c) => {
   try {
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -293,7 +714,6 @@ shortUserRoutes.get('/admin/stats', adminAuth, async (c) => {
       clickedAt: { $gte: todayStart }
     })
 
-    // Last 7 days
     const last7Days = []
     for (let i = 6; i >= 0; i--) {
       const dayStart = new Date()
@@ -310,20 +730,22 @@ shortUserRoutes.get('/admin/stats', adminAuth, async (c) => {
       })
     }
 
-    // Top countries
     const topCountries = await db.collection('shortclicks').aggregate([
       { $group: { _id: '$country', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
       { $limit: 10 }
     ]).toArray()
 
-    // Unpaid total
     const unpaidResult = await db.collection('shortusers').aggregate([
       { $group: { _id: null, total: { $sum: '$unpaidEarnings' } } }
     ]).toArray()
     const totalUnpaid = unpaidResult[0]?.total || 0
 
-    // All users with stats
+    const pendingRequests = await db.collection('shortrequests').countDocuments({ status: 'pending' })
+    const unreadMessages = await db.collection('shortmessages').countDocuments({
+      fromAdmin: false, readByAdmin: false
+    })
+
     const users = await db.collection('shortusers')
       .find({})
       .sort({ totalClicks: -1 })
@@ -335,9 +757,11 @@ shortUserRoutes.get('/admin/stats', adminAuth, async (c) => {
       totalClicks,
       todayClicks,
       totalUnpaid,
+      pendingRequests,
+      unreadMessages,
       last7Days,
       topCountries,
-      users: users.map((u: any) => ({ ...u, password: '***' }))
+      users
     })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)

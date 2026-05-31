@@ -240,6 +240,16 @@ export interface IAnalytics {
   updatedAt?: Date
 }
 
+// ============ SHORT USER PROFILE ============
+export interface IShortUserProfile {
+  mobile?: string
+  gmail?: string
+  upiId?: string
+  upiPhone?: string
+  age?: number
+  gender?: 'Male' | 'Female' | 'Other' | ''
+}
+
 // ============ SHORT USER ============
 export interface IShortUser {
   _id?: ObjectId
@@ -252,6 +262,9 @@ export interface IShortUser {
   totalEarnings: number
   unpaidEarnings: number
   paidEarnings: number
+  // Gmail OAuth login support
+  gmailLinked?: string        // linked gmail address
+  profile?: IShortUserProfile
   createdAt?: Date
   updatedAt?: Date
 }
@@ -293,4 +306,34 @@ export interface IPayment {
   amount: number
   note?: string
   paidAt: Date
+}
+
+// ============ SHORT REQUEST ============
+export interface IShortRequest {
+  _id?: ObjectId
+  userId: ObjectId
+  username: string
+  realName: string
+  type: 'payment' | 'link'
+  status: 'pending' | 'done' | 'rejected'
+  // Payment request fields
+  amount?: number
+  profile?: IShortUserProfile
+  // Link request fields
+  message?: string
+  createdAt?: Date
+  updatedAt?: Date
+}
+
+// ============ SHORT MESSAGE ============
+export interface IShortMessage {
+  _id?: ObjectId
+  userId: ObjectId
+  username: string
+  realName: string
+  text: string
+  fromAdmin: boolean
+  readByAdmin: boolean
+  readByUser: boolean
+  createdAt?: Date
 }
