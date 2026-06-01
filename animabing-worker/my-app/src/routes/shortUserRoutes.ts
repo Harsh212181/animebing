@@ -283,7 +283,7 @@ shortUserRoutes.put('/profile', userAuth, async (c) => {
   }
 })
 
-// ============ USER SELF-CREATE LINK ============
+// ============ USER SELF-CREATE LINK (FIXED) ============
 shortUserRoutes.post('/create-link', userAuth, async (c) => {
   try {
     const { id, username } = c.get('shortUser')
@@ -304,8 +304,11 @@ shortUserRoutes.post('/create-link', userAuth, async (c) => {
       return c.json({ error: 'Aapko link create karne ki permission nahi hai. Admin se contact karo.' }, 403)
     }
 
-    let finalCode = customCode?.trim()
-    if (finalCode) {
+    // ✅ declare at top, assign later
+    let finalCode: string
+
+    if (customCode?.trim()) {
+      finalCode = customCode.trim()
       if (!/^[a-zA-Z0-9-_]+$/.test(finalCode)) {
         return c.json({ error: 'Code mein sirf letters, numbers, - aur _ use kar sakte hain.' }, 400)
       }
@@ -317,7 +320,6 @@ shortUserRoutes.post('/create-link', userAuth, async (c) => {
         return c.json({ error: `"${finalCode}" code already use ho chuka hai. Koi aur code try karo.` }, 400)
       }
     } else {
-      // ✅ Use label as slug (label or animeTitle)
       const baseLabel = label?.trim() || animeTitle || 'link'
       const slug = baseLabel
         .toLowerCase()
@@ -325,10 +327,11 @@ shortUserRoutes.post('/create-link', userAuth, async (c) => {
         .replace(/[^a-z0-9-]/g, '')
         .substring(0, 50)
 
-      let finalCode = slug
+      // ✅ assign to the outer variable, do NOT redeclare with 'let'
+      finalCode = slug
       let counter = 1
       while (await db.collection('shortlinks').findOne({ code: finalCode })) {
-        finalCode = `${slug}-${counter}`
+        finalCode = `${slug}-${counter}`  // ✅ no 'let' here
         counter++
       }
     }

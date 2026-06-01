@@ -303,7 +303,7 @@ const UserDashboard: React.FC = () => {
   );
 };
 
-// ─── Login Form (unchanged) ────────────────────────────────────
+// ─── Login Form ────────────────────────────────────
 const LoginForm: React.FC<{ onLogin: (cred: any) => void; loginError: string }> = ({ onLogin, loginError }) => {
   const [loginMode, setLoginMode] = useState<'password' | 'gmail'>('password');
   const [username, setUsername] = useState('');
@@ -348,7 +348,7 @@ const LoginForm: React.FC<{ onLogin: (cred: any) => void; loginError: string }> 
   );
 };
 
-// ─── Chart Component (unchanged) ──────────────────────────────
+// ─── Chart Component ──────────────────────────────
 const ClicksLineChart: React.FC<{ data: Array<{ date: string; clicks: number }> }> = ({ data }) => {
   const [hoverPoint, setHoverPoint] = useState<{ index: number; x: number; y: number } | null>(null);
   const chartRef = useRef<SVGSVGElement>(null);
@@ -397,7 +397,7 @@ const ClicksLineChart: React.FC<{ data: Array<{ date: string; clicks: number }> 
   );
 };
 
-// ─── Overview Tab (unchanged) ──────────────────────────────────
+// ─── Overview Tab ──────────────────────────────────
 const OverviewTab: React.FC<{ data: DashboardData; onRefresh: () => void; onToast: any }> = ({ data, onRefresh, onToast }) => {
   const { user, last7Days, topCountries } = data;
   const canPayRequest = (user.totalClicks || 0) >= 1000 && (user.unpaidEarnings || 0) > 0;
@@ -492,21 +492,21 @@ const OverviewTab: React.FC<{ data: DashboardData; onRefresh: () => void; onToas
   );
 };
 
-// ─── Links Tab (with null-safety & truncation) ─────────────────
+// ─── Links Tab (WITH NULL SAFETY FIX) ─────────────────────
 const LinksTab: React.FC<{ links: DashboardData['links']; onToast: any }> = ({ links, onToast }) => {
   const copyLink = (code: string) => {
     navigator.clipboard.writeText(`https://go.animebing.in/${code}`);
     onToast('Link copied to clipboard', 'success');
   };
 
-  // safe code display helper
+  // 🛡️ SAFE: handles null/undefined codes
   const displayCode = (code: string | null | undefined): string => {
     if (!code) return '—';
-    if (code.length > 20) return code.substring(0, 17) + '...';
+    if (code.length > 15) return code.substring(0, 15) + '...';
     return code;
   };
 
-  // filter out links with missing code (or you can still show them with fallback)
+  // filter out links that are missing a code
   const validLinks = links.filter(link => link && link.code);
 
   return (
@@ -517,66 +517,78 @@ const LinksTab: React.FC<{ links: DashboardData['links']; onToast: any }> = ({ l
           No links assigned yet. Request a link from the Requests tab.
         </div>
       ) : (
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50/80 border-b border-gray-200">
-                <tr>
-                  <th className="text-left p-4 text-xs font-semibold text-gray-500 uppercase">Short URL</th>
-                  <th className="text-left p-4 text-xs font-semibold text-gray-500 uppercase">Label</th>
-                  <th className="text-left p-4 text-xs font-semibold text-gray-500 uppercase">Clicks</th>
-                  <th className="text-left p-4 text-xs font-semibold text-gray-500 uppercase">Last Click</th>
-                  <th className="text-left p-4 text-xs font-semibold text-gray-500 uppercase">Copy</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {validLinks.map(link => (
-                  <tr key={link.code} className="hover:bg-gray-50/80 transition">
-                    <td className="p-4">
-                      <div
-                        className="max-w-[200px] truncate text-indigo-600 font-mono text-sm"
-                        title={`go.animebing.in/${link.code}`}
-                      >
-                        {displayCode(link.code)}
-                      </div>
-                    </td>
-                    <td className="p-4">
-                      <div className="max-w-[150px] truncate text-gray-600" title={link.label || '—'}>
-                        {link.label || '—'}
-                      </div>
-                    </td>
-                    <td className="p-4">
-                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                        link.clicks > 100 ? 'bg-emerald-100 text-emerald-700' :
-                        link.clicks > 10 ? 'bg-amber-100 text-amber-700' :
-                        'bg-gray-100 text-gray-600'
-                      }`}>
-                        {link.clicks || 0}
+        <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto">
+          <table className="w-full text-sm table-fixed sm:table-auto">
+            <thead className="bg-gray-50/80 border-b border-gray-200">
+              <tr>
+                <th className="text-left p-2 sm:p-4 text-xs font-semibold text-gray-500 uppercase w-[45%] sm:w-auto">
+                  Short URL
+                </th>
+                <th className="text-left p-2 sm:p-4 text-xs font-semibold text-gray-500 uppercase w-[30%] sm:w-auto">
+                  Label
+                </th>
+                <th className="text-left p-2 sm:p-4 text-xs font-semibold text-gray-500 uppercase w-[15%] sm:w-auto">
+                  Clicks
+                </th>
+                <th className="text-left p-2 sm:p-4 text-xs font-semibold text-gray-500 uppercase hidden sm:table-cell sm:w-auto">
+                  Last Click
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {validLinks.map((link) => (
+                <tr key={link.code} className="hover:bg-gray-50/80 transition">
+                  <td className="p-2 sm:p-4">
+                    <div className="flex items-center gap-1 sm:gap-2">
+                      {/* Mobile: truncated code */}
+                      <span className="sm:hidden text-indigo-600 font-mono text-xs truncate" title={`go.animebing.in/${link.code}`}>
+                        go.animebing.in/{displayCode(link.code)}
                       </span>
-                    </td>
-                    <td className="p-4 text-gray-500 text-xs">
-                      {link.lastClicked ? new Date(link.lastClicked).toLocaleDateString('en-IN') : 'Never'}
-                    </td>
-                    <td className="p-4">
+                      {/* Desktop: full code */}
+                      <span className="hidden sm:inline text-indigo-600 font-mono text-sm break-all" title={`go.animebing.in/${link.code}`}>
+                        go.animebing.in/{link.code}
+                      </span>
                       <button
                         onClick={() => copyLink(link.code)}
-                        className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-200 transition"
+                        className="px-2 py-0.5 sm:py-1 bg-gray-100 text-gray-600 rounded text-xs font-medium hover:bg-gray-200 transition flex-shrink-0"
                       >
                         Copy
                       </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </div>
+                  </td>
+                  <td className="p-2 sm:p-4 text-gray-600 text-xs sm:text-sm truncate max-w-[120px] sm:overflow-visible sm:whitespace-normal sm:max-w-none"
+                    title={link.label || ''}>
+                    {link.label || '—'}
+                  </td>
+                  <td className="p-2 sm:p-4">
+                    <span
+                      className={`px-2 py-0.5 sm:py-1 rounded-full text-xs font-semibold ${
+                        link.clicks > 100
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : link.clicks > 10
+                          ? 'bg-amber-100 text-amber-700'
+                          : 'bg-gray-100 text-gray-600'
+                      }`}
+                    >
+                      {link.clicks || 0}
+                    </span>
+                  </td>
+                  <td className="p-2 sm:p-4 text-gray-500 text-xs hidden sm:table-cell">
+                    {link.lastClicked
+                      ? new Date(link.lastClicked).toLocaleDateString('en-IN')
+                      : 'Never'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
   );
 };
 
-// ─── Profile Tab (unchanged) ──────────────────────────────────
+// ─── Profile Tab ──────────────────────────────────
 const ProfileTab: React.FC<{ user: any; onProfileUpdate: () => void; token: string; onToast: any; avatarId: number | null; name: string; onOpenAvatarPicker: () => void }> = ({ user, onProfileUpdate, token, onToast, avatarId, name, onOpenAvatarPicker }) => {
   const [form, setForm] = useState({
     mobile: user.profile?.mobile || '', gmail: user.profile?.gmail || '', upiId: user.profile?.upiId || '',
@@ -716,7 +728,7 @@ const MessagesTab: React.FC<{ token: string; onRead: () => void; onToast: any; u
   );
 };
 
-// ─── Requests Tab (unchanged) ──────────────────────────────────
+// ─── Requests Tab ──────────────────────────────────
 const RequestsTab: React.FC<{ data: DashboardData; onRefresh: () => void; token: string; onToast: any }> = ({ data, onRefresh, token, onToast }) => {
   const [linkMsg, setLinkMsg] = useState('');
 
@@ -785,7 +797,7 @@ const RequestsTab: React.FC<{ data: DashboardData; onRefresh: () => void; token:
   );
 };
 
-// ─── Create Link Tab (unchanged) ──────────────────────────────
+// ─── Create Link Tab ──────────────────────────────
 const CreateLinkTab: React.FC<{ token: string; onRefresh: () => void; onToast: any }> = ({ token, onRefresh, onToast }) => {
   const [animeList, setAnimeList] = useState<AnimeItem[]>([]);
   const [animeSearch, setAnimeSearch] = useState('');
