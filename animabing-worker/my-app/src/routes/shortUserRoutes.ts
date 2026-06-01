@@ -1,4 +1,4 @@
- import { Hono } from 'hono'
+import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { getDb } from '../services/mongoService'
 import { adminAuth } from '../middleware/auth'
@@ -177,12 +177,10 @@ shortUserRoutes.get('/dashboard', userAuth, async (c) => {
       clickedAt: { $gte: todayStart }
     })
 
-    // ── current month clicks (day by day) ────────────────
-    const now = new Date()
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-    const last7Days = []   // keeps the same name so frontend doesn't break
-    for (let d = new Date(monthStart); d <= now; d.setDate(d.getDate() + 1)) {
-      const dayStart = new Date(d)
+    const last7Days = []
+    for (let i = 6; i >= 0; i--) {
+      const dayStart = new Date()
+      dayStart.setDate(dayStart.getDate() - i)
       dayStart.setHours(0, 0, 0, 0)
       const dayEnd = new Date(dayStart)
       dayEnd.setHours(23, 59, 59, 999)
@@ -239,7 +237,7 @@ shortUserRoutes.get('/dashboard', userAuth, async (c) => {
         avatarId: (user as any).avatarId || null,
       },
       links,
-      last7Days,                // still called last7Days to keep frontend working
+      last7Days,
       topCountries,
       unreadMessages,
       pendingPaymentRequest: !!pendingPaymentRequest,
@@ -285,7 +283,7 @@ shortUserRoutes.put('/profile', userAuth, async (c) => {
   }
 })
 
-// ============ USER SELF-CREATE LINK (label‑based code) ============
+// ============ USER SELF-CREATE LINK ============
 shortUserRoutes.post('/create-link', userAuth, async (c) => {
   try {
     const { id, username } = c.get('shortUser')

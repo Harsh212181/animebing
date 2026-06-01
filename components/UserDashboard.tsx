@@ -123,7 +123,6 @@ const UserDashboard: React.FC = () => {
 
   useEffect(() => { if (token) loadDashboard(); }, [token]);
 
-  // ✅ Sync avatar from backend on dashboard load
   useEffect(() => {
     if (dashData?.user?.avatarId) {
       const backendId = dashData.user.avatarId;
@@ -169,7 +168,6 @@ const UserDashboard: React.FC = () => {
     setToken(null); setDashData(null);
   };
 
-  // ✅ Updated: save to backend when avatar changes
   const handleAvatarSelect = async (id: number) => {
     setAvatarId(id);
     localStorage.setItem('userAvatarId', String(id));
@@ -183,7 +181,7 @@ const UserDashboard: React.FC = () => {
         body: JSON.stringify({ avatarId: id })
       });
     } catch {
-      // silent fail – avatar is at least saved in localStorage
+      // silent fail
     }
   };
 
@@ -214,7 +212,6 @@ const UserDashboard: React.FC = () => {
       {/* Header */}
       <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-gray-200/80 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          {/* Brand only - user name removed */}
           <div>
             <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent leading-tight">
               AnimaBing
@@ -222,7 +219,6 @@ const UserDashboard: React.FC = () => {
             <p className="text-xs text-gray-500">Creator Dashboard</p>
           </div>
 
-          {/* Hamburger – visible only on mobile */}
           <button
             onClick={() => setMenuOpen(!menuOpen)}
             className="p-1.5 rounded-lg text-gray-600 hover:bg-gray-100 transition sm:hidden"
@@ -232,7 +228,6 @@ const UserDashboard: React.FC = () => {
           </button>
         </div>
 
-        {/* Desktop navigation bar (hidden on mobile) */}
         <nav className="hidden sm:block max-w-7xl mx-auto px-4 pb-2 overflow-x-auto">
           <div className="flex gap-6">
             {tabs.map(tab => (
@@ -256,10 +251,8 @@ const UserDashboard: React.FC = () => {
           </div>
         </nav>
 
-        {/* Mobile drawer */}
         {menuOpen && (
           <div className="sm:hidden bg-white border-t border-gray-100 shadow-lg px-4 py-3 space-y-1">
-            {/* Avatar section inside menu */}
             <div className="flex items-center gap-3 px-3 py-3 mb-2 bg-indigo-50 rounded-xl border border-indigo-100">
               <button onClick={() => { setShowAvatarPicker(true); }} className="focus:outline-none" title="Change avatar">
                 <AvatarDisplay avatarId={avatarId} name={name} size={44} />
@@ -286,7 +279,6 @@ const UserDashboard: React.FC = () => {
         )}
       </header>
 
-      {/* Main */}
       <main className="max-w-7xl mx-auto p-4 sm:p-6">
         {activeTab === 'overview' && <OverviewTab data={dashData} onRefresh={loadDashboard} onToast={showToast} />}
         {activeTab === 'links' && <LinksTab links={dashData.links} onToast={showToast} />}
@@ -296,12 +288,10 @@ const UserDashboard: React.FC = () => {
         {activeTab === 'create' && showCreateTab && <CreateLinkTab token={token!} onRefresh={loadDashboard} onToast={showToast} />}
       </main>
 
-      {/* Avatar Picker */}
       {showAvatarPicker && (
         <AvatarPicker current={avatarId} onSelect={handleAvatarSelect} onClose={() => setShowAvatarPicker(false)} />
       )}
 
-      {/* Toast */}
       {toastMsg && (
         <div className="fixed bottom-6 right-6 z-50">
           <div className={`px-4 py-2.5 rounded-xl text-sm shadow-lg font-medium ${toastMsg.type === 'success' ? 'bg-emerald-50 border border-emerald-200 text-emerald-800' : 'bg-red-50 border border-red-200 text-red-800'}`}>
@@ -502,96 +492,91 @@ const OverviewTab: React.FC<{ data: DashboardData; onRefresh: () => void; onToas
   );
 };
 
-// ─── Links Tab (responsive: full on desktop, truncated on mobile) ──────
+// ─── Links Tab (with null-safety & truncation) ─────────────────
 const LinksTab: React.FC<{ links: DashboardData['links']; onToast: any }> = ({ links, onToast }) => {
   const copyLink = (code: string) => {
     navigator.clipboard.writeText(`https://go.animebing.in/${code}`);
     onToast('Link copied to clipboard', 'success');
   };
 
-  const displayCode = (code: string) =>
-    code.length > 15 ? code.substring(0, 15) + '...' : code;
+  // safe code display helper
+  const displayCode = (code: string | null | undefined): string => {
+    if (!code) return '—';
+    if (code.length > 20) return code.substring(0, 17) + '...';
+    return code;
+  };
+
+  // filter out links with missing code (or you can still show them with fallback)
+  const validLinks = links.filter(link => link && link.code);
 
   return (
     <div>
       <h2 className="text-xl font-semibold text-gray-800 mb-5">My Short Links</h2>
-      {links.length === 0 ? (
+      {validLinks.length === 0 ? (
         <div className="bg-white border border-gray-200 rounded-xl p-8 text-center text-gray-500 shadow-sm">
           No links assigned yet. Request a link from the Requests tab.
         </div>
       ) : (
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto">
-          <table className="w-full text-sm table-fixed sm:table-auto">
-            <thead className="bg-gray-50/80 border-b border-gray-200">
-              <tr>
-                <th className="text-left p-2 sm:p-4 text-xs font-semibold text-gray-500 uppercase w-[45%] sm:w-auto">
-                  Short URL
-                </th>
-                <th className="text-left p-2 sm:p-4 text-xs font-semibold text-gray-500 uppercase w-[30%] sm:w-auto">
-                  Label
-                </th>
-                <th className="text-left p-2 sm:p-4 text-xs font-semibold text-gray-500 uppercase w-[15%] sm:w-auto">
-                  Clicks
-                </th>
-                <th className="text-left p-2 sm:p-4 text-xs font-semibold text-gray-500 uppercase hidden sm:table-cell sm:w-auto">
-                  Last Click
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {links.map((link) => (
-                <tr key={link.code} className="hover:bg-gray-50/80 transition">
-                  <td className="p-2 sm:p-4">
-                    <div className="flex items-center gap-1 sm:gap-2">
-                      {/* Mobile: truncated code */}
-                      <span className="sm:hidden text-indigo-600 font-mono text-xs truncate" title={`go.animebing.in/${link.code}`}>
-                        go.animebing.in/{displayCode(link.code)}
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50/80 border-b border-gray-200">
+                <tr>
+                  <th className="text-left p-4 text-xs font-semibold text-gray-500 uppercase">Short URL</th>
+                  <th className="text-left p-4 text-xs font-semibold text-gray-500 uppercase">Label</th>
+                  <th className="text-left p-4 text-xs font-semibold text-gray-500 uppercase">Clicks</th>
+                  <th className="text-left p-4 text-xs font-semibold text-gray-500 uppercase">Last Click</th>
+                  <th className="text-left p-4 text-xs font-semibold text-gray-500 uppercase">Copy</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {validLinks.map(link => (
+                  <tr key={link.code} className="hover:bg-gray-50/80 transition">
+                    <td className="p-4">
+                      <div
+                        className="max-w-[200px] truncate text-indigo-600 font-mono text-sm"
+                        title={`go.animebing.in/${link.code}`}
+                      >
+                        {displayCode(link.code)}
+                      </div>
+                    </td>
+                    <td className="p-4">
+                      <div className="max-w-[150px] truncate text-gray-600" title={link.label || '—'}>
+                        {link.label || '—'}
+                      </div>
+                    </td>
+                    <td className="p-4">
+                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                        link.clicks > 100 ? 'bg-emerald-100 text-emerald-700' :
+                        link.clicks > 10 ? 'bg-amber-100 text-amber-700' :
+                        'bg-gray-100 text-gray-600'
+                      }`}>
+                        {link.clicks || 0}
                       </span>
-                      {/* Desktop: full code */}
-                      <span className="hidden sm:inline text-indigo-600 font-mono text-sm break-all" title={`go.animebing.in/${link.code}`}>
-                        go.animebing.in/{link.code}
-                      </span>
+                    </td>
+                    <td className="p-4 text-gray-500 text-xs">
+                      {link.lastClicked ? new Date(link.lastClicked).toLocaleDateString('en-IN') : 'Never'}
+                    </td>
+                    <td className="p-4">
                       <button
                         onClick={() => copyLink(link.code)}
-                        className="px-2 py-0.5 sm:py-1 bg-gray-100 text-gray-600 rounded text-xs font-medium hover:bg-gray-200 transition flex-shrink-0"
+                        className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-xs font-medium hover:bg-gray-200 transition"
                       >
                         Copy
                       </button>
-                    </div>
-                  </td>
-                  <td className="p-2 sm:p-4 text-gray-600 text-xs sm:text-sm truncate max-w-[120px] sm:overflow-visible sm:whitespace-normal sm:max-w-none"
-                    title={link.label || ''}>
-                    {link.label || '—'}
-                  </td>
-                  <td className="p-2 sm:p-4">
-                    <span
-                      className={`px-2 py-0.5 sm:py-1 rounded-full text-xs font-semibold ${
-                        link.clicks > 100
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : link.clicks > 10
-                          ? 'bg-amber-100 text-amber-700'
-                          : 'bg-gray-100 text-gray-600'
-                      }`}
-                    >
-                      {link.clicks || 0}
-                    </span>
-                  </td>
-                  <td className="p-2 sm:p-4 text-gray-500 text-xs hidden sm:table-cell">
-                    {link.lastClicked
-                      ? new Date(link.lastClicked).toLocaleDateString('en-IN')
-                      : 'Never'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
   );
 };
 
-// ─── Profile Tab (with avatar) ─────────────────────────────────
+// ─── Profile Tab (unchanged) ──────────────────────────────────
 const ProfileTab: React.FC<{ user: any; onProfileUpdate: () => void; token: string; onToast: any; avatarId: number | null; name: string; onOpenAvatarPicker: () => void }> = ({ user, onProfileUpdate, token, onToast, avatarId, name, onOpenAvatarPicker }) => {
   const [form, setForm] = useState({
     mobile: user.profile?.mobile || '', gmail: user.profile?.gmail || '', upiId: user.profile?.upiId || '',
