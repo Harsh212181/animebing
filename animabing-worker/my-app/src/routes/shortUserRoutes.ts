@@ -1,4 +1,4 @@
- import { Hono } from 'hono'
+import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { getDb } from '../services/mongoService'
 import { adminAuth } from '../middleware/auth'
@@ -217,8 +217,6 @@ shortUserRoutes.get('/dashboard', userAuth, async (c) => {
       status: 'pending'
     })
 
-    // ── NEW: user ka self-create link quota check ──
-    // User ke settings mein canCreateLinks: true hona chahiye
     const canCreateLinks = (user as any).canCreateLinks === true
 
     return c.json({
@@ -233,7 +231,7 @@ shortUserRoutes.get('/dashboard', userAuth, async (c) => {
         ratePerThousand: user.ratePerThousand || 0,
         gmailLinked: user.gmailLinked || '',
         profile: user.profile || {},
-        canCreateLinks  // ← frontend ko batao
+        canCreateLinks
       },
       links,
       last7Days,
@@ -279,23 +277,20 @@ shortUserRoutes.put('/profile', userAuth, async (c) => {
 })
 
 // ============================================================
-// ── NEW: USER SELF-CREATE LINK ──
+// ── USER SELF-CREATE LINK ──
 // POST /api/short-users/create-link
-// User apni anime ka link khud bana sakta hai
 // ============================================================
 shortUserRoutes.post('/create-link', userAuth, async (c) => {
   try {
     const { id, username } = c.get('shortUser')
     const { animeId, animeTitle, animeSlug, customCode, label } = await c.req.json()
 
-    // Validation
     if (!animeId || !animeSlug) {
       return c.json({ error: 'Anime select karna zaroori hai.' }, 400)
     }
 
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    // Check if user has permission to create links
     const user = await db.collection('shortusers').findOne(
       { _id: new ObjectId(id) }
     ) as IShortUser | null
@@ -305,7 +300,6 @@ shortUserRoutes.post('/create-link', userAuth, async (c) => {
       return c.json({ error: 'Aapko link create karne ki permission nahi hai. Admin se contact karo.' }, 403)
     }
 
-    // Custom code validation — agar diya to check karo
     let finalCode = customCode?.trim()
     if (finalCode) {
       if (!/^[a-zA-Z0-9-_]+$/.test(finalCode)) {
@@ -314,17 +308,14 @@ shortUserRoutes.post('/create-link', userAuth, async (c) => {
       if (finalCode.length < 3 || finalCode.length > 30) {
         return c.json({ error: 'Code 3 se 30 characters ka hona chahiye.' }, 400)
       }
-      // Check duplicate
       const existingCode = await db.collection('shortlinks').findOne({ code: finalCode })
       if (existingCode) {
         return c.json({ error: `"${finalCode}" code already use ho chuka hai. Koi aur code try karo.` }, 400)
       }
     } else {
-      // Auto-generate code from animeSlug + random suffix
       const base = animeSlug.replace(/[^a-zA-Z0-9-]/g, '').substring(0, 15)
       const suffix = Math.random().toString(36).substring(2, 6)
       finalCode = `${base}-${suffix}`
-      // Ensure unique
       let attempt = 0
       while (await db.collection('shortlinks').findOne({ code: finalCode }) && attempt < 5) {
         const newSuffix = Math.random().toString(36).substring(2, 6)
@@ -333,7 +324,6 @@ shortUserRoutes.post('/create-link', userAuth, async (c) => {
       }
     }
 
-    // Check: same user ne same anime ka link already banaya hai?
     const existingAnimeLink = await db.collection('shortlinks').findOne({
       userId: new ObjectId(id),
       animeId: animeId
@@ -344,8 +334,8 @@ shortUserRoutes.post('/create-link', userAuth, async (c) => {
       }, 400)
     }
 
-    // Destination URL — anime watch page
-    const destinationUrl = `https://animebing.in/watch/${animeSlug}`
+    // ✅ FIXED: Use /detail/ instead of /watch/
+    const destinationUrl = `https://animebing.in/detail/${animeSlug}`
 
     const newLink = {
       code: finalCode,
@@ -353,10 +343,10 @@ shortUserRoutes.post('/create-link', userAuth, async (c) => {
       label: label?.trim() || animeTitle || finalCode,
       userId: new ObjectId(id),
       username,
-      animeId,         // reference for duplicate check
+      animeId,
       animeTitle,
       animeSlug,
-      createdByUser: true,  // admin se alag identify karne ke liye
+      createdByUser: true,
       clicks: 0,
       createdAt: new Date(),
       lastClicked: null
@@ -548,7 +538,7 @@ shortUserRoutes.post('/admin/users', adminAuth, async (c) => {
       username, password, realName,
       ratePerThousand: ratePerThousand || 10,
       isActive: true,
-      canCreateLinks: canCreateLinks || false, // ← NEW
+      canCreateLinks: canCreateLinks || false,
       totalClicks: 0,
       totalEarnings: 0,
       unpaidEarnings: 0,
@@ -577,7 +567,7 @@ shortUserRoutes.put('/admin/users/:id', adminAuth, async (c) => {
     if (realName) updateData.realName = realName
     if (ratePerThousand !== undefined) updateData.ratePerThousand = ratePerThousand
     if (isActive !== undefined) updateData.isActive = isActive
-    if (canCreateLinks !== undefined) updateData.canCreateLinks = canCreateLinks // ← NEW
+    if (canCreateLinks !== undefined) updateData.canCreateLinks = canCreateLinks
 
     await db.collection('shortusers').updateOne(
       { _id: new ObjectId(id) },

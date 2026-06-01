@@ -16,6 +16,7 @@ interface DashboardData {
     ratePerThousand: number;
     profile: any;
     gmailLinked?: string;
+    canCreateLinks?: boolean;     // ✨ NEW
   };
   links: Array<{
     code: string;
@@ -33,6 +34,7 @@ interface DashboardData {
 interface AnimeItem {
   _id: string;
   title: string;
+  slug?: string;    // ✨ NEW (used for link creation)
 }
 
 const UserDashboard: React.FC = () => {
@@ -119,6 +121,7 @@ const UserDashboard: React.FC = () => {
 
   const user = dashData.user;
   const name = localStorage.getItem('shortUserName') || user.realName || user.username;
+  const showCreateTab = user.canCreateLinks === true;   // ✨ NEW
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -183,6 +186,19 @@ const UserDashboard: React.FC = () => {
               {tab === 'requests' && 'Requests'}
             </button>
           ))}
+          {/* ✨ NEW: Create Link tab (only if user has permission) */}
+          {showCreateTab && (
+            <button
+              onClick={() => setActiveTab('create')}
+              className={`py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === 'create'
+                  ? 'text-indigo-600 border-indigo-600'
+                  : 'text-gray-500 border-transparent hover:text-gray-700'
+              }`}
+            >
+              Create Link
+            </button>
+          )}
         </div>
       </nav>
 
@@ -192,6 +208,10 @@ const UserDashboard: React.FC = () => {
         {activeTab === 'profile' && <ProfileTab user={user} onProfileUpdate={loadDashboard} token={token!} onToast={showToast} />}
         {activeTab === 'messages' && <MessagesTab token={token!} onRead={() => loadDashboard()} onToast={showToast} userName={name} />}
         {activeTab === 'requests' && <RequestsTab data={dashData} onRefresh={loadDashboard} token={token!} onToast={showToast} />}
+        {/* ✨ NEW: Create Link Tab */}
+        {activeTab === 'create' && showCreateTab && (
+          <CreateLinkTab token={token!} onRefresh={loadDashboard} onToast={showToast} />
+        )}
       </main>
 
       {/* Toast Notifications */}
@@ -212,7 +232,7 @@ const UserDashboard: React.FC = () => {
   );
 };
 
-// ======================= LOGIN FORM =======================
+// ======================= LOGIN FORM (unchanged) =======================
 const LoginForm: React.FC<{ onLogin: (cred: any) => void; loginError: string }> = ({ onLogin, loginError }) => {
   const [loginMode, setLoginMode] = useState<'password' | 'gmail'>('password');
   const [username, setUsername] = useState('');
@@ -323,7 +343,7 @@ const LoginForm: React.FC<{ onLogin: (cred: any) => void; loginError: string }> 
   );
 };
 
-// ======================= CHART COMPONENT =======================
+// ======================= CHART COMPONENT (unchanged) =======================
 const ClicksLineChart: React.FC<{ data: Array<{ date: string; clicks: number }> }> = ({ data }) => {
   const [hoverPoint, setHoverPoint] = useState<{ index: number; x: number; y: number } | null>(null);
   const chartRef = React.useRef<SVGSVGElement>(null);
@@ -455,7 +475,7 @@ const ClicksLineChart: React.FC<{ data: Array<{ date: string; clicks: number }> 
   );
 };
 
-// ======================= OVERVIEW TAB =======================
+// ======================= OVERVIEW TAB (unchanged) =======================
 const OverviewTab: React.FC<{ data: DashboardData; onRefresh: () => void; onToast: (msg: string, type: 'success' | 'error') => void }> = ({ data, onRefresh, onToast }) => {
   const { user, last7Days, topCountries } = data;
   const canPayRequest = (user.totalClicks || 0) >= 1000 && (user.unpaidEarnings || 0) > 0;
@@ -573,7 +593,7 @@ const OverviewTab: React.FC<{ data: DashboardData; onRefresh: () => void; onToas
   );
 };
 
-// ======================= LINKS TAB =======================
+// ======================= LINKS TAB (unchanged) =======================
 const LinksTab: React.FC<{ links: DashboardData['links']; onToast: (msg: string, type: 'success' | 'error') => void }> = ({ links, onToast }) => {
   const copyLink = (code: string) => {
     navigator.clipboard.writeText(`https://go.animebing.in/${code}`);
@@ -636,7 +656,7 @@ const LinksTab: React.FC<{ links: DashboardData['links']; onToast: (msg: string,
   );
 };
 
-// ======================= PROFILE TAB =======================
+// ======================= PROFILE TAB (unchanged) =======================
 const ProfileTab: React.FC<{ user: DashboardData['user']; onProfileUpdate: () => void; token: string; onToast: any }> = ({ user, onProfileUpdate, token, onToast }) => {
   const [form, setForm] = useState({
     mobile: user.profile?.mobile || '',
@@ -740,7 +760,7 @@ const ProfileTab: React.FC<{ user: DashboardData['user']; onProfileUpdate: () =>
   );
 };
 
-// ======================= MESSAGES TAB =======================
+// ======================= MESSAGES TAB (unchanged) =======================
 const MessagesTab: React.FC<{ token: string; onRead: () => void; onToast: any; userName: string }> = ({ token, onRead, onToast, userName }) => {
   const [messages, setMessages] = useState<any[]>([]);
   const [text, setText] = useState('');
@@ -862,7 +882,7 @@ const MessagesTab: React.FC<{ token: string; onRead: () => void; onToast: any; u
   );
 };
 
-// ======================= REQUESTS TAB (with infinite scroll anime selector) =======================
+// ======================= REQUESTS TAB (unchanged) =======================
 const RequestsTab: React.FC<{ data: DashboardData; onRefresh: () => void; token: string; onToast: any }> = ({ data, onRefresh, token, onToast }) => {
   const [linkMsg, setLinkMsg] = useState('');
   const [animeList, setAnimeList] = useState<AnimeItem[]>([]);
@@ -871,7 +891,6 @@ const RequestsTab: React.FC<{ data: DashboardData; onRefresh: () => void; token:
   const [fetchingAnime, setFetchingAnime] = useState(false);
   const [animeFetchError, setAnimeFetchError] = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
-  // ── NEW: how many items to show in the default (no-search) list ──
   const [displayCount, setDisplayCount] = useState(30);
 
   useEffect(() => {
@@ -897,16 +916,12 @@ const RequestsTab: React.FC<{ data: DashboardData; onRefresh: () => void; token:
     fetchAnime();
   }, []);
 
-  // Search → show all matches; no search → show first `displayCount` items
   const filteredAnime = animeSearch.trim()
-    ? animeList.filter(a =>
-        a.title.toLowerCase().includes(animeSearch.toLowerCase())
-      )
+    ? animeList.filter(a => a.title.toLowerCase().includes(animeSearch.toLowerCase()))
     : animeList.slice(0, displayCount);
 
-  // Handle dropdown scroll → load 30 more when near bottom (only in default view)
   const handleDropdownScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    if (animeSearch.trim()) return; // search mode shows all results, no pagination needed
+    if (animeSearch.trim()) return;
     const el = e.currentTarget;
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
     if (nearBottom) {
@@ -984,7 +999,7 @@ const RequestsTab: React.FC<{ data: DashboardData; onRefresh: () => void; token:
         )}
       </div>
 
-      {/* Request More Links – with infinite scroll anime selector */}
+      {/* Request More Links */}
       <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
         <h3 className="text-xl font-semibold text-gray-800 mb-2">Request More Links</h3>
         <p className="text-sm text-gray-500 mb-5">Select an anime for which you need a short link. You can also add a note.</p>
@@ -992,103 +1007,204 @@ const RequestsTab: React.FC<{ data: DashboardData; onRefresh: () => void; token:
           <span className="inline-block px-4 py-2 bg-amber-100 text-amber-700 rounded-lg text-sm font-medium">Link Request Pending — Admin will assign soon</span>
         ) : (
           <div className="space-y-4">
-            {/* Selected anime badge */}
             {selectedAnime && (
               <div className="flex items-center gap-2 p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
                 <span className="text-sm font-medium text-indigo-700">Selected: {selectedAnime.title}</span>
-                <button
-                  onClick={() => setSelectedAnime(null)}
-                  className="ml-auto text-indigo-400 hover:text-indigo-600 transition"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                <button onClick={() => setSelectedAnime(null)} className="ml-auto text-indigo-400 hover:text-indigo-600 transition">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
               </div>
             )}
-
-            {/* Search input */}
             <div className="relative">
-              <input
-                type="text"
-                placeholder="Search anime..."
-                value={animeSearch}
-                onChange={e => {
-                  setAnimeSearch(e.target.value);
-                  setDisplayCount(30); // reset pagination on new search
-                  if (!showDropdown) setShowDropdown(true);
-                }}
-                onFocus={() => setShowDropdown(true)}
-                onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
-                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 text-sm text-gray-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition"
-              />
-              {fetchingAnime && (
-                <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                  <div className="w-4 h-4 border-2 border-gray-200 border-t-indigo-600 rounded-full animate-spin"></div>
-                </div>
-              )}
+              <input type="text" placeholder="Search anime..." value={animeSearch} onChange={e => { setAnimeSearch(e.target.value); setDisplayCount(30); if (!showDropdown) setShowDropdown(true); }} onFocus={() => setShowDropdown(true)} onBlur={() => setTimeout(() => setShowDropdown(false), 150)} className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 text-sm text-gray-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition" />
+              {fetchingAnime && <div className="absolute right-3 top-1/2 -translate-y-1/2"><div className="w-4 h-4 border-2 border-gray-200 border-t-indigo-600 rounded-full animate-spin"></div></div>}
             </div>
-
-            {/* Fetch error */}
-            {animeFetchError && !fetchingAnime && (
-              <p className="text-sm text-red-500 bg-red-50 p-2 rounded">{animeFetchError}</p>
-            )}
-
-            {/* Anime dropdown with infinite scroll */}
+            {animeFetchError && !fetchingAnime && <p className="text-sm text-red-500 bg-red-50 p-2 rounded">{animeFetchError}</p>}
             {showDropdown && !animeFetchError && (
-              <div
-                className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg bg-white shadow-sm"
-                onScroll={handleDropdownScroll}
-              >
-                {filteredAnime.length === 0 ? (
-                  <p className="text-gray-400 text-center py-4 text-sm">No anime found</p>
-                ) : (
+              <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg bg-white shadow-sm" onScroll={handleDropdownScroll}>
+                {filteredAnime.length === 0 ? <p className="text-gray-400 text-center py-4 text-sm">No anime found</p> : (
                   <>
                     {filteredAnime.map(anime => (
-                      <button
-                        key={anime._id}
-                        onMouseDown={() => {
-                          setSelectedAnime(anime);
-                          setAnimeSearch('');
-                          setShowDropdown(false);
-                          setDisplayCount(30);
-                        }}
-                        className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 transition border-b border-gray-100 last:border-0"
-                      >
+                      <button key={anime._id} onMouseDown={() => { setSelectedAnime(anime); setAnimeSearch(''); setShowDropdown(false); setDisplayCount(30); }} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 transition border-b border-gray-100 last:border-0">
                         {anime.title}
                       </button>
                     ))}
-                    {/* Load-more indicator — only shown in default (no-search) view */}
-                    {!animeSearch.trim() && displayCount < animeList.length && (
-                      <div className="text-center py-2.5 text-xs text-gray-400 border-t border-gray-100">
-                        ↓ Scroll karo — {animeList.length - displayCount} aur anime baaki hain
-                      </div>
-                    )}
-                    {/* All loaded indicator */}
-                    {!animeSearch.trim() && displayCount >= animeList.length && animeList.length > 30 && (
-                      <div className="text-center py-2.5 text-xs text-gray-400 border-t border-gray-100">
-                        ✓ Saari anime load ho gayi ({animeList.length} total)
-                      </div>
-                    )}
+                    {!animeSearch.trim() && displayCount < animeList.length && <div className="text-center py-2.5 text-xs text-gray-400 border-t border-gray-100">↓ Scroll karo — {animeList.length - displayCount} aur anime baaki hain</div>}
+                    {!animeSearch.trim() && displayCount >= animeList.length && animeList.length > 30 && <div className="text-center py-2.5 text-xs text-gray-400 border-t border-gray-100">✓ Saari anime load ho gayi ({animeList.length} total)</div>}
                   </>
                 )}
               </div>
             )}
-
-            {/* Additional note */}
-            <textarea
-              className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm text-gray-800 mb-2 resize-none h-24 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition"
-              placeholder="Additional note for admin (optional)..."
-              value={linkMsg}
-              onChange={e => setLinkMsg(e.target.value)}
-            />
-
-            <button onClick={requestLink} className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700 transition shadow-sm">
-              Request More Links
-            </button>
+            <textarea className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm text-gray-800 mb-2 resize-none h-24 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition" placeholder="Additional note for admin (optional)..." value={linkMsg} onChange={e => setLinkMsg(e.target.value)} />
+            <button onClick={requestLink} className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700 transition shadow-sm">Request More Links</button>
           </div>
         )}
       </div>
+    </div>
+  );
+};
+
+// ======================= ✨ NEW CREATE LINK TAB =======================
+const CreateLinkTab: React.FC<{ token: string; onRefresh: () => void; onToast: (msg: string, type: 'success' | 'error') => void }> = ({ token, onRefresh, onToast }) => {
+  const [animeList, setAnimeList] = useState<AnimeItem[]>([]);
+  const [animeSearch, setAnimeSearch] = useState('');
+  const [selectedAnime, setSelectedAnime] = useState<AnimeItem | null>(null);
+  const [customCode, setCustomCode] = useState('');
+  const [label, setLabel] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [fetchingAnime, setFetchingAnime] = useState(false);
+  const [animeFetchError, setAnimeFetchError] = useState<string | null>(null);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [displayCount, setDisplayCount] = useState(30);
+
+  useEffect(() => {
+    const fetchAnime = async () => {
+      setFetchingAnime(true);
+      setAnimeFetchError(null);
+      try {
+        const res = await fetch(`${ANIME_API_BASE}?limit=1000`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          setAnimeList(json.data);
+        } else {
+          throw new Error('Invalid response format');
+        }
+      } catch (err) {
+        console.error('Error fetching anime:', err);
+        setAnimeFetchError('Could not load anime list. Please try again later.');
+      } finally {
+        setFetchingAnime(false);
+      }
+    };
+    fetchAnime();
+  }, []);
+
+  const filteredAnime = animeSearch.trim()
+    ? animeList.filter(a => a.title.toLowerCase().includes(animeSearch.toLowerCase()))
+    : animeList.slice(0, displayCount);
+
+  const handleDropdownScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    if (animeSearch.trim()) return;
+    const el = e.currentTarget;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 40) {
+      setDisplayCount(prev => prev + 30);
+    }
+  };
+
+  const handleCreateLink = async () => {
+    if (!selectedAnime) {
+      onToast('Please select an anime first.', 'error');
+      return;
+    }
+    if (customCode && !/^[a-zA-Z0-9-_]+$/.test(customCode)) {
+      onToast('Custom code can only contain letters, numbers, - and _', 'error');
+      return;
+    }
+    if (customCode && (customCode.length < 3 || customCode.length > 30)) {
+      onToast('Custom code must be 3–30 characters', 'error');
+      return;
+    }
+
+    setCreating(true);
+    try {
+      const payload = {
+        animeId: selectedAnime._id,
+        animeTitle: selectedAnime.title,
+        animeSlug: selectedAnime.slug || selectedAnime.title.replace(/\s+/g, '-').toLowerCase(),
+        customCode: customCode || undefined,
+        label: label.trim() || selectedAnime.title
+      };
+      const res = await fetch(`${API_BASE}/create-link`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        onToast(data.error || 'Failed to create link', 'error');
+        return;
+      }
+      onToast(data.message || 'Link created successfully!', 'success');
+      // Reset form
+      setSelectedAnime(null);
+      setAnimeSearch('');
+      setCustomCode('');
+      setLabel('');
+      setShowDropdown(false);
+      setDisplayCount(30);
+      // Refresh dashboard to show the new link in "My Links"
+      onRefresh();
+    } catch (err) {
+      onToast('Network error', 'error');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-6 max-w-3xl shadow-sm">
+      <h2 className="text-xl font-semibold text-gray-800 mb-2">Create Your Own Short Link</h2>
+      <p className="text-sm text-gray-500 mb-5">
+        Select an anime from our website. A short link will be generated automatically (or you can provide a custom code).
+      </p>
+
+      {selectedAnime && (
+        <div className="flex items-center gap-2 p-3 bg-indigo-50 border border-indigo-200 rounded-lg mb-4">
+          <span className="text-sm font-medium text-indigo-700">Selected: {selectedAnime.title}</span>
+          <button onClick={() => setSelectedAnime(null)} className="ml-auto text-indigo-400 hover:text-indigo-600 transition">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+      )}
+
+      <div className="relative mb-4">
+        <input type="text" placeholder="Search anime..." value={animeSearch} onChange={e => { setAnimeSearch(e.target.value); setDisplayCount(30); if (!showDropdown) setShowDropdown(true); }} onFocus={() => setShowDropdown(true)} onBlur={() => setTimeout(() => setShowDropdown(false), 150)} className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 text-sm text-gray-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition" />
+        {fetchingAnime && <div className="absolute right-3 top-1/2 -translate-y-1/2"><div className="w-4 h-4 border-2 border-gray-200 border-t-indigo-600 rounded-full animate-spin"></div></div>}
+      </div>
+
+      {showDropdown && !animeFetchError && (
+        <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg bg-white shadow-sm mb-4" onScroll={handleDropdownScroll}>
+          {filteredAnime.length === 0 ? <p className="text-gray-400 text-center py-4 text-sm">No anime found</p> : (
+            <>
+              {filteredAnime.map(anime => (
+                <button key={anime._id} onMouseDown={() => { setSelectedAnime(anime); setAnimeSearch(''); setShowDropdown(false); setDisplayCount(30); }} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 transition border-b border-gray-100 last:border-0">
+                  {anime.title}
+                </button>
+              ))}
+              {!animeSearch.trim() && displayCount < animeList.length && <div className="text-center py-2.5 text-xs text-gray-400 border-t border-gray-100">↓ Scroll karo — {animeList.length - displayCount} aur anime baaki hain</div>}
+              {!animeSearch.trim() && displayCount >= animeList.length && animeList.length > 30 && <div className="text-center py-2.5 text-xs text-gray-400 border-t border-gray-100">✓ All anime loaded ({animeList.length} total)</div>}
+            </>
+          )}
+        </div>
+      )}
+
+      {animeFetchError && !fetchingAnime && (
+        <p className="text-sm text-red-500 bg-red-50 p-2 rounded mb-4">{animeFetchError}</p>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+        <div>
+          <label className="block text-xs text-gray-500 uppercase tracking-wider mb-1.5">Custom Code (optional)</label>
+          <input type="text" placeholder="e.g., naruto-shippuden" value={customCode} onChange={e => setCustomCode(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 text-sm text-gray-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition" />
+          <p className="text-gray-400 text-xs mt-1">3–30 characters, only letters, numbers, - and _</p>
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 uppercase tracking-wider mb-1.5">Label (optional)</label>
+          <input type="text" placeholder="Anime title or description" value={label} onChange={e => setLabel(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 text-sm text-gray-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition" />
+        </div>
+      </div>
+
+      <button onClick={handleCreateLink} disabled={creating || !selectedAnime} className="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg text-sm font-semibold hover:shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed">
+        {creating ? 'Creating...' : 'Create Link'}
+      </button>
+
+      <p className="text-xs text-gray-400 mt-4">
+        ✅ After creation, your link will appear in the <strong>My Links</strong> tab. You can copy and share it anywhere.
+      </p>
     </div>
   );
 };

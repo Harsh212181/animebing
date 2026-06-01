@@ -12,6 +12,7 @@ import PartnerManager from './PartnerManager';
 import EpisodeStatusManager from './EpisodeStatusManager';
 import DownloadPageManager from './DownloadPageManager';
 import ShortenerManager from './ShortenerManager';
+import ShortUsersManager from './ShortUsersManager';  // ✨ NEW
 import Spinner from '../Spinner';
 import axios from 'axios';
 
@@ -59,6 +60,7 @@ const TAB_LABELS: Record<string, { label: string; icon: string }> = {
   downloadPages:   { label: 'Download Pages',  icon: '🏴‍☠️' },
   shortener:       { label: 'URL Shortener',   icon: '🔗' },
   partners:        { label: 'Partner Manager', icon: '🎉' },
+  shortusers:      { label: 'Short Users',     icon: '👥' },   // ✨ NEW
 };
 
 // Defined OUTSIDE so React never unmounts/remounts on parent re-render
@@ -75,11 +77,12 @@ const TabContent: React.FC<{ activeTab: string; token: string }> = React.memo(({
     case 'partners':       return <PartnerManager token={token} apiBase={API_BASE} />;
     case 'downloadPages':  return <DownloadPageManager />;
     case 'shortener':      return <ShortenerManager />;
+    case 'shortusers':     return <ShortUsersManager />;   // ✨ NEW
     default:               return <AnimeListTable />;
   }
 });
 
-// ─── Scroll to top ────────────────────────────────────────────────────────────
+// ─── Scroll to top button (unchanged) ───────────────────────────────────────
 const ScrollToTopButton: React.FC = () => {
   const [visible, setVisible] = useState(false);
   useEffect(() => {
@@ -104,7 +107,7 @@ const ScrollToTopButton: React.FC = () => {
   );
 };
 
-// ─── Sidebar nav item ─────────────────────────────────────────────────────────
+// ─── Sidebar nav item (unchanged) ───────────────────────────────────────────
 interface NavItemProps {
   icon: string;
   label: string;
@@ -141,7 +144,7 @@ const NavItem: React.FC<NavItemProps> = ({ icon, label, tabId, activeTab, collap
   );
 };
 
-// ─── Section label ────────────────────────────────────────────────────────────
+// ─── Section label (unchanged) ──────────────────────────────────────────────
 const SidebarSection: React.FC<{ label: string; collapsed: boolean; children: React.ReactNode }> = ({
   label, children,
 }) => (
@@ -153,7 +156,7 @@ const SidebarSection: React.FC<{ label: string; collapsed: boolean; children: Re
   </div>
 );
 
-// ─── Main Dashboard ───────────────────────────────────────────────────────────
+// ─── Main Dashboard ──────────────────────────────────────────────────────────
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState('list');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
@@ -298,7 +301,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
   const currentTab = TAB_LABELS[activeTab] ?? { label: activeTab, icon: '✦' };
 
-  // ── Loading & error screens ──────────────────────────────────────────────
+  // Loading & error screens remain same
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0f0e17] flex items-center justify-center flex-col gap-3">
@@ -323,7 +326,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     );
   }
 
-  // ── Main layout ──────────────────────────────────────────────────────────
+  // Main layout
   return (
     <div className="relative h-screen bg-[#0f0e17] text-white overflow-hidden">
       <Toaster
@@ -336,18 +339,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         }}
       />
 
-      {/* ── ICON STRIP — always visible, 52px wide ── */}
+      {/* Icon Strip (always visible) */}
       <div
         onMouseEnter={handleSidebarMouseEnter}
         onMouseLeave={handleSidebarMouseLeave}
         className="fixed top-0 left-0 h-full w-[52px] z-50 flex flex-col bg-[#13121e] border-r border-white/[0.06]"
       >
-        {/* Logo */}
         <div className="h-14 flex items-center justify-center border-b border-white/[0.06] flex-shrink-0">
           <div className="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center text-base select-none">☠️</div>
         </div>
 
-        {/* Icon buttons */}
         <div className="flex-1 flex flex-col items-center py-3 gap-1 overflow-y-auto overflow-x-hidden">
           {[
             { icon: '🤖', tabId: 'list' },
@@ -360,6 +361,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             { icon: '☣️', tabId: 'social' },
             { icon: '🏴‍☠️', tabId: 'downloadPages' },
             { icon: '🔗', tabId: 'shortener' },
+            { icon: '👥', tabId: 'shortusers' },   // ✨ NEW
             { icon: '🎉', tabId: 'partners' },
           ].map(({ icon, tabId }) => (
             <button
@@ -375,7 +377,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           ))}
         </div>
 
-        {/* User avatar */}
         <div className="flex-shrink-0 border-t border-white/[0.06] h-14 flex items-center justify-center">
           <div className="w-8 h-8 rounded-full bg-purple-700 flex items-center justify-center text-xs font-bold cursor-pointer hover:ring-2 hover:ring-purple-500 transition-all">
             {(user.username || 'A').charAt(0).toUpperCase()}
@@ -383,7 +384,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         </div>
       </div>
 
-      {/* ── EXPANDED SIDEBAR — overlay on top of icon strip, slide in on hover ── */}
+      {/* Expanded Sidebar */}
       <aside
         onMouseEnter={handleSidebarMouseEnter}
         onMouseLeave={handleSidebarMouseLeave}
@@ -392,14 +393,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           ${sidebarCollapsed ? '-translate-x-full opacity-0 pointer-events-none' : 'translate-x-0 opacity-100'}
         `}
       >
-        {/* Logo / Header */}
         <div className="flex items-center gap-3 h-14 px-3 border-b border-white/[0.06] flex-shrink-0">
           <div className="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center text-base flex-shrink-0 select-none">☠️</div>
           <div className="overflow-hidden flex-1">
             <p className="text-sm font-semibold text-white leading-tight truncate">AnimaBing</p>
             <p className="text-[10px] text-gray-500 truncate">Admin Panel</p>
           </div>
-          {/* Pin button */}
           <button
             onClick={() => setSidebarPinned(v => !v)}
             className={`flex-shrink-0 w-7 h-7 rounded-md flex items-center justify-center transition-colors ml-auto
@@ -412,7 +411,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           </button>
         </div>
 
-        {/* Nav */}
         <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-4 scrollbar-thin scrollbar-thumb-white/10">
           <SidebarSection label="Content" collapsed={false}>
             <NavItem icon="🤖" label="Content List"   tabId="list"            activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
@@ -422,18 +420,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           </SidebarSection>
           <SidebarSection label="Manage" collapsed={false}>
             <NavItem icon="🎈" label="Featured Anime" tabId="featured"        activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
-            <NavItem icon="🍂" label="User Reports"   tabId="reports"         activeTab={activeTab} collapsed={false} onClick={setActiveTab} badge={0} />
+            <NavItem icon="🍂" label="User Reports"   tabId="reports"         activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
             <NavItem icon="👻" label="Poll Manager"   tabId="polls"           activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
             <NavItem icon="☣️" label="Social Media"   tabId="social"          activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
           </SidebarSection>
           <SidebarSection label="Downloads" collapsed={false}>
             <NavItem icon="🏴‍☠️" label="Download Pages" tabId="downloadPages"   activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
             <NavItem icon="🔗" label="URL Shortener"  tabId="shortener"       activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
+            <NavItem icon="👥" label="Short Users"    tabId="shortusers"      activeTab={activeTab} collapsed={false} onClick={setActiveTab} /> {/* ✨ NEW */}
             <NavItem icon="🎉" label="Partner Manager" tabId="partners"       activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
           </SidebarSection>
         </nav>
 
-        {/* User + Logout */}
         <div className="flex-shrink-0 border-t border-white/[0.06] p-3">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-full bg-purple-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
@@ -456,10 +454,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         </div>
       </aside>
 
-      {/* ── MAIN CONTENT — offset by icon strip width only ── */}
+      {/* Main content area */}
       <div id="main-scroll" className="h-full flex flex-col overflow-y-auto pl-[52px]">
-
-        {/* Top bar */}
         <header className="sticky top-0 z-40 h-14 flex-shrink-0 flex items-center px-5 gap-3 bg-[#13121e]/80 backdrop-blur border-b border-white/[0.06]">
           <span className="text-lg">{currentTab.icon}</span>
           <h1 className="text-sm font-semibold text-white">{currentTab.label}</h1>
@@ -477,8 +473,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         </header>
 
         <main className="flex-1 p-4 sm:p-6 space-y-4">
-
-          {/* Analytics cards */}
+          {/* Analytics Cards (unchanged) */}
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
             {[
               { label: 'Total Content', value: analytics.totalAnimes + analytics.totalMovies + analytics.totalManga, sub: 'Anime · Movies · Manga', color: 'text-purple-400' },
@@ -496,7 +491,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             ))}
           </div>
 
-          {/* Link control */}
+          {/* Link Control Panel (unchanged) */}
           <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4">
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
               <div className="flex items-center gap-3">
@@ -570,7 +565,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             )}
           </div>
 
-          {/* Active tab content */}
+          {/* Active Tab Content */}
           <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4 sm:p-6 min-h-[300px]">
             <TabContent activeTab={activeTab} token={token || ''} />
           </div>
