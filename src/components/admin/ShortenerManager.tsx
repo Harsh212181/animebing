@@ -1,11 +1,41 @@
-// src/components/admin/ShortenerManager.tsx
+ // src/components/admin/ShortenerManager.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import Spinner from '../Spinner';
 
 const SHORTENER_BASE = 'https://go.animebing.in';
 const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
 const getToken = () => localStorage.getItem('adminToken') || '';
+
+// ── Avatar list (same as UserDashboard) ──────────────────────
+const AVATARS = [
+  { id: 1,  emoji: '🦊', bg: 'linear-gradient(135deg,#f97316,#ef4444)' },
+  { id: 2,  emoji: '🐉', bg: 'linear-gradient(135deg,#a855f7,#6366f1)' },
+  { id: 3,  emoji: '⚡', bg: 'linear-gradient(135deg,#eab308,#f97316)' },
+  { id: 4,  emoji: '👻', bg: 'linear-gradient(135deg,#ec4899,#f43f5e)' },
+  { id: 5,  emoji: '🗡️', bg: 'linear-gradient(135deg,#64748b,#334155)' },
+  { id: 6,  emoji: '🌙', bg: 'linear-gradient(135deg,#3b82f6,#6366f1)' },
+  { id: 7,  emoji: '🔥', bg: 'linear-gradient(135deg,#ef4444,#f97316)' },
+  { id: 8,  emoji: '🦚', bg: 'linear-gradient(135deg,#38bdf8,#06b6d4)' },
+  { id: 9,  emoji: '🧌', bg: 'linear-gradient(135deg,#0ea5e9,#3b82f6)' },
+  { id: 10, emoji: '🦋', bg: 'linear-gradient(135deg,#8b5cf6,#ec4899)' },
+  { id: 11, emoji: '🎮', bg: 'linear-gradient(135deg,#6366f1,#4f46e5)' },
+  { id: 12, emoji: '🧙‍♂️', bg: 'linear-gradient(135deg,#fbbf24,#f59e0b)' },
+  { id: 13, emoji: '🐺', bg: 'linear-gradient(135deg,#78716c,#57534e)' },
+  { id: 14, emoji: '⚖️', bg: 'linear-gradient(135deg,#22c55e,#16a34a)' },
+  { id: 15, emoji: '💀', bg: 'linear-gradient(135deg,#374151,#111827)' },
+  { id: 16, emoji: '🦅', bg: 'linear-gradient(135deg,#0369a1,#1d4ed8)' },
+  { id: 17, emoji: '🛸', bg: 'linear-gradient(135deg,#f43f5e,#e11d48)' },
+  { id: 18, emoji: '⛈️', bg: 'linear-gradient(135deg,#475569,#1e293b)' },
+  { id: 19, emoji: '🐉', bg: 'linear-gradient(135deg,#10b981,#059669)' },
+  { id: 20, emoji: '💎', bg: 'linear-gradient(135deg,#06b6d4,#0891b2)' },
+  { id: 21, emoji: '🌪️', bg: 'linear-gradient(135deg,#8b5cf6,#7c3aed)' },
+  { id: 22, emoji: '🏔️', bg: 'linear-gradient(135deg,#64748b,#475569)' },
+  { id: 23, emoji: '🦁', bg: 'linear-gradient(135deg,#d97706,#92400e)' },
+  { id: 24, emoji: '🌌', bg: 'linear-gradient(135deg,#1e1b4b,#312e81)' },
+  { id: 25, emoji: '🎙️', bg: 'linear-gradient(135deg,#be185d,#9d174d)' },
+];
 
 interface ShortLink {
   _id: string;
@@ -30,6 +60,7 @@ interface ShortUser {
   unpaidEarnings: number;
   paidEarnings: number;
   gmailLinked?: string;
+  avatarId?: number | null;   // ✨ added
   profile?: {
     mobile?: string;
     gmail?: string;
@@ -66,10 +97,541 @@ interface ShortMessage {
   createdAt: string;
 }
 
+// Helper: render user avatar from AVATARS list
+const renderUserAvatar = (user: ShortUser, size = 28) => {
+  const av = AVATARS.find(a => a.id === user.avatarId);
+  if (av) {
+    return (
+      <div style={{
+        width: size, height: size,
+        background: av.bg,
+        borderRadius: size * 0.28,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: size * 0.48, flexShrink: 0
+      }}>
+        {av.emoji}
+      </div>
+    );
+  }
+  return (
+    <div className="sm-sidebar-avatar" style={{ width: size, height: size, fontSize: size * 0.4 }}>
+      {user.realName.charAt(0).toUpperCase()}
+    </div>
+  );
+};
+
+/* ─────────────────────────────────────────── css (unchanged) ─── */
+const css = `
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+@import url('https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css');
+
+:root {
+  --bg0: #0a0a0c;
+  --bg1: #111114;
+  --bg2: #18181d;
+  --bg3: #1f1f26;
+  --border: rgba(255,255,255,0.065);
+  --border2: rgba(255,255,255,0.11);
+  --t1: #f0f0f2;
+  --t2: #9191a0;
+  --t3: #50505e;
+  --accent: #7c6af7;
+  --accent-dim: rgba(124,106,247,0.14);
+  --accent-border: rgba(124,106,247,0.35);
+  --green: #34d399;
+  --green-dim: rgba(52,211,153,0.12);
+  --green-border: rgba(52,211,153,0.25);
+  --red: #f87171;
+  --red-dim: rgba(248,113,113,0.10);
+  --red-border: rgba(248,113,113,0.20);
+  --amber: #fbbf24;
+  --amber-dim: rgba(251,191,36,0.12);
+  --amber-border: rgba(251,191,36,0.25);
+  --blue: #60a5fa;
+  --blue-dim: rgba(96,165,250,0.10);
+  --blue-border: rgba(96,165,250,0.22);
+  --teal: #2dd4bf;
+  --teal-dim: rgba(45,212,191,0.10);
+  --teal-border: rgba(45,212,191,0.22);
+  --radius: 10px;
+  --font: 'DM Sans', system-ui, sans-serif;
+  --mono: 'DM Mono', 'SF Mono', monospace;
+}
+
+.sm * { box-sizing: border-box; margin: 0; padding: 0; }
+.sm { font-family: var(--font); font-size: 13px; color: var(--t1); }
+
+/* ── stats bar ── */
+.sm-stats {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.sm-stat-card {
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.15s;
+}
+.sm-stat-card:hover { border-color: var(--border2); }
+.sm-stat-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.7px; color: var(--t3); }
+.sm-stat-value { font-family: var(--mono); font-size: 20px; font-weight: 500; letter-spacing: -0.5px; }
+.sm-stat-sub { font-size: 11px; color: var(--t3); margin-top: 2px; }
+.sm-v-accent { color: var(--accent); }
+.sm-v-green  { color: var(--green); }
+.sm-v-red    { color: var(--red); }
+.sm-v-amber  { color: var(--amber); }
+.sm-v-teal   { color: var(--teal); }
+.sm-v-blue   { color: var(--blue); }
+
+/* ── tabs ── */
+.sm-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 5px;
+}
+.sm-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px;
+  font-size: 12px; font-weight: 500; font-family: var(--font);
+  border-radius: 7px; border: none;
+  background: transparent; color: var(--t2);
+  cursor: pointer; transition: all 0.14s;
+  position: relative;
+}
+.sm-tab:hover { color: var(--t1); background: var(--bg3); }
+.sm-tab-active { background: var(--bg3) !important; color: var(--t1) !important; }
+.sm-tab-active-teal { box-shadow: inset 0 0 0 1px var(--teal-border); color: var(--teal) !important; }
+.sm-tab-active-purple { box-shadow: inset 0 0 0 1px var(--accent-border); color: var(--accent) !important; }
+.sm-tab-active-amber { box-shadow: inset 0 0 0 1px var(--amber-border); color: var(--amber) !important; }
+.sm-tab-active-blue { box-shadow: inset 0 0 0 1px var(--blue-border); color: var(--blue) !important; }
+.sm-tab-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  font-size: 10px; font-weight: 700;
+  border-radius: 9px;
+  background: var(--red-dim); color: var(--red); border: 1px solid var(--red-border);
+}
+
+/* ── toolbar ── */
+.sm-toolbar {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 14px; flex-wrap: wrap;
+}
+.sm-toolbar-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.sm-search-wrap { position: relative; flex: 1; max-width: 280px; }
+.sm-search-wrap i { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--t3); font-size: 14px; pointer-events: none; }
+.sm-search {
+  width: 100%;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px 8px 32px;
+  font-size: 13px; font-family: var(--font); color: var(--t1);
+  transition: border-color 0.15s, background 0.15s;
+}
+.sm-search:focus { outline: none; border-color: var(--border2); background: var(--bg3); }
+.sm-search::placeholder { color: var(--t3); }
+
+/* ── buttons ── */
+.sm-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px;
+  font-size: 12px; font-weight: 500; font-family: var(--font);
+  border-radius: 8px; border: 1px solid transparent;
+  cursor: pointer; transition: all 0.13s; white-space: nowrap;
+}
+.sm-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.sm-btn-primary { background: var(--accent-dim); color: var(--accent); border-color: var(--accent-border); }
+.sm-btn-primary:hover:not(:disabled) { background: rgba(124,106,247,0.22); }
+.sm-btn-ghost { background: var(--bg2); color: var(--t2); border-color: var(--border); }
+.sm-btn-ghost:hover:not(:disabled) { background: var(--bg3); color: var(--t1); border-color: var(--border2); }
+.sm-btn-success { background: var(--green-dim); color: var(--green); border-color: var(--green-border); }
+.sm-btn-success:hover:not(:disabled) { background: rgba(52,211,153,0.2); }
+.sm-btn-danger { background: var(--red-dim); color: var(--red); border-color: var(--red-border); }
+.sm-btn-danger:hover:not(:disabled) { background: rgba(248,113,113,0.18); }
+.sm-btn-teal { background: var(--teal-dim); color: var(--teal); border-color: var(--teal-border); }
+.sm-btn-teal:hover:not(:disabled) { background: rgba(45,212,191,0.18); }
+.sm-btn-amber { background: var(--amber-dim); color: var(--amber); border-color: var(--amber-border); }
+.sm-btn-amber:hover:not(:disabled) { background: rgba(251,191,36,0.2); }
+.sm-btn-new { background: var(--t1); color: var(--bg0); padding: 8px 16px; font-weight: 600; font-size: 12px; }
+.sm-btn-new:hover { opacity: 0.88; }
+
+/* ── create form ── */
+.sm-create-panel {
+  background: var(--bg1); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 18px 20px;
+  margin-bottom: 16px; animation: smSlide 0.18s ease;
+}
+@keyframes smSlide { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
+.sm-panel-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--t3); margin-bottom: 14px; }
+.sm-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.sm-field { display: flex; flex-direction: column; gap: 5px; }
+.sm-field > span { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--t3); }
+.sm-input {
+  width: 100%; background: var(--bg0); border: 1px solid var(--border2);
+  border-radius: 7px; padding: 8px 11px; font-size: 13px;
+  font-family: var(--font); color: var(--t1);
+  transition: border-color 0.14s, background 0.14s;
+}
+.sm-input:focus { outline: none; border-color: rgba(124,106,247,0.5); background: #0d0d11; }
+.sm-input::placeholder { color: var(--t3); }
+.sm-select {
+  width: 100%; background: var(--bg0); border: 1px solid var(--border2);
+  border-radius: 7px; padding: 8px 11px; font-size: 13px;
+  font-family: var(--font); color: var(--t1);
+  cursor: pointer;
+}
+.sm-select:focus { outline: none; border-color: rgba(124,106,247,0.5); }
+.sm-form-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.sm-preview-url { font-family: var(--mono); font-size: 11px; color: var(--teal); margin-top: 4px; }
+
+/* ── table ── */
+.sm-table-shell {
+  background: var(--bg1); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: hidden;
+}
+.sm-table-wrap { overflow-x: auto; }
+.sm-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.sm-table thead tr { background: var(--bg2); border-bottom: 1px solid var(--border); }
+.sm-table th {
+  padding: 10px 14px; text-align: left;
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.6px; color: var(--t3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  user-select: none; cursor: pointer; transition: color 0.13s;
+}
+.sm-table th:hover { color: var(--t2); }
+.sm-table tbody tr.sm-data-row { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+.sm-table tbody tr.sm-data-row:last-child { border-bottom: none; }
+.sm-table tbody tr.sm-data-row:hover { background: rgba(255,255,255,0.02); }
+.sm-table tbody tr.sm-edit-row { background: rgba(124,106,247,0.05); border-bottom: none; }
+.sm-table td { padding: 12px 14px; vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── cell atoms ── */
+.sm-mono { font-family: var(--mono); font-size: 12px; }
+.sm-code-chip {
+  font-family: var(--mono); font-size: 11px; color: var(--teal);
+  background: var(--teal-dim); border: 1px solid var(--teal-border);
+  border-radius: 5px; padding: 2px 8px; display: inline-block;
+}
+.sm-url-link { font-size: 11px; color: var(--blue); text-decoration: none; }
+.sm-url-link:hover { text-decoration: underline; }
+.sm-badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 500; }
+.sm-badge-active { background: var(--green-dim); color: var(--green); border: 1px solid var(--green-border); }
+.sm-badge-inactive { background: var(--red-dim); color: var(--red); border: 1px solid var(--red-border); }
+.sm-badge-pending { background: var(--amber-dim); color: var(--amber); border: 1px solid var(--amber-border); }
+.sm-badge-done { background: var(--green-dim); color: var(--green); border: 1px solid var(--green-border); }
+.sm-badge-rejected { background: var(--red-dim); color: var(--red); border: 1px solid var(--red-border); }
+.sm-badge-payment { background: var(--green-dim); color: var(--green); border: 1px solid var(--green-border); }
+.sm-badge-link { background: var(--teal-dim); color: var(--teal); border: 1px solid var(--teal-border); }
+.sm-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; display: inline-block; flex-shrink: 0; }
+
+.sm-clicks-badge {
+  display: inline-flex; align-items: center;
+  padding: 2px 8px; border-radius: 12px;
+  font-family: var(--mono); font-size: 11px; font-weight: 500;
+}
+.sm-clicks-high { background: var(--green-dim); color: var(--green); border: 1px solid var(--green-border); }
+.sm-clicks-mid  { background: var(--amber-dim); color: var(--amber); border: 1px solid var(--amber-border); }
+.sm-clicks-low  { background: var(--bg3); color: var(--t3); border: 1px solid var(--border); }
+
+/* ── inline edit ── */
+.sm-inline-input {
+  background: var(--bg0); border: 1px solid var(--border2);
+  border-radius: 6px; padding: 5px 8px;
+  font-size: 12px; font-family: var(--font); color: var(--t1); width: 100%;
+}
+.sm-inline-input:focus { outline: none; border-color: rgba(124,106,247,0.45); }
+
+/* ── action buttons ── */
+.sm-act-group { display: flex; align-items: center; gap: 3px; }
+.sm-act-sep { width: 1px; height: 16px; background: var(--border); margin: 0 2px; flex-shrink: 0; }
+.sm-act-btn {
+  width: 28px; height: 28px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 7px; border: 1px solid var(--border);
+  background: transparent; color: var(--t3);
+  cursor: pointer; font-size: 14px; transition: all 0.12s;
+}
+.sm-act-btn:hover { background: var(--bg3); color: var(--t2); border-color: var(--border2); }
+.sm-act-btn-on { background: var(--accent-dim) !important; color: var(--accent) !important; border-color: var(--accent-border) !important; }
+.sm-act-btn-save { background: var(--green-dim); color: var(--green); border-color: var(--green-border); font-size: 12px; width: auto; padding: 0 10px; font-weight: 600; }
+.sm-act-btn-cancel { font-size: 12px; width: auto; padding: 0 10px; }
+.sm-act-btn-danger { background: var(--red-dim) !important; color: var(--red) !important; border-color: var(--red-border) !important; }
+.sm-act-btn-teal { background: var(--teal-dim) !important; color: var(--teal) !important; border-color: var(--teal-border) !important; }
+.sm-act-btn-amber { background: var(--amber-dim) !important; color: var(--amber) !important; border-color: var(--amber-border) !important; }
+
+/* ── edit row expand ── */
+.sm-edit-expand td { padding: 0 !important; border-bottom: 1px solid var(--border) !important; white-space: normal !important; overflow: visible !important; }
+.sm-edit-inner { padding: 18px 20px; background: #0d0d12; border-top: 1px solid var(--border); animation: smExpand 0.16s ease; }
+@keyframes smExpand { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:translateY(0); } }
+
+.sm-edit-header { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.sm-edit-bar { width: 3px; height: 14px; border-radius: 2px; background: var(--accent); flex-shrink: 0; }
+.sm-edit-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--accent); }
+.sm-edit-sub { font-family: var(--mono); font-size: 11px; color: var(--t3); background: var(--bg2); border: 1px solid var(--border); padding: 3px 10px; border-radius: 5px; margin-left: auto; }
+
+/* ── modal overlay ── */
+.sm-modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.72); z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  animation: smFadeIn 0.14s ease;
+}
+@keyframes smFadeIn { from { opacity:0; } to { opacity:1; } }
+.sm-modal {
+  background: var(--bg1); border: 1px solid var(--border2);
+  border-radius: 14px; padding: 22px 24px;
+  width: 100%; max-width: 420px;
+  animation: smModalIn 0.16s ease;
+}
+@keyframes smModalIn { from { opacity:0; transform:scale(0.96) translateY(-8px); } to { opacity:1; transform:scale(1) translateY(0); } }
+.sm-modal-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; }
+.sm-modal-title { font-size: 15px; font-weight: 600; color: var(--t1); }
+.sm-modal-sub { font-size: 12px; color: var(--t3); margin-top: 3px; }
+.sm-modal-close { width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--t3); cursor: pointer; font-size: 14px; transition: all 0.12s; flex-shrink: 0; }
+.sm-modal-close:hover { background: var(--bg3); color: var(--t2); }
+.sm-modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+.sm-upi-box { background: var(--green-dim); border: 1px solid var(--green-border); border-radius: 7px; padding: 10px 14px; margin-bottom: 12px; }
+.sm-upi-row { font-size: 11px; color: var(--green); margin-bottom: 3px; font-family: var(--mono); }
+.sm-upi-row:last-child { margin-bottom: 0; }
+
+/* ── messages layout ── */
+.sm-msg-layout { display: grid; grid-template-columns: 220px 1fr; gap: 12px; min-height: 500px; }
+.sm-msg-sidebar { background: var(--bg1); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.sm-msg-sidebar-header {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--t3);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.sm-msg-user-list { overflow-y: auto; max-height: 460px; }
+.sm-msg-user-list::-webkit-scrollbar { width: 3px; }
+.sm-msg-user-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+.sm-msg-user-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s;
+}
+.sm-msg-user-btn:last-child { border-bottom: none; }
+.sm-msg-user-btn:hover { background: rgba(255,255,255,0.025); }
+.sm-msg-user-btn-active { background: var(--accent-dim) !important; border-left: 2px solid var(--accent); }
+
+.sm-msg-user-name { font-size: 12px; font-weight: 500; color: var(--t1); }
+.sm-msg-user-handle { font-size: 11px; color: var(--t3); font-family: var(--mono); margin-top: 2px; }
+
+/* Sidebar avatar */
+.sm-sidebar-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--teal-dim);
+  border: 1px solid var(--teal-border);
+  color: var(--teal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.sm-msg-window {
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23e2e8f0' fill-opacity='0.15'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 60px 60px;
+}
+
+.sm-msg-win-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg1);
+}
+.sm-msg-win-name { font-size: 13px; font-weight: 500; color: var(--t1); }
+.sm-msg-win-handle { font-size: 11px; color: var(--t3); font-family: var(--mono); }
+
+.sm-msg-body {
+  flex: 1;
+  padding: 14px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 380px;
+}
+.sm-msg-body::-webkit-scrollbar { width: 4px; }
+.sm-msg-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+/* ── Bubbles (WhatsApp style) ── */
+.sm-bubble {
+  display: inline-block;
+  max-width: 100%;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.55;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  white-space: normal;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.sm-bubble-admin {
+  background: #ffffff;
+  color: #1e293b;
+  border-radius: 12px 12px 12px 4px;
+  border: 1px solid rgba(0,0,0,0.05);
+}
+
+.sm-bubble-user {
+  background: #dcf8c6;
+  color: #1e293b;
+  border-radius: 12px 12px 4px 12px;
+}
+
+.sm-bubble-time {
+  font-size: 10px;
+  color: #94a3b8;
+  margin-top: 4px;
+  font-family: var(--mono);
+}
+
+.sm-chat-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* Input row */
+.sm-msg-input-row {
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg1);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.sm-msg-input {
+  flex: 1;
+  background: var(--bg0);
+  border: 1px solid var(--border2);
+  border-radius: 9999px;
+  padding: 10px 18px;
+  font-size: 13px;
+  font-family: var(--font);
+  color: var(--t1);
+  outline: none;
+  transition: border-color 0.2s;
+}
+.sm-msg-input:focus { border-color: var(--accent-border); }
+
+.sm-msg-send-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s;
+  font-size: 18px;
+}
+.sm-msg-send-btn:hover { background: #6a5acd; }
+.sm-msg-send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Broadcast toggle */
+.sm-broadcast-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--t2);
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 5px 8px;
+  border-radius: 6px;
+  transition: all 0.13s;
+}
+.sm-broadcast-toggle:hover { background: var(--bg3); color: var(--t1); }
+.sm-broadcast-toggle.active { color: var(--amber); background: var(--amber-dim); border: 1px solid var(--amber-border); }
+
+.sm-no-msgs { text-align: center; padding: 40px 20px; color: var(--t3); font-size: 12px; }
+.sm-msg-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--t3); font-size: 13px; gap: 8px; }
+.sm-msg-empty i { font-size: 28px; }
+
+/* ── requests ── */
+.sm-req-list { display: flex; flex-direction: column; gap: 0; }
+.sm-req-item { padding: 16px 18px; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; transition: background 0.1s; }
+.sm-req-item:last-child { border-bottom: none; }
+.sm-req-item:hover { background: rgba(255,255,255,0.015); }
+.sm-req-left { flex: 1; min-width: 200px; }
+.sm-req-meta { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
+.sm-req-name { font-size: 13px; font-weight: 500; color: var(--t1); }
+.sm-req-handle { font-size: 11px; color: var(--t3); font-family: var(--mono); margin-top: 1px; }
+.sm-req-amount { font-family: var(--mono); font-size: 13px; font-weight: 500; color: var(--amber); margin-top: 4px; }
+.sm-req-upi { font-size: 11px; color: var(--t3); margin-top: 3px; font-family: var(--mono); }
+.sm-req-msg { font-size: 11px; color: var(--t3); margin-top: 3px; font-style: italic; }
+.sm-req-time { font-size: 10px; color: var(--t3); margin-top: 6px; font-family: var(--mono); }
+.sm-req-actions { display: flex; gap: 6px; align-items: flex-start; flex-wrap: wrap; }
+
+/* ── table footer ── */
+.sm-table-footer { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-top: 1px solid var(--border); background: var(--bg2); }
+.sm-footer-count { font-size: 11px; color: var(--t3); font-family: var(--mono); }
+
+/* ── empty ── */
+.sm-empty { padding: 48px 24px; text-align: center; color: var(--t3); font-size: 13px; }
+
+/* responsive */
+@media (max-width: 1000px) { .sm-stats { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 700px) {
+  .sm-stats { grid-template-columns: repeat(2, 1fr); }
+  .sm-msg-layout { grid-template-columns: 1fr; }
+}
+`;
+
 const ShortenerManager: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'links' | 'users' | 'requests' | 'messages'>('links');
 
-  // ===== LINKS STATE =====
+  // links
   const [links, setLinks] = useState<ShortLink[]>([]);
   const [linksLoading, setLinksLoading] = useState(true);
   const [addForm, setAddForm] = useState({ code: '', url: '', label: '', userId: '' });
@@ -79,8 +641,9 @@ const ShortenerManager: React.FC = () => {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [showAddLink, setShowAddLink] = useState(false);
 
-  // ===== USERS STATE =====
+  // users
   const [users, setUsers] = useState<ShortUser[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
   const [addUserForm, setAddUserForm] = useState({ username: '', password: '', realName: '', ratePerThousand: 10 });
@@ -91,19 +654,18 @@ const ShortenerManager: React.FC = () => {
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentNote, setPaymentNote] = useState('');
   const [payingId, setPayingId] = useState<string | null>(null);
-  // Create link for user modal
   const [createLinkModal, setCreateLinkModal] = useState<ShortUser | null>(null);
   const [createLinkForm, setCreateLinkForm] = useState({ code: '', url: '', label: '' });
   const [creatingLink, setCreatingLink] = useState(false);
-  // Profile view
   const [profileModal, setProfileModal] = useState<ShortUser | null>(null);
+  const [showAddUser, setShowAddUser] = useState(false);
 
-  // ===== REQUESTS STATE =====
+  // requests
   const [requests, setRequests] = useState<ShortRequest[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
 
-  // ===== MESSAGES STATE =====
+  // messages
   const [selectedUserMsg, setSelectedUserMsg] = useState<ShortUser | null>(null);
   const [messages, setMessages] = useState<ShortMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
@@ -111,915 +673,1056 @@ const ShortenerManager: React.FC = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    fetchLinks();
-    fetchUsers();
-    fetchUnreadCount();
-  }, []);
+  // broadcast mode
+  const [broadcastMode, setBroadcastMode] = useState(false);
+  const [selectedBroadcastUsers, setSelectedBroadcastUsers] = useState<string[]>([]);
 
-  useEffect(() => {
-    if (activeTab === 'requests') fetchRequests();
-  }, [activeTab]);
+  useEffect(() => { fetchLinks(); fetchUsers(); fetchUnreadCount(); }, []);
+  useEffect(() => { if (activeTab === 'requests') fetchRequests(); }, [activeTab]);
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  // ===== UNREAD COUNT =====
   const fetchUnreadCount = async () => {
     try {
-      const { data } = await axios.get(`${API_BASE}/short-users/admin/messages-count`, {
-        headers: { Authorization: `Bearer ${getToken()}` }
-      });
+      const { data } = await axios.get(`${API_BASE}/short-users/admin/messages-count`, { headers: { Authorization: `Bearer ${getToken()}` } });
       setUnreadCount(data.unread || 0);
     } catch {}
   };
 
-  // ===== LINKS =====
   const fetchLinks = async () => {
     setLinksLoading(true);
     try {
-      const { data } = await axios.get(`${SHORTENER_BASE}/admin/links`, {
-        headers: { Authorization: `Bearer ${getToken()}` }
-      });
+      const { data } = await axios.get(`${SHORTENER_BASE}/admin/links`, { headers: { Authorization: `Bearer ${getToken()}` } });
       setLinks(Array.isArray(data) ? data : []);
     } catch (err: any) {
       toast.error('Links load failed: ' + (err.response?.data?.error || err.message));
-      setLinks([]);
-    } finally {
-      setLinksLoading(false);
-    }
+    } finally { setLinksLoading(false); }
   };
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!addForm.code.trim() || !addForm.url.trim()) { toast.error('Code and URL are required'); return; }
     setAdding(true);
-    const tid = toast.loading('Creating link...');
     try {
       await axios.post(`${SHORTENER_BASE}/admin/links`,
         { code: addForm.code.trim().toLowerCase(), url: addForm.url.trim(), label: addForm.label.trim() || addForm.code.trim(), userId: addForm.userId || null },
         { headers: { Authorization: `Bearer ${getToken()}` } }
       );
-      toast.success('✅ Link created!', { id: tid });
+      toast.success('Link created');
       setAddForm({ code: '', url: '', label: '', userId: '' });
+      setShowAddLink(false);
       fetchLinks();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Create failed', { id: tid });
-    } finally {
-      setAdding(false);
-    }
+    } catch (err: any) { toast.error(err.response?.data?.error || 'Create failed'); }
+    finally { setAdding(false); }
   };
 
   const handleUpdate = async (code: string) => {
-    const tid = toast.loading('Updating...');
     try {
       await axios.put(`${SHORTENER_BASE}/admin/links/${code}`, editForm, { headers: { Authorization: `Bearer ${getToken()}` } });
-      toast.success('✅ Updated!', { id: tid });
-      setEditingId(null);
-      fetchLinks();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Update failed', { id: tid });
-    }
+      toast.success('Updated');
+      setEditingId(null); fetchLinks();
+    } catch (err: any) { toast.error(err.response?.data?.error || 'Update failed'); }
   };
 
   const handleDelete = async (code: string) => {
-    const tid = toast.loading('Deleting...');
     try {
       await axios.delete(`${SHORTENER_BASE}/admin/links/${code}`, { headers: { Authorization: `Bearer ${getToken()}` } });
-      toast.success('✅ Link deleted!', { id: tid });
-      setDeleteConfirm(null);
-      fetchLinks();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Delete failed', { id: tid });
-    }
+      toast.success('Link deleted');
+      setDeleteConfirm(null); fetchLinks();
+    } catch (err: any) { toast.error(err.response?.data?.error || 'Delete failed'); }
   };
 
   const copyToClipboard = (code: string) => {
     navigator.clipboard.writeText(`https://go.animebing.in/${code}`);
-    setCopiedCode(code);
-    toast.success('Link copied!');
+    setCopiedCode(code); toast.success('Copied!');
     setTimeout(() => setCopiedCode(null), 2000);
   };
 
-  // ===== USERS =====
   const fetchUsers = async () => {
     setUsersLoading(true);
     try {
-      const { data } = await axios.get(`${API_BASE}/short-users/admin/users`, {
-        headers: { Authorization: `Bearer ${getToken()}` }
-      });
+      const { data } = await axios.get(`${API_BASE}/short-users/admin/users`, { headers: { Authorization: `Bearer ${getToken()}` } });
       setUsers(Array.isArray(data) ? data : []);
-    } catch (err: any) {
-      toast.error('Users load failed');
-      setUsers([]);
-    } finally {
-      setUsersLoading(false);
-    }
+    } catch { toast.error('Users load failed'); }
+    finally { setUsersLoading(false); }
   };
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!addUserForm.username.trim() || !addUserForm.password.trim() || !addUserForm.realName.trim()) {
-      toast.error('All fields are required'); return;
-    }
+    if (!addUserForm.username || !addUserForm.password || !addUserForm.realName) { toast.error('All fields required'); return; }
     setAddingUser(true);
-    const tid = toast.loading('Creating user...');
     try {
       await axios.post(`${API_BASE}/short-users/admin/users`, addUserForm, { headers: { Authorization: `Bearer ${getToken()}` } });
-      toast.success('✅ User created!', { id: tid });
+      toast.success('User created');
       setAddUserForm({ username: '', password: '', realName: '', ratePerThousand: 10 });
-      fetchUsers();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Create failed', { id: tid });
-    } finally {
-      setAddingUser(false);
-    }
+      setShowAddUser(false); fetchUsers();
+    } catch (err: any) { toast.error(err.response?.data?.error || 'Create failed'); }
+    finally { setAddingUser(false); }
   };
 
   const handleUpdateUser = async (userId: string) => {
-    const tid = toast.loading('Updating...');
     try {
-      const updateData: any = { realName: editUserForm.realName, ratePerThousand: editUserForm.ratePerThousand, isActive: editUserForm.isActive };
-      if (editUserForm.password.trim()) updateData.password = editUserForm.password.trim();
-      await axios.put(`${API_BASE}/short-users/admin/users/${userId}`, updateData, { headers: { Authorization: `Bearer ${getToken()}` } });
-      toast.success('✅ User updated!', { id: tid });
-      setEditingUserId(null);
-      fetchUsers();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Update failed', { id: tid });
-    }
+      const payload: any = { realName: editUserForm.realName, ratePerThousand: editUserForm.ratePerThousand, isActive: editUserForm.isActive };
+      if (editUserForm.password.trim()) payload.password = editUserForm.password.trim();
+      await axios.put(`${API_BASE}/short-users/admin/users/${userId}`, payload, { headers: { Authorization: `Bearer ${getToken()}` } });
+      toast.success('User updated'); setEditingUserId(null); fetchUsers();
+    } catch (err: any) { toast.error(err.response?.data?.error || 'Update failed'); }
   };
 
   const handlePayment = async () => {
     if (!paymentModal || !paymentAmount) return;
     const amount = parseFloat(paymentAmount);
-    if (isNaN(amount) || amount <= 0) { toast.error('Enter a valid amount'); return; }
+    if (isNaN(amount) || amount <= 0) { toast.error('Enter valid amount'); return; }
     setPayingId(paymentModal._id);
-    const tid = toast.loading('Processing payment...');
     try {
-      await axios.post(`${API_BASE}/short-users/admin/users/${paymentModal._id}/pay`,
-        { amount, note: paymentNote },
-        { headers: { Authorization: `Bearer ${getToken()}` } }
-      );
-      toast.success(`✅ ₹${amount} payment marked!`, { id: tid });
+      await axios.post(`${API_BASE}/short-users/admin/users/${paymentModal._id}/pay`, { amount, note: paymentNote }, { headers: { Authorization: `Bearer ${getToken()}` } });
+      toast.success(`Rs.${amount} payment marked`);
       setPaymentModal(null); setPaymentAmount(''); setPaymentNote('');
       fetchUsers(); fetchRequests();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Payment failed', { id: tid });
-    } finally {
-      setPayingId(null);
-    }
+    } catch (err: any) { toast.error(err.response?.data?.error || 'Payment failed'); }
+    finally { setPayingId(null); }
   };
 
-  // ===== CREATE LINK FOR USER =====
   const handleCreateLinkForUser = async () => {
     if (!createLinkModal) return;
-    if (!createLinkForm.code.trim() || !createLinkForm.url.trim()) { toast.error('Code and URL required'); return; }
+    if (!createLinkForm.code || !createLinkForm.url) { toast.error('Code and URL required'); return; }
     setCreatingLink(true);
-    const tid = toast.loading('Creating link...');
     try {
-      await axios.post(
-        `${API_BASE}/short-users/admin/users/${createLinkModal._id}/create-link`,
+      await axios.post(`${API_BASE}/short-users/admin/users/${createLinkModal._id}/create-link`,
         { code: createLinkForm.code.trim().toLowerCase(), url: createLinkForm.url.trim(), label: createLinkForm.label.trim() || createLinkForm.code.trim() },
         { headers: { Authorization: `Bearer ${getToken()}` } }
       );
-      toast.success(`✅ Link created for ${createLinkModal.realName}!`, { id: tid });
+      toast.success(`Link created for ${createLinkModal.realName}`);
       setCreateLinkModal(null); setCreateLinkForm({ code: '', url: '', label: '' });
       fetchLinks(); fetchRequests();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Create failed', { id: tid });
-    } finally {
-      setCreatingLink(false);
-    }
+    } catch (err: any) { toast.error(err.response?.data?.error || 'Create failed'); }
+    finally { setCreatingLink(false); }
   };
 
-  // ===== REQUESTS =====
   const fetchRequests = async () => {
     setRequestsLoading(true);
     try {
-      const { data } = await axios.get(`${API_BASE}/short-users/admin/requests`, {
-        headers: { Authorization: `Bearer ${getToken()}` }
-      });
+      const { data } = await axios.get(`${API_BASE}/short-users/admin/requests`, { headers: { Authorization: `Bearer ${getToken()}` } });
       const list = Array.isArray(data) ? data : [];
       setRequests(list);
       setPendingCount(list.filter((r: ShortRequest) => r.status === 'pending').length);
-    } catch (err: any) {
-      toast.error('Requests load failed');
-    } finally {
-      setRequestsLoading(false);
-    }
+    } catch { toast.error('Requests load failed'); }
+    finally { setRequestsLoading(false); }
   };
 
   const updateRequestStatus = async (reqId: string, status: string) => {
     try {
       await axios.put(`${API_BASE}/short-users/admin/requests/${reqId}`, { status }, { headers: { Authorization: `Bearer ${getToken()}` } });
-      toast.success(`Request marked as ${status}`);
-      fetchRequests();
-    } catch (err: any) {
-      toast.error('Update failed');
-    }
+      toast.success(`Marked as ${status}`); fetchRequests();
+    } catch { toast.error('Update failed'); }
   };
 
-  // ===== MESSAGES =====
   const loadMessages = async (user: ShortUser) => {
-    setSelectedUserMsg(user);
-    setMessagesLoading(true);
-    setMessages([]);
+    setSelectedUserMsg(user); setMessagesLoading(true); setMessages([]);
     try {
-      const { data } = await axios.get(`${API_BASE}/short-users/admin/messages/${user._id}`, {
-        headers: { Authorization: `Bearer ${getToken()}` }
-      });
+      const { data } = await axios.get(`${API_BASE}/short-users/admin/messages/${user._id}`, { headers: { Authorization: `Bearer ${getToken()}` } });
       setMessages(Array.isArray(data) ? data : []);
       fetchUnreadCount();
-    } catch (err: any) {
-      toast.error('Messages load failed');
-    } finally {
-      setMessagesLoading(false);
-    }
+    } catch { toast.error('Messages load failed'); }
+    finally { setMessagesLoading(false); }
   };
 
   const sendAdminMessage = async () => {
     if (!selectedUserMsg || !msgText.trim()) return;
+    const text = msgText.trim(); setMsgText('');
+    try {
+      await axios.post(`${API_BASE}/short-users/admin/messages/${selectedUserMsg._id}`, { text }, { headers: { Authorization: `Bearer ${getToken()}` } });
+      loadMessages(selectedUserMsg);
+    } catch { toast.error('Send failed'); }
+  };
+
+  // --- Broadcast functions ---
+  const toggleBroadcastMode = () => {
+    setBroadcastMode(!broadcastMode);
+    setSelectedBroadcastUsers([]);
+    setSelectedUserMsg(null);
+  };
+
+  const toggleUserSelection = (userId: string) => {
+    setSelectedBroadcastUsers(prev =>
+      prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
+    );
+  };
+
+  const selectAllUsers = () => setSelectedBroadcastUsers(users.map(u => u._id));
+  const deselectAllUsers = () => setSelectedBroadcastUsers([]);
+
+  const sendBroadcast = async () => {
+    if (!msgText.trim() || selectedBroadcastUsers.length === 0) return;
     const text = msgText.trim();
     setMsgText('');
-    try {
-      await axios.post(
-        `${API_BASE}/short-users/admin/messages/${selectedUserMsg._id}`,
-        { text },
-        { headers: { Authorization: `Bearer ${getToken()}` } }
-      );
-      loadMessages(selectedUserMsg);
-    } catch (err: any) {
-      toast.error('Send failed');
+    const total = selectedBroadcastUsers.length;
+    const toastId = toast.loading(`Sending to ${total} users...`);
+    let success = 0;
+    let failed = 0;
+    for (const userId of selectedBroadcastUsers) {
+      try {
+        await axios.post(`${API_BASE}/short-users/admin/messages/${userId}`, { text }, { headers: { Authorization: `Bearer ${getToken()}` } });
+        success++;
+      } catch {
+        failed++;
+      }
     }
+    toast.dismiss(toastId);
+    if (failed === 0) {
+      toast.success(`Message sent to all ${success} users`);
+    } else {
+      toast.error(`Sent to ${success} users, failed for ${failed} users`);
+    }
+    setSelectedBroadcastUsers([]);
   };
 
   const getUserName = (userId?: string) => {
     if (!userId) return '—';
     const u = users.find(u => u._id === userId);
-    return u ? `${u.realName} (${u.username})` : 'Unknown';
+    return u ? `${u.realName} (@${u.username})` : 'Unknown';
   };
 
-  const filteredLinks = links.filter(link =>
-    (link.code || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (link.label || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (link.url || '').toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredLinks = links.filter(l =>
+    (l.code || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (l.label || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (l.url || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const totalClicks = links.reduce((sum, l) => sum + (l.clicks || 0), 0);
-  const totalUnpaid = users.reduce((sum, u) => sum + (u.unpaidEarnings || 0), 0);
+  const totalClicks = links.reduce((s, l) => s + (l.clicks || 0), 0);
+  const totalUnpaid = users.reduce((s, u) => s + (u.unpaidEarnings || 0), 0);
+  const totalEarned = users.reduce((s, u) => s + (u.totalEarnings || 0), 0);
 
   return (
-    <div className="p-4 space-y-6 min-h-screen">
+    <>
+      <style>{css}</style>
+      <div className="sm">
 
-      {/* ===== DELETE MODAL ===== */}
-      {deleteConfirm && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-gray-800 border border-white/20 rounded-2xl p-6 max-w-sm w-full mx-4">
-            <h3 className="text-lg font-semibold text-white mb-3">Delete Link?</h3>
-            <p className="text-slate-300 text-sm mb-5">
-              <span className="text-teal-300 font-mono">go.animebing.in/{deleteConfirm}</span> will be deleted.
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm">Cancel</button>
-              <button onClick={() => handleDelete(deleteConfirm)} className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm">Delete</button>
-            </div>
+        {/* Stats */}
+        <div className="sm-stats">
+          <div className="sm-stat-card">
+            <div className="sm-stat-label">Total Links</div>
+            <div className="sm-stat-value sm-v-teal">{links.length}</div>
+            <div className="sm-stat-sub">short URLs active</div>
+          </div>
+          <div className="sm-stat-card">
+            <div className="sm-stat-label">Total Clicks</div>
+            <div className="sm-stat-value sm-v-accent">{totalClicks.toLocaleString()}</div>
+            <div className="sm-stat-sub">across all links</div>
+          </div>
+          <div className="sm-stat-card">
+            <div className="sm-stat-label">Total Users</div>
+            <div className="sm-stat-value sm-v-blue">{users.length}</div>
+            <div className="sm-stat-sub">{users.filter(u => u.isActive).length} active</div>
+          </div>
+          <div className="sm-stat-card">
+            <div className="sm-stat-label">Total Earned</div>
+            <div className="sm-stat-value sm-v-green">Rs.{totalEarned.toFixed(0)}</div>
+            <div className="sm-stat-sub">all time</div>
+          </div>
+          <div className="sm-stat-card">
+            <div className="sm-stat-label">Pending Payout</div>
+            <div className="sm-stat-value sm-v-red">Rs.{totalUnpaid.toFixed(0)}</div>
+            <div className="sm-stat-sub">awaiting payment</div>
           </div>
         </div>
-      )}
 
-      {/* ===== PAYMENT MODAL ===== */}
-      {paymentModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-gray-800 border border-white/20 rounded-2xl p-6 max-w-sm w-full mx-4">
-            <h3 className="text-lg font-semibold text-white mb-1">Mark Payment</h3>
-            <p className="text-slate-400 text-sm mb-1">{paymentModal.realName} ({paymentModal.username})</p>
-            <p className="text-sm mb-3">Pending: <span className="text-yellow-300 font-bold">₹{(paymentModal.unpaidEarnings || 0).toFixed(2)}</span></p>
-
-            {/* Show UPI info */}
-            {paymentModal.profile && (paymentModal.profile.upiId || paymentModal.profile.upiPhone) && (
-              <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3 mb-3 text-xs space-y-1">
-                {paymentModal.profile.upiId && <div className="text-green-300">UPI ID: <span className="font-mono">{paymentModal.profile.upiId}</span></div>}
-                {paymentModal.profile.upiPhone && <div className="text-green-300">UPI Phone: <span className="font-mono">{paymentModal.profile.upiPhone}</span></div>}
-              </div>
-            )}
-
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs text-white/50 mb-1 block">Amount (₹) *</label>
-                <input type="number" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} placeholder="100"
-                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-green-500" />
-              </div>
-              <div>
-                <label className="text-xs text-white/50 mb-1 block">Note (optional)</label>
-                <input type="text" value={paymentNote} onChange={e => setPaymentNote(e.target.value)} placeholder="Sent via UPI"
-                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-green-500" />
-              </div>
-            </div>
-            <div className="flex gap-3 justify-end mt-4">
-              <button onClick={() => { setPaymentModal(null); setPaymentAmount(''); setPaymentNote(''); }}
-                className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm">Cancel</button>
-              <button onClick={handlePayment} disabled={!!payingId}
-                className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white rounded-lg text-sm flex items-center gap-2">
-                {payingId && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>}
-                ✓ Mark Payment
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ===== CREATE LINK FOR USER MODAL ===== */}
-      {createLinkModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-gray-800 border border-white/20 rounded-2xl p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold text-white mb-1">Create Link for User</h3>
-            <p className="text-slate-400 text-sm mb-4">{createLinkModal.realName} ({createLinkModal.username})</p>
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs text-white/50 mb-1 block">Short Code *</label>
-                <div className="flex items-center gap-1">
-                  <span className="text-xs text-white/30">go.../</span>
-                  <input type="text" value={createLinkForm.code}
-                    onChange={e => setCreateLinkForm({ ...createLinkForm, code: e.target.value.toLowerCase().replace(/[^a-z0-9-_]/g, '') })}
-                    placeholder="ep1"
-                    className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-teal-500" />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs text-white/50 mb-1 block">Target URL *</label>
-                <input type="url" value={createLinkForm.url}
-                  onChange={e => setCreateLinkForm({ ...createLinkForm, url: e.target.value })}
-                  placeholder="https://..."
-                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-teal-500" />
-              </div>
-              <div>
-                <label className="text-xs text-white/50 mb-1 block">Label</label>
-                <input type="text" value={createLinkForm.label}
-                  onChange={e => setCreateLinkForm({ ...createLinkForm, label: e.target.value })}
-                  placeholder="Naruto Ep 1"
-                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-teal-500" />
-              </div>
-              {createLinkForm.code && (
-                <p className="text-xs text-teal-400">Preview: https://go.animebing.in/{createLinkForm.code}</p>
-              )}
-            </div>
-            <div className="flex gap-3 justify-end mt-4">
-              <button onClick={() => { setCreateLinkModal(null); setCreateLinkForm({ code: '', url: '', label: '' }); }}
-                className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm">Cancel</button>
-              <button onClick={handleCreateLinkForUser} disabled={creatingLink}
-                className="px-4 py-2 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white rounded-lg text-sm flex items-center gap-2">
-                {creatingLink && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>}
-                + Create & Assign
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ===== PROFILE VIEW MODAL ===== */}
-      {profileModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-gray-800 border border-white/20 rounded-2xl p-6 max-w-sm w-full mx-4">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-white">Profile: {profileModal.realName}</h3>
-              <button onClick={() => setProfileModal(null)} className="text-white/40 hover:text-white text-xl">✕</button>
-            </div>
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between py-2 border-b border-white/10">
-                <span className="text-white/50">Username</span>
-                <span className="font-mono text-teal-300">{profileModal.username}</span>
-              </div>
-              {profileModal.gmailLinked && (
-                <div className="flex justify-between py-2 border-b border-white/10">
-                  <span className="text-white/50">Gmail Linked</span>
-                  <span className="text-green-300 text-xs">{profileModal.gmailLinked}</span>
-                </div>
-              )}
-              {profileModal.profile?.mobile && (
-                <div className="flex justify-between py-2 border-b border-white/10">
-                  <span className="text-white/50">Mobile</span>
-                  <span className="text-white">{profileModal.profile.mobile}</span>
-                </div>
-              )}
-              {profileModal.profile?.gmail && (
-                <div className="flex justify-between py-2 border-b border-white/10">
-                  <span className="text-white/50">Gmail</span>
-                  <span className="text-white text-xs">{profileModal.profile.gmail}</span>
-                </div>
-              )}
-              {profileModal.profile?.upiId && (
-                <div className="flex justify-between py-2 border-b border-white/10">
-                  <span className="text-white/50">UPI ID</span>
-                  <span className="text-yellow-300 font-mono text-xs">{profileModal.profile.upiId}</span>
-                </div>
-              )}
-              {profileModal.profile?.upiPhone && (
-                <div className="flex justify-between py-2 border-b border-white/10">
-                  <span className="text-white/50">UPI Phone</span>
-                  <span className="text-yellow-300 font-mono">{profileModal.profile.upiPhone}</span>
-                </div>
-              )}
-              {profileModal.profile?.age && (
-                <div className="flex justify-between py-2 border-b border-white/10">
-                  <span className="text-white/50">Age</span>
-                  <span className="text-white">{profileModal.profile.age}</span>
-                </div>
-              )}
-              {profileModal.profile?.gender && (
-                <div className="flex justify-between py-2 border-b border-white/10">
-                  <span className="text-white/50">Gender</span>
-                  <span className="text-white">{profileModal.profile.gender}</span>
-                </div>
-              )}
-              {!profileModal.profile?.upiId && !profileModal.profile?.upiPhone && (
-                <p className="text-center text-yellow-400 text-xs py-2">⚠️ No UPI details filled yet</p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ===== HEADER ===== */}
-      <div className="flex flex-wrap items-center gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-teal-500/20 rounded-xl">
-            <svg className="w-7 h-7 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-            </svg>
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-teal-300 to-cyan-300">URL Shortener</h1>
-            <p className="text-xs text-white/40">go.animebing.in</p>
-          </div>
-        </div>
-        <div className="flex gap-2 ml-auto flex-wrap">
-          <div className="bg-teal-500/20 border border-teal-500/30 rounded-full px-4 py-1.5 text-sm text-teal-300">🔗 {links.length} Links</div>
-          <div className="bg-purple-500/20 border border-purple-500/30 rounded-full px-4 py-1.5 text-sm text-purple-300">👆 {totalClicks} Clicks</div>
-          <div className="bg-yellow-500/20 border border-yellow-500/30 rounded-full px-4 py-1.5 text-sm text-yellow-300">💰 ₹{totalUnpaid.toFixed(2)} Pending</div>
-          <div className="bg-blue-500/20 border border-blue-500/30 rounded-full px-4 py-1.5 text-sm text-blue-300">👥 {users.length} Users</div>
-          {pendingCount > 0 && (
-            <div className="bg-red-500/20 border border-red-500/30 rounded-full px-4 py-1.5 text-sm text-red-300">🔔 {pendingCount} Pending</div>
-          )}
-          <button onClick={() => { fetchLinks(); fetchUsers(); fetchUnreadCount(); if (activeTab === 'requests') fetchRequests(); }}
-            className="bg-white/10 hover:bg-white/20 border border-white/20 rounded-full px-4 py-1.5 text-sm text-white transition">↻ Refresh</button>
-        </div>
-      </div>
-
-      {/* ===== TABS ===== */}
-      <div className="flex gap-2 border-b border-white/10 pb-0">
-        {[
-          { key: 'links', label: '🔗 Links', color: 'teal' },
-          { key: 'users', label: '👥 Users', color: 'purple' },
-          { key: 'requests', label: `📋 Requests${pendingCount > 0 ? ` (${pendingCount})` : ''}`, color: 'yellow' },
-          { key: 'messages', label: `💬 Messages${unreadCount > 0 ? ` (${unreadCount})` : ''}`, color: 'blue' },
-        ].map(tab => (
-          <button key={tab.key} onClick={() => setActiveTab(tab.key as any)}
-            className={`px-5 py-2.5 text-sm font-medium rounded-t-lg transition ${
-              activeTab === tab.key
-                ? tab.color === 'teal' ? 'bg-teal-600 text-white' : tab.color === 'purple' ? 'bg-purple-600 text-white' : tab.color === 'yellow' ? 'bg-yellow-600 text-white' : 'bg-blue-600 text-white'
-                : 'bg-white/5 text-white/60 hover:bg-white/10'
-            }`}>
-            {tab.label}
+        {/* Tabs */}
+        <div className="sm-tabs">
+          <button
+            className={`sm-tab${activeTab === 'links' ? ' sm-tab-active sm-tab-active-teal' : ''}`}
+            onClick={() => setActiveTab('links')}
+          >
+            <i className="ti ti-link" style={{ fontSize: 13 }} />
+            Links
           </button>
-        ))}
-      </div>
-
-      {/* ===== LINKS TAB ===== */}
-      {activeTab === 'links' && (
-        <>
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
-            <h2 className="text-base font-semibold text-white mb-4"><span className="text-teal-400">+</span> Create New Short Link</h2>
-            <form onSubmit={handleAdd} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-              <div>
-                <label className="text-xs text-white/50 mb-1 block">Short Code *</label>
-                <div className="flex items-center gap-1">
-                  <span className="text-xs text-white/30 whitespace-nowrap">go.../</span>
-                  <input type="text" value={addForm.code}
-                    onChange={e => setAddForm({ ...addForm, code: e.target.value.toLowerCase().replace(/[^a-z0-9-_]/g, '') })}
-                    placeholder="ep1"
-                    className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-teal-500" required />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs text-white/50 mb-1 block">Target URL *</label>
-                <input type="url" value={addForm.url} onChange={e => setAddForm({ ...addForm, url: e.target.value })} placeholder="https://..."
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-teal-500" required />
-              </div>
-              <div>
-                <label className="text-xs text-white/50 mb-1 block">Label</label>
-                <input type="text" value={addForm.label} onChange={e => setAddForm({ ...addForm, label: e.target.value })} placeholder="Naruto Ep 1"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-teal-500" />
-              </div>
-              <div>
-                <label className="text-xs text-white/50 mb-1 block">Assign to User</label>
-                <select value={addForm.userId} onChange={e => setAddForm({ ...addForm, userId: e.target.value })}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-teal-500">
-                  <option value="">— No assignment —</option>
-                  {users.map(u => <option key={u._id} value={u._id}>{u.realName} ({u.username})</option>)}
-                </select>
-              </div>
-              <div className="md:col-span-2 lg:col-span-4">
-                {addForm.code && <p className="text-xs text-teal-400 mb-2">Preview: https://go.animebing.in/{addForm.code}</p>}
-                <button type="submit" disabled={adding}
-                  className="bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 disabled:opacity-50 text-white font-semibold py-2 px-6 rounded-lg text-sm flex items-center gap-2">
-                  {adding ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>Creating...</> : '+ Create Link'}
-                </button>
-              </div>
-            </form>
-          </div>
-
-          <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
-            <div className="p-4 border-b border-white/10 flex items-center gap-3">
-              <div className="relative flex-1 max-w-xs">
-                <input type="text" placeholder="Search links..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:ring-1 focus:ring-teal-500" />
-                <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-              </div>
-              <span className="text-xs text-white/40">{filteredLinks.length} / {links.length}</span>
-            </div>
-
-            {linksLoading ? (
-              <div className="flex justify-center py-12"><div className="w-10 h-10 border-4 border-teal-500/30 border-t-teal-500 rounded-full animate-spin"></div></div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-white/10 text-sm">
-                  <thead className="bg-white/5">
-                    <tr>
-                      {['Short URL', 'Label', 'Target URL', 'User', 'Clicks', 'Last Click', 'Actions'].map(h => (
-                        <th key={h} className="px-4 py-3 text-left text-xs font-medium text-white/50 uppercase">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/10">
-                    {filteredLinks.length === 0 ? (
-                      <tr><td colSpan={7} className="px-6 py-12 text-center text-white/40">{links.length === 0 ? 'No links yet.' : 'No matches.'}</td></tr>
-                    ) : filteredLinks.map(link => (
-                      <React.Fragment key={link.code}>
-                        <tr className={`hover:bg-white/5 transition ${editingId === link.code ? 'bg-white/10' : ''}`}>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono text-teal-300 text-xs">go.../{link.code}</span>
-                              <button onClick={() => copyToClipboard(link.code)} className="text-white/40 hover:text-white">
-                                {copiedCode === link.code
-                                  ? <svg className="w-3.5 h-3.5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                                  : <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>}
-                              </button>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3"><span className="text-white/80 text-xs">{link.label || '—'}</span></td>
-                          <td className="px-4 py-3 max-w-[160px]">
-                            <a href={link.url || '#'} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 text-xs truncate block max-w-[150px]" title={link.url || ''}>
-                              {link.url ? (link.url.length > 35 ? link.url.substring(0, 35) + '...' : link.url) : 'No URL'}
-                            </a>
-                          </td>
-                          <td className="px-4 py-3"><span className="text-xs text-purple-300">{getUserName(link.userId)}</span></td>
-                          <td className="px-4 py-3">
-                            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${(link.clicks || 0) > 100 ? 'bg-green-500/20 text-green-300' : (link.clicks || 0) > 10 ? 'bg-yellow-500/20 text-yellow-300' : 'bg-white/10 text-white/60'}`}>{link.clicks || 0}</span>
-                          </td>
-                          <td className="px-4 py-3"><span className="text-white/40 text-xs">{link.lastClicked ? new Date(link.lastClicked).toLocaleDateString('en-IN') : 'Never'}</span></td>
-                          <td className="px-4 py-3">
-                            <div className="flex gap-1.5">
-                              <button onClick={() => { if (editingId === link.code) { setEditingId(null); } else { setEditingId(link.code); setEditForm({ url: link.url || '', label: link.label || '', userId: link.userId || '' }); } }}
-                                className={`px-2 py-1.5 border rounded-lg text-xs font-medium transition ${editingId === link.code ? 'bg-yellow-500/20 border-yellow-500/30 text-yellow-200' : 'bg-indigo-500/20 border-indigo-500/30 text-indigo-200 hover:bg-indigo-500/40'}`}>
-                                {editingId === link.code ? '✕' : '✎'}
-                              </button>
-                              <button onClick={() => setDeleteConfirm(link.code)} className="px-2 py-1.5 bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 rounded-lg text-red-200 text-xs">🗑</button>
-                            </div>
-                          </td>
-                        </tr>
-                        {editingId === link.code && (
-                          <tr className="bg-white/5">
-                            <td colSpan={7} className="px-4 py-4">
-                              <div className="border-l-4 border-indigo-500 pl-4 space-y-3">
-                                <h4 className="text-sm font-semibold text-white">Edit: go.animebing.in/{link.code}</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                  <div>
-                                    <label className="text-xs text-white/50 mb-1 block">Target URL</label>
-                                    <input type="url" value={editForm.url} onChange={e => setEditForm({ ...editForm, url: e.target.value })}
-                                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-                                  </div>
-                                  <div>
-                                    <label className="text-xs text-white/50 mb-1 block">Label</label>
-                                    <input type="text" value={editForm.label} onChange={e => setEditForm({ ...editForm, label: e.target.value })}
-                                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-                                  </div>
-                                  <div>
-                                    <label className="text-xs text-white/50 mb-1 block">Assign to User</label>
-                                    <select value={editForm.userId} onChange={e => setEditForm({ ...editForm, userId: e.target.value })}
-                                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                                      <option value="">— No assignment —</option>
-                                      {users.map(u => <option key={u._id} value={u._id}>{u.realName} ({u.username})</option>)}
-                                    </select>
-                                  </div>
-                                </div>
-                                <div className="flex gap-2">
-                                  <button onClick={() => handleUpdate(link.code)} className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 text-white font-medium py-1.5 px-4 rounded-lg text-sm">✓ Save</button>
-                                  <button onClick={() => setEditingId(null)} className="bg-white/10 hover:bg-white/20 text-white font-medium py-1.5 px-4 rounded-lg text-sm">Cancel</button>
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </>
-      )}
-
-      {/* ===== USERS TAB ===== */}
-      {activeTab === 'users' && (
-        <>
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
-            <h2 className="text-base font-semibold text-white mb-4"><span className="text-purple-400">+</span> Create New User</h2>
-            <form onSubmit={handleAddUser} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-              <div>
-                <label className="text-xs text-white/50 mb-1 block">Username *</label>
-                <input type="text" value={addUserForm.username}
-                  onChange={e => setAddUserForm({ ...addUserForm, username: e.target.value.toLowerCase().replace(/\s/g, '') })}
-                  placeholder="harsh" className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-purple-500" required />
-              </div>
-              <div>
-                <label className="text-xs text-white/50 mb-1 block">Password *</label>
-                <input type="text" value={addUserForm.password} onChange={e => setAddUserForm({ ...addUserForm, password: e.target.value })}
-                  placeholder="harsh123" className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-purple-500" required />
-              </div>
-              <div>
-                <label className="text-xs text-white/50 mb-1 block">Real Name *</label>
-                <input type="text" value={addUserForm.realName} onChange={e => setAddUserForm({ ...addUserForm, realName: e.target.value })}
-                  placeholder="Harsh Rathore" className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-purple-500" required />
-              </div>
-              <div>
-                <label className="text-xs text-white/50 mb-1 block">Rate per 1000 clicks (₹)</label>
-                <input type="number" value={addUserForm.ratePerThousand} min="1"
-                  onChange={e => setAddUserForm({ ...addUserForm, ratePerThousand: Number(e.target.value) })}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-purple-500" />
-              </div>
-              <div className="md:col-span-2 lg:col-span-4">
-                <button type="submit" disabled={addingUser}
-                  className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 disabled:opacity-50 text-white font-semibold py-2 px-6 rounded-lg text-sm flex items-center gap-2">
-                  {addingUser ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>Creating...</> : '+ Create User'}
-                </button>
-              </div>
-            </form>
-          </div>
-
-          <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
-            <div className="p-4 border-b border-white/10">
-              <span className="text-sm text-white/60">{users.length} users total</span>
-            </div>
-            {usersLoading ? (
-              <div className="flex justify-center py-12"><div className="w-10 h-10 border-4 border-purple-500/30 border-t-purple-500 rounded-full animate-spin"></div></div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-white/10 text-sm">
-                  <thead className="bg-white/5">
-                    <tr>
-                      {['Real Name', 'Username', 'Password', 'Rate/1000', 'Clicks', 'Earned', 'Pending', 'Status', 'Actions'].map(h => (
-                        <th key={h} className="px-4 py-3 text-left text-xs font-medium text-white/50 uppercase">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/10">
-                    {users.length === 0 ? (
-                      <tr><td colSpan={9} className="px-6 py-12 text-center text-white/40">No users yet. Create one above!</td></tr>
-                    ) : users.map(user => (
-                      <React.Fragment key={user._id}>
-                        <tr className={`hover:bg-white/5 transition ${editingUserId === user._id ? 'bg-white/10' : ''}`}>
-                          <td className="px-4 py-3">
-                            <div>
-                              <span className="text-white font-medium text-xs">{user.realName}</span>
-                              {user.gmailLinked && <div className="text-green-400 text-xs">✉️ Gmail linked</div>}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3"><span className="font-mono text-teal-300 text-xs">{user.username}</span></td>
-                          <td className="px-4 py-3"><span className="font-mono text-yellow-300 text-xs bg-yellow-500/10 px-2 py-0.5 rounded">{user.password}</span></td>
-                          <td className="px-4 py-3"><span className="text-green-300 text-xs">₹{user.ratePerThousand}</span></td>
-                          <td className="px-4 py-3"><span className="text-purple-300 text-xs">{(user.totalClicks || 0).toLocaleString()}</span></td>
-                          <td className="px-4 py-3"><span className="text-white/70 text-xs">₹{(user.totalEarnings || 0).toFixed(2)}</span></td>
-                          <td className="px-4 py-3">
-                            <span className={`text-xs font-semibold ${(user.unpaidEarnings || 0) > 0 ? 'text-yellow-300' : 'text-white/40'}`}>
-                              ₹{(user.unpaidEarnings || 0).toFixed(2)}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${user.isActive ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
-                              {user.isActive ? '✅ Active' : '❌ Inactive'}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex gap-1.5 flex-wrap">
-                              <button onClick={() => { if (editingUserId === user._id) { setEditingUserId(null); } else { setEditingUserId(user._id); setEditUserForm({ password: user.password, realName: user.realName, ratePerThousand: user.ratePerThousand, isActive: user.isActive }); } }}
-                                className={`px-2 py-1.5 border rounded-lg text-xs font-medium transition ${editingUserId === user._id ? 'bg-yellow-500/20 border-yellow-500/30 text-yellow-200' : 'bg-indigo-500/20 border-indigo-500/30 text-indigo-200 hover:bg-indigo-500/40'}`}>
-                                {editingUserId === user._id ? '✕' : '✎'}
-                              </button>
-                              <button onClick={() => setPaymentModal(user)} className="px-2 py-1.5 bg-green-500/20 hover:bg-green-500/40 border border-green-500/30 rounded-lg text-green-200 text-xs">💰 Pay</button>
-                              <button onClick={() => { setCreateLinkModal(user); setCreateLinkForm({ code: '', url: '', label: '' }); }}
-                                className="px-2 py-1.5 bg-teal-500/20 hover:bg-teal-500/40 border border-teal-500/30 rounded-lg text-teal-200 text-xs">🔗 Link</button>
-                              <button onClick={() => setProfileModal(user)} className="px-2 py-1.5 bg-blue-500/20 hover:bg-blue-500/40 border border-blue-500/30 rounded-lg text-blue-200 text-xs">👤</button>
-                              <button onClick={() => { setActiveTab('messages'); loadMessages(user); }} className="px-2 py-1.5 bg-purple-500/20 hover:bg-purple-500/40 border border-purple-500/30 rounded-lg text-purple-200 text-xs">💬</button>
-                            </div>
-                          </td>
-                        </tr>
-                        {editingUserId === user._id && (
-                          <tr className="bg-white/5">
-                            <td colSpan={9} className="px-4 py-4">
-                              <div className="border-l-4 border-purple-500 pl-4 space-y-3">
-                                <h4 className="text-sm font-semibold text-white">Edit: {user.realName}</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                                  <div>
-                                    <label className="text-xs text-white/50 mb-1 block">Real Name</label>
-                                    <input type="text" value={editUserForm.realName} onChange={e => setEditUserForm({ ...editUserForm, realName: e.target.value })}
-                                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-purple-500" />
-                                  </div>
-                                  <div>
-                                    <label className="text-xs text-white/50 mb-1 block">New Password (blank = keep)</label>
-                                    <input type="text" value={editUserForm.password} onChange={e => setEditUserForm({ ...editUserForm, password: e.target.value })}
-                                      placeholder="New password or blank"
-                                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-purple-500" />
-                                  </div>
-                                  <div>
-                                    <label className="text-xs text-white/50 mb-1 block">Rate/1000 (₹)</label>
-                                    <input type="number" value={editUserForm.ratePerThousand} min="1"
-                                      onChange={e => setEditUserForm({ ...editUserForm, ratePerThousand: Number(e.target.value) })}
-                                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-purple-500" />
-                                  </div>
-                                  <div>
-                                    <label className="text-xs text-white/50 mb-1 block">Status</label>
-                                    <select value={editUserForm.isActive ? 'true' : 'false'} onChange={e => setEditUserForm({ ...editUserForm, isActive: e.target.value === 'true' })}
-                                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-purple-500">
-                                      <option value="true">✅ Active</option>
-                                      <option value="false">❌ Inactive</option>
-                                    </select>
-                                  </div>
-                                </div>
-                                <div className="flex gap-2">
-                                  <button onClick={() => handleUpdateUser(user._id)} className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 text-white font-medium py-1.5 px-4 rounded-lg text-sm">✓ Save</button>
-                                  <button onClick={() => setEditingUserId(null)} className="bg-white/10 hover:bg-white/20 text-white font-medium py-1.5 px-4 rounded-lg text-sm">Cancel</button>
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </>
-      )}
-
-      {/* ===== REQUESTS TAB ===== */}
-      {activeTab === 'requests' && (
-        <div className="space-y-4">
-          {requestsLoading ? (
-            <div className="flex justify-center py-12"><div className="w-10 h-10 border-4 border-yellow-500/30 border-t-yellow-500 rounded-full animate-spin"></div></div>
-          ) : requests.length === 0 ? (
-            <div className="bg-white/5 border border-white/10 rounded-2xl p-12 text-center text-white/40">No requests yet.</div>
-          ) : (
-            <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
-              <div className="p-4 border-b border-white/10 flex items-center justify-between">
-                <span className="text-sm text-white/60">{requests.length} requests · {pendingCount} pending</span>
-              </div>
-              <div className="divide-y divide-white/10">
-                {requests.map(req => (
-                  <div key={req._id} className="p-4 flex flex-wrap gap-4 items-start">
-                    <div className="flex-1 min-w-[200px]">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={`px-2 py-0.5 rounded text-xs font-bold ${req.type === 'payment' ? 'bg-green-500/20 text-green-300' : 'bg-blue-500/20 text-blue-300'}`}>
-                          {req.type === 'payment' ? '💰 Payment' : '🔗 Link'}
-                        </span>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${req.status === 'pending' ? 'bg-yellow-500/20 text-yellow-300' : req.status === 'done' ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
-                          {req.status === 'pending' ? '⏳ Pending' : req.status === 'done' ? '✅ Done' : '❌ Rejected'}
-                        </span>
-                      </div>
-                      <p className="text-white font-medium text-sm">{req.realName} <span className="text-white/40 font-normal">({req.username})</span></p>
-                      {req.type === 'payment' && req.amount && (
-                        <p className="text-yellow-300 text-sm font-semibold">Amount: ₹{req.amount.toFixed(2)}</p>
-                      )}
-                      {req.type === 'payment' && req.profile && (
-                        <div className="mt-1 text-xs text-white/50 space-x-3">
-                          {req.profile.upiId && <span>UPI: <span className="text-yellow-300 font-mono">{req.profile.upiId}</span></span>}
-                          {req.profile.upiPhone && <span>Phone: <span className="text-yellow-300 font-mono">{req.profile.upiPhone}</span></span>}
-                        </div>
-                      )}
-                      {req.type === 'link' && req.message && (
-                        <p className="text-white/60 text-xs mt-1">"{req.message}"</p>
-                      )}
-                      <p className="text-white/30 text-xs mt-1">{new Date(req.createdAt).toLocaleString('en-IN')}</p>
-                    </div>
-                    {req.status === 'pending' && (
-                      <div className="flex gap-2 flex-wrap">
-                        {req.type === 'payment' && (
-                          <button
-                            onClick={() => {
-                              const user = users.find(u => u._id === req.userId);
-                              if (user) { setPaymentModal(user); setPaymentAmount(String(req.amount || '')); }
-                            }}
-                            className="px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white rounded-lg text-xs font-medium">
-                            💰 Process Payment
-                          </button>
-                        )}
-                        {req.type === 'link' && (
-                          <button
-                            onClick={() => {
-                              const user = users.find(u => u._id === req.userId);
-                              if (user) { setCreateLinkModal(user); setCreateLinkForm({ code: '', url: '', label: '' }); }
-                            }}
-                            className="px-3 py-1.5 bg-teal-600 hover:bg-teal-500 text-white rounded-lg text-xs font-medium">
-                            🔗 Create Link
-                          </button>
-                        )}
-                        <button onClick={() => updateRequestStatus(req._id, 'rejected')}
-                          className="px-3 py-1.5 bg-red-600/30 hover:bg-red-600/60 border border-red-500/30 text-red-300 rounded-lg text-xs font-medium">
-                          Reject
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <button
+            className={`sm-tab${activeTab === 'users' ? ' sm-tab-active sm-tab-active-purple' : ''}`}
+            onClick={() => setActiveTab('users')}
+          >
+            <i className="ti ti-users" style={{ fontSize: 13 }} />
+            Users
+          </button>
+          <button
+            className={`sm-tab${activeTab === 'requests' ? ' sm-tab-active sm-tab-active-amber' : ''}`}
+            onClick={() => setActiveTab('requests')}
+          >
+            <i className="ti ti-clipboard-list" style={{ fontSize: 13 }} />
+            Requests
+            {pendingCount > 0 && <span className="sm-tab-badge">{pendingCount}</span>}
+          </button>
+          <button
+            className={`sm-tab${activeTab === 'messages' ? ' sm-tab-active sm-tab-active-blue' : ''}`}
+            onClick={() => setActiveTab('messages')}
+          >
+            <i className="ti ti-message-circle" style={{ fontSize: 13 }} />
+            Messages
+            {unreadCount > 0 && <span className="sm-tab-badge">{unreadCount}</span>}
+          </button>
+          <div style={{ flex: 1 }} />
+          <button
+            className="sm-btn sm-btn-ghost"
+            style={{ padding: '6px 12px', fontSize: 12 }}
+            onClick={() => { fetchLinks(); fetchUsers(); fetchUnreadCount(); if (activeTab === 'requests') fetchRequests(); }}
+          >
+            <i className="ti ti-refresh" style={{ fontSize: 13 }} /> Refresh
+          </button>
         </div>
-      )}
 
-      {/* ===== MESSAGES TAB ===== */}
-      {activeTab === 'messages' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* User list */}
-          <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
-            <div className="p-3 border-b border-white/10">
-              <span className="text-sm text-white/60">Select a user to chat</span>
+        {/* ═══ LINKS TAB ═══ (unchanged) */}
+        {activeTab === 'links' && (
+          <>
+            {/* ... (same as before) ... */}
+            <div className="sm-toolbar">
+              <div className="sm-toolbar-left">
+                <div className="sm-search-wrap">
+                  <i className="ti ti-search" />
+                  <input className="sm-search" type="text" placeholder="Search links..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+                </div>
+                {(searchQuery) && (
+                  <span style={{ fontSize: 11, color: 'var(--t3)', fontFamily: 'var(--mono)' }}>
+                    {filteredLinks.length} / {links.length}
+                  </span>
+                )}
+              </div>
+              <button className="sm-btn sm-btn-new" onClick={() => setShowAddLink(v => !v)}>
+                <i className="ti ti-plus" style={{ fontSize: 13 }} /> New Link
+              </button>
             </div>
-            <div className="divide-y divide-white/10 max-h-[500px] overflow-y-auto">
-              {users.map(user => (
-                <button key={user._id} onClick={() => loadMessages(user)}
-                  className={`w-full text-left px-4 py-3 hover:bg-white/10 transition ${selectedUserMsg?._id === user._id ? 'bg-white/10 border-l-2 border-purple-500' : ''}`}>
-                  <div className="text-sm text-white font-medium">{user.realName}</div>
-                  <div className="text-xs text-white/40">{user.username}</div>
-                </button>
-              ))}
-            </div>
-          </div>
 
-          {/* Chat window */}
-          <div className="lg:col-span-2 bg-white/5 border border-white/10 rounded-2xl flex flex-col" style={{ minHeight: '500px' }}>
-            {!selectedUserMsg ? (
-              <div className="flex-1 flex items-center justify-center text-white/30 text-sm">Select a user to start messaging</div>
+            {showAddLink && (
+              <div className="sm-create-panel">
+                <div className="sm-panel-label">Create Short Link</div>
+                <form onSubmit={handleAdd}>
+                  <div className="sm-form-grid">
+                    <div className="sm-field">
+                      <span>Short Code</span>
+                      <input className="sm-input" type="text" placeholder="e.g. ep1"
+                        value={addForm.code}
+                        onChange={e => setAddForm({ ...addForm, code: e.target.value.toLowerCase().replace(/[^a-z0-9-_]/g, '') })} />
+                      {addForm.code && <span className="sm-preview-url">go.animebing.in/{addForm.code}</span>}
+                    </div>
+                    <div className="sm-field">
+                      <span>Target URL</span>
+                      <input className="sm-input" type="url" placeholder="https://..." value={addForm.url} onChange={e => setAddForm({ ...addForm, url: e.target.value })} />
+                    </div>
+                    <div className="sm-field">
+                      <span>Label</span>
+                      <input className="sm-input" type="text" placeholder="Display name" value={addForm.label} onChange={e => setAddForm({ ...addForm, label: e.target.value })} />
+                    </div>
+                    <div className="sm-field">
+                      <span>Assign to User</span>
+                      <select className="sm-select" value={addForm.userId} onChange={e => setAddForm({ ...addForm, userId: e.target.value })}>
+                        <option value="">— No assignment —</option>
+                        {users.map(u => <option key={u._id} value={u._id}>{u.realName} ({u.username})</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="sm-form-actions">
+                    <button type="button" className="sm-btn sm-btn-ghost" onClick={() => setShowAddLink(false)}>Cancel</button>
+                    <button type="submit" className="sm-btn sm-btn-teal" disabled={adding}>
+                      <i className="ti ti-link" />{adding ? 'Creating...' : 'Create Link'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            <div className="sm-table-shell">
+              <div className="sm-table-wrap">
+                {linksLoading ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '48px 0', gap: 12 }}>
+                    <Spinner /><p style={{ color: 'var(--t3)', fontSize: 12, fontFamily: 'var(--mono)' }}>Loading links...</p>
+                  </div>
+                ) : filteredLinks.length === 0 ? (
+                  <div className="sm-empty">{links.length === 0 ? 'No links yet. Create one to get started.' : 'No links match your search.'}</div>
+                ) : (
+                  <table className="sm-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: '14%' }}>Short URL</th>
+                        <th style={{ width: '13%' }}>Label</th>
+                        <th style={{ width: '22%' }}>Target URL</th>
+                        <th style={{ width: '16%' }}>Assigned User</th>
+                        <th style={{ width: '9%' }}>Clicks</th>
+                        <th style={{ width: '12%' }}>Last Click</th>
+                        <th style={{ width: '14%' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredLinks.map(link => (
+                        <React.Fragment key={link.code}>
+                          <tr className="sm-data-row">
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span className="sm-code-chip">{link.code}</span>
+                                <button
+                                  className="sm-act-btn"
+                                  style={copiedCode === link.code ? { background: 'var(--green-dim)', color: 'var(--green)', borderColor: 'var(--green-border)' } : {}}
+                                  onClick={() => copyToClipboard(link.code)}
+                                  title="Copy URL"
+                                >
+                                  <i className={copiedCode === link.code ? 'ti ti-check' : 'ti ti-copy'} />
+                                </button>
+                              </div>
+                            </td>
+                            <td><span style={{ color: 'var(--t2)', fontSize: 12 }}>{link.label || '—'}</span></td>
+                            <td>
+                              <a href={link.url || '#'} target="_blank" rel="noopener noreferrer" className="sm-url-link" title={link.url}>
+                                {link.url ? (link.url.length > 38 ? link.url.substring(0, 38) + '…' : link.url) : '—'}
+                              </a>
+                            </td>
+                            <td>
+                              <span style={{ fontSize: 11, color: 'var(--accent)', fontFamily: 'var(--mono)' }}>
+                                {getUserName(link.userId)}
+                              </span>
+                            </td>
+                            <td>
+                              <span className={`sm-clicks-badge ${(link.clicks || 0) > 100 ? 'sm-clicks-high' : (link.clicks || 0) > 10 ? 'sm-clicks-mid' : 'sm-clicks-low'}`}>
+                                {(link.clicks || 0).toLocaleString()}
+                              </span>
+                            </td>
+                            <td><span className="sm-mono" style={{ color: 'var(--t3)', fontSize: 11 }}>{link.lastClicked ? new Date(link.lastClicked).toLocaleDateString('en-IN') : 'Never'}</span></td>
+                            <td>
+                              <div className="sm-act-group">
+                                <button
+                                  className={`sm-act-btn${editingId === link.code ? ' sm-act-btn-on' : ''}`}
+                                  onClick={() => { if (editingId === link.code) { setEditingId(null); } else { setEditingId(link.code); setEditForm({ url: link.url || '', label: link.label || '', userId: link.userId || '' }); } }}
+                                  title="Edit"
+                                ><i className="ti ti-edit" /></button>
+                                <span className="sm-act-sep" />
+                                <button className="sm-act-btn sm-act-btn-danger" onClick={() => setDeleteConfirm(link.code)} title="Delete">
+                                  <i className="ti ti-trash" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                          {editingId === link.code && (
+                            <tr className="sm-edit-expand">
+                              <td colSpan={7}>
+                                <div className="sm-edit-inner">
+                                  <div className="sm-edit-header">
+                                    <span className="sm-edit-bar" />
+                                    <span className="sm-edit-title">Edit Link</span>
+                                    <span className="sm-edit-sub">go.animebing.in/{link.code}</span>
+                                  </div>
+                                  <div className="sm-form-grid">
+                                    <div className="sm-field">
+                                      <span>Target URL</span>
+                                      <input className="sm-input" type="url" value={editForm.url} onChange={e => setEditForm({ ...editForm, url: e.target.value })} />
+                                    </div>
+                                    <div className="sm-field">
+                                      <span>Label</span>
+                                      <input className="sm-input" type="text" value={editForm.label} onChange={e => setEditForm({ ...editForm, label: e.target.value })} />
+                                    </div>
+                                    <div className="sm-field">
+                                      <span>Assign to User</span>
+                                      <select className="sm-select" value={editForm.userId} onChange={e => setEditForm({ ...editForm, userId: e.target.value })}>
+                                        <option value="">— No assignment —</option>
+                                        {users.map(u => <option key={u._id} value={u._id}>{u.realName} ({u.username})</option>)}
+                                      </select>
+                                    </div>
+                                  </div>
+                                  <div className="sm-form-actions">
+                                    <button className="sm-btn sm-btn-ghost" onClick={() => setEditingId(null)}>Cancel</button>
+                                    <button className="sm-btn sm-btn-success" onClick={() => handleUpdate(link.code)}>
+                                      <i className="ti ti-check" /> Save Changes
+                                    </button>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+              {filteredLinks.length > 0 && (
+                <div className="sm-table-footer">
+                  <span className="sm-footer-count">
+                    {filteredLinks.length === links.length ? `${links.length} links` : `${filteredLinks.length} of ${links.length} links`}
+                  </span>
+                  {searchQuery && (
+                    <button className="sm-btn sm-btn-ghost" style={{ padding: '5px 12px', fontSize: 11 }} onClick={() => setSearchQuery('')}>
+                      <i className="ti ti-x" style={{ fontSize: 11 }} /> Clear
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ═══ USERS TAB ═══ (unchanged) */}
+        {activeTab === 'users' && (
+          <>
+            <div className="sm-toolbar">
+              <div className="sm-toolbar-left" />
+              <button className="sm-btn sm-btn-new" onClick={() => setShowAddUser(v => !v)}>
+                <i className="ti ti-plus" style={{ fontSize: 13 }} /> New User
+              </button>
+            </div>
+
+            {showAddUser && (
+              <div className="sm-create-panel">
+                <div className="sm-panel-label">Create New User</div>
+                <form onSubmit={handleAddUser}>
+                  <div className="sm-form-grid">
+                    <div className="sm-field">
+                      <span>Username</span>
+                      <input className="sm-input" type="text" placeholder="e.g. harsh"
+                        value={addUserForm.username}
+                        onChange={e => setAddUserForm({ ...addUserForm, username: e.target.value.toLowerCase().replace(/\s/g, '') })} />
+                    </div>
+                    <div className="sm-field">
+                      <span>Password</span>
+                      <input className="sm-input" type="text" placeholder="harsh123" value={addUserForm.password} onChange={e => setAddUserForm({ ...addUserForm, password: e.target.value })} />
+                    </div>
+                    <div className="sm-field">
+                      <span>Real Name</span>
+                      <input className="sm-input" type="text" placeholder="Harsh Rathore" value={addUserForm.realName} onChange={e => setAddUserForm({ ...addUserForm, realName: e.target.value })} />
+                    </div>
+                    <div className="sm-field">
+                      <span>Rate per 1,000 (Rs.)</span>
+                      <input className="sm-input" type="number" min="1" value={addUserForm.ratePerThousand} onChange={e => setAddUserForm({ ...addUserForm, ratePerThousand: Number(e.target.value) })} />
+                    </div>
+                  </div>
+                  <div className="sm-form-actions">
+                    <button type="button" className="sm-btn sm-btn-ghost" onClick={() => setShowAddUser(false)}>Cancel</button>
+                    <button type="submit" className="sm-btn sm-btn-primary" disabled={addingUser}>
+                      <i className="ti ti-check" />{addingUser ? 'Creating...' : 'Create User'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            <div className="sm-table-shell">
+              <div className="sm-table-wrap">
+                {usersLoading ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '48px 0', gap: 12 }}>
+                    <Spinner /><p style={{ color: 'var(--t3)', fontSize: 12, fontFamily: 'var(--mono)' }}>Loading users...</p>
+                  </div>
+                ) : users.length === 0 ? (
+                  <div className="sm-empty">No users yet. Create one to get started.</div>
+                ) : (
+                  <table className="sm-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: '15%' }}>User</th>
+                        <th style={{ width: '12%' }}>Password</th>
+                        <th style={{ width: '8%' }}>Rate/1k</th>
+                        <th style={{ width: '9%' }}>Clicks</th>
+                        <th style={{ width: '10%' }}>Earned</th>
+                        <th style={{ width: '10%' }}>Pending</th>
+                        <th style={{ width: '9%' }}>Status</th>
+                        <th style={{ width: '27%' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {users.map(user => (
+                        <React.Fragment key={user._id}>
+                          <tr className="sm-data-row">
+                            <td>
+                              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--t1)' }}>{user.realName}</div>
+                              <div style={{ fontSize: 11, color: 'var(--t3)', fontFamily: 'var(--mono)', marginTop: 2 }}>@{user.username}</div>
+                            </td>
+                            <td>
+                              <span className="sm-mono" style={{ color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-border)', borderRadius: 5, padding: '2px 8px', fontSize: 11 }}>
+                                {user.password}
+                              </span>
+                            </td>
+                            <td><span className="sm-mono" style={{ color: 'var(--teal)' }}>Rs.{user.ratePerThousand}</span></td>
+                            <td><span className="sm-mono" style={{ color: 'var(--t2)' }}>{(user.totalClicks || 0).toLocaleString()}</span></td>
+                            <td><span className="sm-mono" style={{ color: 'var(--green)' }}>Rs.{(user.totalEarnings || 0).toFixed(2)}</span></td>
+                            <td><span className="sm-mono" style={{ color: 'var(--red)' }}>Rs.{(user.unpaidEarnings || 0).toFixed(2)}</span></td>
+                            <td>
+                              <span className={user.isActive ? 'sm-badge sm-badge-active' : 'sm-badge sm-badge-inactive'}>
+                                <span className="sm-dot" />{user.isActive ? 'Active' : 'Inactive'}
+                              </span>
+                            </td>
+                            <td>
+                              <div className="sm-act-group">
+                                <button
+                                  className={`sm-act-btn${editingUserId === user._id ? ' sm-act-btn-on' : ''}`}
+                                  onClick={() => { if (editingUserId === user._id) setEditingUserId(null); else { setEditingUserId(user._id); setEditUserForm({ password: user.password, realName: user.realName, ratePerThousand: user.ratePerThousand, isActive: user.isActive }); } }}
+                                  title="Edit"
+                                ><i className="ti ti-edit" /></button>
+                                <span className="sm-act-sep" />
+                                <button className="sm-act-btn sm-act-btn-amber" onClick={() => { setPaymentModal(user); setPaymentAmount(''); setPaymentNote(''); }} title="Mark payment">
+                                  <i className="ti ti-currency-rupee" />
+                                </button>
+                                <button className="sm-act-btn sm-act-btn-teal" onClick={() => { setCreateLinkModal(user); setCreateLinkForm({ code: '', url: '', label: '' }); }} title="Create link">
+                                  <i className="ti ti-link" />
+                                </button>
+                                <button className="sm-act-btn" onClick={() => setProfileModal(user)} title="View profile">
+                                  <i className="ti ti-user" />
+                                </button>
+                                <button className="sm-act-btn" onClick={() => { setActiveTab('messages'); loadMessages(user); }} title="Messages">
+                                  <i className="ti ti-message-circle" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                          {editingUserId === user._id && (
+                            <tr className="sm-edit-expand">
+                              <td colSpan={8}>
+                                <div className="sm-edit-inner">
+                                  <div className="sm-edit-header">
+                                    <span className="sm-edit-bar" />
+                                    <span className="sm-edit-title">Edit User</span>
+                                    <span className="sm-edit-sub">{user.realName}</span>
+                                  </div>
+                                  <div className="sm-form-grid">
+                                    <div className="sm-field">
+                                      <span>Real Name</span>
+                                      <input className="sm-input" type="text" value={editUserForm.realName} onChange={e => setEditUserForm({ ...editUserForm, realName: e.target.value })} />
+                                    </div>
+                                    <div className="sm-field">
+                                      <span>New Password</span>
+                                      <input className="sm-input" type="text" placeholder="Leave blank to keep" value={editUserForm.password} onChange={e => setEditUserForm({ ...editUserForm, password: e.target.value })} />
+                                    </div>
+                                    <div className="sm-field">
+                                      <span>Rate / 1,000 (Rs.)</span>
+                                      <input className="sm-input" type="number" min="1" value={editUserForm.ratePerThousand} onChange={e => setEditUserForm({ ...editUserForm, ratePerThousand: Number(e.target.value) })} />
+                                    </div>
+                                    <div className="sm-field">
+                                      <span>Status</span>
+                                      <select className="sm-select" value={editUserForm.isActive ? 'true' : 'false'} onChange={e => setEditUserForm({ ...editUserForm, isActive: e.target.value === 'true' })}>
+                                        <option value="true">Active</option>
+                                        <option value="false">Inactive</option>
+                                      </select>
+                                    </div>
+                                  </div>
+                                  <div className="sm-form-actions">
+                                    <button className="sm-btn sm-btn-ghost" onClick={() => setEditingUserId(null)}>Cancel</button>
+                                    <button className="sm-btn sm-btn-success" onClick={() => handleUpdateUser(user._id)}>
+                                      <i className="ti ti-check" /> Save Changes
+                                    </button>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+              {users.length > 0 && (
+                <div className="sm-table-footer">
+                  <span className="sm-footer-count">{users.length} users &bull; {users.filter(u => u.isActive).length} active</span>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ═══ REQUESTS TAB ═══ (unchanged) */}
+        {activeTab === 'requests' && (
+          <div className="sm-table-shell">
+            {requestsLoading ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '48px 0', gap: 12 }}>
+                <Spinner /><p style={{ color: 'var(--t3)', fontSize: 12, fontFamily: 'var(--mono)' }}>Loading requests...</p>
+              </div>
+            ) : requests.length === 0 ? (
+              <div className="sm-empty">No requests yet.</div>
             ) : (
               <>
-                <div className="p-4 border-b border-white/10 flex items-center gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-white">{selectedUserMsg.realName}</p>
-                    <p className="text-xs text-white/40">{selectedUserMsg.username}</p>
-                  </div>
+                <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 11, color: 'var(--t3)', fontFamily: 'var(--mono)' }}>{requests.length} requests</span>
+                  {pendingCount > 0 && (
+                    <span className="sm-badge sm-badge-pending" style={{ fontSize: 10 }}>
+                      <span className="sm-dot" />{pendingCount} pending
+                    </span>
+                  )}
                 </div>
-                <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-3" style={{ maxHeight: '380px' }}>
-                  {messagesLoading ? (
-                    <div className="flex justify-center py-8"><div className="w-8 h-8 border-3 border-purple-500/30 border-t-purple-500 rounded-full animate-spin"></div></div>
-                  ) : messages.length === 0 ? (
-                    <div className="text-center text-white/30 text-sm py-8">No messages yet. Start the conversation!</div>
-                  ) : messages.map(msg => (
-                    <div key={msg._id} className={`flex ${msg.fromAdmin ? 'justify-end' : 'justify-start'}`}>
-                      <div>
-                        <div className={`max-w-xs px-3 py-2 rounded-xl text-sm ${msg.fromAdmin ? 'bg-purple-600/50 text-purple-100 rounded-br-sm' : 'bg-white/10 text-white/80 rounded-bl-sm'}`}>
-                          {msg.text}
+                <div className="sm-req-list">
+                  {requests.map(req => (
+                    <div key={req._id} className="sm-req-item">
+                      <div className="sm-req-left">
+                        <div className="sm-req-meta">
+                          <span className={`sm-badge ${req.type === 'payment' ? 'sm-badge-payment' : 'sm-badge-link'}`}>
+                            <i className={req.type === 'payment' ? 'ti ti-currency-rupee' : 'ti ti-link'} style={{ fontSize: 10 }} />
+                            {req.type === 'payment' ? 'Payment' : 'Link'}
+                          </span>
+                          <span className={`sm-badge sm-badge-${req.status}`}>
+                            <span className="sm-dot" />
+                            {req.status === 'pending' ? 'Pending' : req.status === 'done' ? 'Done' : 'Rejected'}
+                          </span>
                         </div>
-                        <div className={`text-xs text-white/30 mt-1 ${msg.fromAdmin ? 'text-right' : 'text-left'}`}>
-                          {msg.fromAdmin ? 'You (Admin)' : selectedUserMsg.realName} · {new Date(msg.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                        </div>
+                        <div className="sm-req-name">{req.realName}</div>
+                        <div className="sm-req-handle">@{req.username}</div>
+                        {req.type === 'payment' && req.amount && (
+                          <div className="sm-req-amount">Rs.{req.amount.toFixed(2)}</div>
+                        )}
+                        {req.type === 'payment' && req.profile && (
+                          <div className="sm-req-upi">
+                            {req.profile.upiId && <span>UPI: {req.profile.upiId}</span>}
+                            {req.profile.upiId && req.profile.upiPhone && <span> &bull; </span>}
+                            {req.profile.upiPhone && <span>Phone: {req.profile.upiPhone}</span>}
+                          </div>
+                        )}
+                        {req.type === 'link' && req.message && (
+                          <div className="sm-req-msg">"{req.message}"</div>
+                        )}
+                        <div className="sm-req-time">{new Date(req.createdAt).toLocaleString('en-IN')}</div>
                       </div>
+                      {req.status === 'pending' && (
+                        <div className="sm-req-actions">
+                          {req.type === 'payment' && (
+                            <button
+                              className="sm-btn sm-btn-success"
+                              onClick={() => { const u = users.find(u => u._id === req.userId); if (u) { setPaymentModal(u); setPaymentAmount(String(req.amount || '')); } }}
+                            >
+                              <i className="ti ti-currency-rupee" /> Process
+                            </button>
+                          )}
+                          {req.type === 'link' && (
+                            <button
+                              className="sm-btn sm-btn-teal"
+                              onClick={() => { const u = users.find(u => u._id === req.userId); if (u) { setCreateLinkModal(u); setCreateLinkForm({ code: '', url: '', label: '' }); } }}
+                            >
+                              <i className="ti ti-link" /> Create Link
+                            </button>
+                          )}
+                          <button className="sm-btn sm-btn-danger" onClick={() => updateRequestStatus(req._id, 'rejected')}>
+                            Reject
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
-                  <div ref={messagesEndRef} />
-                </div>
-                <div className="p-3 border-t border-white/10 flex gap-2">
-                  <input
-                    type="text"
-                    value={msgText}
-                    onChange={e => setMsgText(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') sendAdminMessage(); }}
-                    placeholder={`Message to ${selectedUserMsg.realName}...`}
-                    className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
-                  />
-                  <button onClick={sendAdminMessage} className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-sm font-medium">Send</button>
                 </div>
               </>
             )}
           </div>
-        </div>
-      )}
-    </div>
+        )}
+
+        {/* ═══ MESSAGES TAB (with avatars from user dashboard) ═══ */}
+        {activeTab === 'messages' && (
+          <div className="sm-msg-layout">
+            {/* Sidebar – users with avatars */}
+            <div className="sm-msg-sidebar">
+              <div className="sm-msg-sidebar-header">
+                {broadcastMode ? 'Select Recipients' : 'Users'}
+                {broadcastMode && (
+                  <span className="sm-tab-badge" style={{ fontSize: 10, background: 'var(--amber-dim)', color: 'var(--amber)' }}>
+                    {selectedBroadcastUsers.length}
+                  </span>
+                )}
+              </div>
+              <div className="sm-msg-user-list">
+                {broadcastMode ? (
+                  <>
+                    <div style={{ padding: '4px 8px', display: 'flex', gap: 4 }}>
+                      <button className="sm-btn sm-btn-ghost" style={{ padding: '2px 8px', fontSize: 10 }} onClick={selectAllUsers}>All</button>
+                      <button className="sm-btn sm-btn-ghost" style={{ padding: '2px 8px', fontSize: 10 }} onClick={deselectAllUsers}>None</button>
+                    </div>
+                    {users.map(user => (
+                      <label key={user._id} className="sm-msg-user-btn" style={{ cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedBroadcastUsers.includes(user._id)}
+                          onChange={() => toggleUserSelection(user._id)}
+                          style={{ accentColor: 'var(--accent)' }}
+                        />
+                        {renderUserAvatar(user, 28)}
+                        <div>
+                          <div className="sm-msg-user-name">{user.realName}</div>
+                          <div className="sm-msg-user-handle">@{user.username}</div>
+                        </div>
+                      </label>
+                    ))}
+                  </>
+                ) : (
+                  users.map(user => (
+                    <button
+                      key={user._id}
+                      className={`sm-msg-user-btn${selectedUserMsg?._id === user._id ? ' sm-msg-user-btn-active' : ''}`}
+                      onClick={() => { setBroadcastMode(false); loadMessages(user); }}
+                    >
+                      {renderUserAvatar(user, 28)}
+                      <div>
+                        <div className="sm-msg-user-name">{user.realName}</div>
+                        <div className="sm-msg-user-handle">@{user.username}</div>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Chat window */}
+            <div className="sm-msg-window">
+              {broadcastMode ? (
+                <div className="sm-msg-empty" style={{ justifyContent: 'flex-start', alignItems: 'stretch', padding: 16, gap: 12, flex: 1 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--t1)' }}>Compose Broadcast</span>
+                    <button className="sm-broadcast-toggle active" onClick={toggleBroadcastMode}>
+                      <i className="ti ti-arrow-back" style={{ fontSize: 13 }} /> Chat mode
+                    </button>
+                  </div>
+                  <textarea
+                    className="sm-input"
+                    style={{ flex: 1, minHeight: 150, resize: 'vertical', borderRadius: 8, background: 'var(--bg0)' }}
+                    placeholder={`Write a message to ${selectedBroadcastUsers.length} selected user(s)...`}
+                    value={msgText}
+                    onChange={e => setMsgText(e.target.value)}
+                  />
+                  <button
+                    className="sm-btn sm-btn-primary"
+                    style={{ alignSelf: 'flex-end' }}
+                    disabled={selectedBroadcastUsers.length === 0 || !msgText.trim()}
+                    onClick={sendBroadcast}
+                  >
+                    <i className="ti ti-send" /> Send to {selectedBroadcastUsers.length} user{selectedBroadcastUsers.length !== 1 ? 's' : ''}
+                  </button>
+                </div>
+              ) : !selectedUserMsg ? (
+                <div className="sm-msg-empty">
+                  <i className="ti ti-message-circle" />
+                  <span>Select a user to start messaging</span>
+                  <button className="sm-broadcast-toggle" onClick={toggleBroadcastMode} style={{ marginTop: 8 }}>
+                    <i className="ti ti-antenna-bars-5" style={{ fontSize: 13 }} /> Broadcast
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="sm-msg-win-header">
+                    {renderUserAvatar(selectedUserMsg, 32)}
+                    <div>
+                      <div className="sm-msg-win-name">{selectedUserMsg.realName}</div>
+                      <div className="sm-msg-win-handle">@{selectedUserMsg.username}</div>
+                    </div>
+                    <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <button className="sm-broadcast-toggle" onClick={toggleBroadcastMode}>
+                        <i className="ti ti-antenna-bars-5" style={{ fontSize: 13 }} /> Broadcast
+                      </button>
+                      <button className="sm-btn sm-btn-ghost" style={{ padding: '5px 10px', fontSize: 11 }} onClick={() => loadMessages(selectedUserMsg)}>
+                        <i className="ti ti-refresh" style={{ fontSize: 12 }} /> Refresh
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="sm-msg-body">
+                    {messagesLoading ? (
+                      <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}><Spinner /></div>
+                    ) : messages.length === 0 ? (
+                      <div className="sm-no-msgs">No messages yet. Start the conversation.</div>
+                    ) : (
+                      messages.map(msg => (
+                        <div
+                          key={msg._id}
+                          style={{
+                            display: 'flex',
+                            justifyContent: msg.fromAdmin ? 'flex-start' : 'flex-end',
+                            alignItems: 'flex-end',
+                          }}
+                        >
+                          {msg.fromAdmin ? (
+                            /* Admin message (left) – with avatar */
+                            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, maxWidth: '75%' }}>
+                              <div className="sm-chat-avatar">A</div>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                                <div className="sm-bubble sm-bubble-admin">{msg.text}</div>
+                                <div className="sm-bubble-time">
+                                  {new Date(msg.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                                  {' '}· Admin
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            /* User message (right) – with avatar */
+                            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, maxWidth: '75%', flexDirection: 'row-reverse' }}>
+                              {renderUserAvatar(selectedUserMsg!, 28)}
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                                <div className="sm-bubble sm-bubble-user">{msg.text}</div>
+                                <div className="sm-bubble-time">
+                                  {new Date(msg.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    )}
+                    <div ref={messagesEndRef} />
+                  </div>
+
+                  <div className="sm-msg-input-row">
+                    <input
+                      className="sm-msg-input"
+                      type="text"
+                      placeholder={`Message ${selectedUserMsg.realName}...`}
+                      value={msgText}
+                      onChange={e => setMsgText(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && sendAdminMessage()}
+                    />
+                    <button
+                      className="sm-msg-send-btn"
+                      onClick={sendAdminMessage}
+                      disabled={!msgText.trim()}
+                    >
+                      <i className="ti ti-send" />
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ═══ DELETE MODAL ═══ */}
+        {deleteConfirm && (
+          <div className="sm-modal-backdrop" onClick={() => setDeleteConfirm(null)}>
+            <div className="sm-modal" onClick={e => e.stopPropagation()}>
+              <div className="sm-modal-header">
+                <div>
+                  <div className="sm-modal-title">Delete Link?</div>
+                  <div className="sm-modal-sub" style={{ fontFamily: 'var(--mono)', color: 'var(--teal)', marginTop: 6 }}>go.animebing.in/{deleteConfirm}</div>
+                </div>
+                <button className="sm-modal-close" onClick={() => setDeleteConfirm(null)}><i className="ti ti-x" /></button>
+              </div>
+              <p style={{ fontSize: 12, color: 'var(--t3)' }}>This action cannot be undone. All click data will be lost.</p>
+              <div className="sm-modal-footer">
+                <button className="sm-btn sm-btn-ghost" onClick={() => setDeleteConfirm(null)}>Cancel</button>
+                <button className="sm-btn sm-btn-danger" onClick={() => handleDelete(deleteConfirm)}>
+                  <i className="ti ti-trash" /> Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ═══ PAYMENT MODAL ═══ */}
+        {paymentModal && (
+          <div className="sm-modal-backdrop" onClick={() => setPaymentModal(null)}>
+            <div className="sm-modal" onClick={e => e.stopPropagation()}>
+              <div className="sm-modal-header">
+                <div>
+                  <div className="sm-modal-title">Mark Payment</div>
+                  <div className="sm-modal-sub">{paymentModal.realName} &bull; @{paymentModal.username}</div>
+                </div>
+                <button className="sm-modal-close" onClick={() => setPaymentModal(null)}><i className="ti ti-x" /></button>
+              </div>
+              {paymentModal.profile && (paymentModal.profile.upiId || paymentModal.profile.upiPhone) && (
+                <div className="sm-upi-box">
+                  {paymentModal.profile.upiId && <div className="sm-upi-row"><i className="ti ti-credit-card" style={{ marginRight: 6 }} />UPI ID: {paymentModal.profile.upiId}</div>}
+                  {paymentModal.profile.upiPhone && <div className="sm-upi-row"><i className="ti ti-phone" style={{ marginRight: 6 }} />Phone: {paymentModal.profile.upiPhone}</div>}
+                </div>
+              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div className="sm-field">
+                  <span>Amount (Rs.)</span>
+                  <input className="sm-input" type="number" step="0.01" placeholder="0.00" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} />
+                </div>
+                <div className="sm-field">
+                  <span>Note (optional)</span>
+                  <input className="sm-input" type="text" placeholder="Payment reference..." value={paymentNote} onChange={e => setPaymentNote(e.target.value)} />
+                </div>
+              </div>
+              <p style={{ fontSize: 11, color: 'var(--t3)', marginTop: 10 }}>
+                Unpaid: <strong style={{ color: 'var(--red)' }}>Rs.{paymentModal.unpaidEarnings.toFixed(2)}</strong>
+              </p>
+              <div className="sm-modal-footer">
+                <button className="sm-btn sm-btn-ghost" onClick={() => setPaymentModal(null)}>Cancel</button>
+                <button className="sm-btn sm-btn-success" onClick={handlePayment} disabled={!!payingId}>
+                  <i className="ti ti-check" />{payingId ? 'Processing...' : 'Confirm Payment'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ═══ CREATE LINK MODAL ═══ */}
+        {createLinkModal && (
+          <div className="sm-modal-backdrop" onClick={() => setCreateLinkModal(null)}>
+            <div className="sm-modal" style={{ maxWidth: 460 }} onClick={e => e.stopPropagation()}>
+              <div className="sm-modal-header">
+                <div>
+                  <div className="sm-modal-title">Create Link for User</div>
+                  <div className="sm-modal-sub">{createLinkModal.realName} &bull; @{createLinkModal.username}</div>
+                </div>
+                <button className="sm-modal-close" onClick={() => setCreateLinkModal(null)}><i className="ti ti-x" /></button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div className="sm-field">
+                  <span>Short Code</span>
+                  <input className="sm-input" type="text" placeholder="e.g. myanime"
+                    value={createLinkForm.code}
+                    onChange={e => setCreateLinkForm({ ...createLinkForm, code: e.target.value.toLowerCase().replace(/[^a-z0-9-_]/g, '') })} />
+                  {createLinkForm.code && <span className="sm-preview-url">go.animebing.in/{createLinkForm.code}</span>}
+                </div>
+                <div className="sm-field">
+                  <span>Destination URL</span>
+                  <input className="sm-input" type="url" placeholder="https://..." value={createLinkForm.url} onChange={e => setCreateLinkForm({ ...createLinkForm, url: e.target.value })} />
+                </div>
+                <div className="sm-field">
+                  <span>Label (optional)</span>
+                  <input className="sm-input" type="text" placeholder="Display name" value={createLinkForm.label} onChange={e => setCreateLinkForm({ ...createLinkForm, label: e.target.value })} />
+                </div>
+              </div>
+              <div className="sm-modal-footer">
+                <button className="sm-btn sm-btn-ghost" onClick={() => setCreateLinkModal(null)}>Cancel</button>
+                <button className="sm-btn sm-btn-teal" onClick={handleCreateLinkForUser} disabled={creatingLink}>
+                  <i className="ti ti-link" />{creatingLink ? 'Creating...' : 'Create & Assign'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ═══ PROFILE MODAL ═══ */}
+        {profileModal && (
+          <div className="sm-modal-backdrop" onClick={() => setProfileModal(null)}>
+            <div className="sm-modal" onClick={e => e.stopPropagation()}>
+              <div className="sm-modal-header">
+                <div>
+                  <div className="sm-modal-title">Profile Details</div>
+                  <div className="sm-modal-sub">{profileModal.realName} &bull; @{profileModal.username}</div>
+                </div>
+                <button className="sm-modal-close" onClick={() => setProfileModal(null)}><i className="ti ti-x" /></button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                {[
+                  { icon: 'ti-device-mobile', label: 'Mobile', value: profileModal.profile?.mobile },
+                  { icon: 'ti-mail', label: 'Gmail', value: profileModal.profile?.gmail },
+                  { icon: 'ti-credit-card', label: 'UPI ID', value: profileModal.profile?.upiId },
+                  { icon: 'ti-phone', label: 'UPI Phone', value: profileModal.profile?.upiPhone },
+                  { icon: 'ti-calendar', label: 'Age', value: profileModal.profile?.age?.toString() },
+                  { icon: 'ti-users', label: 'Gender', value: profileModal.profile?.gender },
+                ].map(({ icon, label, value }) => (
+                  <div key={label} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 28, height: 28, borderRadius: 7, background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <i className={`ti ${icon}`} style={{ fontSize: 13, color: 'var(--t3)' }} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.4px', color: 'var(--t3)', marginBottom: 2 }}>{label}</div>
+                      {value
+                        ? <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--t1)' }}>{value}</div>
+                        : <div style={{ fontSize: 11, color: 'var(--t3)', fontStyle: 'italic' }}>Not provided</div>
+                      }
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {profileModal.gmailLinked && (
+                <div style={{ marginTop: 10, padding: '8px 12px', background: 'var(--blue-dim)', border: '1px solid var(--blue-border)', borderRadius: 7, fontSize: 11, color: 'var(--blue)', fontFamily: 'var(--mono)' }}>
+                  <i className="ti ti-brand-google" style={{ marginRight: 6 }} />Gmail linked: {profileModal.gmailLinked}
+                </div>
+              )}
+              <div className="sm-modal-footer">
+                <button className="sm-btn sm-btn-ghost" onClick={() => setProfileModal(null)}>Close</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+      </div>
+    </>
   );
 };
 

@@ -1,4 +1,4 @@
- // src/components/admin/AdminDashboard.tsx - YouTube-Style Sidebar Layout
+ // src/components/admin/AdminDashboard.tsx - Clean Sidebar with SVG Icons
 import React, { useState, useEffect, useRef } from 'react';
 import { Toaster, toast } from 'react-hot-toast';
 import AnimeListTable from './AnimeListTable';
@@ -12,7 +12,7 @@ import PartnerManager from './PartnerManager';
 import EpisodeStatusManager from './EpisodeStatusManager';
 import DownloadPageManager from './DownloadPageManager';
 import ShortenerManager from './ShortenerManager';
-import ShortUsersManager from './ShortUsersManager';  // ✨ NEW
+import ShortUsersManager from './ShortUsersManager';
 import Spinner from '../Spinner';
 import axios from 'axios';
 
@@ -48,22 +48,46 @@ const isSundayInIndia = (): boolean => {
   return indiaTime.getDay() === 0;
 };
 
-const TAB_LABELS: Record<string, { label: string; icon: string }> = {
-  list:            { label: 'Content List',    icon: '🤖' },
-  add:             { label: 'Add Content',     icon: '🐦‍🔥' },
-  episodes:        { label: 'Episodes',        icon: '👀' },
-  'episode-status':{ label: 'Episode Status',  icon: '🪼' },
-  featured:        { label: 'Featured Anime',  icon: '🎈' },
-  reports:         { label: 'User Reports',    icon: '🍂' },
-  social:          { label: 'Social Media',    icon: '☣️' },
-  polls:           { label: 'Poll Manager',    icon: '👻' },
-  downloadPages:   { label: 'Download Pages',  icon: '🏴‍☠️' },
-  shortener:       { label: 'URL Shortener',   icon: '🔗' },
-  partners:        { label: 'Partner Manager', icon: '🎉' },
-  shortusers:      { label: 'Short Users',     icon: '👥' },   // ✨ NEW
+// SVG icon factory - each returns a tiny SVG component for consistent sizing
+const SvgIcon: React.FC<{ d: string; className?: string }> = ({ d, className = 'w-4 h-4' }) => (
+  <svg className={className} fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+    <path d={d} />
+  </svg>
+);
+
+// Pre-defined paths for sidebar icons (Heroicons outline style)
+const ICONS: Record<string, string> = {
+  list:            'M4 6h16M4 10h16M4 14h16M4 18h16',
+  add:             'M12 4v16m8-8H4',
+  episodes:        'M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z',
+  'episode-status':'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
+  featured:        'M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z',
+  reports:         'M3 21v-4m0 0V5a2 2 0 012-2h14a2 2 0 012 2v12m-4 4v-4m-4 4v-4m-4 4v-4',
+  polls:           'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
+  social:          'M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z',
+  downloadPages:   'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4',
+  shortener:       'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1',
+  shortusers:      'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z',
+  partners:        'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9',
 };
 
-// Defined OUTSIDE so React never unmounts/remounts on parent re-render
+// Tab labels with pure text (no emojis)
+const TAB_LABELS: Record<string, string> = {
+  list:            'Content List',
+  add:             'Add Content',
+  episodes:        'Episodes',
+  'episode-status':'Episode Status',
+  featured:        'Featured Anime',
+  reports:         'User Reports',
+  social:          'Social Media',
+  polls:           'Poll Manager',
+  downloadPages:   'Download Pages',
+  shortener:       'URL Shortener',
+  shortusers:      'Short Users',
+  partners:        'Partner Manager',
+};
+
+// Tab content stays the same
 const TabContent: React.FC<{ activeTab: string; token: string }> = React.memo(({ activeTab, token }) => {
   switch (activeTab) {
     case 'list':           return <AnimeListTable />;
@@ -77,12 +101,12 @@ const TabContent: React.FC<{ activeTab: string; token: string }> = React.memo(({
     case 'partners':       return <PartnerManager token={token} apiBase={API_BASE} />;
     case 'downloadPages':  return <DownloadPageManager />;
     case 'shortener':      return <ShortenerManager />;
-    case 'shortusers':     return <ShortUsersManager />;   // ✨ NEW
+    case 'shortusers':     return <ShortUsersManager />;
     default:               return <AnimeListTable />;
   }
 });
 
-// ─── Scroll to top button (unchanged) ───────────────────────────────────────
+// Scroll to top button (unchanged)
 const ScrollToTopButton: React.FC = () => {
   const [visible, setVisible] = useState(false);
   useEffect(() => {
@@ -107,10 +131,8 @@ const ScrollToTopButton: React.FC = () => {
   );
 };
 
-// ─── Sidebar nav item (unchanged) ───────────────────────────────────────────
+// Sidebar nav item (now uses SVG icon)
 interface NavItemProps {
-  icon: string;
-  label: string;
   tabId: string;
   activeTab: string;
   collapsed: boolean;
@@ -118,8 +140,11 @@ interface NavItemProps {
   onClick: (id: string) => void;
 }
 
-const NavItem: React.FC<NavItemProps> = ({ icon, label, tabId, activeTab, collapsed, badge, onClick }) => {
+const NavItem: React.FC<NavItemProps> = ({ tabId, activeTab, collapsed, badge, onClick }) => {
   const isActive = activeTab === tabId;
+  const label = TAB_LABELS[tabId] || tabId;
+  const iconPath = ICONS[tabId] || ICONS.list;
+
   return (
     <button
       onClick={() => onClick(tabId)}
@@ -133,7 +158,9 @@ const NavItem: React.FC<NavItemProps> = ({ icon, label, tabId, activeTab, collap
       {isActive && (
         <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-purple-400 rounded-r-full" />
       )}
-      <span className="text-[18px] flex-shrink-0">{icon}</span>
+      <span className="flex-shrink-0 w-5 h-5">
+        <SvgIcon d={iconPath} className="w-5 h-5" />
+      </span>
       <span className="text-sm font-medium truncate flex-1">{label}</span>
       {badge !== undefined && badge > 0 && (
         <span className="ml-auto bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
@@ -144,15 +171,22 @@ const NavItem: React.FC<NavItemProps> = ({ icon, label, tabId, activeTab, collap
   );
 };
 
-// ─── Section label (unchanged) ──────────────────────────────────────────────
-const SidebarSection: React.FC<{ label: string; collapsed: boolean; children: React.ReactNode }> = ({
-  label, children,
-}) => (
+// Sidebar section (unchanged logic, but now passed proper collapsible control)
+const SidebarSection: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
   <div className="mb-1">
     <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-widest text-gray-600 select-none">
       {label}
     </p>
     <div className="space-y-0.5 px-2">{children}</div>
+  </div>
+);
+
+// Brand logo SVG for the top
+const BrandLogo: React.FC = () => (
+  <div className="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center text-white text-base font-bold select-none">
+    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor">
+      <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+    </svg>
   </div>
 );
 
@@ -173,6 +207,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     if (sidebarPinned) return;
     hoverTimeout.current = setTimeout(() => setSidebarCollapsed(true), 300);
   };
+
   const [loading, setLoading] = useState(true);
   const [linkSettingsLoading, setLinkSettingsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -299,9 +334,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
-  const currentTab = TAB_LABELS[activeTab] ?? { label: activeTab, icon: '✦' };
-
-  // Loading & error screens remain same
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0f0e17] flex items-center justify-center flex-col gap-3">
@@ -326,7 +358,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     );
   }
 
-  // Main layout
   return (
     <div className="relative h-screen bg-[#0f0e17] text-white overflow-hidden">
       <Toaster
@@ -339,40 +370,27 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         }}
       />
 
-      {/* Icon Strip (always visible) */}
+      {/* Icon Strip (always visible) – now uses SVG icons */}
       <div
         onMouseEnter={handleSidebarMouseEnter}
         onMouseLeave={handleSidebarMouseLeave}
         className="fixed top-0 left-0 h-full w-[52px] z-50 flex flex-col bg-[#13121e] border-r border-white/[0.06]"
       >
         <div className="h-14 flex items-center justify-center border-b border-white/[0.06] flex-shrink-0">
-          <div className="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center text-base select-none">☠️</div>
+          <BrandLogo />
         </div>
 
         <div className="flex-1 flex flex-col items-center py-3 gap-1 overflow-y-auto overflow-x-hidden">
-          {[
-            { icon: '🤖', tabId: 'list' },
-            { icon: '🐦‍🔥', tabId: 'add' },
-            { icon: '👀', tabId: 'episodes' },
-            { icon: '🪼', tabId: 'episode-status' },
-            { icon: '🎈', tabId: 'featured' },
-            { icon: '🍂', tabId: 'reports' },
-            { icon: '👻', tabId: 'polls' },
-            { icon: '☣️', tabId: 'social' },
-            { icon: '🏴‍☠️', tabId: 'downloadPages' },
-            { icon: '🔗', tabId: 'shortener' },
-            { icon: '👥', tabId: 'shortusers' },   // ✨ NEW
-            { icon: '🎉', tabId: 'partners' },
-          ].map(({ icon, tabId }) => (
+          {Object.keys(TAB_LABELS).map(tabId => (
             <button
               key={tabId}
               onClick={() => setActiveTab(tabId)}
-              title={TAB_LABELS[tabId]?.label}
-              className={`w-9 h-9 rounded-lg flex items-center justify-center text-[18px] transition-colors
+              title={TAB_LABELS[tabId]}
+              className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors
                 ${activeTab === tabId ? 'bg-purple-900/60' : 'hover:bg-white/5'}
               `}
             >
-              {icon}
+              <SvgIcon d={ICONS[tabId] || ICONS.list} className="w-5 h-5" />
             </button>
           ))}
         </div>
@@ -384,7 +402,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         </div>
       </div>
 
-      {/* Expanded Sidebar */}
+      {/* Expanded Sidebar – full labels with icons */}
       <aside
         onMouseEnter={handleSidebarMouseEnter}
         onMouseLeave={handleSidebarMouseLeave}
@@ -394,7 +412,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         `}
       >
         <div className="flex items-center gap-3 h-14 px-3 border-b border-white/[0.06] flex-shrink-0">
-          <div className="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center text-base flex-shrink-0 select-none">☠️</div>
+          <BrandLogo />
           <div className="overflow-hidden flex-1">
             <p className="text-sm font-semibold text-white leading-tight truncate">AnimaBing</p>
             <p className="text-[10px] text-gray-500 truncate">Admin Panel</p>
@@ -412,23 +430,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         </div>
 
         <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-4 scrollbar-thin scrollbar-thumb-white/10">
-          <SidebarSection label="Content" collapsed={false}>
-            <NavItem icon="🤖" label="Content List"   tabId="list"            activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
-            <NavItem icon="🐦‍🔥" label="Add Content"    tabId="add"             activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
-            <NavItem icon="👀" label="Episodes"       tabId="episodes"        activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
-            <NavItem icon="🪼" label="Episode Status" tabId="episode-status"  activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
+          <SidebarSection label="Content">
+            <NavItem tabId="list"            activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
+            <NavItem tabId="add"             activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
+            <NavItem tabId="episodes"        activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
+            <NavItem tabId="episode-status"  activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
           </SidebarSection>
-          <SidebarSection label="Manage" collapsed={false}>
-            <NavItem icon="🎈" label="Featured Anime" tabId="featured"        activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
-            <NavItem icon="🍂" label="User Reports"   tabId="reports"         activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
-            <NavItem icon="👻" label="Poll Manager"   tabId="polls"           activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
-            <NavItem icon="☣️" label="Social Media"   tabId="social"          activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
+          <SidebarSection label="Manage">
+            <NavItem tabId="featured"        activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
+            <NavItem tabId="reports"         activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
+            <NavItem tabId="polls"           activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
+            <NavItem tabId="social"          activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
           </SidebarSection>
-          <SidebarSection label="Downloads" collapsed={false}>
-            <NavItem icon="🏴‍☠️" label="Download Pages" tabId="downloadPages"   activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
-            <NavItem icon="🔗" label="URL Shortener"  tabId="shortener"       activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
-            <NavItem icon="👥" label="Short Users"    tabId="shortusers"      activeTab={activeTab} collapsed={false} onClick={setActiveTab} /> {/* ✨ NEW */}
-            <NavItem icon="🎉" label="Partner Manager" tabId="partners"       activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
+          <SidebarSection label="Downloads">
+            <NavItem tabId="downloadPages"   activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
+            <NavItem tabId="shortener"       activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
+            <NavItem tabId="shortusers"      activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
+            <NavItem tabId="partners"        activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
           </SidebarSection>
         </nav>
 
@@ -457,8 +475,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       {/* Main content area */}
       <div id="main-scroll" className="h-full flex flex-col overflow-y-auto pl-[52px]">
         <header className="sticky top-0 z-40 h-14 flex-shrink-0 flex items-center px-5 gap-3 bg-[#13121e]/80 backdrop-blur border-b border-white/[0.06]">
-          <span className="text-lg">{currentTab.icon}</span>
-          <h1 className="text-sm font-semibold text-white">{currentTab.label}</h1>
+          <span className="w-5 h-5">
+            <SvgIcon d={ICONS[activeTab] || ICONS.list} className="w-5 h-5" />
+          </span>
+          <h1 className="text-sm font-semibold text-white">{TAB_LABELS[activeTab]}</h1>
           <div className="ml-auto flex items-center gap-2">
             <button
               onClick={loadInitialData}
@@ -473,7 +493,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         </header>
 
         <main className="flex-1 p-4 sm:p-6 space-y-4">
-          {/* Analytics Cards (unchanged) */}
+          {/* Analytics Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
             {[
               { label: 'Total Content', value: analytics.totalAnimes + analytics.totalMovies + analytics.totalManga, sub: 'Anime · Movies · Manga', color: 'text-purple-400' },
@@ -491,7 +511,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             ))}
           </div>
 
-          {/* Link Control Panel (unchanged) */}
+          {/* Link Control Panel */}
           <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4">
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
               <div className="flex items-center gap-3">

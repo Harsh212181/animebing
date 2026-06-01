@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+ import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { getDb } from '../services/mongoService'
 import { adminAuth } from '../middleware/auth'
@@ -90,7 +90,8 @@ shortUserRoutes.post('/login', async (c) => {
         totalEarnings: user.totalEarnings,
         unpaidEarnings: user.unpaidEarnings,
         ratePerThousand: user.ratePerThousand,
-        profile: user.profile || {}
+        profile: user.profile || {},
+        avatarId: (user as any).avatarId || null,
       }
     })
   } catch (err: any) {
@@ -144,7 +145,8 @@ shortUserRoutes.post('/login/gmail', async (c) => {
         totalEarnings: user.totalEarnings,
         unpaidEarnings: user.unpaidEarnings,
         ratePerThousand: user.ratePerThousand,
-        profile: user.profile || {}
+        profile: user.profile || {},
+        avatarId: (user as any).avatarId || null,
       }
     })
   } catch (err: any) {
@@ -175,10 +177,12 @@ shortUserRoutes.get('/dashboard', userAuth, async (c) => {
       clickedAt: { $gte: todayStart }
     })
 
-    const last7Days = []
-    for (let i = 6; i >= 0; i--) {
-      const dayStart = new Date()
-      dayStart.setDate(dayStart.getDate() - i)
+    // ── current month clicks (day by day) ────────────────
+    const now = new Date()
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const last7Days = []   // keeps the same name so frontend doesn't break
+    for (let d = new Date(monthStart); d <= now; d.setDate(d.getDate() + 1)) {
+      const dayStart = new Date(d)
       dayStart.setHours(0, 0, 0, 0)
       const dayEnd = new Date(dayStart)
       dayEnd.setHours(23, 59, 59, 999)
@@ -231,10 +235,11 @@ shortUserRoutes.get('/dashboard', userAuth, async (c) => {
         ratePerThousand: user.ratePerThousand || 0,
         gmailLinked: user.gmailLinked || '',
         profile: user.profile || {},
-        canCreateLinks
+        canCreateLinks,
+        avatarId: (user as any).avatarId || null,
       },
       links,
-      last7Days,
+      last7Days,                // still called last7Days to keep frontend working
       topCountries,
       unreadMessages,
       pendingPaymentRequest: !!pendingPaymentRequest,
@@ -249,7 +254,7 @@ shortUserRoutes.get('/dashboard', userAuth, async (c) => {
 shortUserRoutes.put('/profile', userAuth, async (c) => {
   try {
     const { id } = c.get('shortUser')
-    const { mobile, gmail, upiId, upiPhone, age, gender } = await c.req.json()
+    const { mobile, gmail, upiId, upiPhone, age, gender, avatarId } = await c.req.json()
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
     const profileData: any = {}
@@ -264,6 +269,10 @@ shortUserRoutes.put('/profile', userAuth, async (c) => {
       profileData['gmailLinked'] = gmail.toLowerCase().trim()
     }
 
+    if (avatarId !== undefined) {
+      profileData['avatarId'] = avatarId
+    }
+
     profileData['updatedAt'] = new Date()
 
     await db.collection('shortusers').updateOne(
@@ -276,10 +285,7 @@ shortUserRoutes.put('/profile', userAuth, async (c) => {
   }
 })
 
-// ============================================================
-// ── USER SELF-CREATE LINK ──
-// POST /api/short-users/create-link
-// ============================================================
+// ============ USER SELF-CREATE LINK (label‑based code) ============
 shortUserRoutes.post('/create-link', userAuth, async (c) => {
   try {
     const { id, username } = c.get('shortUser')
@@ -313,14 +319,19 @@ shortUserRoutes.post('/create-link', userAuth, async (c) => {
         return c.json({ error: `"${finalCode}" code already use ho chuka hai. Koi aur code try karo.` }, 400)
       }
     } else {
-      const base = animeSlug.replace(/[^a-zA-Z0-9-]/g, '').substring(0, 15)
-      const suffix = Math.random().toString(36).substring(2, 6)
-      finalCode = `${base}-${suffix}`
-      let attempt = 0
-      while (await db.collection('shortlinks').findOne({ code: finalCode }) && attempt < 5) {
-        const newSuffix = Math.random().toString(36).substring(2, 6)
-        finalCode = `${base}-${newSuffix}`
-        attempt++
+      // ✅ Use label as slug (label or animeTitle)
+      const baseLabel = label?.trim() || animeTitle || 'link'
+      const slug = baseLabel
+        .toLowerCase()
+        .replace(/\s+/g, '-')
+        .replace(/[^a-z0-9-]/g, '')
+        .substring(0, 50)
+
+      let finalCode = slug
+      let counter = 1
+      while (await db.collection('shortlinks').findOne({ code: finalCode })) {
+        finalCode = `${slug}-${counter}`
+        counter++
       }
     }
 
@@ -334,7 +345,6 @@ shortUserRoutes.post('/create-link', userAuth, async (c) => {
       }, 400)
     }
 
-    // ✅ FIXED: Use /detail/ instead of /watch/
     const destinationUrl = `https://animebing.in/detail/${animeSlug}`
 
     const newLink = {
