@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+ import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { getDb } from '../services/mongoService'
 import { adminAuth } from '../middleware/auth'
@@ -99,7 +99,6 @@ shortUserRoutes.post('/login', async (c) => {
 })
 
 // ============ GMAIL LOGIN ============
-// User apni gmail se login kar sakta hai agar gmail account se linked ho
 shortUserRoutes.post('/login/gmail', async (c) => {
   try {
     const { gmail } = await c.req.json()
@@ -110,7 +109,6 @@ shortUserRoutes.post('/login/gmail', async (c) => {
     const normalizedGmail = gmail.toLowerCase().trim()
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    // Check gmailLinked field ya profile.gmail dono mein search karo
     const user = await db.collection('shortusers').findOne({
       $or: [
         { gmailLinked: normalizedGmail },
@@ -125,7 +123,6 @@ shortUserRoutes.post('/login/gmail', async (c) => {
       return c.json({ error: 'Account is inactive. Please contact admin.' }, 403)
     }
 
-    // Gmail linked nahi hai to profile.gmail se link kar do automatically
     if (!user.gmailLinked && (user.profile as any)?.gmail === normalizedGmail) {
       await db.collection('shortusers').updateOne(
         { _id: user._id },
@@ -202,26 +199,27 @@ shortUserRoutes.get('/dashboard', userAuth, async (c) => {
       { $limit: 5 }
     ]).toArray()
 
-    // Unread messages count
     const unreadMessages = await db.collection('shortmessages').countDocuments({
       userId: new ObjectId(id),
       fromAdmin: true,
       readByUser: false
     })
 
-    // Pending payment request
     const pendingPaymentRequest = await db.collection('shortrequests').findOne({
       userId: new ObjectId(id),
       type: 'payment',
       status: 'pending'
     })
 
-    // Pending link request
     const pendingLinkRequest = await db.collection('shortrequests').findOne({
       userId: new ObjectId(id),
       type: 'link',
       status: 'pending'
     })
+
+    // ── NEW: user ka self-create link quota check ──
+    // User ke settings mein canCreateLinks: true hona chahiye
+    const canCreateLinks = (user as any).canCreateLinks === true
 
     return c.json({
       user: {
@@ -234,7 +232,8 @@ shortUserRoutes.get('/dashboard', userAuth, async (c) => {
         paidEarnings: user.paidEarnings || 0,
         ratePerThousand: user.ratePerThousand || 0,
         gmailLinked: user.gmailLinked || '',
-        profile: user.profile || {}
+        profile: user.profile || {},
+        canCreateLinks  // ← frontend ko batao
       },
       links,
       last7Days,
@@ -263,7 +262,6 @@ shortUserRoutes.put('/profile', userAuth, async (c) => {
     if (age !== undefined) profileData['profile.age'] = age
     if (gender !== undefined) profileData['profile.gender'] = gender
 
-    // Gmail update hone par gmailLinked bhi update karo for login support
     if (gmail) {
       profileData['gmailLinked'] = gmail.toLowerCase().trim()
     }
@@ -275,6 +273,108 @@ shortUserRoutes.put('/profile', userAuth, async (c) => {
       { $set: profileData }
     )
     return c.json({ success: true, message: 'Profile updated successfully!' })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============================================================
+// ── NEW: USER SELF-CREATE LINK ──
+// POST /api/short-users/create-link
+// User apni anime ka link khud bana sakta hai
+// ============================================================
+shortUserRoutes.post('/create-link', userAuth, async (c) => {
+  try {
+    const { id, username } = c.get('shortUser')
+    const { animeId, animeTitle, animeSlug, customCode, label } = await c.req.json()
+
+    // Validation
+    if (!animeId || !animeSlug) {
+      return c.json({ error: 'Anime select karna zaroori hai.' }, 400)
+    }
+
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    // Check if user has permission to create links
+    const user = await db.collection('shortusers').findOne(
+      { _id: new ObjectId(id) }
+    ) as IShortUser | null
+    if (!user) return c.json({ error: 'User not found' }, 404)
+
+    if (!(user as any).canCreateLinks) {
+      return c.json({ error: 'Aapko link create karne ki permission nahi hai. Admin se contact karo.' }, 403)
+    }
+
+    // Custom code validation — agar diya to check karo
+    let finalCode = customCode?.trim()
+    if (finalCode) {
+      if (!/^[a-zA-Z0-9-_]+$/.test(finalCode)) {
+        return c.json({ error: 'Code mein sirf letters, numbers, - aur _ use kar sakte hain.' }, 400)
+      }
+      if (finalCode.length < 3 || finalCode.length > 30) {
+        return c.json({ error: 'Code 3 se 30 characters ka hona chahiye.' }, 400)
+      }
+      // Check duplicate
+      const existingCode = await db.collection('shortlinks').findOne({ code: finalCode })
+      if (existingCode) {
+        return c.json({ error: `"${finalCode}" code already use ho chuka hai. Koi aur code try karo.` }, 400)
+      }
+    } else {
+      // Auto-generate code from animeSlug + random suffix
+      const base = animeSlug.replace(/[^a-zA-Z0-9-]/g, '').substring(0, 15)
+      const suffix = Math.random().toString(36).substring(2, 6)
+      finalCode = `${base}-${suffix}`
+      // Ensure unique
+      let attempt = 0
+      while (await db.collection('shortlinks').findOne({ code: finalCode }) && attempt < 5) {
+        const newSuffix = Math.random().toString(36).substring(2, 6)
+        finalCode = `${base}-${newSuffix}`
+        attempt++
+      }
+    }
+
+    // Check: same user ne same anime ka link already banaya hai?
+    const existingAnimeLink = await db.collection('shortlinks').findOne({
+      userId: new ObjectId(id),
+      animeId: animeId
+    })
+    if (existingAnimeLink) {
+      return c.json({
+        error: `Aapne "${animeTitle}" ke liye pehle se ek link bana rakha hai: go.animebing.in/${existingAnimeLink.code}`
+      }, 400)
+    }
+
+    // Destination URL — anime watch page
+    const destinationUrl = `https://animebing.in/watch/${animeSlug}`
+
+    const newLink = {
+      code: finalCode,
+      url: destinationUrl,
+      label: label?.trim() || animeTitle || finalCode,
+      userId: new ObjectId(id),
+      username,
+      animeId,         // reference for duplicate check
+      animeTitle,
+      animeSlug,
+      createdByUser: true,  // admin se alag identify karne ke liye
+      clicks: 0,
+      createdAt: new Date(),
+      lastClicked: null
+    }
+
+    await db.collection('shortlinks').insertOne(newLink)
+
+    return c.json({
+      success: true,
+      message: `Link successfully create ho gaya!`,
+      link: {
+        code: finalCode,
+        shortUrl: `https://go.animebing.in/${finalCode}`,
+        destinationUrl,
+        label: newLink.label,
+        animeTitle
+      }
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
@@ -301,13 +401,11 @@ shortUserRoutes.post('/request/payment', userAuth, async (c) => {
       return c.json({ error: 'No pending payment available.' }, 400)
     }
 
-    // Profile check — UPI details required
     const profile = (user as any).profile || {}
     if (!profile.upiId && !profile.upiPhone) {
       return c.json({ error: 'Please update your UPI ID or UPI Phone in your profile before requesting payment.' }, 400)
     }
 
-    // Check existing pending request
     const existing = await db.collection('shortrequests').findOne({
       userId: new ObjectId(id),
       type: 'payment',
@@ -383,7 +481,6 @@ shortUserRoutes.get('/messages', userAuth, async (c) => {
       .limit(50)
       .toArray()
 
-    // Mark admin messages as read
     await db.collection('shortmessages').updateMany(
       { userId: new ObjectId(id), fromAdmin: true, readByUser: false },
       { $set: { readByUser: true } }
@@ -439,7 +536,7 @@ shortUserRoutes.get('/admin/users', adminAuth, async (c) => {
 // ============ ADMIN — CREATE USER ============
 shortUserRoutes.post('/admin/users', adminAuth, async (c) => {
   try {
-    const { username, password, realName, ratePerThousand } = await c.req.json()
+    const { username, password, realName, ratePerThousand, canCreateLinks } = await c.req.json()
     if (!username || !password || !realName) {
       return c.json({ error: 'username, password and realName are required' }, 400)
     }
@@ -451,6 +548,7 @@ shortUserRoutes.post('/admin/users', adminAuth, async (c) => {
       username, password, realName,
       ratePerThousand: ratePerThousand || 10,
       isActive: true,
+      canCreateLinks: canCreateLinks || false, // ← NEW
       totalClicks: 0,
       totalEarnings: 0,
       unpaidEarnings: 0,
@@ -471,7 +569,7 @@ shortUserRoutes.post('/admin/users', adminAuth, async (c) => {
 shortUserRoutes.put('/admin/users/:id', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
-    const { password, realName, ratePerThousand, isActive } = await c.req.json()
+    const { password, realName, ratePerThousand, isActive, canCreateLinks } = await c.req.json()
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
     const updateData: any = { updatedAt: new Date() }
@@ -479,6 +577,7 @@ shortUserRoutes.put('/admin/users/:id', adminAuth, async (c) => {
     if (realName) updateData.realName = realName
     if (ratePerThousand !== undefined) updateData.ratePerThousand = ratePerThousand
     if (isActive !== undefined) updateData.isActive = isActive
+    if (canCreateLinks !== undefined) updateData.canCreateLinks = canCreateLinks // ← NEW
 
     await db.collection('shortusers').updateOne(
       { _id: new ObjectId(id) },
@@ -519,13 +618,11 @@ shortUserRoutes.post('/admin/users/:id/pay', adminAuth, async (c) => {
       paidAt: new Date()
     })
 
-    // Close pending payment request
     await db.collection('shortrequests').updateMany(
       { userId: new ObjectId(id), type: 'payment', status: 'pending' },
       { $set: { status: 'done', updatedAt: new Date() } }
     )
 
-    // Notify user via message
     await db.collection('shortmessages').insertOne({
       userId: new ObjectId(id),
       username: user.username,
@@ -585,7 +682,6 @@ shortUserRoutes.get('/admin/messages/:userId', adminAuth, async (c) => {
       .sort({ createdAt: 1 })
       .toArray()
 
-    // Mark user messages as read by admin
     await db.collection('shortmessages').updateMany(
       { userId: new ObjectId(userId), fromAdmin: false, readByAdmin: false },
       { $set: { readByAdmin: true } }
@@ -661,13 +757,11 @@ shortUserRoutes.post('/admin/users/:id/create-link', adminAuth, async (c) => {
 
     await db.collection('shortlinks').insertOne(newLink)
 
-    // Close pending link request
     await db.collection('shortrequests').updateMany(
       { userId: new ObjectId(userId), type: 'link', status: 'pending' },
       { $set: { status: 'done', updatedAt: new Date() } }
     )
 
-    // Notify user
     await db.collection('shortmessages').insertOne({
       userId: new ObjectId(userId),
       username: user.username,
