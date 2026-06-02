@@ -69,6 +69,16 @@ const CloseIcon = () => (
     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
   </svg>
 );
+const ChevronDown = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+  </svg>
+);
+const ChevronUp = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+  </svg>
+);
 
 // ─── AvatarDisplay ──────────────────────────────────────────────
 const AvatarDisplay: React.FC<{ avatarId: number | null; name: string; size?: number }> = ({ avatarId, name, size = 36 }) => {
@@ -194,6 +204,7 @@ const UserDashboard: React.FC = () => {
 
   const user = dashData.user;
   const name = localStorage.getItem('shortUserName') || user.realName || user.username;
+  // ✅ Create Link tab visible if user has permission (no length restriction)
   const showCreateTab = user.canCreateLinks === true;
 
   const tabs = [
@@ -285,7 +296,7 @@ const UserDashboard: React.FC = () => {
         {activeTab === 'profile' && <ProfileTab user={user} onProfileUpdate={loadDashboard} token={token!} onToast={showToast} avatarId={avatarId} name={name} onOpenAvatarPicker={() => setShowAvatarPicker(true)} />}
         {activeTab === 'messages' && <MessagesTab token={token!} onRead={() => loadDashboard()} onToast={showToast} userName={name} avatarId={avatarId} />}
         {activeTab === 'requests' && <RequestsTab data={dashData} onRefresh={loadDashboard} token={token!} onToast={showToast} />}
-        {activeTab === 'create' && showCreateTab && <CreateLinkTab token={token!} onRefresh={loadDashboard} onToast={showToast} />}
+        {activeTab === 'create' && showCreateTab && <CreateLinkTab token={token!} onRefresh={loadDashboard} onToast={showToast} existingLinksCount={dashData.links.length} />}
       </main>
 
       {showAvatarPicker && (
@@ -492,21 +503,24 @@ const OverviewTab: React.FC<{ data: DashboardData; onRefresh: () => void; onToas
   );
 };
 
-// ─── Links Tab (WITH NULL SAFETY FIX) ─────────────────────
+// ─── Links Tab (with chevron icons on the right side for mobile) ─────────────
 const LinksTab: React.FC<{ links: DashboardData['links']; onToast: any }> = ({ links, onToast }) => {
+  const [expandedCodes, setExpandedCodes] = useState<Set<string>>(new Set());
+
   const copyLink = (code: string) => {
     navigator.clipboard.writeText(`https://go.animebing.in/${code}`);
     onToast('Link copied to clipboard', 'success');
   };
 
-  // 🛡️ SAFE: handles null/undefined codes
-  const displayCode = (code: string | null | undefined): string => {
-    if (!code) return '—';
-    if (code.length > 15) return code.substring(0, 15) + '...';
-    return code;
+  const toggleExpand = (code: string) => {
+    setExpandedCodes(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(code)) newSet.delete(code);
+      else newSet.add(code);
+      return newSet;
+    });
   };
 
-  // filter out links that are missing a code
   const validLinks = links.filter(link => link && link.code);
 
   return (
@@ -530,56 +544,91 @@ const LinksTab: React.FC<{ links: DashboardData['links']; onToast: any }> = ({ l
                 <th className="text-left p-2 sm:p-4 text-xs font-semibold text-gray-500 uppercase w-[15%] sm:w-auto">
                   Clicks
                 </th>
-                <th className="text-left p-2 sm:p-4 text-xs font-semibold text-gray-500 uppercase hidden sm:table-cell sm:w-auto">
+                <th className="text-left p-2 sm:p-4 text-xs font-semibold text-gray-500 uppercase hidden sm:table-cell">
                   Last Click
                 </th>
+                {/* Extra column for expand button on mobile (hidden on desktop) */}
+                <th className="sm:hidden w-10"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {validLinks.map((link) => (
-                <tr key={link.code} className="hover:bg-gray-50/80 transition">
-                  <td className="p-2 sm:p-4">
-                    <div className="flex items-center gap-1 sm:gap-2">
-                      {/* Mobile: truncated code */}
-                      <span className="sm:hidden text-indigo-600 font-mono text-xs truncate" title={`go.animebing.in/${link.code}`}>
-                        go.animebing.in/{displayCode(link.code)}
-                      </span>
-                      {/* Desktop: full code */}
-                      <span className="hidden sm:inline text-indigo-600 font-mono text-sm break-all" title={`go.animebing.in/${link.code}`}>
-                        go.animebing.in/{link.code}
-                      </span>
-                      <button
-                        onClick={() => copyLink(link.code)}
-                        className="px-2 py-0.5 sm:py-1 bg-gray-100 text-gray-600 rounded text-xs font-medium hover:bg-gray-200 transition flex-shrink-0"
-                      >
-                        Copy
-                      </button>
-                    </div>
-                  </td>
-                  <td className="p-2 sm:p-4 text-gray-600 text-xs sm:text-sm truncate max-w-[120px] sm:overflow-visible sm:whitespace-normal sm:max-w-none"
-                    title={link.label || ''}>
-                    {link.label || '—'}
-                  </td>
-                  <td className="p-2 sm:p-4">
-                    <span
-                      className={`px-2 py-0.5 sm:py-1 rounded-full text-xs font-semibold ${
+              {validLinks.map((link) => {
+                const isExpanded = expandedCodes.has(link.code);
+                const fullUrl = `go.animebing.in/${link.code}`;
+                return (
+                  <tr key={link.code} className="hover:bg-gray-50/80 transition">
+                    {/* URL cell */}
+                    <td className="p-2 sm:p-4">
+                      <div className="flex items-center gap-1 sm:gap-2">
+                        {/* Mobile: show truncated or full URL */}
+                        {isExpanded ? (
+                          <span className="text-indigo-600 font-mono text-xs break-all sm:hidden">
+                            {fullUrl}
+                          </span>
+                        ) : (
+                          <span className="sm:hidden text-indigo-600 font-mono text-xs truncate" title={fullUrl}>
+                            {fullUrl}
+                          </span>
+                        )}
+                        {/* Desktop always full */}
+                        <span className="hidden sm:inline text-indigo-600 font-mono text-sm break-all" title={fullUrl}>
+                          {fullUrl}
+                        </span>
+                        <button
+                          onClick={() => copyLink(link.code)}
+                          className="px-2 py-0.5 sm:py-1 bg-gray-100 text-gray-600 rounded text-xs font-medium hover:bg-gray-200 transition flex-shrink-0"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    </td>
+
+                    {/* Label cell */}
+                    <td className="p-2 sm:p-4">
+                      {isExpanded ? (
+                        <span className="text-gray-600 text-xs sm:text-sm break-words" title={link.label || ''}>
+                          {link.label || '—'}
+                        </span>
+                      ) : (
+                        <span className="text-gray-600 text-xs sm:text-sm truncate max-w-[120px] sm:overflow-visible sm:whitespace-normal sm:max-w-none block" title={link.label || ''}>
+                          {link.label || '—'}
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Clicks */}
+                    <td className="p-2 sm:p-4">
+                      <span className={`px-2 py-0.5 sm:py-1 rounded-full text-xs font-semibold ${
                         link.clicks > 100
                           ? 'bg-emerald-100 text-emerald-700'
                           : link.clicks > 10
                           ? 'bg-amber-100 text-amber-700'
                           : 'bg-gray-100 text-gray-600'
-                      }`}
-                    >
-                      {link.clicks || 0}
-                    </span>
-                  </td>
-                  <td className="p-2 sm:p-4 text-gray-500 text-xs hidden sm:table-cell">
-                    {link.lastClicked
-                      ? new Date(link.lastClicked).toLocaleDateString('en-IN')
-                      : 'Never'}
-                  </td>
-                </tr>
-              ))}
+                      }`}>
+                        {link.clicks || 0}
+                      </span>
+                    </td>
+
+                    {/* Last Click (desktop) */}
+                    <td className="p-2 sm:p-4 text-gray-500 text-xs hidden sm:table-cell">
+                      {link.lastClicked
+                        ? new Date(link.lastClicked).toLocaleDateString('en-IN')
+                        : 'Never'}
+                    </td>
+
+                    {/* Expand/Collapse button column (mobile only) */}
+                    <td className="sm:hidden p-2 text-right align-middle">
+                      <button
+                        onClick={() => toggleExpand(link.code)}
+                        className="p-1 rounded-full text-gray-500 hover:bg-gray-100 transition-colors"
+                        title={isExpanded ? 'Collapse' : 'Expand'}
+                      >
+                        {isExpanded ? <ChevronUp /> : <ChevronDown />}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -652,7 +701,7 @@ const ProfileTab: React.FC<{ user: any; onProfileUpdate: () => void; token: stri
   );
 };
 
-// ─── Messages Tab (with emoji avatar) ──────────────────────────
+// ─── Messages Tab ──────────────────────────
 const MessagesTab: React.FC<{ token: string; onRead: () => void; onToast: any; userName: string; avatarId: number | null }> = ({ token, onRead, onToast, userName, avatarId }) => {
   const [messages, setMessages] = useState<any[]>([]);
   const [text, setText] = useState('');
@@ -797,8 +846,8 @@ const RequestsTab: React.FC<{ data: DashboardData; onRefresh: () => void; token:
   );
 };
 
-// ─── Create Link Tab ──────────────────────────────
-const CreateLinkTab: React.FC<{ token: string; onRefresh: () => void; onToast: any }> = ({ token, onRefresh, onToast }) => {
+// ─── Create Link Tab (no hard limit on links, one at a time) ──────────────
+const CreateLinkTab: React.FC<{ token: string; onRefresh: () => void; onToast: any; existingLinksCount: number }> = ({ token, onRefresh, onToast, existingLinksCount }) => {
   const [animeList, setAnimeList] = useState<AnimeItem[]>([]);
   const [animeSearch, setAnimeSearch] = useState('');
   const [selectedAnime, setSelectedAnime] = useState<AnimeItem | null>(null);
@@ -810,6 +859,7 @@ const CreateLinkTab: React.FC<{ token: string; onRefresh: () => void; onToast: a
   const [showDropdown, setShowDropdown] = useState(false);
   const [displayCount, setDisplayCount] = useState(30);
 
+  // No longer restricting based on existingLinksCount – user can always create a new link
   useEffect(() => {
     const fetchAnime = async () => {
       setFetchingAnime(true); setAnimeFetchError(null);

@@ -533,12 +533,8 @@ const css = `
 /* ── empty ── */
 .sm-empty { padding: 48px 24px; text-align: center; color: var(--t3); font-size: 13px; }
 
-/* ── broken link warning banner ── */
-.sm-broken-banner {
-  background: var(--amber-dim); border: 1px solid var(--amber-border);
-  border-radius: 8px; padding: 10px 14px; margin-bottom: 14px;
-  display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--amber);
-}
+/* ── broken link warning banner (now removed) ── */
+.sm-broken-banner { display: none; }
 
 /* responsive */
 @media (max-width: 1000px) { .sm-stats { grid-template-columns: repeat(3, 1fr); } }
@@ -556,9 +552,9 @@ const ShortenerManager: React.FC = () => {
   const [linksLoading, setLinksLoading] = useState(true);
   const [addForm, setAddForm] = useState({ code: '', url: '', label: '', userId: '' });
   const [adding, setAdding] = useState(false);
-  const [editingLinkId, setEditingLinkId] = useState<string | null>(null); // use _id not code
+  const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ url: '', label: '', userId: '' });
-  const [deleteConfirm, setDeleteConfirm] = useState<ShortLink | null>(null); // store full link object
+  const [deleteConfirm, setDeleteConfirm] = useState<ShortLink | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [showAddLink, setShowAddLink] = useState(false);
@@ -579,9 +575,10 @@ const ShortenerManager: React.FC = () => {
   const [creatingLink, setCreatingLink] = useState(false);
   const [profileModal, setProfileModal] = useState<ShortUser | null>(null);
   const [showAddUser, setShowAddUser] = useState(false);
-  // ── NEW: delete user confirm ──
   const [deleteUserConfirm, setDeleteUserConfirm] = useState<ShortUser | null>(null);
   const [deletingUser, setDeletingUser] = useState(false);
+
+  const [userSearchQuery, setUserSearchQuery] = useState('');
 
   // requests
   const [requests, setRequests] = useState<ShortRequest[]>([]);
@@ -595,6 +592,8 @@ const ShortenerManager: React.FC = () => {
   const [msgText, setMsgText] = useState('');
   const [unreadCount, setUnreadCount] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const [msgUserSearch, setMsgUserSearch] = useState('');
 
   // broadcast
   const [broadcastMode, setBroadcastMode] = useState(false);
@@ -615,7 +614,6 @@ const ShortenerManager: React.FC = () => {
     setLinksLoading(true);
     try {
       const { data } = await axios.get(`${SHORTENER_BASE}/admin/links`, { headers: { Authorization: `Bearer ${getToken()}` } });
-      // Sort newest first, filter out completely broken entries
       const sorted = (Array.isArray(data) ? data : []).sort(
         (a: ShortLink, b: ShortLink) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
@@ -642,10 +640,8 @@ const ShortenerManager: React.FC = () => {
     finally { setAdding(false); }
   };
 
-  // ── FIXED: use link._id for edit tracking, use link.code for API call ──
   const handleUpdate = async (link: ShortLink) => {
     if (!link.code || !link.code.trim()) {
-      // If no code, offer to set one via a prompt
       toast.error('This link has no short code — please delete it and recreate');
       return;
     }
@@ -661,11 +657,9 @@ const ShortenerManager: React.FC = () => {
     } catch (err: any) { toast.error(err.response?.data?.error || 'Update failed'); }
   };
 
-  // ── FIXED: use by-id endpoint for broken links (no code), code endpoint otherwise ──
   const handleDelete = async (link: ShortLink) => {
     try {
       if (!link.code || !link.code.trim()) {
-        // Broken link — delete by MongoDB _id via the new by-id endpoint
         await axios.delete(
           `${SHORTENER_BASE}/admin/links/by-id/${link._id}`,
           { headers: { Authorization: `Bearer ${getToken()}` } }
@@ -729,7 +723,6 @@ const ShortenerManager: React.FC = () => {
     } catch (err: any) { toast.error(err.response?.data?.error || 'Update failed'); }
   };
 
-  // ── NEW: Delete user handler ──
   const handleDeleteUser = async () => {
     if (!deleteUserConfirm) return;
     setDeletingUser(true);
@@ -742,7 +735,6 @@ const ShortenerManager: React.FC = () => {
       setDeleteUserConfirm(null);
       fetchUsers();
     } catch (err: any) {
-      // If backend doesn't support delete yet, show helpful message
       const msg = err.response?.data?.error || 'Delete failed';
       if (err.response?.status === 404 || err.response?.status === 405) {
         toast.error('Delete endpoint not found — add DELETE /admin/users/:id to your backend');
@@ -859,15 +851,42 @@ const ShortenerManager: React.FC = () => {
     return u ? `${u.realName} (@${u.username})` : 'Unknown';
   };
 
-  // ── FIXED: filter and sort, newest first, null-safe code ──
-  const filteredLinks = links.filter(l =>
-    (l.code || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (l.label || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (l.url || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // ── Enhanced link search (includes assigned user) ──
+  const filteredLinks = links.filter(l => {
+    const q = searchQuery.toLowerCase();
+    if (!q) return true;
+    const matchSelf =
+      (l.code || '').toLowerCase().includes(q) ||
+      (l.label || '').toLowerCase().includes(q) ||
+      (l.url || '').toLowerCase().includes(q);
+    if (matchSelf) return true;
+    if (l.userId) {
+      const u = users.find(u => u._id === l.userId);
+      if (u && ((u.realName || '').toLowerCase().includes(q) || (u.username || '').toLowerCase().includes(q))) return true;
+    }
+    return false;
+  });
 
-  // Count links with missing codes
-  const brokenLinksCount = links.filter(l => !l.code || !l.code.trim()).length;
+  // ── User search filter ──
+  const filteredUsers = users.filter(u => {
+    if (!userSearchQuery) return true;
+    const q = userSearchQuery.toLowerCase();
+    return (
+      (u.realName || '').toLowerCase().includes(q) ||
+      (u.username || '').toLowerCase().includes(q) ||
+      (u.password || '').toLowerCase().includes(q)
+    );
+  });
+
+  // ── Message sidebar user filter ──
+  const filteredMsgUsers = users.filter(u => {
+    if (!msgUserSearch) return true;
+    const q = msgUserSearch.toLowerCase();
+    return (
+      (u.realName || '').toLowerCase().includes(q) ||
+      (u.username || '').toLowerCase().includes(q)
+    );
+  });
 
   const totalClicks = links.reduce((s, l) => s + (l.clicks || 0), 0);
   const totalUnpaid = users.reduce((s, u) => s + (u.unpaidEarnings || 0), 0);
@@ -935,7 +954,7 @@ const ShortenerManager: React.FC = () => {
               <div className="sm-toolbar-left">
                 <div className="sm-search-wrap">
                   <i className="ti ti-search" />
-                  <input className="sm-search" type="text" placeholder="Search links..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+                  <input className="sm-search" type="text" placeholder="Search links (code, label, URL, user)..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
                 </div>
                 {searchQuery && (
                   <span style={{ fontSize: 11, color: 'var(--t3)', fontFamily: 'var(--mono)' }}>
@@ -947,14 +966,6 @@ const ShortenerManager: React.FC = () => {
                 <i className="ti ti-plus" style={{ fontSize: 13 }} /> New Link
               </button>
             </div>
-
-            {/* Warning banner for broken links */}
-            {brokenLinksCount > 0 && (
-              <div className="sm-broken-banner">
-                <i className="ti ti-alert-triangle" style={{ fontSize: 16 }} />
-                <span>{brokenLinksCount} link{brokenLinksCount > 1 ? 's' : ''} without a short code detected. These were likely created with a bug and cannot be edited/deleted via the API. Clean them up directly in your database.</span>
-              </div>
-            )}
 
             {showAddLink && (
               <div className="sm-create-panel">
@@ -1022,30 +1033,71 @@ const ShortenerManager: React.FC = () => {
                         return (
                           <React.Fragment key={link._id}>
                             <tr className="sm-data-row">
+                              {/* ── SHORT URL CELL (FIXED) ── */}
                               <td>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  {hasCode ? (
-                                    <span className="sm-code-chip">{link.code}</span>
-                                  ) : (
-                                    <span className="sm-code-chip-missing">⚠ no code</span>
-                                  )}
-                                  {hasCode && (
+                                {hasCode ? (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                                    <span
+                                      className="sm-code-chip"
+                                      title={`go.animebing.in/${link.code}`}
+                                      style={{
+                                        maxWidth: 110,
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap',
+                                        display: 'inline-block',
+                                      }}
+                                    >
+                                      {link.code}
+                                    </span>
                                     <button
                                       className="sm-act-btn"
-                                      style={copiedCode === link.code ? { background: 'var(--green-dim)', color: 'var(--green)', borderColor: 'var(--green-border)' } : {}}
+                                      style={{
+                                        flexShrink: 0,
+                                        ...(copiedCode === link.code
+                                          ? { background: 'var(--green-dim)', color: 'var(--green)', borderColor: 'var(--green-border)' }
+                                          : {}),
+                                      }}
                                       onClick={() => copyToClipboard(link.code)}
-                                      title="Copy URL"
+                                      title={`Copy: go.animebing.in/${link.code}`}
                                     >
                                       <i className={copiedCode === link.code ? 'ti ti-check' : 'ti ti-copy'} />
                                     </button>
-                                  )}
-                                </div>
+                                  </div>
+                                ) : (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    {link.url ? (
+                                      <a
+                                        href={link.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="sm-url-link"
+                                        title={link.url}
+                                        style={{
+                                          fontSize: 11,
+                                          maxWidth: '140px',
+                                          overflow: 'hidden',
+                                          textOverflow: 'ellipsis',
+                                          whiteSpace: 'nowrap',
+                                          display: 'inline-block'
+                                        }}
+                                      >
+                                        {link.url.replace(/^https?:\/\//, '')}
+                                      </a>
+                                    ) : (
+                                      <span style={{ color: 'var(--t3)', fontSize: 11 }}>No URL</span>
+                                    )}
+                                    <span style={{ fontSize: 9, color: 'var(--t3)', whiteSpace: 'nowrap' }}>(no code)</span>
+                                  </div>
+                                )}
                               </td>
+                              {/* ── END SHORT URL CELL ── */}
+
                               <td><span style={{ color: 'var(--t2)', fontSize: 12 }}>{link.label || '—'}</span></td>
                               <td>
                                 {link.url ? (
                                   <a href={link.url} target="_blank" rel="noopener noreferrer" className="sm-url-link" title={link.url}>
-                                    {link.url.length > 38 ? link.url.substring(0, 38) + '…' : link.url}
+                                    {link.url.length > 50 ? link.url.substring(0, 50) + '…' : link.url}
                                   </a>
                                 ) : <span style={{ color: 'var(--t3)' }}>—</span>}
                               </td>
@@ -1149,7 +1201,23 @@ const ShortenerManager: React.FC = () => {
         {activeTab === 'users' && (
           <>
             <div className="sm-toolbar">
-              <div className="sm-toolbar-left" />
+              <div className="sm-toolbar-left">
+                <div className="sm-search-wrap">
+                  <i className="ti ti-search" />
+                  <input
+                    className="sm-search"
+                    type="text"
+                    placeholder="Search users by name, username, or password..."
+                    value={userSearchQuery}
+                    onChange={e => setUserSearchQuery(e.target.value)}
+                  />
+                </div>
+                {userSearchQuery && (
+                  <span style={{ fontSize: 11, color: 'var(--t3)', fontFamily: 'var(--mono)' }}>
+                    {filteredUsers.length} / {users.length}
+                  </span>
+                )}
+              </div>
               <button className="sm-btn sm-btn-new" onClick={() => setShowAddUser(v => !v)}>
                 <i className="ti ti-plus" style={{ fontSize: 13 }} /> New User
               </button>
@@ -1180,7 +1248,6 @@ const ShortenerManager: React.FC = () => {
                       <input className="sm-input" type="number" min="1" value={addUserForm.ratePerThousand} onChange={e => setAddUserForm({ ...addUserForm, ratePerThousand: Number(e.target.value) })} />
                     </div>
                   </div>
-                  {/* Preview of login credentials */}
                   {addUserForm.username && addUserForm.password && (
                     <div style={{ background: 'var(--green-dim)', border: '1px solid var(--green-border)', borderRadius: 7, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: 'var(--green)', fontFamily: 'var(--mono)' }}>
                       ✅ Login credentials: username="{addUserForm.username}" password="{addUserForm.password}"
@@ -1202,8 +1269,8 @@ const ShortenerManager: React.FC = () => {
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '48px 0', gap: 12 }}>
                     <Spinner /><p style={{ color: 'var(--t3)', fontSize: 12, fontFamily: 'var(--mono)' }}>Loading users...</p>
                   </div>
-                ) : users.length === 0 ? (
-                  <div className="sm-empty">No users yet. Create one to get started.</div>
+                ) : filteredUsers.length === 0 ? (
+                  <div className="sm-empty">{users.length === 0 ? 'No users yet. Create one to get started.' : 'No users match your search.'}</div>
                 ) : (
                   <table className="sm-table">
                     <thead>
@@ -1219,7 +1286,7 @@ const ShortenerManager: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {users.map(user => (
+                      {filteredUsers.map(user => (
                         <React.Fragment key={user._id}>
                           <tr className="sm-data-row">
                             <td>
@@ -1266,7 +1333,6 @@ const ShortenerManager: React.FC = () => {
                                   <i className="ti ti-message-circle" />
                                 </button>
                                 <span className="sm-act-sep" />
-                                {/* ── NEW: Delete user button ── */}
                                 <button
                                   className="sm-act-btn sm-act-btn-danger"
                                   onClick={() => setDeleteUserConfirm(user)}
@@ -1324,9 +1390,9 @@ const ShortenerManager: React.FC = () => {
                   </table>
                 )}
               </div>
-              {users.length > 0 && (
+              {filteredUsers.length > 0 && (
                 <div className="sm-table-footer">
-                  <span className="sm-footer-count">{users.length} users &bull; {users.filter(u => u.isActive).length} active</span>
+                  <span className="sm-footer-count">{filteredUsers.length} of {users.length} users &bull; {filteredUsers.filter(u => u.isActive).length} active</span>
                 </div>
               )}
             </div>
@@ -1416,6 +1482,18 @@ const ShortenerManager: React.FC = () => {
                   </span>
                 )}
               </div>
+              {!broadcastMode && (
+                <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)' }}>
+                  <input
+                    className="sm-input"
+                    type="text"
+                    placeholder="Search users..."
+                    value={msgUserSearch}
+                    onChange={e => setMsgUserSearch(e.target.value)}
+                    style={{ fontSize: 12, padding: '6px 10px' }}
+                  />
+                </div>
+              )}
               <div className="sm-msg-user-list">
                 {broadcastMode ? (
                   <>
@@ -1423,7 +1501,7 @@ const ShortenerManager: React.FC = () => {
                       <button className="sm-btn sm-btn-ghost" style={{ padding: '2px 8px', fontSize: 10 }} onClick={selectAllUsers}>All</button>
                       <button className="sm-btn sm-btn-ghost" style={{ padding: '2px 8px', fontSize: 10 }} onClick={deselectAllUsers}>None</button>
                     </div>
-                    {users.map(user => (
+                    {filteredMsgUsers.map(user => (
                       <label key={user._id} className="sm-msg-user-btn" style={{ cursor: 'pointer' }}>
                         <input type="checkbox" checked={selectedBroadcastUsers.includes(user._id)} onChange={() => toggleUserSelection(user._id)} style={{ accentColor: 'var(--accent)' }} />
                         {renderUserAvatar(user, 28)}
@@ -1435,7 +1513,7 @@ const ShortenerManager: React.FC = () => {
                     ))}
                   </>
                 ) : (
-                  users.map(user => (
+                  filteredMsgUsers.map(user => (
                     <button key={user._id}
                       className={`sm-msg-user-btn${selectedUserMsg?._id === user._id ? ' sm-msg-user-btn-active' : ''}`}
                       onClick={() => { setBroadcastMode(false); loadMessages(user); }}>
@@ -1564,7 +1642,7 @@ const ShortenerManager: React.FC = () => {
           </div>
         )}
 
-        {/* ═══ DELETE USER MODAL (NEW) ═══ */}
+        {/* ═══ DELETE USER MODAL ═══ */}
         {deleteUserConfirm && (
           <div className="sm-modal-backdrop" onClick={() => setDeleteUserConfirm(null)}>
             <div className="sm-modal" onClick={e => e.stopPropagation()}>

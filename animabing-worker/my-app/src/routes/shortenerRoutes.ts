@@ -1,4 +1,4 @@
-// File: ANIMABING/animabing-worker/my-app/src/routes/shortenerRoutes.ts
+ // File: ANIMABING/animabing-worker/my-app/src/routes/shortenerRoutes.ts
 
 import { Hono } from 'hono'
 import { Env, Variables } from '../index'
@@ -7,6 +7,154 @@ import { adminAuth } from '../middleware/auth'
 import { ObjectId } from 'mongodb'
 
 const shortenerRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
+
+// ============ BOT DETECTION ============
+const BOT_PATTERNS = [
+  'googlebot', 'bingbot', 'slurp', 'duckduckbot', 'baiduspider', 'yandexbot',
+  'facebot', 'facebookexternalhit', 'twitterbot', 'linkedinbot', 'pinterest',
+  'telegrambot', 'discordbot', 'whatsapp', 'slackbot', 'applebot', 'rogerbot',
+  'embedly', 'quora link preview', 'showyoubot', 'outbrain', 'developers.google.com',
+  'bot', 'crawl', 'spider',
+]
+
+function isBot(userAgent: string | null | undefined): boolean {
+  if (!userAgent) return false
+  const ua = userAgent.toLowerCase()
+  return BOT_PATTERNS.some(p => ua.includes(p))
+}
+
+// ============ HTML ESCAPE ============
+function esc(input: unknown): string {
+  return String(input || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\n/g, ' ')
+    .trim()
+}
+
+// ============ META HTML BUILDER ============
+// Crawlers ke liye — redirect nahi, seedha HTML serve karo with OG tags
+// Real URL (animebing.in/detail/slug) bhi include hai taaki Google sahi page index kare
+function buildMetaHTML(opts: {
+  title: string
+  description: string
+  image: string
+  canonicalUrl: string   // animebing.in/detail/slug — real indexable page
+  shortUrl: string       // go.animebing.in/code — current URL
+  redirectUrl: string    // jahan user actually jayega
+}): string {
+  const t   = esc(opts.title)
+  const d   = esc(opts.description.substring(0, 900))
+  const img = opts.image || 'https://animebing.in/AnimeBinglogo.jpg'
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${t}</title>
+  <meta name="description" content="${d}" />
+  <link rel="canonical" href="${esc(opts.canonicalUrl)}" />
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="${t}" />
+  <meta property="og:description" content="${d}" />
+  <meta property="og:url" content="${esc(opts.shortUrl)}" />
+  <meta property="og:image" content="${esc(img)}" />
+  <meta property="og:image:secure_url" content="${esc(img)}" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:type" content="video.tv_show" />
+  <meta property="og:site_name" content="AnimeBing" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="${t}" />
+  <meta name="twitter:description" content="${d}" />
+  <meta name="twitter:image" content="${esc(img)}" />
+
+  <!-- Bot ko redirect nahi, crawl karne do — real users JS se jayenge -->
+  <script>
+    // Sirf real users ko redirect karo, bots yahan ruke
+    var ua = navigator.userAgent.toLowerCase();
+    var bots = ['bot','crawl','spider','facebookexternalhit','twitterbot','whatsapp','telegram','discord','slack','linkedin'];
+    var isBot = bots.some(function(b){ return ua.indexOf(b) !== -1; });
+    if (!isBot) {
+      window.location.replace("${esc(opts.redirectUrl)}");
+    }
+  </script>
+  <noscript>
+    <meta http-equiv="refresh" content="0;url=${esc(opts.redirectUrl)}" />
+  </noscript>
+</head>
+<body style="background:#0f172a;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;">
+  <div style="text-align:center;padding:2rem;max-width:500px;">
+    <img src="${esc(img)}" alt="${t}" style="width:100%;max-width:300px;border-radius:12px;margin-bottom:1.5rem;" onerror="this.style.display='none'" />
+    <h1 style="font-size:1.4rem;margin-bottom:0.75rem;">${t}</h1>
+    <p style="color:#94a3b8;font-size:0.95rem;margin-bottom:1.5rem;">${d}</p>
+    <a href="${esc(opts.redirectUrl)}" style="background:#6366f1;color:#fff;padding:0.75rem 2rem;border-radius:8px;text-decoration:none;font-weight:600;">
+      Watch Now →
+    </a>
+  </div>
+</body>
+</html>`
+}
+
+// ============ ANIME META FETCHER ============
+// animebing.in/detail/slug ka HTML fetch karo — _middleware.ts pehle se meta inject karta hai
+// Is tarah hamesha fresh aur correct meta milega, API alag se nahi call karna
+async function fetchAnimeMeta(
+  targetUrl: string,
+): Promise<{ title: string; description: string; image: string; slug: string } | null> {
+  try {
+    // Sirf animebing.in/detail/:slug URLs handle karo
+    const match = targetUrl.match(/animebing\.in\/detail\/([^/?#]+)/)
+    if (!match) return null
+
+    const slug = match[1]
+
+    // animebing.in/detail/slug ka HTML fetch karo — bot UA use karo taaki _middleware.ts meta inject kare
+    const res = await fetch(`https://animebing.in/detail/${slug}`, {
+      headers: {
+        'User-Agent': 'facebookexternalhit/1.1',
+        'Accept': 'text/html',
+      }
+    })
+    if (!res.ok) return null
+
+    const html = await res.text()
+
+    // OG tags HTML se extract karo — regex se
+    function extractOg(property: string): string {
+      const m = html.match(new RegExp(`<meta[^>]+property=["']og:${property}["'][^>]+content=["']([^"']+)["']`, 'i'))
+               || html.match(new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:${property}["']`, 'i'))
+      return m ? m[1].replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim() : ''
+    }
+
+    function extractTitle(): string {
+      const m = html.match(/<title>([^<]+)<\/title>/i)
+      return m ? m[1].trim() : ''
+    }
+
+    function extractDescription(): string {
+      const m = html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i)
+               || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["']/i)
+      return m ? m[1].trim() : ''
+    }
+
+    const title       = extractOg('title') || extractTitle()
+    const description = extractOg('description') || extractDescription()
+    const image       = extractOg('image')
+
+    if (!title) return null
+
+    return { title, description, image, slug }
+  } catch {
+    return null
+  }
+}
 
 // ============ ADMIN — ALL LINKS ============
 shortenerRoutes.get('/admin/links', adminAuth, async (c) => {
@@ -93,11 +241,6 @@ shortenerRoutes.get('/admin/links/:code/stats', adminAuth, async (c) => {
   }
 })
 
-// ✅ NEW: Dashboard redirect — worker se React app par bhejo
-shortenerRoutes.get('/dashboard', (c) => {
-  return c.redirect('https://animebing.in/dashboard', 302)
-})
-
 // ============ REDIRECT — LAST ============
 shortenerRoutes.get('/:code', async (c) => {
   try {
@@ -115,6 +258,35 @@ shortenerRoutes.get('/:code', async (c) => {
       `, 404)
     }
 
+    const userAgent = c.req.header('User-Agent') || ''
+
+    // ============ BOT: Meta HTML serve karo ============
+    if (isBot(userAgent)) {
+      const meta = await fetchAnimeMeta(link.url)
+
+      // Canonical URL: agar animebing.in/detail/slug hai to wohi, warna target URL
+      const canonicalUrl = meta
+        ? `https://animebing.in/detail/${meta.slug}`
+        : link.url
+
+      const title       = meta?.title       || link.label || code
+      const description = meta?.description || `Visit ${link.url}`
+      const image       = meta?.image       || 'https://animebing.in/AnimeBinglogo.jpg'
+
+      return c.html(
+        buildMetaHTML({
+          title,
+          description,
+          image,
+          canonicalUrl,
+          shortUrl:    `https://go.animebing.in/${code}`,
+          redirectUrl: link.url,
+        }),
+        200
+      )
+    }
+
+    // ============ REAL USER: Click track karo + redirect ============
     const ip = c.req.header('CF-Connecting-IP') ||
                c.req.header('X-Forwarded-For') ||
                c.req.header('X-Real-IP') || 'unknown'
@@ -125,9 +297,9 @@ shortenerRoutes.get('/:code', async (c) => {
     })
 
     if (!recentClick) {
-      const country = c.req.header('CF-IPCountry') || 'Unknown'
-      const city = (c as any).req.raw?.cf?.city || 'Unknown'
-      const device = c.req.header('User-Agent') || ''
+      const country    = c.req.header('CF-IPCountry') || 'Unknown'
+      const city       = (c as any).req.raw?.cf?.city || 'Unknown'
+      const device     = userAgent
       const deviceType = /mobile|android|iphone|ipad/i.test(device)
         ? 'mobile' : /tablet/i.test(device) ? 'tablet' : 'desktop'
 
@@ -153,8 +325,8 @@ shortenerRoutes.get('/:code', async (c) => {
             { _id: link.userId },
             {
               $inc: {
-                totalClicks: 1,
-                totalEarnings: earningPerClick,
+                totalClicks:    1,
+                totalEarnings:  earningPerClick,
                 unpaidEarnings: earningPerClick
               }
             }
