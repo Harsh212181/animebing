@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+ import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { getDb } from '../services/mongoService'
 import { adminAuth } from '../middleware/auth'
@@ -886,6 +886,21 @@ shortUserRoutes.get('/admin/stats', adminAuth, async (c) => {
       topCountries,
       users
     })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============ ADMIN — DELETE LINK BY ID (for broken links without code) ============
+shortUserRoutes.delete('/admin/links/by-id/:id', adminAuth, async (c) => {
+  try {
+    const id = c.req.param('id')
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const result = await db.collection('shortlinks').deleteOne({ _id: new ObjectId(id) })
+    if (result.deletedCount === 0) {
+      return c.json({ error: 'Link not found' }, 404)
+    }
+    return c.json({ success: true, message: 'Link deleted' })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
