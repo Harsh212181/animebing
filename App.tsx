@@ -1,4 +1,4 @@
- // App.tsx - FINAL FIXED VERSION (hooks order correct for go.animebing.in + full components)
+// App.tsx - FINAL FIXED VERSION (with HelmetProvider + AnimeContext for no re-fetch)
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
@@ -23,7 +23,7 @@ import Top100Page from './components/Top100Page';
 import EarnMoney from './components/EarnMoney';
 import WelcomePage from './components/WelcomePage';
 import DownloadLinkPage from './components/DownloadLinkPage';
-import UserDashboard from './components/UserDashboard';
+import UserDashboard from './components/UserDashboard'; // ✅ NEW IMPORT
 
 import { AnimeProvider } from './src/context/AnimeContext';
 
@@ -93,6 +93,8 @@ const ScrollToTop: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
 
   useEffect(() => {
+    // ✅ Agar homeScrollPosition hai, user back aa raha hai
+    // Us case mein scroll restore HomePage khud karega — yahan kuch mat karo
     const isComingBack = !!sessionStorage.getItem('homeScrollPosition');
     if (isComingBack) return;
 
@@ -102,7 +104,7 @@ const ScrollToTop: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return <>{children}</>;
 };
 
-// ✅ LOADING SCREEN — Anime Portal Style
+// ✅ NEW LOADING SCREEN — Anime Portal Style
 const LoadingScreen: React.FC = () => {
   const [progress, setProgress] = useState(0);
   const [visible, setVisible] = useState(false);
@@ -434,60 +436,45 @@ const MainApp: React.FC = () => {
   const location = useLocation();
   const [searchParams] = useSearchParams();
 
-  // ✅ 1. Determine domain (before hooks)
-  const isGoDomain = window.location.hostname === 'go.animebing.in';
-
-  // ✅ 2. ALL useState / useRef hooks – unconditional, always the same order
-  const [goDomainLoading, setGoDomainLoading] = useState(isGoDomain);
   const [adminView, setAdminView] = useState<AdminViewType | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<FilterType>('All');
   const [contentType, setContentType] = useState<ContentTypeFilter>('All');
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
-  const [isAppLoading, setIsAppLoading] = useState(!isGoDomain); // skip loading on go domain
+  const [isAppLoading, setIsAppLoading] = useState(true);
+
   const [typedText, setTypedText] = useState('');
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
-  // ✅ 3. ALL useEffect hooks – unconditional
+  const dummyFilterFunction = (filter: 'Hindi Dub' | 'Hindi Sub' | 'English Sub') => {};
+  const dummyContentTypeFunction = (contentType: ContentType) => {};
 
-  // go.animebing.in loading timer
-  useEffect(() => {
-    if (isGoDomain) {
-      const timer = setTimeout(() => setGoDomainLoading(false), 2000);
-      return () => clearTimeout(timer);
-    }
-  }, []);
-
-  // URL param sync (dev logging)
   useEffect(() => {
     if (import.meta.env.DEV) {
       console.log('📍 URL Changed:', location.search);
+
       const urlContentType = searchParams.get('contentType') as ContentTypeFilter | null;
       const urlFilter = searchParams.get('filter') as FilterType | null;
       const urlSearchQuery = searchParams.get('search') || '';
+
       if (urlContentType && urlContentType !== contentType) setContentType(urlContentType);
       if (urlFilter && urlFilter !== filter) setFilter(urlFilter);
       if (urlSearchQuery && urlSearchQuery !== searchQuery) setSearchQuery(urlSearchQuery);
     }
   }, [location.search, searchParams]);
 
-  // URL param sync (always)
   useEffect(() => {
     const urlContentType = searchParams.get('contentType') as ContentTypeFilter | null;
     const urlFilter = searchParams.get('filter') as FilterType | null;
     const urlSearchQuery = searchParams.get('search') || '';
+
     if (urlContentType && urlContentType !== contentType) setContentType(urlContentType);
     if (urlFilter && urlFilter !== filter) setFilter(urlFilter);
     if (urlSearchQuery !== searchQuery) setSearchQuery(urlSearchQuery);
   }, [location.search]);
 
-  // App initialisation (admin token check, loading screen)
   useEffect(() => {
-    if (isGoDomain) {
-      // go domain handles its own loading, no app loading needed
-      return;
-    }
     const initializeApp = async () => {
       try {
         await new Promise(resolve => setTimeout(resolve, 2000));
@@ -507,7 +494,7 @@ const MainApp: React.FC = () => {
     initializeApp();
   }, []);
 
-  // Secret code keyboard listener
+  // ✅ SECRET CODE KEYBOARD LISTENER
   useEffect(() => {
     const showAdminNotification = () => {
       const notification = document.createElement('div');
@@ -543,7 +530,7 @@ const MainApp: React.FC = () => {
         typingTimeoutRef.current = setTimeout(() => setTypedText(''), 3000);
       }
 
-      // Ctrl + Shift + Alt + H
+      // ✅ CHANGED: Ctrl + Shift + Alt + H combo to trigger admin login
       if (e.ctrlKey && e.shiftKey && e.altKey && (e.key === 'h' || e.key === 'H')) {
         e.preventDefault();
         setAdminView('login');
@@ -559,7 +546,6 @@ const MainApp: React.FC = () => {
     };
   }, [typedText]);
 
-  // Admin handlers
   const handleAdminLogin = (token: string, username: string) => {
     localStorage.setItem('adminToken', token);
     localStorage.setItem('adminUsername', username);
@@ -575,11 +561,13 @@ const MainApp: React.FC = () => {
     window.location.href = window.location.origin + '/';
   };
 
-  // Anime selection (save scroll position)
+  // ✅ FIXED handleAnimeSelect — scroll position pehle save, phir navigate
   const handleAnimeSelect = (anime: Anime) => {
     const identifier = anime.slug || anime.id || anime._id;
     if (identifier) {
+      // ✅ Pehle position save karo
       sessionStorage.setItem('homeScrollPosition', String(window.scrollY));
+      // ✅ Phir navigate karo — scroll to top NAHI karna (ScrollToTop component handle karega)
       navigate(`/detail/${identifier}`);
     }
   };
@@ -627,16 +615,6 @@ const MainApp: React.FC = () => {
       window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
     });
   };
-
-  // Dummy functions for Header props
-  const dummyFilterFunction = (filter: 'Hindi Dub' | 'Hindi Sub' | 'English Sub') => {};
-  const dummyContentTypeFunction = (contentType: ContentType) => {};
-
-  // ✅ 4. Conditional returns AFTER all hooks
-  if (isGoDomain) {
-    if (goDomainLoading) return <LoadingScreen />;
-    return <UserDashboard />;
-  }
 
   if (isAppLoading) return <LoadingScreen />;
 
@@ -747,7 +725,7 @@ const MainApp: React.FC = () => {
                 </div>
               } />
 
-              {/* ✅ USER DASHBOARD ROUTE (for regular domain) */}
+              {/* ✅ NEW USER DASHBOARD ROUTE */}
               <Route path="/dashboard" element={
                 <div className="rounded-lg overflow-hidden glow-green-border">
                   <UserDashboard />
@@ -805,7 +783,7 @@ const MainApp: React.FC = () => {
   );
 };
 
-// ✅ FINAL APP WRAPPER
+// ✅ FINAL APP WITH HELMETPROVIDER + ANIMEPROVIDER WRAPPER
 const App: React.FC = () => {
   return (
     <HelmetProvider>

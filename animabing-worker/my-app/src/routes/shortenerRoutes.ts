@@ -1,4 +1,4 @@
- // File: ANIMABING/animabing-worker/my-app/src/routes/shortenerRoutes.ts
+// File: ANIMABING/animabing-worker/my-app/src/routes/shortenerRoutes.ts
 
 import { Hono } from 'hono'
 import { Env, Variables } from '../index'
@@ -103,10 +103,10 @@ function buildMetaHTML(opts: {
 }
 
 // ============ ANIME META FETCHER ============
-// animebing.in/detail/slug ka HTML fetch karo — _middleware.ts pehle se meta inject karta hai
-// Is tarah hamesha fresh aur correct meta milega, API alag se nahi call karna
+// animebing.in/detail/slug se slug nikalo aur API se meta lo
 async function fetchAnimeMeta(
   targetUrl: string,
+  apiBase: string
 ): Promise<{ title: string; description: string; image: string; slug: string } | null> {
   try {
     // Sirf animebing.in/detail/:slug URLs handle karo
@@ -114,43 +114,40 @@ async function fetchAnimeMeta(
     if (!match) return null
 
     const slug = match[1]
-
-    // animebing.in/detail/slug ka HTML fetch karo — bot UA use karo taaki _middleware.ts meta inject kare
-    const res = await fetch(`https://animebing.in/detail/${slug}`, {
-      headers: {
-        'User-Agent': 'facebookexternalhit/1.1',
-        'Accept': 'text/html',
-      }
+    const res = await fetch(`${apiBase}/api/anime/${slug}`, {
+      headers: { Accept: 'application/json' }
     })
     if (!res.ok) return null
 
-    const html = await res.text()
+    const data = await res.json() as { success: boolean; data?: Record<string, unknown> }
+    if (!data.success || !data.data) return null
 
-    // OG tags HTML se extract karo — regex se
-    function extractOg(property: string): string {
-      const m = html.match(new RegExp(`<meta[^>]+property=["']og:${property}["'][^>]+content=["']([^"']+)["']`, 'i'))
-               || html.match(new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:${property}["']`, 'i'))
-      return m ? m[1].replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim() : ''
+    const anime = data.data
+    const title = String(anime.title || slug.replace(/-/g, ' '))
+
+    // Episode count se title suffix
+    const epCount = Number((anime as any).currentEpisode || 0)
+    let titleFull = title
+    if (anime.contentType === 'Movie')       titleFull += ' (Movie)'
+    else if (anime.contentType === 'Manga')  titleFull += ' Manga'
+    else if (epCount > 1)                    titleFull += ` EP 1-${epCount}`
+    else if (epCount === 1)                  titleFull += ' EP 1'
+
+    const description = String(
+      (anime as any).description ||
+      (anime as any).seoDescription ||
+      (anime as any).synopsis ||
+      `Watch ${title} online in HD quality on AnimeBing. Free streaming and downloads.`
+    ).trim()
+
+    const image = String((anime as any).thumbnail || 'https://animebing.in/AnimeBinglogo.jpg')
+
+    return {
+      title: `${titleFull} | AnimeBing`,
+      description,
+      image,
+      slug,
     }
-
-    function extractTitle(): string {
-      const m = html.match(/<title>([^<]+)<\/title>/i)
-      return m ? m[1].trim() : ''
-    }
-
-    function extractDescription(): string {
-      const m = html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i)
-               || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["']/i)
-      return m ? m[1].trim() : ''
-    }
-
-    const title       = extractOg('title') || extractTitle()
-    const description = extractOg('description') || extractDescription()
-    const image       = extractOg('image')
-
-    if (!title) return null
-
-    return { title, description, image, slug }
   } catch {
     return null
   }
@@ -241,6 +238,11 @@ shortenerRoutes.get('/admin/links/:code/stats', adminAuth, async (c) => {
   }
 })
 
+// ✅ Dashboard redirect
+shortenerRoutes.get('/dashboard', (c) => {
+  return c.redirect('https://animebing.in/dashboard', 302)
+})
+
 // ============ REDIRECT — LAST ============
 shortenerRoutes.get('/:code', async (c) => {
   try {
@@ -262,7 +264,10 @@ shortenerRoutes.get('/:code', async (c) => {
 
     // ============ BOT: Meta HTML serve karo ============
     if (isBot(userAgent)) {
-      const meta = await fetchAnimeMeta(link.url)
+      // API base — wrangler.json ya .dev.vars se aata hai, index.ts mein MONGODB_URI jaisa
+      const apiBase = (c.env as any).API_URL || 'https://animabing-backend.animabingwatch.workers.dev'
+
+      const meta = await fetchAnimeMeta(link.url, apiBase)
 
       // Canonical URL: agar animebing.in/detail/slug hai to wohi, warna target URL
       const canonicalUrl = meta
