@@ -891,11 +891,12 @@ shortUserRoutes.get('/admin/stats', adminAuth, async (c) => {
   }
 })
 
-// ============ ADMIN — DELETE LINK BY ID (for broken links without code) ============
+// ============ ADMIN — DELETE LINK BY ID (for broken links without a code) ============
 shortUserRoutes.delete('/admin/links/by-id/:id', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
     const result = await db.collection('shortlinks').deleteOne({ _id: new ObjectId(id) })
     if (result.deletedCount === 0) {
       return c.json({ error: 'Link not found' }, 404)
