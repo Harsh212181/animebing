@@ -60,7 +60,7 @@ interface ShortUser {
   unpaidEarnings: number;
   paidEarnings: number;
   gmailLinked?: string;
-  avatarId?: number | null;   // ✨ added
+  avatarId?: number | null;
   profile?: {
     mobile?: string;
     gmail?: string;
@@ -97,7 +97,7 @@ interface ShortMessage {
   createdAt: string;
 }
 
-// Helper: render user avatar from AVATARS list
+// ── Helper: render user avatar ──────────────────────────────
 const renderUserAvatar = (user: ShortUser, size = 28) => {
   const av = AVATARS.find(a => a.id === user.avatarId);
   if (av) {
@@ -120,7 +120,7 @@ const renderUserAvatar = (user: ShortUser, size = 28) => {
   );
 };
 
-/* ─────────────────────────────────────────── css (unchanged) ─── */
+/* ─────────────────────────────────────────── css ─── */
 const css = `
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
 @import url('https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css');
@@ -322,6 +322,11 @@ const css = `
   background: var(--teal-dim); border: 1px solid var(--teal-border);
   border-radius: 5px; padding: 2px 8px; display: inline-block;
 }
+.sm-code-chip-missing {
+  font-family: var(--mono); font-size: 11px; color: var(--red);
+  background: var(--red-dim); border: 1px solid var(--red-border);
+  border-radius: 5px; padding: 2px 8px; display: inline-block;
+}
 .sm-url-link { font-size: 11px; color: var(--blue); text-decoration: none; }
 .sm-url-link:hover { text-decoration: underline; }
 .sm-badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 500; }
@@ -362,6 +367,7 @@ const css = `
   cursor: pointer; font-size: 14px; transition: all 0.12s;
 }
 .sm-act-btn:hover { background: var(--bg3); color: var(--t2); border-color: var(--border2); }
+.sm-act-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 .sm-act-btn-on { background: var(--accent-dim) !important; color: var(--accent) !important; border-color: var(--accent-border) !important; }
 .sm-act-btn-save { background: var(--green-dim); color: var(--green); border-color: var(--green-border); font-size: 12px; width: auto; padding: 0 10px; font-weight: 600; }
 .sm-act-btn-cancel { font-size: 12px; width: auto; padding: 0 10px; }
@@ -420,15 +426,10 @@ const css = `
 .sm-msg-user-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
 
 .sm-msg-user-btn {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  text-align: left;
-  padding: 10px 14px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; text-align: left;
+  padding: 10px 14px; border: none;
+  background: transparent; cursor: pointer;
   border-bottom: 1px solid var(--border);
   transition: background 0.1s;
 }
@@ -439,162 +440,74 @@ const css = `
 .sm-msg-user-name { font-size: 12px; font-weight: 500; color: var(--t1); }
 .sm-msg-user-handle { font-size: 11px; color: var(--t3); font-family: var(--mono); margin-top: 2px; }
 
-/* Sidebar avatar */
 .sm-sidebar-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--teal-dim);
-  border: 1px solid var(--teal-border);
-  color: var(--teal);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 700;
-  flex-shrink: 0;
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--teal-dim); border: 1px solid var(--teal-border);
+  color: var(--teal); display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; flex-shrink: 0;
 }
 
 .sm-msg-window {
-  background: var(--bg1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  display: flex;
-  flex-direction: column;
+  background: var(--bg1); border: 1px solid var(--border);
+  border-radius: var(--radius); display: flex; flex-direction: column;
   background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23e2e8f0' fill-opacity='0.15'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
-  background-repeat: repeat;
-  background-size: 60px 60px;
+  background-repeat: repeat; background-size: 60px 60px;
 }
-
 .sm-msg-win-header {
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--bg1);
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px; background: var(--bg1);
 }
 .sm-msg-win-name { font-size: 13px; font-weight: 500; color: var(--t1); }
 .sm-msg-win-handle { font-size: 11px; color: var(--t3); font-family: var(--mono); }
-
 .sm-msg-body {
-  flex: 1;
-  padding: 14px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  max-height: 380px;
+  flex: 1; padding: 14px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 12px; max-height: 380px;
 }
 .sm-msg-body::-webkit-scrollbar { width: 4px; }
 .sm-msg-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
 
-/* ── Bubbles (WhatsApp style) ── */
 .sm-bubble {
-  display: inline-block;
-  max-width: 100%;
-  padding: 10px 14px;
-  font-size: 13px;
-  line-height: 1.55;
-  word-break: break-word;
-  overflow-wrap: break-word;
-  white-space: normal;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+  display: inline-block; max-width: 100%; padding: 10px 14px;
+  font-size: 13px; line-height: 1.55; word-break: break-word;
+  overflow-wrap: break-word; white-space: normal; box-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
-
-.sm-bubble-admin {
-  background: #ffffff;
-  color: #1e293b;
-  border-radius: 12px 12px 12px 4px;
-  border: 1px solid rgba(0,0,0,0.05);
-}
-
-.sm-bubble-user {
-  background: #dcf8c6;
-  color: #1e293b;
-  border-radius: 12px 12px 4px 12px;
-}
-
-.sm-bubble-time {
-  font-size: 10px;
-  color: #94a3b8;
-  margin-top: 4px;
-  font-family: var(--mono);
-}
+.sm-bubble-admin { background: #ffffff; color: #1e293b; border-radius: 12px 12px 12px 4px; border: 1px solid rgba(0,0,0,0.05); }
+.sm-bubble-user  { background: #dcf8c6; color: #1e293b; border-radius: 12px 12px 4px 12px; }
+.sm-bubble-time  { font-size: 10px; color: #94a3b8; margin-top: 4px; font-family: var(--mono); }
 
 .sm-chat-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--accent-dim);
-  border: 1px solid var(--accent-border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--accent);
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--accent-dim); border: 1px solid var(--accent-border);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; font-size: 11px; font-weight: 700; color: var(--accent);
 }
 
-/* Input row */
 .sm-msg-input-row {
-  padding: 12px 14px;
-  border-top: 1px solid var(--border);
-  background: var(--bg1);
-  display: flex;
-  gap: 8px;
-  align-items: center;
+  padding: 12px 14px; border-top: 1px solid var(--border);
+  background: var(--bg1); display: flex; gap: 8px; align-items: center;
 }
 .sm-msg-input {
-  flex: 1;
-  background: var(--bg0);
-  border: 1px solid var(--border2);
-  border-radius: 9999px;
-  padding: 10px 18px;
-  font-size: 13px;
-  font-family: var(--font);
-  color: var(--t1);
-  outline: none;
-  transition: border-color 0.2s;
+  flex: 1; background: var(--bg0); border: 1px solid var(--border2);
+  border-radius: 9999px; padding: 10px 18px; font-size: 13px;
+  font-family: var(--font); color: var(--t1); outline: none; transition: border-color 0.2s;
 }
 .sm-msg-input:focus { border-color: var(--accent-border); }
-
 .sm-msg-send-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
-  border: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background 0.15s;
-  font-size: 18px;
+  width: 40px; height: 40px; border-radius: 50%; background: var(--accent); color: #fff;
+  border: none; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background 0.15s; font-size: 18px;
 }
 .sm-msg-send-btn:hover { background: #6a5acd; }
 .sm-msg-send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* Broadcast toggle */
 .sm-broadcast-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--t2);
-  cursor: pointer;
-  background: none;
-  border: none;
-  padding: 5px 8px;
-  border-radius: 6px;
-  transition: all 0.13s;
+  display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--t2);
+  cursor: pointer; background: none; border: none; padding: 5px 8px; border-radius: 6px; transition: all 0.13s;
 }
 .sm-broadcast-toggle:hover { background: var(--bg3); color: var(--t1); }
 .sm-broadcast-toggle.active { color: var(--amber); background: var(--amber-dim); border: 1px solid var(--amber-border); }
 
-.sm-no-msgs { text-align: center; padding: 40px 20px; color: var(--t3); font-size: 12px; }
+.sm-no-msgs { text-align: center; padding: 28px; color: var(--t3); font-size: 12px; }
 .sm-msg-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--t3); font-size: 13px; gap: 8px; }
 .sm-msg-empty i { font-size: 28px; }
 
@@ -620,6 +533,13 @@ const css = `
 /* ── empty ── */
 .sm-empty { padding: 48px 24px; text-align: center; color: var(--t3); font-size: 13px; }
 
+/* ── broken link warning banner ── */
+.sm-broken-banner {
+  background: var(--amber-dim); border: 1px solid var(--amber-border);
+  border-radius: 8px; padding: 10px 14px; margin-bottom: 14px;
+  display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--amber);
+}
+
 /* responsive */
 @media (max-width: 1000px) { .sm-stats { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 700px) {
@@ -636,9 +556,9 @@ const ShortenerManager: React.FC = () => {
   const [linksLoading, setLinksLoading] = useState(true);
   const [addForm, setAddForm] = useState({ code: '', url: '', label: '', userId: '' });
   const [adding, setAdding] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingLinkId, setEditingLinkId] = useState<string | null>(null); // use _id not code
   const [editForm, setEditForm] = useState({ url: '', label: '', userId: '' });
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<ShortLink | null>(null); // store full link object
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [showAddLink, setShowAddLink] = useState(false);
@@ -659,6 +579,9 @@ const ShortenerManager: React.FC = () => {
   const [creatingLink, setCreatingLink] = useState(false);
   const [profileModal, setProfileModal] = useState<ShortUser | null>(null);
   const [showAddUser, setShowAddUser] = useState(false);
+  // ── NEW: delete user confirm ──
+  const [deleteUserConfirm, setDeleteUserConfirm] = useState<ShortUser | null>(null);
+  const [deletingUser, setDeletingUser] = useState(false);
 
   // requests
   const [requests, setRequests] = useState<ShortRequest[]>([]);
@@ -673,7 +596,7 @@ const ShortenerManager: React.FC = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // broadcast mode
+  // broadcast
   const [broadcastMode, setBroadcastMode] = useState(false);
   const [selectedBroadcastUsers, setSelectedBroadcastUsers] = useState<string[]>([]);
 
@@ -692,7 +615,11 @@ const ShortenerManager: React.FC = () => {
     setLinksLoading(true);
     try {
       const { data } = await axios.get(`${SHORTENER_BASE}/admin/links`, { headers: { Authorization: `Bearer ${getToken()}` } });
-      setLinks(Array.isArray(data) ? data : []);
+      // Sort newest first, filter out completely broken entries
+      const sorted = (Array.isArray(data) ? data : []).sort(
+        (a: ShortLink, b: ShortLink) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      setLinks(sorted);
     } catch (err: any) {
       toast.error('Links load failed: ' + (err.response?.data?.error || err.message));
     } finally { setLinksLoading(false); }
@@ -715,23 +642,48 @@ const ShortenerManager: React.FC = () => {
     finally { setAdding(false); }
   };
 
-  const handleUpdate = async (code: string) => {
+  // ── FIXED: use link._id for edit tracking, use link.code for API call ──
+  const handleUpdate = async (link: ShortLink) => {
+    if (!link.code || !link.code.trim()) {
+      // If no code, offer to set one via a prompt
+      toast.error('This link has no short code — please delete it and recreate');
+      return;
+    }
     try {
-      await axios.put(`${SHORTENER_BASE}/admin/links/${code}`, editForm, { headers: { Authorization: `Bearer ${getToken()}` } });
+      await axios.put(
+        `${SHORTENER_BASE}/admin/links/${encodeURIComponent(link.code)}`,
+        editForm,
+        { headers: { Authorization: `Bearer ${getToken()}` } }
+      );
       toast.success('Updated');
-      setEditingId(null); fetchLinks();
+      setEditingLinkId(null);
+      fetchLinks();
     } catch (err: any) { toast.error(err.response?.data?.error || 'Update failed'); }
   };
 
-  const handleDelete = async (code: string) => {
+  // ── FIXED: use by-id endpoint for broken links (no code), code endpoint otherwise ──
+  const handleDelete = async (link: ShortLink) => {
     try {
-      await axios.delete(`${SHORTENER_BASE}/admin/links/${code}`, { headers: { Authorization: `Bearer ${getToken()}` } });
+      if (!link.code || !link.code.trim()) {
+        // Broken link — delete by MongoDB _id via the new by-id endpoint
+        await axios.delete(
+          `${SHORTENER_BASE}/admin/links/by-id/${link._id}`,
+          { headers: { Authorization: `Bearer ${getToken()}` } }
+        );
+      } else {
+        await axios.delete(
+          `${SHORTENER_BASE}/admin/links/${encodeURIComponent(link.code)}`,
+          { headers: { Authorization: `Bearer ${getToken()}` } }
+        );
+      }
       toast.success('Link deleted');
-      setDeleteConfirm(null); fetchLinks();
+      setDeleteConfirm(null);
+      fetchLinks();
     } catch (err: any) { toast.error(err.response?.data?.error || 'Delete failed'); }
   };
 
   const copyToClipboard = (code: string) => {
+    if (!code || !code.trim()) { toast.error('No short code to copy'); return; }
     navigator.clipboard.writeText(`https://go.animebing.in/${code}`);
     setCopiedCode(code); toast.success('Copied!');
     setTimeout(() => setCopiedCode(null), 2000);
@@ -748,13 +700,22 @@ const ShortenerManager: React.FC = () => {
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!addUserForm.username || !addUserForm.password || !addUserForm.realName) { toast.error('All fields required'); return; }
+    const uname = addUserForm.username.trim();
+    const pwd   = addUserForm.password.trim();
+    const rname = addUserForm.realName.trim();
+    if (!uname || !pwd || !rname) { toast.error('All fields required'); return; }
+    if (pwd.length < 4) { toast.error('Password must be at least 4 characters'); return; }
     setAddingUser(true);
     try {
-      await axios.post(`${API_BASE}/short-users/admin/users`, addUserForm, { headers: { Authorization: `Bearer ${getToken()}` } });
-      toast.success('User created');
+      await axios.post(
+        `${API_BASE}/short-users/admin/users`,
+        { username: uname, password: pwd, realName: rname, ratePerThousand: addUserForm.ratePerThousand },
+        { headers: { Authorization: `Bearer ${getToken()}` } }
+      );
+      toast.success(`User "${uname}" created! Password: ${pwd}`);
       setAddUserForm({ username: '', password: '', realName: '', ratePerThousand: 10 });
-      setShowAddUser(false); fetchUsers();
+      setShowAddUser(false);
+      fetchUsers();
     } catch (err: any) { toast.error(err.response?.data?.error || 'Create failed'); }
     finally { setAddingUser(false); }
   };
@@ -766,6 +727,29 @@ const ShortenerManager: React.FC = () => {
       await axios.put(`${API_BASE}/short-users/admin/users/${userId}`, payload, { headers: { Authorization: `Bearer ${getToken()}` } });
       toast.success('User updated'); setEditingUserId(null); fetchUsers();
     } catch (err: any) { toast.error(err.response?.data?.error || 'Update failed'); }
+  };
+
+  // ── NEW: Delete user handler ──
+  const handleDeleteUser = async () => {
+    if (!deleteUserConfirm) return;
+    setDeletingUser(true);
+    try {
+      await axios.delete(
+        `${API_BASE}/short-users/admin/users/${deleteUserConfirm._id}`,
+        { headers: { Authorization: `Bearer ${getToken()}` } }
+      );
+      toast.success(`User "${deleteUserConfirm.realName}" deleted`);
+      setDeleteUserConfirm(null);
+      fetchUsers();
+    } catch (err: any) {
+      // If backend doesn't support delete yet, show helpful message
+      const msg = err.response?.data?.error || 'Delete failed';
+      if (err.response?.status === 404 || err.response?.status === 405) {
+        toast.error('Delete endpoint not found — add DELETE /admin/users/:id to your backend');
+      } else {
+        toast.error(msg);
+      }
+    } finally { setDeletingUser(false); }
   };
 
   const handlePayment = async () => {
@@ -787,7 +771,8 @@ const ShortenerManager: React.FC = () => {
     if (!createLinkForm.code || !createLinkForm.url) { toast.error('Code and URL required'); return; }
     setCreatingLink(true);
     try {
-      await axios.post(`${API_BASE}/short-users/admin/users/${createLinkModal._id}/create-link`,
+      await axios.post(
+        `${API_BASE}/short-users/admin/users/${createLinkModal._id}/create-link`,
         { code: createLinkForm.code.trim().toLowerCase(), url: createLinkForm.url.trim(), label: createLinkForm.label.trim() || createLinkForm.code.trim() },
         { headers: { Authorization: `Bearer ${getToken()}` } }
       );
@@ -835,7 +820,6 @@ const ShortenerManager: React.FC = () => {
     } catch { toast.error('Send failed'); }
   };
 
-  // --- Broadcast functions ---
   const toggleBroadcastMode = () => {
     setBroadcastMode(!broadcastMode);
     setSelectedBroadcastUsers([]);
@@ -855,24 +839,17 @@ const ShortenerManager: React.FC = () => {
     if (!msgText.trim() || selectedBroadcastUsers.length === 0) return;
     const text = msgText.trim();
     setMsgText('');
-    const total = selectedBroadcastUsers.length;
-    const toastId = toast.loading(`Sending to ${total} users...`);
-    let success = 0;
-    let failed = 0;
+    const toastId = toast.loading(`Sending to ${selectedBroadcastUsers.length} users...`);
+    let success = 0; let failed = 0;
     for (const userId of selectedBroadcastUsers) {
       try {
         await axios.post(`${API_BASE}/short-users/admin/messages/${userId}`, { text }, { headers: { Authorization: `Bearer ${getToken()}` } });
         success++;
-      } catch {
-        failed++;
-      }
+      } catch { failed++; }
     }
     toast.dismiss(toastId);
-    if (failed === 0) {
-      toast.success(`Message sent to all ${success} users`);
-    } else {
-      toast.error(`Sent to ${success} users, failed for ${failed} users`);
-    }
+    if (failed === 0) toast.success(`Message sent to all ${success} users`);
+    else toast.error(`Sent to ${success}, failed for ${failed}`);
     setSelectedBroadcastUsers([]);
   };
 
@@ -882,11 +859,15 @@ const ShortenerManager: React.FC = () => {
     return u ? `${u.realName} (@${u.username})` : 'Unknown';
   };
 
+  // ── FIXED: filter and sort, newest first, null-safe code ──
   const filteredLinks = links.filter(l =>
     (l.code || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     (l.label || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     (l.url || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // Count links with missing codes
+  const brokenLinksCount = links.filter(l => !l.code || !l.code.trim()).length;
 
   const totalClicks = links.reduce((s, l) => s + (l.clicks || 0), 0);
   const totalUnpaid = users.reduce((s, u) => s + (u.unpaidEarnings || 0), 0);
@@ -928,57 +909,35 @@ const ShortenerManager: React.FC = () => {
 
         {/* Tabs */}
         <div className="sm-tabs">
-          <button
-            className={`sm-tab${activeTab === 'links' ? ' sm-tab-active sm-tab-active-teal' : ''}`}
-            onClick={() => setActiveTab('links')}
-          >
-            <i className="ti ti-link" style={{ fontSize: 13 }} />
-            Links
-          </button>
-          <button
-            className={`sm-tab${activeTab === 'users' ? ' sm-tab-active sm-tab-active-purple' : ''}`}
-            onClick={() => setActiveTab('users')}
-          >
-            <i className="ti ti-users" style={{ fontSize: 13 }} />
-            Users
-          </button>
-          <button
-            className={`sm-tab${activeTab === 'requests' ? ' sm-tab-active sm-tab-active-amber' : ''}`}
-            onClick={() => setActiveTab('requests')}
-          >
-            <i className="ti ti-clipboard-list" style={{ fontSize: 13 }} />
-            Requests
-            {pendingCount > 0 && <span className="sm-tab-badge">{pendingCount}</span>}
-          </button>
-          <button
-            className={`sm-tab${activeTab === 'messages' ? ' sm-tab-active sm-tab-active-blue' : ''}`}
-            onClick={() => setActiveTab('messages')}
-          >
-            <i className="ti ti-message-circle" style={{ fontSize: 13 }} />
-            Messages
-            {unreadCount > 0 && <span className="sm-tab-badge">{unreadCount}</span>}
-          </button>
+          {(['links','users','requests','messages'] as const).map(tab => (
+            <button
+              key={tab}
+              className={`sm-tab${activeTab === tab ? ` sm-tab-active sm-tab-active-${tab === 'links' ? 'teal' : tab === 'users' ? 'purple' : tab === 'requests' ? 'amber' : 'blue'}` : ''}`}
+              onClick={() => setActiveTab(tab)}
+            >
+              <i className={`ti ti-${tab === 'links' ? 'link' : tab === 'users' ? 'users' : tab === 'requests' ? 'clipboard-list' : 'message-circle'}`} style={{ fontSize: 13 }} />
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              {tab === 'requests' && pendingCount > 0 && <span className="sm-tab-badge">{pendingCount}</span>}
+              {tab === 'messages' && unreadCount > 0 && <span className="sm-tab-badge">{unreadCount}</span>}
+            </button>
+          ))}
           <div style={{ flex: 1 }} />
-          <button
-            className="sm-btn sm-btn-ghost"
-            style={{ padding: '6px 12px', fontSize: 12 }}
-            onClick={() => { fetchLinks(); fetchUsers(); fetchUnreadCount(); if (activeTab === 'requests') fetchRequests(); }}
-          >
+          <button className="sm-btn sm-btn-ghost" style={{ padding: '6px 12px', fontSize: 12 }}
+            onClick={() => { fetchLinks(); fetchUsers(); fetchUnreadCount(); if (activeTab === 'requests') fetchRequests(); }}>
             <i className="ti ti-refresh" style={{ fontSize: 13 }} /> Refresh
           </button>
         </div>
 
-        {/* ═══ LINKS TAB ═══ (unchanged) */}
+        {/* ═══ LINKS TAB ═══ */}
         {activeTab === 'links' && (
           <>
-            {/* ... (same as before) ... */}
             <div className="sm-toolbar">
               <div className="sm-toolbar-left">
                 <div className="sm-search-wrap">
                   <i className="ti ti-search" />
                   <input className="sm-search" type="text" placeholder="Search links..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
                 </div>
-                {(searchQuery) && (
+                {searchQuery && (
                   <span style={{ fontSize: 11, color: 'var(--t3)', fontFamily: 'var(--mono)' }}>
                     {filteredLinks.length} / {links.length}
                   </span>
@@ -988,6 +947,14 @@ const ShortenerManager: React.FC = () => {
                 <i className="ti ti-plus" style={{ fontSize: 13 }} /> New Link
               </button>
             </div>
+
+            {/* Warning banner for broken links */}
+            {brokenLinksCount > 0 && (
+              <div className="sm-broken-banner">
+                <i className="ti ti-alert-triangle" style={{ fontSize: 16 }} />
+                <span>{brokenLinksCount} link{brokenLinksCount > 1 ? 's' : ''} without a short code detected. These were likely created with a bug and cannot be edited/deleted via the API. Clean them up directly in your database.</span>
+              </div>
+            )}
 
             {showAddLink && (
               <div className="sm-create-panel">
@@ -1049,91 +1016,115 @@ const ShortenerManager: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredLinks.map(link => (
-                        <React.Fragment key={link.code}>
-                          <tr className="sm-data-row">
-                            <td>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span className="sm-code-chip">{link.code}</span>
-                                <button
-                                  className="sm-act-btn"
-                                  style={copiedCode === link.code ? { background: 'var(--green-dim)', color: 'var(--green)', borderColor: 'var(--green-border)' } : {}}
-                                  onClick={() => copyToClipboard(link.code)}
-                                  title="Copy URL"
-                                >
-                                  <i className={copiedCode === link.code ? 'ti ti-check' : 'ti ti-copy'} />
-                                </button>
-                              </div>
-                            </td>
-                            <td><span style={{ color: 'var(--t2)', fontSize: 12 }}>{link.label || '—'}</span></td>
-                            <td>
-                              <a href={link.url || '#'} target="_blank" rel="noopener noreferrer" className="sm-url-link" title={link.url}>
-                                {link.url ? (link.url.length > 38 ? link.url.substring(0, 38) + '…' : link.url) : '—'}
-                              </a>
-                            </td>
-                            <td>
-                              <span style={{ fontSize: 11, color: 'var(--accent)', fontFamily: 'var(--mono)' }}>
-                                {getUserName(link.userId)}
-                              </span>
-                            </td>
-                            <td>
-                              <span className={`sm-clicks-badge ${(link.clicks || 0) > 100 ? 'sm-clicks-high' : (link.clicks || 0) > 10 ? 'sm-clicks-mid' : 'sm-clicks-low'}`}>
-                                {(link.clicks || 0).toLocaleString()}
-                              </span>
-                            </td>
-                            <td><span className="sm-mono" style={{ color: 'var(--t3)', fontSize: 11 }}>{link.lastClicked ? new Date(link.lastClicked).toLocaleDateString('en-IN') : 'Never'}</span></td>
-                            <td>
-                              <div className="sm-act-group">
-                                <button
-                                  className={`sm-act-btn${editingId === link.code ? ' sm-act-btn-on' : ''}`}
-                                  onClick={() => { if (editingId === link.code) { setEditingId(null); } else { setEditingId(link.code); setEditForm({ url: link.url || '', label: link.label || '', userId: link.userId || '' }); } }}
-                                  title="Edit"
-                                ><i className="ti ti-edit" /></button>
-                                <span className="sm-act-sep" />
-                                <button className="sm-act-btn sm-act-btn-danger" onClick={() => setDeleteConfirm(link.code)} title="Delete">
-                                  <i className="ti ti-trash" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                          {editingId === link.code && (
-                            <tr className="sm-edit-expand">
-                              <td colSpan={7}>
-                                <div className="sm-edit-inner">
-                                  <div className="sm-edit-header">
-                                    <span className="sm-edit-bar" />
-                                    <span className="sm-edit-title">Edit Link</span>
-                                    <span className="sm-edit-sub">go.animebing.in/{link.code}</span>
-                                  </div>
-                                  <div className="sm-form-grid">
-                                    <div className="sm-field">
-                                      <span>Target URL</span>
-                                      <input className="sm-input" type="url" value={editForm.url} onChange={e => setEditForm({ ...editForm, url: e.target.value })} />
-                                    </div>
-                                    <div className="sm-field">
-                                      <span>Label</span>
-                                      <input className="sm-input" type="text" value={editForm.label} onChange={e => setEditForm({ ...editForm, label: e.target.value })} />
-                                    </div>
-                                    <div className="sm-field">
-                                      <span>Assign to User</span>
-                                      <select className="sm-select" value={editForm.userId} onChange={e => setEditForm({ ...editForm, userId: e.target.value })}>
-                                        <option value="">— No assignment —</option>
-                                        {users.map(u => <option key={u._id} value={u._id}>{u.realName} ({u.username})</option>)}
-                                      </select>
-                                    </div>
-                                  </div>
-                                  <div className="sm-form-actions">
-                                    <button className="sm-btn sm-btn-ghost" onClick={() => setEditingId(null)}>Cancel</button>
-                                    <button className="sm-btn sm-btn-success" onClick={() => handleUpdate(link.code)}>
-                                      <i className="ti ti-check" /> Save Changes
+                      {filteredLinks.map(link => {
+                        const hasCode = !!(link.code && link.code.trim());
+                        const isEditingThis = editingLinkId === link._id;
+                        return (
+                          <React.Fragment key={link._id}>
+                            <tr className="sm-data-row">
+                              <td>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  {hasCode ? (
+                                    <span className="sm-code-chip">{link.code}</span>
+                                  ) : (
+                                    <span className="sm-code-chip-missing">⚠ no code</span>
+                                  )}
+                                  {hasCode && (
+                                    <button
+                                      className="sm-act-btn"
+                                      style={copiedCode === link.code ? { background: 'var(--green-dim)', color: 'var(--green)', borderColor: 'var(--green-border)' } : {}}
+                                      onClick={() => copyToClipboard(link.code)}
+                                      title="Copy URL"
+                                    >
+                                      <i className={copiedCode === link.code ? 'ti ti-check' : 'ti ti-copy'} />
                                     </button>
-                                  </div>
+                                  )}
+                                </div>
+                              </td>
+                              <td><span style={{ color: 'var(--t2)', fontSize: 12 }}>{link.label || '—'}</span></td>
+                              <td>
+                                {link.url ? (
+                                  <a href={link.url} target="_blank" rel="noopener noreferrer" className="sm-url-link" title={link.url}>
+                                    {link.url.length > 38 ? link.url.substring(0, 38) + '…' : link.url}
+                                  </a>
+                                ) : <span style={{ color: 'var(--t3)' }}>—</span>}
+                              </td>
+                              <td>
+                                <span style={{ fontSize: 11, color: 'var(--accent)', fontFamily: 'var(--mono)' }}>
+                                  {getUserName(link.userId?.toString())}
+                                </span>
+                              </td>
+                              <td>
+                                <span className={`sm-clicks-badge ${(link.clicks || 0) > 100 ? 'sm-clicks-high' : (link.clicks || 0) > 10 ? 'sm-clicks-mid' : 'sm-clicks-low'}`}>
+                                  {(link.clicks || 0).toLocaleString()}
+                                </span>
+                              </td>
+                              <td><span className="sm-mono" style={{ color: 'var(--t3)', fontSize: 11 }}>{link.lastClicked ? new Date(link.lastClicked).toLocaleDateString('en-IN') : 'Never'}</span></td>
+                              <td>
+                                <div className="sm-act-group">
+                                  <button
+                                    className={`sm-act-btn${isEditingThis ? ' sm-act-btn-on' : ''}`}
+                                    onClick={() => {
+                                      if (!hasCode) { toast.error('Cannot edit — link has no short code'); return; }
+                                      if (isEditingThis) { setEditingLinkId(null); }
+                                      else { setEditingLinkId(link._id); setEditForm({ url: link.url || '', label: link.label || '', userId: link.userId?.toString() || '' }); }
+                                    }}
+                                    title={hasCode ? 'Edit' : 'No code — edit disabled'}
+                                  >
+                                    <i className="ti ti-edit" />
+                                  </button>
+                                  <span className="sm-act-sep" />
+                                  <button
+                                    className="sm-act-btn sm-act-btn-danger"
+                                    onClick={() => setDeleteConfirm(link)}
+                                    title="Delete"
+                                  >
+                                    <i className="ti ti-trash" />
+                                  </button>
                                 </div>
                               </td>
                             </tr>
-                          )}
-                        </React.Fragment>
-                      ))}
+
+                            {/* Edit expand row */}
+                            {isEditingThis && (
+                              <tr className="sm-edit-expand">
+                                <td colSpan={7}>
+                                  <div className="sm-edit-inner">
+                                    <div className="sm-edit-header">
+                                      <span className="sm-edit-bar" />
+                                      <span className="sm-edit-title">Edit Link</span>
+                                      <span className="sm-edit-sub">go.animebing.in/{link.code}</span>
+                                    </div>
+                                    <div className="sm-form-grid">
+                                      <div className="sm-field">
+                                        <span>Target URL</span>
+                                        <input className="sm-input" type="url" value={editForm.url} onChange={e => setEditForm({ ...editForm, url: e.target.value })} />
+                                      </div>
+                                      <div className="sm-field">
+                                        <span>Label</span>
+                                        <input className="sm-input" type="text" value={editForm.label} onChange={e => setEditForm({ ...editForm, label: e.target.value })} />
+                                      </div>
+                                      <div className="sm-field">
+                                        <span>Assign to User</span>
+                                        <select className="sm-select" value={editForm.userId} onChange={e => setEditForm({ ...editForm, userId: e.target.value })}>
+                                          <option value="">— No assignment —</option>
+                                          {users.map(u => <option key={u._id} value={u._id}>{u.realName} ({u.username})</option>)}
+                                        </select>
+                                      </div>
+                                    </div>
+                                    <div className="sm-form-actions">
+                                      <button className="sm-btn sm-btn-ghost" onClick={() => setEditingLinkId(null)}>Cancel</button>
+                                      <button className="sm-btn sm-btn-success" onClick={() => handleUpdate(link)}>
+                                        <i className="ti ti-check" /> Save Changes
+                                      </button>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
                     </tbody>
                   </table>
                 )}
@@ -1154,7 +1145,7 @@ const ShortenerManager: React.FC = () => {
           </>
         )}
 
-        {/* ═══ USERS TAB ═══ (unchanged) */}
+        {/* ═══ USERS TAB ═══ */}
         {activeTab === 'users' && (
           <>
             <div className="sm-toolbar">
@@ -1177,7 +1168,8 @@ const ShortenerManager: React.FC = () => {
                     </div>
                     <div className="sm-field">
                       <span>Password</span>
-                      <input className="sm-input" type="text" placeholder="harsh123" value={addUserForm.password} onChange={e => setAddUserForm({ ...addUserForm, password: e.target.value })} />
+                      <input className="sm-input" type="text" placeholder="Enter password (min 4 chars)" value={addUserForm.password} onChange={e => setAddUserForm({ ...addUserForm, password: e.target.value })} />
+                      <span style={{ fontSize: 10, color: 'var(--t3)' }}>⚠ Make sure this is EXACTLY what the user will type to login</span>
                     </div>
                     <div className="sm-field">
                       <span>Real Name</span>
@@ -1188,6 +1180,12 @@ const ShortenerManager: React.FC = () => {
                       <input className="sm-input" type="number" min="1" value={addUserForm.ratePerThousand} onChange={e => setAddUserForm({ ...addUserForm, ratePerThousand: Number(e.target.value) })} />
                     </div>
                   </div>
+                  {/* Preview of login credentials */}
+                  {addUserForm.username && addUserForm.password && (
+                    <div style={{ background: 'var(--green-dim)', border: '1px solid var(--green-border)', borderRadius: 7, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: 'var(--green)', fontFamily: 'var(--mono)' }}>
+                      ✅ Login credentials: username="{addUserForm.username}" password="{addUserForm.password}"
+                    </div>
+                  )}
                   <div className="sm-form-actions">
                     <button type="button" className="sm-btn sm-btn-ghost" onClick={() => setShowAddUser(false)}>Cancel</button>
                     <button type="submit" className="sm-btn sm-btn-primary" disabled={addingUser}>
@@ -1225,8 +1223,13 @@ const ShortenerManager: React.FC = () => {
                         <React.Fragment key={user._id}>
                           <tr className="sm-data-row">
                             <td>
-                              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--t1)' }}>{user.realName}</div>
-                              <div style={{ fontSize: 11, color: 'var(--t3)', fontFamily: 'var(--mono)', marginTop: 2 }}>@{user.username}</div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                {renderUserAvatar(user, 24)}
+                                <div>
+                                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--t1)' }}>{user.realName}</div>
+                                  <div style={{ fontSize: 11, color: 'var(--t3)', fontFamily: 'var(--mono)', marginTop: 2 }}>@{user.username}</div>
+                                </div>
+                              </div>
                             </td>
                             <td>
                               <span className="sm-mono" style={{ color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-border)', borderRadius: 5, padding: '2px 8px', fontSize: 11 }}>
@@ -1262,9 +1265,19 @@ const ShortenerManager: React.FC = () => {
                                 <button className="sm-act-btn" onClick={() => { setActiveTab('messages'); loadMessages(user); }} title="Messages">
                                   <i className="ti ti-message-circle" />
                                 </button>
+                                <span className="sm-act-sep" />
+                                {/* ── NEW: Delete user button ── */}
+                                <button
+                                  className="sm-act-btn sm-act-btn-danger"
+                                  onClick={() => setDeleteUserConfirm(user)}
+                                  title="Delete user"
+                                >
+                                  <i className="ti ti-trash" />
+                                </button>
                               </div>
                             </td>
                           </tr>
+
                           {editingUserId === user._id && (
                             <tr className="sm-edit-expand">
                               <td colSpan={8}>
@@ -1281,7 +1294,7 @@ const ShortenerManager: React.FC = () => {
                                     </div>
                                     <div className="sm-field">
                                       <span>New Password</span>
-                                      <input className="sm-input" type="text" placeholder="Leave blank to keep" value={editUserForm.password} onChange={e => setEditUserForm({ ...editUserForm, password: e.target.value })} />
+                                      <input className="sm-input" type="text" placeholder="Leave blank to keep current" value={editUserForm.password} onChange={e => setEditUserForm({ ...editUserForm, password: e.target.value })} />
                                     </div>
                                     <div className="sm-field">
                                       <span>Rate / 1,000 (Rs.)</span>
@@ -1320,7 +1333,7 @@ const ShortenerManager: React.FC = () => {
           </>
         )}
 
-        {/* ═══ REQUESTS TAB ═══ (unchanged) */}
+        {/* ═══ REQUESTS TAB ═══ */}
         {activeTab === 'requests' && (
           <div className="sm-table-shell">
             {requestsLoading ? (
@@ -1355,9 +1368,7 @@ const ShortenerManager: React.FC = () => {
                         </div>
                         <div className="sm-req-name">{req.realName}</div>
                         <div className="sm-req-handle">@{req.username}</div>
-                        {req.type === 'payment' && req.amount && (
-                          <div className="sm-req-amount">Rs.{req.amount.toFixed(2)}</div>
-                        )}
+                        {req.type === 'payment' && req.amount && <div className="sm-req-amount">Rs.{req.amount.toFixed(2)}</div>}
                         {req.type === 'payment' && req.profile && (
                           <div className="sm-req-upi">
                             {req.profile.upiId && <span>UPI: {req.profile.upiId}</span>}
@@ -1365,32 +1376,24 @@ const ShortenerManager: React.FC = () => {
                             {req.profile.upiPhone && <span>Phone: {req.profile.upiPhone}</span>}
                           </div>
                         )}
-                        {req.type === 'link' && req.message && (
-                          <div className="sm-req-msg">"{req.message}"</div>
-                        )}
+                        {req.type === 'link' && req.message && <div className="sm-req-msg">"{req.message}"</div>}
                         <div className="sm-req-time">{new Date(req.createdAt).toLocaleString('en-IN')}</div>
                       </div>
                       {req.status === 'pending' && (
                         <div className="sm-req-actions">
                           {req.type === 'payment' && (
-                            <button
-                              className="sm-btn sm-btn-success"
-                              onClick={() => { const u = users.find(u => u._id === req.userId); if (u) { setPaymentModal(u); setPaymentAmount(String(req.amount || '')); } }}
-                            >
+                            <button className="sm-btn sm-btn-success"
+                              onClick={() => { const u = users.find(u => u._id === req.userId); if (u) { setPaymentModal(u); setPaymentAmount(String(req.amount || '')); } }}>
                               <i className="ti ti-currency-rupee" /> Process
                             </button>
                           )}
                           {req.type === 'link' && (
-                            <button
-                              className="sm-btn sm-btn-teal"
-                              onClick={() => { const u = users.find(u => u._id === req.userId); if (u) { setCreateLinkModal(u); setCreateLinkForm({ code: '', url: '', label: '' }); } }}
-                            >
+                            <button className="sm-btn sm-btn-teal"
+                              onClick={() => { const u = users.find(u => u._id === req.userId); if (u) { setCreateLinkModal(u); setCreateLinkForm({ code: '', url: '', label: '' }); } }}>
                               <i className="ti ti-link" /> Create Link
                             </button>
                           )}
-                          <button className="sm-btn sm-btn-danger" onClick={() => updateRequestStatus(req._id, 'rejected')}>
-                            Reject
-                          </button>
+                          <button className="sm-btn sm-btn-danger" onClick={() => updateRequestStatus(req._id, 'rejected')}>Reject</button>
                         </div>
                       )}
                     </div>
@@ -1401,10 +1404,9 @@ const ShortenerManager: React.FC = () => {
           </div>
         )}
 
-        {/* ═══ MESSAGES TAB (with avatars from user dashboard) ═══ */}
+        {/* ═══ MESSAGES TAB ═══ */}
         {activeTab === 'messages' && (
           <div className="sm-msg-layout">
-            {/* Sidebar – users with avatars */}
             <div className="sm-msg-sidebar">
               <div className="sm-msg-sidebar-header">
                 {broadcastMode ? 'Select Recipients' : 'Users'}
@@ -1423,12 +1425,7 @@ const ShortenerManager: React.FC = () => {
                     </div>
                     {users.map(user => (
                       <label key={user._id} className="sm-msg-user-btn" style={{ cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={selectedBroadcastUsers.includes(user._id)}
-                          onChange={() => toggleUserSelection(user._id)}
-                          style={{ accentColor: 'var(--accent)' }}
-                        />
+                        <input type="checkbox" checked={selectedBroadcastUsers.includes(user._id)} onChange={() => toggleUserSelection(user._id)} style={{ accentColor: 'var(--accent)' }} />
                         {renderUserAvatar(user, 28)}
                         <div>
                           <div className="sm-msg-user-name">{user.realName}</div>
@@ -1439,11 +1436,9 @@ const ShortenerManager: React.FC = () => {
                   </>
                 ) : (
                   users.map(user => (
-                    <button
-                      key={user._id}
+                    <button key={user._id}
                       className={`sm-msg-user-btn${selectedUserMsg?._id === user._id ? ' sm-msg-user-btn-active' : ''}`}
-                      onClick={() => { setBroadcastMode(false); loadMessages(user); }}
-                    >
+                      onClick={() => { setBroadcastMode(false); loadMessages(user); }}>
                       {renderUserAvatar(user, 28)}
                       <div>
                         <div className="sm-msg-user-name">{user.realName}</div>
@@ -1455,7 +1450,6 @@ const ShortenerManager: React.FC = () => {
               </div>
             </div>
 
-            {/* Chat window */}
             <div className="sm-msg-window">
               {broadcastMode ? (
                 <div className="sm-msg-empty" style={{ justifyContent: 'flex-start', alignItems: 'stretch', padding: 16, gap: 12, flex: 1 }}>
@@ -1465,19 +1459,11 @@ const ShortenerManager: React.FC = () => {
                       <i className="ti ti-arrow-back" style={{ fontSize: 13 }} /> Chat mode
                     </button>
                   </div>
-                  <textarea
-                    className="sm-input"
-                    style={{ flex: 1, minHeight: 150, resize: 'vertical', borderRadius: 8, background: 'var(--bg0)' }}
+                  <textarea className="sm-input" style={{ flex: 1, minHeight: 150, resize: 'vertical', borderRadius: 8, background: 'var(--bg0)' }}
                     placeholder={`Write a message to ${selectedBroadcastUsers.length} selected user(s)...`}
-                    value={msgText}
-                    onChange={e => setMsgText(e.target.value)}
-                  />
-                  <button
-                    className="sm-btn sm-btn-primary"
-                    style={{ alignSelf: 'flex-end' }}
-                    disabled={selectedBroadcastUsers.length === 0 || !msgText.trim()}
-                    onClick={sendBroadcast}
-                  >
+                    value={msgText} onChange={e => setMsgText(e.target.value)} />
+                  <button className="sm-btn sm-btn-primary" style={{ alignSelf: 'flex-end' }}
+                    disabled={selectedBroadcastUsers.length === 0 || !msgText.trim()} onClick={sendBroadcast}>
                     <i className="ti ti-send" /> Send to {selectedBroadcastUsers.length} user{selectedBroadcastUsers.length !== 1 ? 's' : ''}
                   </button>
                 </div>
@@ -1506,66 +1492,38 @@ const ShortenerManager: React.FC = () => {
                       </button>
                     </div>
                   </div>
-
                   <div className="sm-msg-body">
                     {messagesLoading ? (
                       <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}><Spinner /></div>
                     ) : messages.length === 0 ? (
                       <div className="sm-no-msgs">No messages yet. Start the conversation.</div>
-                    ) : (
-                      messages.map(msg => (
-                        <div
-                          key={msg._id}
-                          style={{
-                            display: 'flex',
-                            justifyContent: msg.fromAdmin ? 'flex-start' : 'flex-end',
-                            alignItems: 'flex-end',
-                          }}
-                        >
-                          {msg.fromAdmin ? (
-                            /* Admin message (left) – with avatar */
-                            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, maxWidth: '75%' }}>
-                              <div className="sm-chat-avatar">A</div>
-                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-                                <div className="sm-bubble sm-bubble-admin">{msg.text}</div>
-                                <div className="sm-bubble-time">
-                                  {new Date(msg.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
-                                  {' '}· Admin
-                                </div>
-                              </div>
+                    ) : messages.map(msg => (
+                      <div key={msg._id} style={{ display: 'flex', justifyContent: msg.fromAdmin ? 'flex-start' : 'flex-end', alignItems: 'flex-end' }}>
+                        {msg.fromAdmin ? (
+                          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, maxWidth: '75%' }}>
+                            <div className="sm-chat-avatar">A</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                              <div className="sm-bubble sm-bubble-admin">{msg.text}</div>
+                              <div className="sm-bubble-time">{new Date(msg.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })} · Admin</div>
                             </div>
-                          ) : (
-                            /* User message (right) – with avatar */
-                            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, maxWidth: '75%', flexDirection: 'row-reverse' }}>
-                              {renderUserAvatar(selectedUserMsg!, 28)}
-                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                                <div className="sm-bubble sm-bubble-user">{msg.text}</div>
-                                <div className="sm-bubble-time">
-                                  {new Date(msg.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
-                                </div>
-                              </div>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, maxWidth: '75%', flexDirection: 'row-reverse' }}>
+                            {renderUserAvatar(selectedUserMsg!, 28)}
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                              <div className="sm-bubble sm-bubble-user">{msg.text}</div>
+                              <div className="sm-bubble-time">{new Date(msg.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
                             </div>
-                          )}
-                        </div>
-                      ))
-                    )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
                     <div ref={messagesEndRef} />
                   </div>
-
                   <div className="sm-msg-input-row">
-                    <input
-                      className="sm-msg-input"
-                      type="text"
-                      placeholder={`Message ${selectedUserMsg.realName}...`}
-                      value={msgText}
-                      onChange={e => setMsgText(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && sendAdminMessage()}
-                    />
-                    <button
-                      className="sm-msg-send-btn"
-                      onClick={sendAdminMessage}
-                      disabled={!msgText.trim()}
-                    >
+                    <input className="sm-msg-input" type="text" placeholder={`Message ${selectedUserMsg.realName}...`}
+                      value={msgText} onChange={e => setMsgText(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendAdminMessage()} />
+                    <button className="sm-msg-send-btn" onClick={sendAdminMessage} disabled={!msgText.trim()}>
                       <i className="ti ti-send" />
                     </button>
                   </div>
@@ -1575,22 +1533,61 @@ const ShortenerManager: React.FC = () => {
           </div>
         )}
 
-        {/* ═══ DELETE MODAL ═══ */}
+        {/* ═══ DELETE LINK MODAL ═══ */}
         {deleteConfirm && (
           <div className="sm-modal-backdrop" onClick={() => setDeleteConfirm(null)}>
             <div className="sm-modal" onClick={e => e.stopPropagation()}>
               <div className="sm-modal-header">
                 <div>
                   <div className="sm-modal-title">Delete Link?</div>
-                  <div className="sm-modal-sub" style={{ fontFamily: 'var(--mono)', color: 'var(--teal)', marginTop: 6 }}>go.animebing.in/{deleteConfirm}</div>
+                  {deleteConfirm.code && deleteConfirm.code.trim() ? (
+                    <div className="sm-modal-sub" style={{ fontFamily: 'var(--mono)', color: 'var(--teal)', marginTop: 6 }}>
+                      go.animebing.in/{deleteConfirm.code}
+                    </div>
+                  ) : (
+                    <div className="sm-modal-sub" style={{ color: 'var(--amber)', marginTop: 6 }}>
+                      ⚠ Broken link (no short code) — will be deleted by ID
+                    </div>
+                  )}
                 </div>
                 <button className="sm-modal-close" onClick={() => setDeleteConfirm(null)}><i className="ti ti-x" /></button>
               </div>
+              {deleteConfirm.label && <p style={{ fontSize: 12, color: 'var(--t3)', marginBottom: 8 }}>Label: {deleteConfirm.label}</p>}
               <p style={{ fontSize: 12, color: 'var(--t3)' }}>This action cannot be undone. All click data will be lost.</p>
               <div className="sm-modal-footer">
                 <button className="sm-btn sm-btn-ghost" onClick={() => setDeleteConfirm(null)}>Cancel</button>
                 <button className="sm-btn sm-btn-danger" onClick={() => handleDelete(deleteConfirm)}>
                   <i className="ti ti-trash" /> Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ═══ DELETE USER MODAL (NEW) ═══ */}
+        {deleteUserConfirm && (
+          <div className="sm-modal-backdrop" onClick={() => setDeleteUserConfirm(null)}>
+            <div className="sm-modal" onClick={e => e.stopPropagation()}>
+              <div className="sm-modal-header">
+                <div>
+                  <div className="sm-modal-title" style={{ color: 'var(--red)' }}>Delete User?</div>
+                  <div className="sm-modal-sub" style={{ marginTop: 4 }}>
+                    {deleteUserConfirm.realName} &bull; @{deleteUserConfirm.username}
+                  </div>
+                </div>
+                <button className="sm-modal-close" onClick={() => setDeleteUserConfirm(null)}><i className="ti ti-x" /></button>
+              </div>
+              <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red-border)', borderRadius: 7, padding: '10px 14px', marginBottom: 12, fontSize: 12, color: 'var(--red)' }}>
+                ⚠ This will permanently delete the user and all their data. This cannot be undone.
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--t3)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span>Total clicks: {deleteUserConfirm.totalClicks}</span>
+                <span>Unpaid earnings: Rs.{deleteUserConfirm.unpaidEarnings.toFixed(2)}</span>
+              </div>
+              <div className="sm-modal-footer">
+                <button className="sm-btn sm-btn-ghost" onClick={() => setDeleteUserConfirm(null)}>Cancel</button>
+                <button className="sm-btn sm-btn-danger" onClick={handleDeleteUser} disabled={deletingUser}>
+                  <i className="ti ti-trash" /> {deletingUser ? 'Deleting...' : 'Delete User'}
                 </button>
               </div>
             </div>
@@ -1701,10 +1698,7 @@ const ShortenerManager: React.FC = () => {
                     </div>
                     <div>
                       <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.4px', color: 'var(--t3)', marginBottom: 2 }}>{label}</div>
-                      {value
-                        ? <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--t1)' }}>{value}</div>
-                        : <div style={{ fontSize: 11, color: 'var(--t3)', fontStyle: 'italic' }}>Not provided</div>
-                      }
+                      {value ? <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--t1)' }}>{value}</div> : <div style={{ fontSize: 11, color: 'var(--t3)', fontStyle: 'italic' }}>Not provided</div>}
                     </div>
                   </div>
                 ))}

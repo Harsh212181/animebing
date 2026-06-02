@@ -283,7 +283,7 @@ shortUserRoutes.put('/profile', userAuth, async (c) => {
   }
 })
 
-// ============ USER SELF-CREATE LINK (FIXED) ============
+// ============ USER SELF-CREATE LINK ============
 shortUserRoutes.post('/create-link', userAuth, async (c) => {
   try {
     const { id, username } = c.get('shortUser')
@@ -304,7 +304,6 @@ shortUserRoutes.post('/create-link', userAuth, async (c) => {
       return c.json({ error: 'Aapko link create karne ki permission nahi hai. Admin se contact karo.' }, 403)
     }
 
-    // ✅ declare at top, assign later
     let finalCode: string
 
     if (customCode?.trim()) {
@@ -327,11 +326,10 @@ shortUserRoutes.post('/create-link', userAuth, async (c) => {
         .replace(/[^a-z0-9-]/g, '')
         .substring(0, 50)
 
-      // ✅ assign to the outer variable, do NOT redeclare with 'let'
       finalCode = slug
       let counter = 1
       while (await db.collection('shortlinks').findOne({ code: finalCode })) {
-        finalCode = `${slug}-${counter}`  // ✅ no 'let' here
+        finalCode = `${slug}-${counter}`
         counter++
       }
     }
@@ -585,6 +583,36 @@ shortUserRoutes.put('/admin/users/:id', adminAuth, async (c) => {
       { $set: updateData }
     )
     return c.json({ success: true, message: 'User updated!' })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============ ADMIN — DELETE USER ============
+shortUserRoutes.delete('/admin/users/:id', adminAuth, async (c) => {
+  try {
+    const id = c.req.param('id')
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const user = await db.collection('shortusers').findOne(
+      { _id: new ObjectId(id) }
+    ) as IShortUser | null
+    if (!user) return c.json({ error: 'User not found' }, 404)
+
+    // Delete the user
+    await db.collection('shortusers').deleteOne({ _id: new ObjectId(id) })
+
+    // Optionally: unassign their links (set userId to null instead of deleting)
+    await db.collection('shortlinks').updateMany(
+      { userId: new ObjectId(id) },
+      { $set: { userId: null } }
+    )
+
+    // Optionally: delete their messages and requests
+    await db.collection('shortmessages').deleteMany({ userId: new ObjectId(id) })
+    await db.collection('shortrequests').deleteMany({ userId: new ObjectId(id) })
+
+    return c.json({ success: true, message: `User "${user.realName}" deleted successfully.` })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
