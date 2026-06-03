@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 interface SocialMedia {
@@ -11,7 +11,6 @@ interface SocialMedia {
 }
 
 const Footer: React.FC = () => {
-  // ✅ Fallback — hamesha sahi official links
   const FALLBACK_LINKS: SocialMedia[] = [
     {
       platform: 'instagram',
@@ -37,7 +36,6 @@ const Footer: React.FC = () => {
   ];
 
   const [socialLinks, setSocialLinks] = useState<SocialMedia[]>(FALLBACK_LINKS);
-  const [isNavigating, setIsNavigating] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -55,17 +53,16 @@ const Footer: React.FC = () => {
       console.log('✅ Social links API response:', data);
       
       if (data && Array.isArray(data) && data.length > 0) {
-        // merge fetched links into fallback (DB data overrides fallback for matching platforms)
         const merged = FALLBACK_LINKS.map(fallback => {
           const fetched = data.find((item: any) => item.platform === fallback.platform);
           if (fetched) {
             return {
-              ...fallback,               // keep fallback defaults (icon, displayName)
-              url: fetched.url,           // override with DB url
+              ...fallback,
+              url: fetched.url,
               isActive: fetched.isActive === true || fetched.isActive === 'true' || fetched.isActive === 'Active',
             };
           }
-          return fallback; // if not in DB, use fallback
+          return fallback;
         });
         
         setSocialLinks(merged);
@@ -76,47 +73,40 @@ const Footer: React.FC = () => {
       }
     } catch (error: any) {
       console.error('❌ Social links fetch failed:', error);
-      // Fallback already in state
     }
   };
 
-  const handleQuickLinkClick = async (type: string) => {
-    if (isNavigating) return;
-    setIsNavigating(true);
-    let newUrl = window.location.origin;
+  const handleQuickLinkClick = (type: string) => {
     switch (type) {
-      case 'home': newUrl += '/'; break;
-      case 'hindi-dub': newUrl += '/?filter=Hindi+Dub'; break;
-      case 'hindi-sub': newUrl += '/?filter=Hindi+Sub'; break;
-      case 'english-sub': newUrl += '/?filter=English+Sub'; break;
-      case 'movies': newUrl += '/?contentType=Movie'; break;
-      case 'manga': newUrl += '/?contentType=Manga'; break;
+      case 'home':
+        navigate('/');
+        break;
+      case 'hindi-dub':
+        navigate('/?filter=Hindi+Dub');
+        break;
+      case 'hindi-sub':
+        navigate('/?filter=Hindi+Sub');
+        break;
+      case 'english-sub':
+        navigate('/?filter=English+Sub');
+        break;
+      case 'movies':
+        navigate('/?contentType=Movie');
+        break;
+      case 'manga':
+        navigate('/?contentType=Manga');
+        break;
       case 'anime-list':
         navigate('/anime');
-        setTimeout(() => setIsNavigating(false), 800);
-        return;
-      default: newUrl += '/';
+        break;
+      default:
+        navigate('/');
     }
-    window.location.href = newUrl;
-    setTimeout(() => setIsNavigating(false), 1500);
   };
 
-  const handlePageNavigation = async (path: string) => {
-    if (isNavigating) return;
-    setIsNavigating(true);
+  const handlePageNavigation = (path: string) => {
     if (location.pathname !== path) navigate(path);
-    setTimeout(() => setIsNavigating(false), 800);
   };
-
-  const NavigationLoader = () => (
-    <div className="fixed inset-0 bg-purple-900/95 backdrop-blur-sm z-50 flex items-center justify-center">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-green-400 mx-auto mb-4"></div>
-        <h3 className="text-white text-xl font-semibold mb-2">Loading animebing.in</h3>
-        <p className="text-purple-400">Preparing your content...</p>
-      </div>
-    </div>
-  );
 
   const SocialIcon = ({ platform, className = "w-6 h-6" }: { platform: string; className?: string }) => {
     switch (platform) {
@@ -157,8 +147,6 @@ const Footer: React.FC = () => {
 
   return (
     <>
-      {isNavigating && <NavigationLoader />}
-
       <style>{`
         .border-green-custom { border-color: #73F58A; }
         .border-green-custom-30 { border-color: rgba(115, 245, 138, 0.3); }
@@ -234,14 +222,14 @@ const Footer: React.FC = () => {
             <div className="text-center lg:text-right">
               <h4 className="text-white font-semibold mb-4 text-lg">Quick Links</h4>
               <div className="grid grid-cols-2 gap-3 text-sm">
-                <button onClick={() => handleQuickLinkClick('home')} className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button" disabled={isNavigating}>Home</button>
-                <button onClick={() => handleQuickLinkClick('hindi-dub')} className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button" disabled={isNavigating}>Hindi Dub</button>
-                <button onClick={() => handleQuickLinkClick('hindi-sub')} className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button" disabled={isNavigating}>Hindi Sub</button>
-                <button onClick={() => handleQuickLinkClick('english-sub')} className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button" disabled={isNavigating}>English Sub</button>
-                <button onClick={() => handleQuickLinkClick('movies')} className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button" disabled={isNavigating}>Movies</button>
-                <button onClick={() => handleQuickLinkClick('manga')} className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button" disabled={isNavigating}>Manga</button>
-                <button onClick={() => handleQuickLinkClick('anime-list')} className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button" disabled={isNavigating}>Anime List</button>
-                <button onClick={() => handlePageNavigation('/contact')} className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button" disabled={isNavigating}>Contact</button>
+                <button onClick={() => handleQuickLinkClick('home')} className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button">Home</button>
+                <button onClick={() => handleQuickLinkClick('hindi-dub')} className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button">Hindi Dub</button>
+                <button onClick={() => handleQuickLinkClick('hindi-sub')} className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button">Hindi Sub</button>
+                <button onClick={() => handleQuickLinkClick('english-sub')} className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button">English Sub</button>
+                <button onClick={() => handleQuickLinkClick('movies')} className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button">Movies</button>
+                <button onClick={() => handleQuickLinkClick('manga')} className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button">Manga</button>
+                <button onClick={() => handleQuickLinkClick('anime-list')} className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button">Anime List</button>
+                <button onClick={() => handlePageNavigation('/contact')} className="text-purple-300 hover:text-green-400 transition-colors py-1.5 text-left font-medium bg-purple-800/30 hover:bg-green-500/20 rounded-lg px-2 footer-button">Contact</button>
               </div>
             </div>
           </div>
@@ -249,10 +237,10 @@ const Footer: React.FC = () => {
           <div className="border-t border-green-custom-30 pt-8">
             <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
               <div className="flex flex-wrap justify-center gap-6 text-sm">
-                <button onClick={() => handlePageNavigation('/terms')} className="text-purple-300 hover:text-green-400 transition-colors font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 py-1.5 px-3 rounded-lg footer-button" disabled={isNavigating}>Terms & Conditions</button>
-                <button onClick={() => handlePageNavigation('/privacy')} className="text-purple-300 hover:text-green-400 transition-colors font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 py-1.5 px-3 rounded-lg footer-button" disabled={isNavigating}>Privacy Policy</button>
-                <button onClick={() => handlePageNavigation('/dmca')} className="text-purple-300 hover:text-green-400 transition-colors font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 py-1.5 px-3 rounded-lg footer-button" disabled={isNavigating}>DMCA</button>
-                <button onClick={() => handlePageNavigation('/contact')} className="text-purple-300 hover:text-green-400 transition-colors font-medium disabled:opacity-50 bg-purple-800/30 hover:bg-green-500/20 py-1.5 px-3 rounded-lg footer-button" disabled={isNavigating}>Contact</button>
+                <button onClick={() => handlePageNavigation('/terms')} className="text-purple-300 hover:text-green-400 transition-colors font-medium bg-purple-800/30 hover:bg-green-500/20 py-1.5 px-3 rounded-lg footer-button">Terms & Conditions</button>
+                <button onClick={() => handlePageNavigation('/privacy')} className="text-purple-300 hover:text-green-400 transition-colors font-medium bg-purple-800/30 hover:bg-green-500/20 py-1.5 px-3 rounded-lg footer-button">Privacy Policy</button>
+                <button onClick={() => handlePageNavigation('/dmca')} className="text-purple-300 hover:text-green-400 transition-colors font-medium bg-purple-800/30 hover:bg-green-500/20 py-1.5 px-3 rounded-lg footer-button">DMCA</button>
+                <button onClick={() => handlePageNavigation('/contact')} className="text-purple-300 hover:text-green-400 transition-colors font-medium bg-purple-800/30 hover:bg-green-500/20 py-1.5 px-3 rounded-lg footer-button">Contact</button>
               </div>
 
               <div className="text-center md:text-right">

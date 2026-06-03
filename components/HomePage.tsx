@@ -1,5 +1,6 @@
  // components/HomePage.tsx
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import type { Anime, FilterType, ContentTypeFilter } from '../src/types';
 import AnimeCard from './AnimeCard';
 import { SkeletonLoader } from './SkeletonLoader';
@@ -78,6 +79,18 @@ const HomePage: React.FC<Props> = ({
   const [isPollActive, setIsPollActive] = useState(false);
   const [pollChecked, setPollChecked] = useState(false);
 
+  // ✅ URL search params se filter aur contentType sync karo
+  const [searchParams] = useSearchParams();
+
+  useEffect(() => {
+    const urlFilter = searchParams.get('filter') as FilterType | null;
+    const urlContentType = searchParams.get('contentType') as ContentTypeFilter | null;
+
+    setFilter(urlFilter ?? 'All');
+    if (urlContentType) setContentType(urlContentType);
+    else setContentType('All');
+  }, [searchParams, setFilter, setContentType]);
+
   // ✅ SCROLL RESTORATION — double rAF use karo, setTimeout nahi
   useEffect(() => {
     if (animeList.length === 0) return;
@@ -109,11 +122,11 @@ const HomePage: React.FC<Props> = ({
     setSearchQuery(searchQuery);
   }, [searchQuery, setSearchQuery]);
 
-  // Border color animation
+  // Border color animation (reduced to 60s interval)
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentBorderColorIndex(prev => (prev + 1) % BORDER_COLORS.length);
-    }, 20000);
+    }, 60000); // was 20000
     return () => clearInterval(interval);
   }, []);
 
@@ -221,11 +234,22 @@ const HomePage: React.FC<Props> = ({
 
   const handleFilterChange = (f: FilterType) => setFilter(f);
 
-  // Filtered list
+  // Filtered list with case-insensitive contentType check
   const filteredAnime = useMemo(() => {
     if (!animeList.length) return [];
     let list = [...animeList];
-    if (contentType !== 'All') list = list.filter(a => a.contentType === contentType);
+
+    // ✅ DEBUG — hata dena baad mein
+    console.log('contentType:', contentType);
+    console.log('Sample anime contentType values:', animeList.slice(0, 5).map(a => a.contentType));
+
+    // ✅ Case-insensitive comparison to handle "Movie" vs "movie" etc.
+    if (contentType !== 'All') {
+      list = list.filter(a =>
+        a.contentType?.toLowerCase() === contentType.toLowerCase()
+      );
+    }
+
     if (filter !== 'All') list = list.filter(a => a.subDubStatus === filter);
     const uniqueMap = new Map<string, Anime>();
     list.forEach(a => uniqueMap.set(getAnimeId(a), a));
@@ -260,7 +284,6 @@ const HomePage: React.FC<Props> = ({
   }
 
   // ✅ Back aane par — cache se data aa raha hai, plain background dikho
-  // (animeList.length > 0 hoga cache se, toh yeh case bahut kam aayega)
   if (isLoading && animeList.length === 0 && isComingBackRef.current) {
     return (
       <>
@@ -298,10 +321,6 @@ const HomePage: React.FC<Props> = ({
             opacity: 1 !important;
             animation: none !important;
           }
-          @keyframes subtle-glow {
-            0%,100% { opacity:0.4; filter:drop-shadow(0 0 10px currentColor); }
-            50% { opacity:0.6; filter:drop-shadow(0 0 25px currentColor); }
-          }
           @keyframes shimmer {
             0% { transform:translateX(-100%) rotate(45deg); }
             100% { transform:translateX(100%) rotate(45deg); }
@@ -310,22 +329,7 @@ const HomePage: React.FC<Props> = ({
             0%,100% { transform:translateY(0px); }
             50% { transform:translateY(-3px); }
           }
-          @keyframes pulse-subtle {
-            0%,100% { opacity:0.5; transform:scale(1); }
-            50% { opacity:0.7; transform:scale(1.01); }
-          }
-          .enhanced-glow { animation:pulse-subtle 3s ease-in-out infinite; }
           .card-hover-effect:hover { transform:translateY(-4px) scale(1.01); transition:transform 0.3s ease-out; }
-          .shimmer-effect {
-            position:absolute; top:-50%; left:-50%; width:200%; height:200%;
-            background:linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
-            animation:shimmer 3s infinite;
-          }
-          .sparkle-effect { animation:sparkle 2s ease-in-out infinite; }
-          @keyframes sparkle {
-            0%,100% { opacity:0.2; transform:scale(0.8); }
-            50% { opacity:0.5; transform:scale(1.1); }
-          }
           .border-transition { transition:background 0.8s ease-in-out; }
           .scrollbar-hide { -ms-overflow-style:none; scrollbar-width:none; }
           .scrollbar-hide::-webkit-scrollbar { display:none; }
@@ -433,20 +437,14 @@ const HomePage: React.FC<Props> = ({
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-6 gap-2">
                 {filteredAnime.map((anime, i) => (
                   <div key={`${getAnimeId(anime)}-${i}`} className="group relative">
+                    {/* Static border gradient – no pulse animation */}
                     <div
-                      className={`absolute -inset-[1px] rounded-xl bg-gradient-to-br ${BORDER_COLORS[currentBorderColorIndex]} enhanced-glow border-transition`}
+                      className={`absolute -inset-[1px] rounded-xl border-transition`}
                       style={{
                         backgroundImage: `linear-gradient(135deg, ${GLOW_COLORS[currentBorderColorIndex][0]}, ${GLOW_COLORS[currentBorderColorIndex][1]}, ${GLOW_COLORS[currentBorderColorIndex][2]})`
                       }}
                     />
-                    <div
-                      className="absolute -inset-0 rounded-xl opacity-30 blur-md transition-all duration-500 group-hover:opacity-50"
-                      style={{
-                        backgroundImage: `linear-gradient(135deg, ${GLOW_COLORS[currentBorderColorIndex][0]}40, ${GLOW_COLORS[currentBorderColorIndex][1]}40, ${GLOW_COLORS[currentBorderColorIndex][2]}40)`
-                      }}
-                    />
                     <div className="card-hover-effect relative rounded-xl border border-purple-700/30 bg-gradient-to-b from-purple-900/95 to-purple-800/90 p-1 transition-all duration-300 overflow-hidden group-hover:border-transparent">
-                      <div className="shimmer-effect" />
                       <AnimeCard
                         anime={anime}
                         onClick={onAnimeSelect}

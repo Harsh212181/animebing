@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+ import React, { useEffect, useState, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 
 const API_BASE_URL = 'https://animabing-backend.animabingwatch.workers.dev/api';
@@ -128,7 +128,7 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
   const [userVoteOption, setUserVoteOption] = useState<string | null>(null);
   const [avatarError, setAvatarError] = useState(false);
 
-  const loadPoll = async () => {
+  const loadPoll = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -190,15 +190,20 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []); // stable reference
 
+  // Initial poll load on mount
   useEffect(() => {
     loadPoll();
+  }, []);
+
+  // Auto-refresh if poll is active and user hasn't voted
+  useEffect(() => {
     if (!hasVoted && isActive) {
       const interval = setInterval(loadPoll, 30000);
       return () => clearInterval(interval);
     }
-  }, [hasVoted, isActive]);
+  }, [hasVoted, isActive, loadPoll]);
 
   const handleVote = async (optionId: string) => {
     if (!poll || hasVoted || voting) return;
@@ -223,7 +228,7 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
         if (result.message?.toLowerCase().includes('already voted')) {
           setHasVoted(true);
           setLocalVoteStatus(poll._id, optionId);
-          loadPoll();
+          // No need to reload — we already set voted state
           return;
         }
         throw new Error(result.message || 'Vote failed');

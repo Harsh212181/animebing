@@ -1,4 +1,4 @@
-// App.tsx - FINAL FIXED VERSION (with HelmetProvider + AnimeContext + Service Worker)
+ // App.tsx - FINAL FIXED VERSION (with HelmetProvider + AnimeContext + Service Worker)
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
@@ -470,28 +470,15 @@ const MainApp: React.FC = () => {
     }
   }, []);
 
+  // ✅ URL params sync — DEV duplicate hata diya, direct set
   useEffect(() => {
-    if (import.meta.env.DEV) {
-      console.log('📍 URL Changed:', location.search);
-
-      const urlContentType = searchParams.get('contentType') as ContentTypeFilter | null;
-      const urlFilter = searchParams.get('filter') as FilterType | null;
-      const urlSearchQuery = searchParams.get('search') || '';
-
-      if (urlContentType && urlContentType !== contentType) setContentType(urlContentType);
-      if (urlFilter && urlFilter !== filter) setFilter(urlFilter);
-      if (urlSearchQuery && urlSearchQuery !== searchQuery) setSearchQuery(urlSearchQuery);
-    }
-  }, [location.search, searchParams]);
-
-  useEffect(() => {
-    const urlContentType = searchParams.get('contentType') as ContentTypeFilter | null;
     const urlFilter = searchParams.get('filter') as FilterType | null;
+    const urlContentType = searchParams.get('contentType') as ContentTypeFilter | null;
     const urlSearchQuery = searchParams.get('search') || '';
 
-    if (urlContentType && urlContentType !== contentType) setContentType(urlContentType);
-    if (urlFilter && urlFilter !== filter) setFilter(urlFilter);
-    if (urlSearchQuery !== searchQuery) setSearchQuery(urlSearchQuery);
+    setFilter(urlFilter ?? 'All');
+    setContentType(urlContentType ?? 'All');
+    setSearchQuery(urlSearchQuery);
   }, [location.search]);
 
   useEffect(() => {
@@ -745,12 +732,7 @@ const MainApp: React.FC = () => {
                 </div>
               } />
 
-              {/* ✅ NEW USER DASHBOARD ROUTE */}
-              <Route path="/dashboard" element={
-                <div className="rounded-lg overflow-hidden glow-green-border">
-                  <UserDashboard />
-                </div>
-              } />
+              {/* ✅ USER DASHBOARD ROUTE REMOVED — handled in App component */}
 
               <Route path="/privacy" element={
                 <div className="rounded-lg overflow-hidden glow-green-border">
@@ -809,7 +791,12 @@ const App: React.FC = () => {
     <HelmetProvider>
       <Router>
         <AnimeProvider>
-          <MainApp />
+          <Routes>
+            {/* Dashboard without Header/Footer */}
+            <Route path="/dashboard" element={<UserDashboard />} />
+            {/* All other routes with full layout */}
+            <Route path="*" element={<MainApp />} />
+          </Routes>
         </AnimeProvider>
       </Router>
     </HelmetProvider>
