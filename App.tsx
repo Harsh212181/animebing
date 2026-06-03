@@ -1,4 +1,4 @@
-// App.tsx - FINAL FIXED VERSION (with HelmetProvider + AnimeContext for no re-fetch)
+// App.tsx - FINAL FIXED VERSION (with HelmetProvider + AnimeContext + Service Worker)
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
@@ -449,6 +449,26 @@ const MainApp: React.FC = () => {
 
   const dummyFilterFunction = (filter: 'Hindi Dub' | 'Hindi Sub' | 'English Sub') => {};
   const dummyContentTypeFunction = (contentType: ContentType) => {};
+
+  // ✅ SERVICE WORKER REGISTRATION
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      const isDashboard = window.location.pathname.startsWith('/dashboard');
+      const swFile = isDashboard ? '/sw-creator.js' : '/sw-main.js';
+      
+      navigator.serviceWorker.register(swFile).then(async reg => {
+        console.log('SW registered:', swFile);
+        
+        // Notification permission
+        if (Notification.permission === 'default') {
+          const perm = await Notification.requestPermission();
+          if (perm === 'granted') {
+            console.log('Notifications enabled!');
+          }
+        }
+      });
+    }
+  }, []);
 
   useEffect(() => {
     if (import.meta.env.DEV) {

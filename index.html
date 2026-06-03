@@ -36,6 +36,25 @@
     <meta name="twitter:description" content="Watch and Download latest anime series and movies in Hindi Dub, Hindi Sub and English Sub for free. Stream and download your favorite anime on AnimeBing." />
     <meta name="twitter:image" content="https://animebing.in/AnimeBinglogo.jpg" />
 
+    <!-- Dynamic manifest -->
+    <link rel="manifest" id="pwa-manifest" href="/manifest-main.json" />
+    <meta name="theme-color" content="#6366f1" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <!-- Apple icons -->
+    <link rel="apple-touch-icon" href="/icons/main-192.png" id="apple-icon" />
+
+    <script>
+      // Dashboard pe ho to creator manifest use karo
+      if (window.location.pathname.startsWith('/dashboard')) {
+        document.getElementById('pwa-manifest').href = '/manifest-creator.json';
+        document.getElementById('apple-icon').href = '/icons/creator-192.png';
+        document.title = 'AnimaBing Creator';
+      }
+    </script>
+
     <!-- Google AdSense -->
     <script
       async
