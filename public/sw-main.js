@@ -1,17 +1,23 @@
-const CACHE = 'animabing-main-v1';
-const OFFLINE_URL = '/';
+const CACHE = 'animabing-main-v2';
+const PRECACHE = [
+  '/',
+  '/index.html',
+  '/icon-512.png',
+];
 
 self.addEventListener('install', e => {
   self.skipWaiting();
   e.waitUntil(
-    caches.open(CACHE).then(c => c.addAll([
-      '/', '/index.html', '/icons/main-192.png'
-    ]))
+    caches.open(CACHE).then(c => c.addAll(PRECACHE))
   );
 });
 
 self.addEventListener('activate', e => {
-  e.waitUntil(clients.claim());
+  e.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+    ).then(() => clients.claim())
+  );
 });
 
 self.addEventListener('fetch', e => {
@@ -20,7 +26,13 @@ self.addEventListener('fetch', e => {
     return;
   }
   e.respondWith(
-    fetch(e.request).catch(() => caches.match(e.request))
+    caches.match(e.request).then(cached => {
+      return cached || fetch(e.request).then(response => {
+        const clone = response.clone();
+        caches.open(CACHE).then(c => c.put(e.request, clone));
+        return response;
+      });
+    })
   );
 });
 
@@ -30,8 +42,8 @@ self.addEventListener('push', e => {
   e.waitUntil(
     self.registration.showNotification(data.title || 'AnimaBing', {
       body: data.body || 'New anime added!',
-      icon: '/icons/main-192.png',
-      badge: '/icons/main-192.png',
+      icon: '/icon-512.png',
+      badge: '/icon-512.png',
       data: { url: data.url || '/' }
     })
   );
