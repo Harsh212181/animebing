@@ -130,20 +130,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // ✅ Show controls temporarily – 3 seconds (YouTube style)
-  const showControlsTemporarily = () => {
-    setControlsVisible(true);
-    if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
-    if (playing && !showQualityMenu) {
-      hideTimeoutRef.current = setTimeout(() => setControlsVisible(false), 3000);
-    }
-  };
-
   useEffect(() => {
     const startHideTimer = () => {
       if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
       if (playing && !showQualityMenu) {
-        hideTimeoutRef.current = setTimeout(() => setControlsVisible(false), 3000);
+        hideTimeoutRef.current = setTimeout(() => setControlsVisible(false), 10000);
       } else {
         setControlsVisible(true);
       }
@@ -153,6 +144,14 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
       if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
     };
   }, [playing, showQualityMenu]);
+
+  const showControlsTemporarily = () => {
+    setControlsVisible(true);
+    if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+    if (playing && !showQualityMenu) {
+      hideTimeoutRef.current = setTimeout(() => setControlsVisible(false), 10000);
+    }
+  };
 
   const togglePlay = () => {
     if (videoRef.current) {
@@ -548,17 +547,21 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
   // ---- Title display logic ----
   const animeTitle = title || '';
   
+  // Only append episode if it exists and is not an empty string
   const hasEpisode = episode !== undefined && episode !== null && episode !== '';
   const episodeStr = hasEpisode ? ` Ep ${episode}` : '';
   const fullTitle = `${animeTitle}${episodeStr}`;
   
-  const MAX_TITLE_LEN = 30;
+  const MAX_TITLE_LEN = 30; // max characters for anime title before truncation
   const truncatedAnime = animeTitle.length > MAX_TITLE_LEN
     ? animeTitle.slice(0, MAX_TITLE_LEN) + '...'
     : animeTitle;
   const truncatedTitle = `${truncatedAnime}${episodeStr}`;
   
+  // Show full title when clicked, otherwise truncated
   const displayedTitle = showFullTitle ? fullTitle : truncatedTitle;
+  
+  // Only show click-to-expand if the anime title actually got truncated
   const isTitleTruncated = animeTitle.length > MAX_TITLE_LEN;
 
   const handleTitleClick = () => {
@@ -572,6 +575,12 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
 
   const showLeftOverlay = skip.active && skip.direction === 'left';
   const showRightOverlay = skip.active && skip.direction === 'right';
+
+  // Fullscreen size classes
+  const fullscreenButtonClass = isFullscreen ? 'text-2xl' : 'text-xl';
+  const fullscreenControlTextClass = isFullscreen ? 'text-base' : 'text-xs';
+  const fullscreenControlButtonClass = isFullscreen ? 'text-2xl' : 'text-xl';
+  const fullscreenRangeClass = isFullscreen ? 'h-2' : 'h-1';
 
   return (
     <div
@@ -610,9 +619,21 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
         .watermark-text {
           animation: fadeIn 0.8s ease-in forwards;
         }
+        .fullscreen-mode .controls-container {
+          padding: 1.5rem 1rem;
+        }
+        .fullscreen-mode .control-button {
+          font-size: 2rem;
+        }
+        .fullscreen-mode .time-display {
+          font-size: 1rem;
+        }
+        .fullscreen-mode .progress-bar {
+          height: 0.5rem;
+        }
       `}</style>
 
-      {/* Anime title on top left */}
+      {/* Anime title on top left - now hides with controls and clickable */}
       {displayedTitle && (
         <div
           className={`absolute top-1 left-3 z-40 pointer-events-auto text-white text-sm font-semibold break-words line-clamp-2 px-1 transition-opacity duration-300 cursor-pointer ${
@@ -626,7 +647,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
         </div>
       )}
 
-      {/* Watermark */}
+      {/* Watermark - now hides with controls */}
       <div
         className={`absolute top-1 right-3 flex items-center space-x-2 z-40 pointer-events-none watermark-container transition-opacity duration-300 ${
           controlsVisible ? 'opacity-100' : 'opacity-0'
@@ -642,7 +663,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
         </span>
       </div>
 
-      {/* Video container with zoom and brightness */}
+      {/* Video with zoom, pan and brightness filter */}
       <div
         style={{
           transform: `scale(${scale}) translate(${translate.x}px, ${translate.y}px)`,
@@ -717,183 +738,129 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
         </div>
       )}
 
-      {/* Brightness popup */}
+      {/* Brightness popup (2 seconds) */}
       {showBrightnessPopup && (
         <div className={`absolute top-1/2 left-4 transform -translate-y-1/2 bg-yellow-500/80 px-3 py-1 rounded text-white z-30 ${isFullscreen ? 'text-base' : 'text-sm'}`}>
           ☀ {Math.round(brightness * 100)}%
         </div>
       )}
 
-      {/* Volume popup */}
+      {/* Volume popup (2 seconds) */}
       {showVolumePopup && (
         <div className={`absolute top-1/2 right-4 transform -translate-y-1/2 bg-purple-600/80 px-3 py-1 rounded text-white z-30 ${isFullscreen ? 'text-base' : 'text-sm'}`}>
           🔊 {Math.round(volume * 100)}%
         </div>
       )}
 
-      {/* Gesture zones – controls toggle on single tap */}
+      {/* Gesture zones */}
       <div className="absolute inset-0 z-10 flex">
-        <div className="w-1/3 h-full" onClick={() => {
-          if (controlsVisible) setControlsVisible(false);
-          else showControlsTemporarily();
-        }} />
-        <div className="w-1/3 h-full" onClick={() => {
-          if (controlsVisible) { setControlsVisible(false); return; }
-          togglePlay();
-        }} onDoubleClick={handleDoubleTap} />
-        <div className="w-1/3 h-full" onClick={() => {
-          if (controlsVisible) setControlsVisible(false);
-          else showControlsTemporarily();
-        }} />
+        <div className="w-1/3 h-full" />
+        <div className="w-1/3 h-full" onClick={togglePlay} onDoubleClick={handleDoubleTap} />
+        <div className="w-1/3 h-full" />
       </div>
 
-      {/* Professional Controls Bar */}
+      {/* Controls */}
       <div
-        className={`absolute bottom-0 left-0 right-0 z-20 transition-opacity duration-300 ${
+        className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-1 text-white z-20 transition-opacity duration-300 controls-container ${
           controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
       >
-        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent pointer-events-none" />
-        <div className="relative px-3 pb-3 pt-8">
-          {/* Progress bar with time */}
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-white/70 text-xs font-mono tabular-nums min-w-[38px]">
-              {formatTime(currentTime)}
-            </span>
-            <input
-              type="range"
-              min={0}
-              max={duration || 100}
-              value={currentTime}
-              onChange={handleSeek}
-              className="flex-1 accent-purple-500 cursor-pointer"
-              style={{ height: '4px' }}
+        <input
+          type="range"
+          min={0}
+          max={duration}
+          value={currentTime}
+          onChange={handleSeek}
+          className={`w-full mb-0 accent-purple-500 progress-bar ${fullscreenRangeClass}`}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchMove={(e) => e.stopPropagation()}
+        />
+
+        <div className="overflow-x-auto pb-1 no-scrollbar relative">
+          <div className="flex items-center space-x-3 min-w-max">
+            <button
+              onClick={volumeDown}
               onTouchStart={(e) => e.stopPropagation()}
-              onTouchMove={(e) => e.stopPropagation()}
-            />
-            <span className="text-white/50 text-xs font-mono tabular-nums min-w-[38px] text-right">
-              {formatTime(duration)}
+              className={`flex-shrink-0 text-white/80 hover:text-white control-button ${fullscreenControlButtonClass}`}
+            >
+              ♪–
+            </button>
+            <button
+              onClick={volumeUp}
+              onTouchStart={(e) => e.stopPropagation()}
+              className={`flex-shrink-0 text-white/80 hover:text-white control-button ${fullscreenControlButtonClass}`}
+            >
+              ♪+
+            </button>
+            <span className={`whitespace-nowrap flex-shrink-0 text-white/60 time-display ${fullscreenControlTextClass}`}>
+              {formatTime(currentTime)} / {formatTime(duration)}
             </span>
-          </div>
 
-          {/* Button row */}
-          <div className="flex items-center justify-between">
-            {/* Left group */}
-            <div className="flex items-center gap-1">
-              <button onClick={togglePlay} onTouchStart={(e) => e.stopPropagation()}
-                className="w-9 h-9 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 active:bg-white/30 transition-colors text-white"
-                title={playing ? 'Pause' : 'Play'}
-              >
-                {playing ? (
-                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-                    <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
-                  </svg>
-                ) : (
-                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-                    <path d="M8 5v14l11-7z"/>
-                  </svg>
-                )}
-              </button>
-
-              <button onClick={skipBackward} onTouchStart={(e) => e.stopPropagation()}
-                className="w-9 h-9 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 active:bg-white/30 transition-colors text-white"
-                title="-15s"
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-                  <path d="M12 5V2L8 6l4 4V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
-                  <text x="8.5" y="14" fontSize="5" fill="currentColor" fontWeight="bold">15</text>
-                </svg>
-              </button>
-
-              <button onClick={skipForward} onTouchStart={(e) => e.stopPropagation()}
-                className="w-9 h-9 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 active:bg-white/30 transition-colors text-white"
-                title="+15s"
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-                  <path d="M12 5V2l4 4-4 4V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8z"/>
-                  <text x="8.5" y="14" fontSize="5" fill="currentColor" fontWeight="bold">15</text>
-                </svg>
-              </button>
-
-              <button onClick={volumeDown} onTouchStart={(e) => e.stopPropagation()}
-                className="w-9 h-9 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 active:bg-white/30 transition-colors text-white"
-                title="Volume -"
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-                  <path d="M18.5 12A4.5 4.5 0 0016 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM5 9v6h4l5 5V4L9 9H5zm7-.17v6.34L9.83 13H7v-2h2.83L12 8.83z"/>
-                  <line x1="21" y1="9" x2="21" y2="15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                </svg>
-              </button>
-
-              <button onClick={volumeUp} onTouchStart={(e) => e.stopPropagation()}
-                className="w-9 h-9 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 active:bg-white/30 transition-colors text-white"
-                title="Volume +"
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-                  <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0014 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
-                </svg>
-              </button>
-            </div>
-
-            {/* Right group */}
-            <div className="flex items-center gap-1">
-              {qualities && qualities.length > 0 && (
-                <div className="relative">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setShowQualityMenu(!showQualityMenu); }}
-                    onTouchStart={(e) => e.stopPropagation()}
-                    className="h-9 px-2.5 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 active:bg-white/30 transition-colors text-white text-xs font-semibold tracking-wide"
-                  >
-                    {autoQuality ? 'AUTO' : (qualities.find(q => q.src === currentSrc)?.label || 'HD')}
-                  </button>
-                  {showQualityMenu && (
-                    <div className="absolute bottom-full right-0 mb-2 bg-gray-900/95 border border-white/10 rounded-xl shadow-2xl overflow-hidden min-w-[90px]">
+            {/* Quality Button */}
+            {qualities && qualities.length > 0 && (
+              <div className="relative flex-shrink-0">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowQualityMenu(!showQualityMenu);
+                  }}
+                  onTouchStart={(e) => e.stopPropagation()}
+                  className={`text-white/80 hover:text-white px-2 py-1 ${fullscreenControlTextClass}`}
+                >
+                  Quality
+                </button>
+                {showQualityMenu && (
+                  <div className="absolute bottom-full right-0 mb-2 bg-gray-800/90 rounded shadow-lg z-50">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setAutoQuality(true);
+                      }}
+                      onTouchStart={(e) => e.stopPropagation()}
+                      className={`block w-full text-left px-4 py-2 hover:bg-purple-700 ${
+                        autoQuality ? 'text-green-400' : 'text-white/80'
+                      } ${fullscreenControlTextClass}`}
+                    >
+                      Auto
+                    </button>
+                    {qualities.map(q => (
                       <button
-                        onClick={(e) => { e.stopPropagation(); setAutoQuality(true); setShowQualityMenu(false); }}
+                        key={q.src}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setAutoQuality(false);
+                          handleQualityChange(q.src);
+                        }}
                         onTouchStart={(e) => e.stopPropagation()}
-                        className={`block w-full text-left px-4 py-2.5 text-xs font-medium hover:bg-white/10 transition-colors ${autoQuality ? 'text-purple-400' : 'text-white/80'}`}
+                        className={`block w-full text-left px-4 py-2 hover:bg-purple-700 ${
+                          q.src === currentSrc && !autoQuality ? 'font-bold text-purple-400' : 'text-white/80'
+                        } ${fullscreenControlTextClass}`}
                       >
-                        Auto
+                        {q.label}
                       </button>
-                      {qualities.map(q => (
-                        <button
-                          key={q.src}
-                          onClick={(e) => { e.stopPropagation(); setAutoQuality(false); handleQualityChange(q.src); }}
-                          onTouchStart={(e) => e.stopPropagation()}
-                          className={`block w-full text-left px-4 py-2.5 text-xs font-medium hover:bg-white/10 transition-colors ${q.src === currentSrc && !autoQuality ? 'text-purple-400 font-bold' : 'text-white/80'}`}
-                        >
-                          {q.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <button onClick={togglePiP} onTouchStart={(e) => e.stopPropagation()}
-                className="w-9 h-9 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 active:bg-white/30 transition-colors text-white"
-                title="Picture in Picture"
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-                  <path d="M19 7h-8v6h8V7zm2-4H3c-1.1 0-2 .9-2 2v14c0 1.1.9 1.99 2 1.99h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16.01H3V4.99h18v14.02z"/>
-                </svg>
-              </button>
-
-              <button onClick={handleFullscreen} onTouchStart={(e) => e.stopPropagation()}
-                className="w-9 h-9 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 active:bg-white/30 transition-colors text-white"
-                title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
-              >
-                {isFullscreen ? (
-                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-                    <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/>
-                  </svg>
-                ) : (
-                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-                    <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
-                  </svg>
+                    ))}
+                  </div>
                 )}
-              </button>
-            </div>
+              </div>
+            )}
+
+            {/* PiP Button */}
+            <button
+              onClick={togglePiP}
+              onTouchStart={(e) => e.stopPropagation()}
+              className={`flex-shrink-0 text-white/80 hover:text-white control-button ${fullscreenControlButtonClass}`}
+            >
+              PiP
+            </button>
+
+            {/* Fullscreen Button */}
+            <button
+              onClick={handleFullscreen}
+              onTouchStart={(e) => e.stopPropagation()}
+              className={`flex-shrink-0 text-white/80 hover:text-white control-button ${fullscreenButtonClass}`}
+            >
+              {isFullscreen ? '⤫' : '⛶'}
+            </button>
           </div>
         </div>
       </div>
