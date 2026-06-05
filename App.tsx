@@ -1,4 +1,4 @@
- // App.tsx - FINAL FIXED VERSION (with HelmetProvider + AnimeContext + Service Worker)
+// App.tsx - FINAL FIXED VERSION (with HelmetProvider + AnimeContext - Service Worker REMOVED)
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
@@ -23,7 +23,7 @@ import Top100Page from './components/Top100Page';
 import EarnMoney from './components/EarnMoney';
 import WelcomePage from './components/WelcomePage';
 import DownloadLinkPage from './components/DownloadLinkPage';
-import UserDashboard from './components/UserDashboard'; // ✅ NEW IMPORT
+import UserDashboard from './components/UserDashboard';
 
 import { AnimeProvider } from './src/context/AnimeContext';
 
@@ -450,27 +450,9 @@ const MainApp: React.FC = () => {
   const dummyFilterFunction = (filter: 'Hindi Dub' | 'Hindi Sub' | 'English Sub') => {};
   const dummyContentTypeFunction = (contentType: ContentType) => {};
 
-  // ✅ SERVICE WORKER REGISTRATION
-  useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      const isDashboard = window.location.pathname.startsWith('/dashboard');
-      const swFile = isDashboard ? '/sw-creator.js' : '/sw-main.js';
-      
-      navigator.serviceWorker.register(swFile).then(async reg => {
-        console.log('SW registered:', swFile);
-        
-        // Notification permission
-        if (Notification.permission === 'default') {
-          const perm = await Notification.requestPermission();
-          if (perm === 'granted') {
-            console.log('Notifications enabled!');
-          }
-        }
-      });
-    }
-  }, []);
+  // ❌ SERVICE WORKER REGISTRATION REMOVED (was causing sw-main.js error)
 
-  // ✅ URL params sync — DEV duplicate hata diya, direct set
+  // ✅ URL params sync
   useEffect(() => {
     const urlFilter = searchParams.get('filter') as FilterType | null;
     const urlContentType = searchParams.get('contentType') as ContentTypeFilter | null;
@@ -537,7 +519,7 @@ const MainApp: React.FC = () => {
         typingTimeoutRef.current = setTimeout(() => setTypedText(''), 3000);
       }
 
-      // ✅ CHANGED: Ctrl + Shift + Alt + H combo to trigger admin login
+      // Ctrl + Shift + Alt + H combo to trigger admin login
       if (e.ctrlKey && e.shiftKey && e.altKey && (e.key === 'h' || e.key === 'H')) {
         e.preventDefault();
         setAdminView('login');
@@ -568,13 +550,10 @@ const MainApp: React.FC = () => {
     window.location.href = window.location.origin + '/';
   };
 
-  // ✅ FIXED handleAnimeSelect — scroll position pehle save, phir navigate
   const handleAnimeSelect = (anime: Anime) => {
     const identifier = anime.slug || anime.id || anime._id;
     if (identifier) {
-      // ✅ Pehle position save karo
       sessionStorage.setItem('homeScrollPosition', String(window.scrollY));
-      // ✅ Phir navigate karo — scroll to top NAHI karna (ScrollToTop component handle karega)
       navigate(`/detail/${identifier}`);
     }
   };
@@ -731,8 +710,6 @@ const MainApp: React.FC = () => {
                   <DownloadLinkPage />
                 </div>
               } />
-
-              {/* ✅ USER DASHBOARD ROUTE REMOVED — handled in App component */}
 
               <Route path="/privacy" element={
                 <div className="rounded-lg overflow-hidden glow-green-border">

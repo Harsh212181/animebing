@@ -1,7 +1,7 @@
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
-import { VitePWA } from 'vite-plugin-pwa';
+// ❌ VitePWA removed — no more manifest / service worker
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
@@ -25,24 +25,7 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       react(),
-      VitePWA({
-        registerType: 'autoUpdate',
-        manifest: {
-          name: 'Animabingwatch - Anime & Movies',
-          short_name: 'Animabingwatch',
-          description: 'Download and watch anime in Hindi for free',
-          theme_color: '#8B5CF6',
-          background_color: '#0a0c1c',
-          display: 'standalone',
-          icons: [
-            {
-              src: '/favicon.ico',
-              sizes: '64x64',
-              type: 'image/x-icon'
-            }
-          ]
-        }
-      })
+      // ❌ VitePWA({ ... }) removed
     ],
     define: {
       'process.env': env,
