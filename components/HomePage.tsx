@@ -261,7 +261,7 @@ const HomePage: React.FC<Props> = ({
     if (isSearching) return;
     const handleScroll = () => {
       if (isLoadingMore || !hasMore) return;
-      if (window.scrollY + window.innerHeight >= document.documentElement.offsetHeight * 0.8) {
+      if (window.scrollY + window.innerHeight >= document.documentElement.offsetHeight * 0.2) {
         loadMoreAnime();
       }
     };

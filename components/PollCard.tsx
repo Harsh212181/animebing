@@ -228,28 +228,21 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
         if (result.message?.toLowerCase().includes('already voted')) {
           setHasVoted(true);
           setLocalVoteStatus(poll._id, optionId);
-          // No need to reload — we already set voted state
+          // Already voted, no need to reload
           return;
         }
         throw new Error(result.message || 'Vote failed');
       }
 
-      const updatedPoll = { ...poll };
-      updatedPoll.totalVotes = result.totalVotes;
-      updatedPoll.userHasVoted = true;
-      updatedPoll.userVoteOption = optionId;
-      updatedPoll.options = updatedPoll.options.map(opt => {
-        const votes = opt._id === optionId ? result.optionVotes : opt.votes;
-        const percentage = result.totalVotes > 0 ? Math.round((votes / result.totalVotes) * 100) : 0;
-        return { ...opt, votes, percentage };
-      });
-
-      setPoll(updatedPoll);
+      // ✅ Vote successful: update state and then reload fresh data
       setHasVoted(true);
       setUserVoteOption(optionId);
       setLocalVoteStatus(poll._id, optionId);
-
       if (onVoteSuccess) onVoteSuccess();
+
+      // Fresh data lo backend se - correct percentages ke liye
+      await loadPoll();
+
     } catch (err: any) {
       console.error('❌ Vote error:', err);
       alert('Failed to vote. Please try again.');

@@ -1,4 +1,4 @@
-// components/Top100Page.tsx - FINAL: Tier Legend at bottom + A/B/C colors + 100 items
+ // components/Top100Page.tsx - FINAL: Tier Legend at bottom + A/B/C colors + 100 items (Simplified glow)
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import type { Anime } from '../src/types';
 import { getTopAnime } from '../services/animeService';
@@ -349,12 +349,7 @@ const Top100Page: React.FC<Top100PageProps> = ({ onAnimeSelect, onBack }) => {
           @keyframes subtle-glow { 0%,100% { opacity:0.4; filter:drop-shadow(0 0 10px currentColor); } 50% { opacity:0.6; filter:drop-shadow(0 0 25px currentColor); } }
           @keyframes shimmer { 0% { transform: translateX(-100%) rotate(45deg); } 100% { transform: translateX(100%) rotate(45deg); } }
           @keyframes float { 0%,100% { transform: translateY(0px); } 50% { transform: translateY(-3px); } }
-          @keyframes pulse-subtle { 0%,100% { opacity:0.5; transform: scale(1); } 50% { opacity:0.7; transform: scale(1.01); } }
-          .enhanced-glow { animation: pulse-subtle 3s ease-in-out infinite; }
           .card-hover-effect:hover { transform: translateY(-4px) scale(1.01); transition: transform 0.3s ease-out; }
-          .shimmer-effect { position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent); animation: shimmer 3s infinite; }
-          .sparkle-effect { animation: sparkle 2s ease-in-out infinite; }
-          @keyframes sparkle { 0%,100% { opacity:0.2; transform: scale(0.8); } 50% { opacity:0.5; transform: scale(1.1); } }
           .border-transition { transition: background 0.8s ease-in-out; }
         `}</style>
         
@@ -430,11 +425,13 @@ const Top100Page: React.FC<Top100PageProps> = ({ onAnimeSelect, onBack }) => {
                   const globalRank = getAnimeRank(anime);
                   return (
                     <div key={`${getAnimeId(anime)}-${index}`} className="group relative">
-                      {/* Glow Effects */}
-                      <div className={`absolute -inset-[1px] rounded-xl bg-gradient-to-br ${BORDER_COLORS[currentBorderColorIndex]} enhanced-glow border-transition`}
-                        style={{ backgroundImage: `linear-gradient(135deg, ${GLOW_COLORS[currentBorderColorIndex][0]}, ${GLOW_COLORS[currentBorderColorIndex][1]}, ${GLOW_COLORS[currentBorderColorIndex][2]})` }} />
-                      <div className="absolute -inset-0 rounded-xl opacity-30 blur-md transition-all duration-500 group-hover:opacity-50"
-                        style={{ backgroundImage: `linear-gradient(135deg, ${GLOW_COLORS[currentBorderColorIndex][0]}40, ${GLOW_COLORS[currentBorderColorIndex][1]}40, ${GLOW_COLORS[currentBorderColorIndex][2]}40)` }} />
+                      {/* SINGLE STATIC GLOW DIV – HomePage style */}
+                      <div
+                        className="absolute -inset-[1px] rounded-xl border-transition"
+                        style={{
+                          backgroundImage: `linear-gradient(135deg, ${GLOW_COLORS[currentBorderColorIndex][0]}, ${GLOW_COLORS[currentBorderColorIndex][1]}, ${GLOW_COLORS[currentBorderColorIndex][2]})`
+                        }}
+                      />
                       
                       {/* Ranking Badge (Only Tier) */}
                       <div className="absolute top-0 left-0 z-20">
@@ -443,16 +440,9 @@ const Top100Page: React.FC<Top100PageProps> = ({ onAnimeSelect, onBack }) => {
                       
                       {/* Card */}
                       <div className="card-hover-effect relative rounded-xl border border-purple-700/30 bg-gradient-to-b from-purple-900/95 to-purple-800/90 p-1 transition-all duration-300 overflow-hidden group-hover:border-transparent">
-                        <div className="shimmer-effect"></div>
-                        <div className="absolute inset-0 opacity-0 group-hover:opacity-30 transition-opacity duration-500"
-                          style={{ background: `radial-gradient(circle at center, ${GLOW_COLORS[currentBorderColorIndex][1]}20 0%, transparent 70%)` }} />
-                        <div className="absolute inset-0 bg-gradient-to-t from-purple-900/80 via-transparent to-transparent opacity-40 group-hover:opacity-30 transition-opacity duration-300"></div>
+                        {/* Removed shimmer-effect, sparkle particles, and radial glow */}
                         
-                        {/* Sparkle particles */}
-                        <div className="absolute top-2 right-2 w-1 h-1 rounded-full sparkle-effect opacity-0 group-hover:opacity-30"
-                          style={{ background: GLOW_COLORS[currentBorderColorIndex][0], boxShadow: `0 0 5px ${GLOW_COLORS[currentBorderColorIndex][0]}`, animationDelay: '0.2s' }} />
-                        <div className="absolute bottom-2 left-2 w-1 h-1 rounded-full sparkle-effect opacity-0 group-hover:opacity-30"
-                          style={{ background: GLOW_COLORS[currentBorderColorIndex][1], boxShadow: `0 0 5px ${GLOW_COLORS[currentBorderColorIndex][1]}`, animationDelay: '0.5s' }} />
+                        <div className="absolute inset-0 bg-gradient-to-t from-purple-900/80 via-transparent to-transparent opacity-40 group-hover:opacity-30 transition-opacity duration-300"></div>
                         
                         {/* Anime Card - No status badge */}
                         <AnimeCard anime={anime} onClick={() => onAnimeSelect(anime)} index={index} showStatus={false} />
