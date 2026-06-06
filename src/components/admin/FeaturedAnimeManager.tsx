@@ -1,4 +1,4 @@
- // src/components/admin/FeaturedAnimeManager.tsx – FINAL VERSION (Fixed thumbnail type)
+ // src/components/admin/FeaturedAnimeManager.tsx – COMPACT CARD VERSION
 import React, { useState, useEffect } from 'react';
 import { Anime } from '../../types';
 
@@ -421,7 +421,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
         </div>
       </div>
 
-      {/* Stats Dashboard */}
+      {/* Stats Dashboard - unchanged */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-purple-900/40 backdrop-blur-sm border border-purple-700/40 rounded-xl p-5 flex items-center gap-4">
           <div className="p-3 bg-amber-500/20 rounded-lg">
@@ -474,7 +474,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
         </div>
       </div>
 
-      {/* Current Featured Section */}
+      {/* Current Featured Section - COMPACT GRID */}
       <div className="space-y-4">
         <div className="flex items-center gap-3">
           <span className="w-1.5 h-7 bg-gradient-to-b from-amber-400 to-orange-400 rounded-full"></span>
@@ -501,19 +501,20 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
+          // ✅ COMPACT GRID: more columns, smaller gap
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 gap-2">
             {featuredAnimes.map((anime, index) => {
-              const imgWidth = 280;
-              const imgHeight = 420;
-              const optimizedSrc = getOptimizedImageUrl(anime.thumbnail, imgWidth, imgHeight); // red line gone
+              const imgWidth = 160;
+              const imgHeight = 240;
+              const optimizedSrc = getOptimizedImageUrl(anime.thumbnail, imgWidth, imgHeight);
               
               return (
                 <div
                   key={getAnimeId(anime)}
-                  className="group bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-purple-900/40 backdrop-blur-sm border border-purple-700/40 rounded-xl overflow-hidden hover:border-amber-500/50 transition-all hover:shadow-lg hover:shadow-amber-500/10"
+                  className="group bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-purple-900/40 backdrop-blur-sm border border-purple-700/40 rounded-lg overflow-hidden hover:border-amber-500/50 transition-all hover:shadow-lg hover:shadow-amber-500/10"
                 >
-                  <div className="absolute top-2 left-2 z-10">
-                    <div className="px-2 py-0.5 bg-gradient-to-r from-amber-600 to-orange-600 rounded-full text-[10px] font-bold shadow-lg">
+                  <div className="absolute top-1 left-1 z-10">
+                    <div className="px-1.5 py-0.5 bg-gradient-to-r from-amber-600 to-orange-600 rounded-full text-[9px] font-bold shadow-lg">
                       #{index + 1}
                     </div>
                   </div>
@@ -527,16 +528,16 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
                       width={imgWidth}
                       height={imgHeight}
                       onError={(e) => {
-                        e.currentTarget.src = getOptimizedImageUrl(anime.thumbnail || '', 280, 420);
+                        e.currentTarget.src = getOptimizedImageUrl(anime.thumbnail || '', 160, 240);
                       }}
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-transparent"></div>
 
-                    <div className="absolute top-2 right-2 flex gap-1">
+                    <div className="absolute top-1 right-1 flex gap-0.5">
                       {index > 0 && (
                         <button
                           onClick={() => reorderFeatured(index, index - 1)}
-                          className="w-7 h-7 flex items-center justify-center bg-purple-900/80 hover:bg-amber-600 rounded-lg text-white/80 hover:text-white text-xs transition-all"
+                          className="w-5 h-5 flex items-center justify-center bg-purple-900/80 hover:bg-amber-600 rounded-md text-white/80 hover:text-white text-[10px] transition-all"
                           title="Move up"
                         >
                           ↑
@@ -545,7 +546,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
                       {index < featuredAnimes.length - 1 && (
                         <button
                           onClick={() => reorderFeatured(index, index + 1)}
-                          className="w-7 h-7 flex items-center justify-center bg-purple-900/80 hover:bg-amber-600 rounded-lg text-white/80 hover:text-white text-xs transition-all"
+                          className="w-5 h-5 flex items-center justify-center bg-purple-900/80 hover:bg-amber-600 rounded-md text-white/80 hover:text-white text-[10px] transition-all"
                           title="Move down"
                         >
                           ↓
@@ -553,7 +554,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
                       )}
                       <button
                         onClick={() => removeFromFeatured(getAnimeId(anime))}
-                        className="w-7 h-7 flex items-center justify-center bg-purple-900/80 hover:bg-rose-600 rounded-lg text-white/80 hover:text-white text-xs transition-all"
+                        className="w-5 h-5 flex items-center justify-center bg-purple-900/80 hover:bg-rose-600 rounded-md text-white/80 hover:text-white text-[10px] transition-all"
                         title="Remove"
                       >
                         ✕
@@ -561,11 +562,11 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
                     </div>
                   </div>
 
-                  <div className="p-3">
-                    <h3 className="font-semibold text-white text-sm truncate">{anime.title}</h3>
-                    <div className="flex items-center justify-between mt-1 text-[10px]">
+                  <div className="p-1.5">
+                    <h3 className="font-semibold text-white text-[11px] truncate">{anime.title}</h3>
+                    <div className="flex items-center justify-between mt-0.5 text-[9px]">
                       <span className="text-white/50">{anime.releaseYear || 'N/A'}</span>
-                      <span className={`px-1.5 py-0.5 rounded-full ${
+                      <span className={`px-1 py-0.5 rounded-full ${
                         anime.subDubStatus?.includes('Dub') 
                           ? 'bg-emerald-500/20 text-emerald-300' 
                           : 'bg-amber-500/20 text-amber-300'
@@ -581,7 +582,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
         )}
       </div>
 
-      {/* Add Anime Section */}
+      {/* Add Anime Section - COMPACT GRID */}
       <div id="add-section" className="space-y-4">
         <div className="flex items-center gap-3">
           <span className="w-1.5 h-7 bg-gradient-to-b from-amber-400 to-orange-400 rounded-full"></span>
@@ -656,16 +657,17 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
         </div>
 
         {filteredAnimes.length > 0 ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4">
+          // ✅ COMPACT GRID: same as PollManager style
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 gap-2">
             {filteredAnimes.map(anime => {
-              const imgWidth = 200;
-              const imgHeight = 300;
-              const optimizedSrc = getOptimizedImageUrl(anime.thumbnail, imgWidth, imgHeight); // red line gone
+              const imgWidth = 160;
+              const imgHeight = 240;
+              const optimizedSrc = getOptimizedImageUrl(anime.thumbnail, imgWidth, imgHeight);
               
               return (
                 <div
                   key={getAnimeId(anime)}
-                  className="group bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-purple-900/40 backdrop-blur-sm border border-purple-700/40 rounded-xl overflow-hidden hover:border-amber-500/50 transition-all hover:shadow-lg hover:shadow-amber-500/10"
+                  className="group bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-purple-900/40 backdrop-blur-sm border border-purple-700/40 rounded-lg overflow-hidden hover:border-amber-500/50 transition-all hover:shadow-lg hover:shadow-amber-500/10"
                 >
                   <div className="relative aspect-[2/3] overflow-hidden">
                     <img
@@ -676,12 +678,12 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
                       width={imgWidth}
                       height={imgHeight}
                       onError={(e) => {
-                        e.currentTarget.src = getOptimizedImageUrl(anime.thumbnail || '', 200, 300);
+                        e.currentTarget.src = getOptimizedImageUrl(anime.thumbnail || '', 160, 240);
                       }}
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-transparent"></div>
-                    <div className="absolute top-2 right-2">
-                      <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                    <div className="absolute top-1 right-1">
+                      <span className={`px-1 py-0.5 text-[9px] font-bold rounded-full ${
                         anime.subDubStatus?.includes('Dub')
                           ? 'bg-emerald-500/20 text-emerald-300'
                           : 'bg-amber-500/20 text-amber-300'
@@ -690,12 +692,12 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
                       </span>
                     </div>
                   </div>
-                  <div className="p-3">
-                    <h3 className="font-medium text-white text-xs truncate mb-2">{anime.title}</h3>
+                  <div className="p-1.5">
+                    <h3 className="font-medium text-white text-[11px] truncate mb-1">{anime.title}</h3>
                     <button
                       onClick={() => addToFeatured(anime)}
                       disabled={featuredAnimes.length >= 24}
-                      className={`w-full py-1.5 text-[10px] font-medium rounded-lg transition-all flex items-center justify-center gap-1 ${
+                      className={`w-full py-1 text-[9px] font-medium rounded-md transition-all flex items-center justify-center gap-0.5 ${
                         featuredAnimes.length >= 24
                           ? 'bg-white/10 text-white/40 cursor-not-allowed'
                           : 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white shadow-lg hover:shadow-amber-600/30'
@@ -703,14 +705,14 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
                     >
                       {featuredAnimes.length >= 24 ? (
                         <>
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                          <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
                           Max
                         </>
                       ) : (
                         <>
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                          <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                           </svg>
                           Add
