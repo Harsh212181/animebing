@@ -11,10 +11,11 @@ const shortenerRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 // ============ BOT DETECTION ============
 const BOT_PATTERNS = [
   'googlebot', 'bingbot', 'slurp', 'duckduckbot', 'baiduspider', 'yandexbot',
-  'facebot', 'facebookexternalhit', 'twitterbot', 'linkedinbot', 'pinterest',
-  'telegrambot', 'discordbot', 'whatsapp', 'slackbot', 'applebot', 'rogerbot',
-  'embedly', 'quora link preview', 'showyoubot', 'outbrain', 'developers.google.com',
-  'bot', 'crawl', 'spider',
+  'facebot', 'facebookexternalhit', 'facebookcatalog', 'twitterbot', 'linkedinbot',
+  'pinterest', 'telegrambot', 'discordbot', 'whatsapp', 'slackbot', 'applebot',
+  'rogerbot', 'embedly', 'quora link preview', 'showyoubot', 'outbrain',
+  'developers.google.com', 'bot', 'crawl', 'spider', 'preview',
+  'iframely', 'vkshare', 'w3c_validator', 'curl', 'wget',
 ]
 
 function isBot(userAgent: string | null | undefined): boolean {
@@ -35,15 +36,13 @@ function esc(input: unknown): string {
 }
 
 // ============ META HTML BUILDER ============
-// Crawlers ke liye — redirect nahi, seedha HTML serve karo with OG tags
-// Real URL (animebing.in/detail/slug) bhi include hai taaki Google sahi page index kare
 function buildMetaHTML(opts: {
   title: string
   description: string
   image: string
-  canonicalUrl: string   // animebing.in/detail/slug — real indexable page
-  shortUrl: string       // go.animebing.in/code — current URL
-  redirectUrl: string    // jahan user actually jayega
+  canonicalUrl: string
+  shortUrl: string
+  redirectUrl: string
 }): string {
   const t   = esc(opts.title)
   const d   = esc(opts.description.substring(0, 900))
@@ -75,9 +74,7 @@ function buildMetaHTML(opts: {
   <meta name="twitter:description" content="${d}" />
   <meta name="twitter:image" content="${esc(img)}" />
 
-  <!-- Bot ko redirect nahi, crawl karne do — real users JS se jayenge -->
   <script>
-    // Sirf real users ko redirect karo, bots yahan ruke
     var ua = navigator.userAgent.toLowerCase();
     var bots = ['bot','crawl','spider','facebookexternalhit','twitterbot','whatsapp','telegram','discord','slack','linkedin'];
     var isBot = bots.some(function(b){ return ua.indexOf(b) !== -1; });
@@ -102,45 +99,39 @@ function buildMetaHTML(opts: {
 </html>`
 }
 
-// ============ ANIME META FETCHER ============
-// animebing.in/detail/slug se slug nikalo aur API se meta lo
+// ============ ANIME META FETCHER — DIRECT DB (NO HTTP) ============
 async function fetchAnimeMeta(
   targetUrl: string,
-  apiBase: string
+  env: Env
 ): Promise<{ title: string; description: string; image: string; slug: string } | null> {
   try {
-    // Sirf animebing.in/detail/:slug URLs handle karo
     const match = targetUrl.match(/animebing\.in\/detail\/([^/?#]+)/)
     if (!match) return null
 
     const slug = match[1]
-    const res = await fetch(`${apiBase}/api/anime/${slug}`, {
-      headers: { Accept: 'application/json' }
-    })
-    if (!res.ok) return null
+    
+    // Direct MongoDB query — no HTTP request to backend
+    const db = await getDb(env.MONGODB_URI, env.MONGODB_DB)
+    const anime = await db.collection('animes').findOne({ slug })
+    
+    if (!anime) return null
 
-    const data = await res.json() as { success: boolean; data?: Record<string, unknown> }
-    if (!data.success || !data.data) return null
-
-    const anime = data.data
     const title = String(anime.title || slug.replace(/-/g, ' '))
-
-    // Episode count se title suffix
-    const epCount = Number((anime as any).currentEpisode || 0)
+    const epCount = Number(anime.currentEpisode || 0)
     let titleFull = title
-    if (anime.contentType === 'Movie')       titleFull += ' (Movie)'
-    else if (anime.contentType === 'Manga')  titleFull += ' Manga'
-    else if (epCount > 1)                    titleFull += ` EP 1-${epCount}`
-    else if (epCount === 1)                  titleFull += ' EP 1'
+    if (anime.contentType === 'Movie')      titleFull += ' (Movie)'
+    else if (anime.contentType === 'Manga') titleFull += ' Manga'
+    else if (epCount > 1)                   titleFull += ` EP 1-${epCount}`
+    else if (epCount === 1)                 titleFull += ' EP 1'
 
     const description = String(
-      (anime as any).description ||
-      (anime as any).seoDescription ||
-      (anime as any).synopsis ||
+      anime.description ||
+      anime.seoDescription ||
+      anime.synopsis ||
       `Watch ${title} online in HD quality on AnimeBing. Free streaming and downloads.`
     ).trim()
 
-    const image = String((anime as any).thumbnail || 'https://animebing.in/AnimeBinglogo.jpg')
+    const image = String(anime.thumbnail || 'https://animebing.in/AnimeBinglogo.jpg')
 
     return {
       title: `${titleFull} | AnimeBing`,
@@ -148,7 +139,8 @@ async function fetchAnimeMeta(
       image,
       slug,
     }
-  } catch {
+  } catch (err) {
+    console.error('fetchAnimeMeta error:', err)
     return null
   }
 }
@@ -238,6 +230,47 @@ shortenerRoutes.get('/admin/links/:code/stats', adminAuth, async (c) => {
   }
 })
 
+// ============ DEBUG — META TEST ============
+shortenerRoutes.get('/debug-meta/:code', async (c) => {
+  try {
+    const code = c.req.param('code')
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const link = await db.collection('shortlinks').findOne({ code })
+    
+    if (!link) return c.json({ error: 'Link not found' })
+
+    const apiBase = c.env.API_URL || 'https://animabing-backend.animabingwatch.workers.dev'
+    
+    // Slug extract karo
+    const match = link.url.match(/animebing\.in\/detail\/([^/?#]+)/)
+    const slug = match ? match[1] : null
+    
+    // Direct API call (debug only)
+    let apiResult = null
+    let apiError = null
+    try {
+      const res = await fetch(`${apiBase}/api/anime/${slug}`, {
+        headers: { Accept: 'application/json' }
+      })
+      apiResult = await res.json()
+    } catch(e: any) {
+      apiError = e.message
+    }
+
+    return c.json({
+      link_url: link.url,
+      api_base: apiBase,
+      slug_extracted: slug,
+      api_url_called: `${apiBase}/api/anime/${slug}`,
+      api_result: apiResult,
+      api_error: apiError,
+      env_API_URL: c.env.API_URL,
+    })
+  } catch (err: any) {
+    return c.json({ error: err.message })
+  }
+})
+
 // ✅ Dashboard redirect
 shortenerRoutes.get('/dashboard', (c) => {
   return c.redirect('https://animebing.in/dashboard', 302)
@@ -264,12 +297,9 @@ shortenerRoutes.get('/:code', async (c) => {
 
     // ============ BOT: Meta HTML serve karo ============
     if (isBot(userAgent)) {
-      // API base — wrangler.json ya .dev.vars se aata hai, index.ts mein MONGODB_URI jaisa
-      const apiBase = (c.env as any).API_URL || 'https://animabing-backend.animabingwatch.workers.dev'
+      // ✅ Direct DB call — no HTTP request
+      const meta = await fetchAnimeMeta(link.url, c.env)
 
-      const meta = await fetchAnimeMeta(link.url, apiBase)
-
-      // Canonical URL: agar animebing.in/detail/slug hai to wohi, warna target URL
       const canonicalUrl = meta
         ? `https://animebing.in/detail/${meta.slug}`
         : link.url

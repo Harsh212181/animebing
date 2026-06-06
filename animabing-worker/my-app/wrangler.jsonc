@@ -6,6 +6,7 @@
   
   "vars": {
     "MONGODB_DB": "animabing",
-    "ALLOWED_ORIGIN": "*"
+    "ALLOWED_ORIGIN": "*",
+    "API_URL": "https://animabing-backend.animabingwatch.workers.dev"
   }
 }

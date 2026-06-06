@@ -1,4 +1,4 @@
- import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import OverviewTab from './dashboard/OverviewTab';
 import LinksTab from './dashboard/LinksTab';
 import ProfileTab from './dashboard/ProfileTab';
@@ -286,7 +286,7 @@ const LoginForm: React.FC<{ onLogin: (cred: any) => void; loginError: string }> 
   );
 };
 
-// ─── Main Dashboard ───────────────────────────────────────────────────────────
+// ─── Main Dashboard (FULL SCREEN WIDTH) ──────────────────────────────────────
 const UserDashboard: React.FC = () => {
   const [token, setToken] = useState<string | null>(localStorage.getItem('shortUserToken'));
   const [dashData, setDashData] = useState<DashboardData | null>(null);
@@ -409,12 +409,22 @@ const UserDashboard: React.FC = () => {
     { id: 'profile',   label: 'Profile' },
     { id: 'messages',  label: 'Messages', badge: dashData.unreadMessages },
     { id: 'requests',  label: 'Requests', badge: (dashData.pendingPaymentRequest || dashData.pendingLinkRequest) ? 1 : 0 },
-    ...(showCreateTab ? [{ id: 'create', label: '+ Create Link' }] : []),
+    ...(showCreateTab ? [{ id: 'create', label: 'Create Link' }] : []),   // ✅ '+' removed
   ];
 
   const switchTab = (tabId: string) => { setActiveTab(tabId); setMenuOpen(false); };
 
-  // ── Styles ──────────────────────────────────────────────────────────────────
+  // ✅ Bell icon toggle: if already on messages → go to overview, else → messages
+  const handleBellClick = () => {
+    if (activeTab === 'messages') {
+      setActiveTab('overview');
+    } else {
+      setActiveTab('messages');
+    }
+    setMenuOpen(false);
+  };
+
+  // ── FULL WIDTH STYLES (removed maxWidth constraints) ─────────────────────
   const S: Record<string, React.CSSProperties> = {
     page: {
       minHeight: '100vh',
@@ -429,8 +439,9 @@ const UserDashboard: React.FC = () => {
       transform: headerVisible ? 'translateY(0)' : 'translateY(-100%)',
     },
     headerInner: {
-      maxWidth: 1100, margin: '0 auto',
-      padding: '12px 20px 0',
+      width: '100%',
+      padding: '12px 24px 0',
+      boxSizing: 'border-box',
     },
     headerTop: {
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -466,12 +477,10 @@ const UserDashboard: React.FC = () => {
       background: '#fff5f5', border: '1px solid #ffe0e0',
       color: '#c0392b', fontSize: 12, fontWeight: 500, cursor: 'pointer',
     },
-    // Nav tabs
     navRow: {
       display: 'flex', gap: 0,
       overflowX: 'auto', scrollbarWidth: 'none',
     },
-    // Mobile menu
     mobileMenu: {
       background: 'white', borderTop: '1px solid #f0eeff',
       padding: '12px 16px 16px',
@@ -487,8 +496,12 @@ const UserDashboard: React.FC = () => {
       border: 'none', cursor: 'pointer', fontFamily: 'inherit',
       transition: 'background 0.15s',
     },
-    // Main
-    main: { maxWidth: 1100, margin: '0 auto', padding: '28px 20px' },
+    main: {
+      width: '100%',
+      maxWidth: '100%',
+      padding: '28px 24px',
+      boxSizing: 'border-box',
+    },
   };
 
   const tabStyle = (id: string): React.CSSProperties => ({
@@ -510,32 +523,29 @@ const UserDashboard: React.FC = () => {
 
   return (
     <div style={S.page}>
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      {/* ── Header (full width) ─────────────────────────────────────────── */}
       <header style={S.header}>
         <div style={S.headerInner}>
           <div style={S.headerTop}>
-            {/* Logo */}
             <div style={S.logoWrap}>
-              <div style={S.logoIcon}>✨</div>
+              <div style={S.logoIcon}>☠️</div>
               <div>
                 <div style={S.logoText}>AnimaBing</div>
                 <div style={S.logoSub}>Creator Dashboard</div>
               </div>
             </div>
 
-            {/* Desktop right actions */}
             <div style={{ ...S.headerActions, display: 'flex' }}>
-              {/* Notifications */}
+              {/* ✅ Bell icon with toggle handler */}
               <button
-                onClick={() => switchTab('messages')}
+                onClick={handleBellClick}
                 style={{ ...S.notifBtn, border: '1px solid #ece9ff' } as React.CSSProperties}
-                title="Messages"
+                title="Messages (toggle)"
               >
                 <BellIcon />
                 {dashData.unreadMessages > 0 && <div style={S.notifDot} />}
               </button>
 
-              {/* Avatar — desktop */}
               <button
                 onClick={() => setShowAvatarPicker(true)}
                 style={S.avatarBtn}
@@ -544,12 +554,10 @@ const UserDashboard: React.FC = () => {
                 <AvatarDisplay avatarId={avatarId} name={name} size={36} />
               </button>
 
-              {/* Logout — desktop only */}
               <button onClick={handleLogout} style={{ ...S.logoutBtn, display: 'none' }} className="desktop-logout">
                 <LogoutIcon /> Logout
               </button>
 
-              {/* Hamburger — mobile */}
               <button
                 onClick={() => setMenuOpen(!menuOpen)}
                 style={{
@@ -564,7 +572,6 @@ const UserDashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* Desktop nav tabs */}
           <nav style={{ ...S.navRow }} className="desktop-nav">
             {tabs.map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={tabStyle(tab.id)}>
@@ -582,10 +589,8 @@ const UserDashboard: React.FC = () => {
           </nav>
         </div>
 
-        {/* Mobile slide-down menu */}
         {menuOpen && (
           <div style={S.mobileMenu} className="mobile-menu">
-            {/* User card */}
             <div style={S.mobileUserCard}>
               <button onClick={() => { setShowAvatarPicker(true); setMenuOpen(false); }} style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer' }}>
                 <AvatarDisplay avatarId={avatarId} name={name} size={44} />
@@ -601,7 +606,6 @@ const UserDashboard: React.FC = () => {
               </div>
             </div>
 
-            {/* Tabs */}
             {tabs.map(tab => (
               <button key={tab.id} onClick={() => switchTab(tab.id)} style={mobileTabActive(tab.id)}>
                 {tab.label}
@@ -614,7 +618,6 @@ const UserDashboard: React.FC = () => {
               </button>
             ))}
 
-            {/* Logout */}
             <button
               onClick={handleLogout}
               style={{ ...S.mobileMenuBtn, color: '#c0392b', marginTop: 4 } as React.CSSProperties}
@@ -626,7 +629,6 @@ const UserDashboard: React.FC = () => {
         )}
       </header>
 
-      {/* ── Responsive CSS ─────────────────────────────────────────────────── */}
       <style>{`
         @media (min-width: 640px) {
           .mobile-hamburger { display: none !important; }
@@ -640,7 +642,6 @@ const UserDashboard: React.FC = () => {
         input:focus { border-color: #7c72d8 !important; box-shadow: 0 0 0 3px rgba(83,74,183,0.12); }
       `}</style>
 
-      {/* ── Main Content ───────────────────────────────────────────────────── */}
       <main style={S.main}>
         {activeTab === 'overview'  && <OverviewTab data={dashData} onRefresh={loadDashboard} onToast={showToast} />}
         {activeTab === 'links'     && <LinksTab links={dashData.links} onToast={showToast} />}
@@ -677,7 +678,6 @@ const UserDashboard: React.FC = () => {
         )}
       </main>
 
-      {/* ── Avatar Picker ──────────────────────────────────────────────────── */}
       {showAvatarPicker && (
         <AvatarPicker
           current={avatarId}
@@ -686,7 +686,6 @@ const UserDashboard: React.FC = () => {
         />
       )}
 
-      {/* ── Toast ──────────────────────────────────────────────────────────── */}
       {toastMsg && (
         <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 50 }}>
           <div style={{

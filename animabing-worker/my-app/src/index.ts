@@ -23,6 +23,7 @@ export type Env = {
   JWT_SECRET: string
   ADMIN_USER: string
   ADMIN_PASS: string
+  API_URL: string         
 }
 
 export type Variables = {
