@@ -8,6 +8,7 @@ import FeaturedAnimeCarousel from '../src/components/FeaturedAnimeCarousel';
 import SEO from '../src/components/SEO';
 import PollCard from './PollCard';
 import { useAnimeContext } from '../src/context/AnimeContext';
+import AppDownloadPopup from './AppDownloadPopup'; // ← added
 
 interface Props {
   onAnimeSelect: (anime: Anime) => void;
@@ -315,6 +316,7 @@ const HomePage: React.FC<Props> = ({
   return (
     <>
       <SEO {...seoData} />
+      <AppDownloadPopup />  {/* ← added */}
       <div className="min-h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-purple-900">
         <style>{`
           body.skip-card-animations .card-load-animate {
