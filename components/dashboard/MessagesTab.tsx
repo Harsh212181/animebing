@@ -30,10 +30,41 @@ const AVATARS = [
   { id: 25, emoji: '🎙️', bg: 'linear-gradient(135deg,#be185d,#9d174d)' },
 ];
 
-const SendIcon = () => (
-  <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z" />
-  </svg>
+// ─── AB Logo ──────────────────────────────────────────────────────────────────
+const ABLogo = () => (
+  <div style={{
+    width: 42, height: 42, borderRadius: 12, flexShrink: 0,
+    background: 'linear-gradient(135deg,#6366f1,#4f46e5)',
+    boxShadow: '0 2px 10px rgba(99,102,241,0.45)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    position: 'relative', overflow: 'hidden',
+  }}>
+    {/* subtle shine */}
+    <div style={{
+      position: 'absolute', top: 0, left: 0, right: 0, height: '50%',
+      background: 'rgba(255,255,255,0.12)', borderRadius: '12px 12px 0 0',
+    }} />
+    <span style={{
+      fontFamily: '"Inter", "SF Pro Display", system-ui, sans-serif',
+      fontWeight: 800, fontSize: 15, color: '#fff',
+      letterSpacing: '-0.5px', position: 'relative', zIndex: 1,
+    }}>AB</span>
+  </div>
+);
+
+// ─── Admin bubble avatar ───────────────────────────────────────────────────────
+const AdminAvatar = () => (
+  <div style={{
+    width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+    background: 'linear-gradient(135deg,#6366f1,#4f46e5)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    boxShadow: '0 1px 4px rgba(99,102,241,0.3)',
+  }}>
+    <span style={{
+      fontFamily: '"Inter", system-ui, sans-serif',
+      fontWeight: 800, fontSize: 10, color: '#fff', letterSpacing: '-0.3px',
+    }}>AB</span>
+  </div>
 );
 
 const MessagesTab: React.FC<{
@@ -99,7 +130,6 @@ const MessagesTab: React.FC<{
   const formatTime = (dateStr: string) =>
     new Date(dateStr).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
 
-  // Group messages by date
   const groupedMessages = messages.reduce<{ date: string; msgs: any[] }[]>((acc, msg) => {
     const d = new Date(msg.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
     const last = acc[acc.length - 1];
@@ -111,103 +141,134 @@ const MessagesTab: React.FC<{
   const av = AVATARS.find(a => a.id === avatarId);
 
   return (
-    <div className="flex flex-col overflow-hidden w-full" style={{ height: 560, borderRadius: 14, border: '1px solid #d1d5db' }}>
-
+    <div
+      className="flex flex-col overflow-hidden w-full"
+      style={{ height: 560, borderRadius: 16, border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 24px rgba(0,0,0,0.10)' }}
+    >
       <style>{`
-        @keyframes msgIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-        .msg-in { animation: msgIn 0.18s ease-out forwards; }
-        .tg-scroll::-webkit-scrollbar { width: 4px; }
-        .tg-scroll::-webkit-scrollbar-track { background: transparent; }
-        .tg-scroll::-webkit-scrollbar-thumb { background: #c5ccd6; border-radius: 99px; }
+        @keyframes msgIn {
+          from { opacity: 0; transform: translateY(6px) scale(0.98); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .msg-in { animation: msgIn 0.2s ease-out forwards; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .chat-scroll::-webkit-scrollbar { width: 3px; }
+        .chat-scroll::-webkit-scrollbar-track { background: transparent; }
+        .chat-scroll::-webkit-scrollbar-thumb { background: rgba(100,120,160,0.25); border-radius: 99px; }
+
+        .send-btn:not(:disabled):hover { filter: brightness(1.1); transform: scale(1.06); }
+        .send-btn { transition: filter 0.15s, transform 0.15s, background 0.2s, box-shadow 0.2s; }
+        .msg-input:focus { border-color: #6366f1 !important; box-shadow: 0 0 0 3px rgba(99,102,241,0.12); }
+        .msg-input { transition: border-color 0.15s, box-shadow 0.15s; }
       `}</style>
 
-      {/* ── Header — Telegram style ── */}
-      <div className="flex items-center gap-3 px-4 py-2.5 shrink-0" style={{ background: '#2b5278' }}>
-        {/* Telegram plane icon avatar */}
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full" style={{ background: '#3d8fc5' }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
-            <path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-          </svg>
+      {/* ── Header ── */}
+      <div style={{
+        background: 'linear-gradient(135deg,#0f0f1a 0%,#1a1a2e 60%,#16213e 100%)',
+        borderBottom: '1px solid rgba(255,255,255,0.07)',
+        padding: '11px 16px',
+        display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0,
+      }}>
+        <ABLogo />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ color: '#fff', fontWeight: 700, fontSize: 15, lineHeight: 1.2, letterSpacing: '-0.2px', margin: 0 }}>
+            AnimaBing
+          </p>
+          <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, margin: '2px 0 0' }}>
+            Official Support
+          </p>
         </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-white leading-tight">AnimaBing Admin</p>
-          <p className="text-[11px]" style={{ color: '#9ecae8' }}>online</p>
-        </div>
-        {messages.length > 0 && (
-          <span className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold text-white" style={{ background: '#3d8fc5' }}>
-            {messages.length}
-          </span>
-        )}
       </div>
 
-      {/* ── Messages — Telegram light bg ── */}
-      <div className="flex-1 overflow-y-auto tg-scroll px-3 py-3 space-y-1" style={{ background: '#c6d9ed' }}>
-
+      {/* ── Messages ── */}
+      <div
+        className="chat-scroll"
+        style={{
+          flex: 1, overflowY: 'auto',
+          backgroundColor: '#eef2f7',
+          backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(99,102,241,0.06) 1px, transparent 0)',
+          backgroundSize: '20px 20px',
+          padding: '12px 14px',
+          display: 'flex', flexDirection: 'column', gap: 2,
+        }}
+      >
         {loading ? (
-          <div className="flex flex-col items-center justify-center h-full gap-2">
-            <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: '#2aabee', borderTopColor: 'transparent' }} />
-            <p className="text-xs" style={{ color: '#5a7a9a' }}>Loading…</p>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 10 }}>
+            <div style={{ width: 30, height: 30, borderRadius: '50%', border: '2.5px solid #6366f1', borderTopColor: 'transparent', animation: 'spin 0.8s linear infinite' }} />
+            <p style={{ color: '#7a8fa6', fontSize: 12, margin: 0 }}>Loading messages…</p>
           </div>
         ) : messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-2 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full" style={{ background: 'rgba(255,255,255,0.6)' }}>
-              <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="#3d8fc5" strokeWidth={1.8}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 8, textAlign: 'center' }}>
+            <div style={{ width: 48, height: 48, borderRadius: 14, background: 'rgba(99,102,241,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="#6366f1" strokeWidth={1.8}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
             </div>
-            <p className="text-sm font-medium" style={{ color: '#4a6a8a' }}>No messages yet</p>
+            <p style={{ color: '#4a5568', fontSize: 13, fontWeight: 600, margin: 0 }}>No messages yet</p>
+            <p style={{ color: '#94a3b8', fontSize: 11, margin: 0 }}>Send a message to get started</p>
           </div>
         ) : (
           groupedMessages.map((group, gi) => (
             <div key={gi}>
-              {/* Telegram date pill */}
-              <div className="flex justify-center my-3">
-                <span className="rounded-full px-3 py-1 text-[11px] font-medium shadow-sm" style={{ background: 'rgba(255,255,255,0.65)', color: '#4a6a8a' }}>
+              <div style={{ display: 'flex', justifyContent: 'center', margin: '10px 0 8px' }}>
+                <span style={{
+                  background: 'rgba(255,255,255,0.8)', backdropFilter: 'blur(8px)',
+                  borderRadius: 99, padding: '3px 12px',
+                  fontSize: 11, fontWeight: 500, color: '#64748b',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                }}>
                   {group.date}
                 </span>
               </div>
 
-              <div className="space-y-1">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {group.msgs.map((msg, i) => (
-                  <div key={i} className={`flex msg-in ${msg.fromAdmin ? 'justify-start' : 'justify-end'}`}>
+                  <div key={i} className="msg-in" style={{ display: 'flex', justifyContent: msg.fromAdmin ? 'flex-start' : 'flex-end' }}>
                     {msg.fromAdmin ? (
-                      /* Incoming — white bubble, Telegram left tail */
-                      <div className="flex items-end gap-1.5 max-w-[75%]">
-                        {/* Telegram bot icon avatar */}
-                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full mb-0.5" style={{ background: '#2b5278' }}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z"/>
-                          </svg>
-                        </div>
+                      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 7, maxWidth: '75%' }}>
+                        <AdminAvatar />
                         <div>
-                          <div className="relative px-3 py-2 text-sm leading-relaxed shadow-sm" style={{ background: '#fff', borderRadius: '0 10px 10px 10px', color: '#000', minWidth: 60 }}>
+                          <div style={{
+                            background: '#fff',
+                            borderRadius: '3px 14px 14px 14px',
+                            padding: '8px 12px',
+                            fontSize: 13.5, lineHeight: 1.45, color: '#1e293b',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                            wordBreak: 'break-word',
+                          }}>
                             {msg.text}
-                            <span style={{ position: 'absolute', top: 0, left: -6, width: 0, height: 0, borderTop: '8px solid #fff', borderLeft: '7px solid transparent' }} />
                           </div>
-                          <p className="text-[10px] mt-0.5 ml-1" style={{ color: '#5a7a9a' }}>
+                          <p style={{ fontSize: 10, color: '#94a3b8', margin: '3px 0 0 3px' }}>
                             {formatTime(msg.createdAt)}
                           </p>
                         </div>
                       </div>
                     ) : (
-                      /* Outgoing — Telegram blue, right tail */
-                      <div className="flex items-end gap-1.5 max-w-[75%] flex-row-reverse">
+                      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 7, maxWidth: '75%', flexDirection: 'row-reverse' }}>
                         {av ? (
-                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm mb-0.5" style={{ background: av.bg }}>
+                          <div style={{ width: 28, height: 28, borderRadius: 8, background: av.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0, boxShadow: '0 1px 4px rgba(0,0,0,0.15)' }}>
                             {av.emoji}
                           </div>
                         ) : (
-                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white text-xs font-bold mb-0.5" style={{ background: '#3d8fc5' }}>
+                          <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#6366f1,#4f46e5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
                             {userName.charAt(0).toUpperCase()}
                           </div>
                         )}
                         <div>
-                          <div className="relative px-3 py-2 text-sm leading-relaxed shadow-sm" style={{ background: '#3d8fc5', borderRadius: '10px 0 10px 10px', color: '#fff', minWidth: 60 }}>
+                          <div style={{
+                            background: 'linear-gradient(135deg,#6366f1,#4f46e5)',
+                            borderRadius: '14px 3px 14px 14px',
+                            padding: '8px 12px',
+                            fontSize: 13.5, lineHeight: 1.45, color: '#fff',
+                            boxShadow: '0 2px 8px rgba(99,102,241,0.3)',
+                            wordBreak: 'break-word',
+                          }}>
                             {msg.text}
-                            <span style={{ position: 'absolute', top: 0, right: -6, width: 0, height: 0, borderTop: '8px solid #3d8fc5', borderRight: '7px solid transparent' }} />
                           </div>
-                          <p className="text-[10px] mt-0.5 mr-1 text-right" style={{ color: '#4a6a8a' }}>
+                          <p style={{ fontSize: 10, color: '#94a3b8', margin: '3px 3px 0 0', textAlign: 'right' }}>
                             {formatTime(msg.createdAt)}
+                            <span style={{ marginLeft: 3, color: '#6366f1', fontWeight: 700 }}>✓✓</span>
                           </p>
                         </div>
                       </div>
@@ -221,34 +282,50 @@ const MessagesTab: React.FC<{
         <div ref={bottomRef} />
       </div>
 
-      {/* ── Input — Telegram bottom bar ── */}
-      <div className="shrink-0 flex items-center gap-2 px-3 py-2.5" style={{ background: '#fff', borderTop: '1px solid #e4e9ef' }}>
+      {/* ── Input bar ── */}
+      <div style={{
+        background: '#fff', borderTop: '1px solid #e2e8f0',
+        padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0,
+      }}>
         <input
           ref={inputRef}
           type="text"
-          placeholder="Message"
+          placeholder="Type a message…"
           value={text}
           onChange={e => setText(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && sendMessage()}
-          className="flex-1 text-sm outline-none"
-          style={{ background: '#f1f3f5', border: 'none', borderRadius: 22, padding: '9px 16px', color: '#222', caretColor: '#2aabee' }}
+          className="msg-input"
+          style={{
+            flex: 1, background: '#f8fafc',
+            border: '1.5px solid #e2e8f0', borderRadius: 24,
+            padding: '9px 16px', fontSize: 13.5, color: '#1e293b',
+            outline: 'none', caretColor: '#6366f1',
+          }}
         />
         <button
           onClick={sendMessage}
           disabled={!text.trim() || sending}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-opacity disabled:opacity-40"
-          style={{ background: '#2b5278' }}
+          className="send-btn"
+          style={{
+            width: 42, height: 42, borderRadius: '50%', border: 'none', cursor: text.trim() && !sending ? 'pointer' : 'not-allowed',
+            background: text.trim() && !sending ? 'linear-gradient(135deg,#6366f1,#4f46e5)' : '#e2e8f0',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            boxShadow: text.trim() && !sending ? '0 2px 8px rgba(99,102,241,0.4)' : 'none',
+          }}
         >
           {sending ? (
-            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            <div style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
           ) : (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z"/>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+              stroke={text.trim() ? '#fff' : '#94a3b8'}
+              strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+            >
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
             </svg>
           )}
         </button>
       </div>
-
     </div>
   );
 };

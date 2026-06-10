@@ -51,7 +51,7 @@ interface ShortUser {
   unpaidEarnings: number;
   paidEarnings: number;
   gmailLinked?: string;
-  avatarId?: number | null;   // ✨ added
+  avatarId?: number | null;
   profile?: {
     mobile?: string;
     gmail?: string;
@@ -70,7 +70,7 @@ interface Message {
   createdAt: string;
 }
 
-type PanelAction = 'pay' | 'link' | 'messages' | 'profile';
+type PanelAction = 'pay' | 'link' | 'messages' | 'profile' | 'activity';
 type SortKey = 'realName' | 'totalClicks' | 'totalEarnings' | 'unpaidEarnings' | 'ratePerThousand';
 type SortDir = 'asc' | 'desc';
 
@@ -394,6 +394,49 @@ const css = `
 .sum-profile-val { font-size: 13px; font-weight: 500; color: var(--t1); }
 .sum-profile-empty { font-size: 12px; color: var(--t3); font-style: italic; }
 
+/* ── activity panel ── */
+.sum-day-filter { display: flex; gap: 6px; margin-bottom: 14px; }
+.sum-day-btn {
+  padding: 5px 14px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--bg2); color: var(--t3); font-size: 11px; font-weight: 600;
+  cursor: pointer; transition: all 0.13s; font-family: var(--font);
+}
+.sum-day-btn:hover { background: var(--bg3); color: var(--t2); }
+.sum-day-btn-on { background: var(--accent-dim) !important; color: var(--accent) !important; border-color: var(--accent-border) !important; }
+
+.sum-activity-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
+.sum-act-stat { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; }
+.sum-act-stat-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--t3); font-weight: 700; margin-bottom: 4px; }
+.sum-act-stat-val { font-family: var(--mono); font-size: 18px; font-weight: 500; }
+
+.sum-cal-grid { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 18px; }
+.sum-cal-day {
+  width: 28px; height: 28px; border-radius: 5px; display: flex; align-items: center;
+  justify-content: center; font-size: 9px; font-family: var(--mono); font-weight: 600;
+  cursor: default; position: relative;
+}
+.sum-cal-day:hover .sum-cal-tooltip {
+  opacity: 1; pointer-events: none;
+}
+.sum-cal-day-on  { background: var(--green); color: #0a0a0c; }
+.sum-cal-day-off { background: var(--bg3); color: var(--t3); border: 1px solid var(--border); }
+.sum-cal-tooltip {
+  position: absolute; bottom: 34px; left: 50%; transform: translateX(-50%);
+  background: var(--bg0); border: 1px solid var(--border2); border-radius: 5px;
+  padding: 4px 8px; font-size: 10px; color: var(--t2); white-space: nowrap;
+  opacity: 0; transition: opacity 0.15s; z-index: 10; pointer-events: none;
+}
+
+.sum-link-stats-table { width: 100%; border-collapse: collapse; }
+.sum-link-stats-table th { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--t3); padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+.sum-link-stats-table td { padding: 10px 12px; font-size: 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.sum-link-stats-table tr:last-child td { border-bottom: none; }
+.sum-link-stats-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+.sum-bar-wrap { display: flex; align-items: center; gap: 8px; }
+.sum-bar-bg { flex: 1; height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden; min-width: 60px; }
+.sum-bar-fill { height: 100%; border-radius: 3px; background: var(--accent); transition: width 0.4s ease; }
+
 /* ── empty / footer ── */
 .sum-empty { padding: 48px 24px; text-align: center; color: var(--t3); font-size: 13px; }
 .sum-table-footer {
@@ -454,6 +497,11 @@ const ShortUsersManager: React.FC = () => {
   const [newUser, setNewUser] = useState({ username: '', password: '', realName: '', ratePerThousand: 10, canCreateLinks: false });
   const [creating, setCreating] = useState(false);
 
+  // activity
+  const [activityData, setActivityData]   = useState<any>(null)
+  const [activityDays, setActivityDays]   = useState<7 | 15 | 30>(30)
+  const [activityLoading, setActivityLoading] = useState(false)
+
   const token       = localStorage.getItem('adminToken');
   const authHeaders = () => ({ headers: { Authorization: `Bearer ${token}` } });
 
@@ -511,12 +559,14 @@ const ShortUsersManager: React.FC = () => {
 
   /* ── panel ── */
   const togglePanel = (userId: string, action: PanelAction) => {
-    if (expandedRow === userId && expandedAction === action) { setExpandedRow(null); setExpandedAction(null); }
-    else {
-      setExpandedRow(userId); setExpandedAction(action);
-      if (action === 'messages') loadMessages(userId);
-      if (action === 'pay')  { setPayAmount(''); setPayNote(''); }
-      if (action === 'link') { setLinkCode(''); setLinkUrl(''); setLinkLabel(''); }
+    if (expandedRow === userId && expandedAction === action) {
+      setExpandedRow(null); setExpandedAction(null)
+    } else {
+      setExpandedRow(userId); setExpandedAction(action)
+      if (action === 'messages') loadMessages(userId)
+      if (action === 'pay')      { setPayAmount(''); setPayNote('') }
+      if (action === 'link')     { setLinkCode(''); setLinkUrl(''); setLinkLabel('') }
+      if (action === 'activity') { setActivityData(null); setActivityDays(30); loadActivity(userId, 30) }
     }
   };
   const closePanel = () => { setExpandedRow(null); setExpandedAction(null); };
@@ -599,6 +649,19 @@ const ShortUsersManager: React.FC = () => {
     } catch (err: any) { toast.error(err.response?.data?.error || 'Send failed'); }
     finally { setSendLoading(false); }
   };
+
+  /* ── activity ── */
+  const loadActivity = async (userId: string, days: 7 | 15 | 30 = 30) => {
+    setActivityLoading(true)
+    try {
+      const res = await axios.get(
+        `${API_BASE}/short-users/admin/users/${userId}/activity?days=${days}`,
+        authHeaders()
+      )
+      setActivityData(res.data)
+    } catch { toast.error('Failed to load activity') }
+    finally { setActivityLoading(false) }
+  }
 
   /* ── loading ── */
   if (loading) return (
@@ -716,7 +779,7 @@ const ShortUsersManager: React.FC = () => {
                               <input className="sum-inline-input" value={editForm.realName || ''} onChange={e => setEditForm({ ...editForm, realName: e.target.value })} />
                             ) : (
                               <div style={{ display: 'flex', alignItems: 'center' }}>
-                                {renderUserAvatar(user, 24)}   {/* ← avatar from user dashboard */}
+                                {renderUserAvatar(user, 24)}
                                 <div>
                                   <div className="sum-user-name">{user.realName}</div>
                                   <div className="sum-user-handle">@{user.username}</div>
@@ -763,13 +826,20 @@ const ShortUsersManager: React.FC = () => {
                                   <button className={`sum-act-btn${isOpen && expandedAction === 'link' ? ' sum-act-btn-on' : ''}`} onClick={() => togglePanel(user._id, 'link')} title="Create link"><i className="ti ti-link" /></button>
                                   <button className={`sum-act-btn${isOpen && expandedAction === 'messages' ? ' sum-act-btn-on' : ''}`} onClick={() => togglePanel(user._id, 'messages')} title="Messages"><i className="ti ti-message-circle" /></button>
                                   <button className={`sum-act-btn${isOpen && expandedAction === 'profile' ? ' sum-act-btn-on' : ''}`} onClick={() => togglePanel(user._id, 'profile')} title="Profile"><i className="ti ti-user" /></button>
+                                  <button
+                                    className={`sum-act-btn${isOpen && expandedAction === 'activity' ? ' sum-act-btn-on' : ''}`}
+                                    onClick={() => togglePanel(user._id, 'activity')}
+                                    title="Activity & Links"
+                                  >
+                                    <i className="ti ti-activity" />
+                                  </button>
                                 </>
                               )}
                             </div>
                           </td>
                         </tr>
 
-                        {/* ── Pay panel ── (unchanged) */}
+                        {/* ── Pay panel ── */}
                         {isOpen && expandedAction === 'pay' && (
                           <tr className="sum-expand-row">
                             <td colSpan={9}>
@@ -792,7 +862,7 @@ const ShortUsersManager: React.FC = () => {
                           </tr>
                         )}
 
-                        {/* ── Link panel ── (unchanged) */}
+                        {/* ── Link panel ── */}
                         {isOpen && expandedAction === 'link' && (
                           <tr className="sum-expand-row">
                             <td colSpan={9}>
@@ -872,7 +942,7 @@ const ShortUsersManager: React.FC = () => {
                           </tr>
                         )}
 
-                        {/* ── Profile panel ── (unchanged) */}
+                        {/* ── Profile panel ── */}
                         {isOpen && expandedAction === 'profile' && (
                           <tr className="sum-expand-row">
                             <td colSpan={9}>
@@ -900,6 +970,161 @@ const ShortUsersManager: React.FC = () => {
                                   ))}
                                 </div>
                                 <div className="sum-panel-footer"><button className="sum-btn sum-btn-ghost" onClick={closePanel}>Close</button></div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+
+                        {/* ── Activity panel ── */}
+                        {isOpen && expandedAction === 'activity' && (
+                          <tr className="sum-expand-row">
+                            <td colSpan={9}>
+                              <div className="sum-expand-inner">
+                                <div className="sum-panel-header">
+                                  <div className="sum-panel-title sum-pt-prof">
+                                    <span className="sum-panel-title-bar" style={{ background: 'var(--green)' }} />
+                                    <span style={{ color: 'var(--green)' }}>Activity & Links</span>
+                                  </div>
+                                  <span className="sum-panel-user">{user.realName}</span>
+                                </div>
+
+                                {/* Day filter */}
+                                <div className="sum-day-filter">
+                                  {([7, 15, 30] as const).map(d => (
+                                    <button
+                                      key={d}
+                                      className={`sum-day-btn${activityDays === d ? ' sum-day-btn-on' : ''}`}
+                                      onClick={() => { setActivityDays(d); loadActivity(user._id, d) }}
+                                    >
+                                      {d} Days
+                                    </button>
+                                  ))}
+                                </div>
+
+                                {activityLoading ? (
+                                  <div style={{ display: 'flex', justifyContent: 'center', padding: 32 }}><Spinner /></div>
+                                ) : activityData ? (
+                                  <>
+                                    {/* Stats row */}
+                                    <div className="sum-activity-stats">
+                                      <div className="sum-act-stat">
+                                        <div className="sum-act-stat-lbl">Active Days</div>
+                                        <div className="sum-act-stat-val" style={{ color: 'var(--green)' }}>{activityData.activeDays}</div>
+                                      </div>
+                                      <div className="sum-act-stat">
+                                        <div className="sum-act-stat-lbl">Absent Days</div>
+                                        <div className="sum-act-stat-val" style={{ color: 'var(--red)' }}>{activityData.absentDays}</div>
+                                      </div>
+                                      <div className="sum-act-stat">
+                                        <div className="sum-act-stat-lbl">Login Rate</div>
+                                        <div className="sum-act-stat-val" style={{ color: 'var(--amber)' }}>{activityData.loginRate}%</div>
+                                      </div>
+                                      <div className="sum-act-stat">
+                                        <div className="sum-act-stat-lbl">Last Login</div>
+                                        <div className="sum-act-stat-val" style={{ fontSize: 12, color: 'var(--t2)', marginTop: 4 }}>
+                                          {activityData.lastLogin
+                                            ? new Date(activityData.lastLogin).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })
+                                            : '—'}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Calendar heatmap */}
+                                    <div style={{ marginBottom: 6, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: 'var(--t3)' }}>
+                                      Login Calendar
+                                    </div>
+                                    <div className="sum-cal-grid">
+                                      {activityData.calendar.map((day: any) => (
+                                        <div
+                                          key={day.date}
+                                          className={`sum-cal-day ${day.loggedIn ? 'sum-cal-day-on' : 'sum-cal-day-off'}`}
+                                        >
+                                          {new Date(day.date).getDate()}
+                                          <span className="sum-cal-tooltip">
+                                            {day.label} {day.loggedIn ? '✅ Logged in' : '❌ Absent'}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+
+                                    {/* Link stats */}
+                                    {activityData.linkStats.length > 0 && (
+                                      <>
+                                        <div style={{ marginBottom: 8, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: 'var(--t3)' }}>
+                                          Links Performance
+                                        </div>
+                                        <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+                                          <table className="sum-link-stats-table">
+                                            <thead>
+                                              <tr>
+                                                <th>Label / Code</th>
+                                                <th>Total Clicks</th>
+                                                <th>{activityDays}d Clicks</th>
+                                                <th>Progress</th>
+                                                <th>Last Click</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              {(() => {
+                                                const maxClicks = Math.max(...activityData.linkStats.map((l: any) => l.totalClicks), 1)
+                                                return activityData.linkStats.map((link: any) => (
+                                                  <tr key={link._id}>
+                                                    <td>
+                                                      <div style={{ fontWeight: 500, color: 'var(--t1)' }}>{link.label}</div>
+                                                      <div style={{ fontSize: 11, color: 'var(--t3)', fontFamily: 'var(--mono)' }}>
+                                                        go.animebing.in/{link.code}
+                                                      </div>
+                                                    </td>
+                                                    <td>
+                                                      <span className="sum-mono" style={{ color: 'var(--t2)' }}>
+                                                        {link.totalClicks.toLocaleString()}
+                                                      </span>
+                                                    </td>
+                                                    <td>
+                                                      <span className="sum-mono" style={{ color: 'var(--accent)' }}>
+                                                        {link.clicksInRange.toLocaleString()}
+                                                      </span>
+                                                    </td>
+                                                    <td style={{ minWidth: 120 }}>
+                                                      <div className="sum-bar-wrap">
+                                                        <div className="sum-bar-bg">
+                                                          <div
+                                                            className="sum-bar-fill"
+                                                            style={{ width: `${Math.round((link.totalClicks / maxClicks) * 100)}%` }}
+                                                          />
+                                                        </div>
+                                                        <span style={{ fontSize: 10, color: 'var(--t3)', fontFamily: 'var(--mono)', minWidth: 30 }}>
+                                                          {Math.round((link.totalClicks / maxClicks) * 100)}%
+                                                        </span>
+                                                      </div>
+                                                    </td>
+                                                    <td>
+                                                      <span style={{ fontSize: 11, color: 'var(--t3)' }}>
+                                                        {link.lastClicked
+                                                          ? new Date(link.lastClicked).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+                                                          : '—'}
+                                                      </span>
+                                                    </td>
+                                                  </tr>
+                                                ))
+                                              })()}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      </>
+                                    )}
+
+                                    {activityData.linkStats.length === 0 && (
+                                      <div style={{ textAlign: 'center', padding: '20px', color: 'var(--t3)', fontSize: 12 }}>
+                                        No links assigned to this user yet.
+                                      </div>
+                                    )}
+                                  </>
+                                ) : null}
+
+                                <div className="sum-panel-footer">
+                                  <button className="sum-btn sum-btn-ghost" onClick={closePanel}>Close</button>
+                                </div>
                               </div>
                             </td>
                           </tr>

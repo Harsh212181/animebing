@@ -1,4 +1,4 @@
- import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api/short-users';
 
@@ -119,6 +119,43 @@ const Field: React.FC<{ label: string; icon: React.ReactNode; children: React.Re
   </div>
 );
 
+// ─── Gmail Linked Banner (sirf save ke baad 3s ke liye) ───────────────────────
+const GmailLinkedBanner: React.FC<{ email: string; triggerKey: number }> = ({ email, triggerKey }) => {
+  const [visible, setVisible] = useState(false);
+  const [fading, setFading] = useState(false);
+
+  useEffect(() => {
+    // triggerKey 0 matlab mount pe nahi dikhna — sirf jab badhega tab
+    if (triggerKey === 0) return;
+
+    setVisible(true);
+    setFading(false);
+
+    const fadeTimer = setTimeout(() => setFading(true), 2400);
+    const hideTimer = setTimeout(() => setVisible(false), 3000);
+
+    return () => {
+      clearTimeout(fadeTimer);
+      clearTimeout(hideTimer);
+    };
+  }, [triggerKey]);
+
+  if (!visible) return null;
+
+  return (
+    <div
+      style={{ transition: 'opacity 0.6s ease', opacity: fading ? 0 : 1 }}
+      className="flex items-center gap-2.5 px-5 py-3 border-t border-gray-100 bg-emerald-50"
+    >
+      <span className="text-emerald-500">{Icon.gmail}</span>
+      <p className="text-sm text-emerald-700">
+        <span className="font-medium">Gmail linked:</span>{' '}
+        <span className="text-emerald-600">{email}</span>
+      </p>
+    </div>
+  );
+};
+
 // ─── Profile Tab ───────────────────────────────────────────────────────────────
 const ProfileTab: React.FC<{
   user: any;
@@ -138,6 +175,8 @@ const ProfileTab: React.FC<{
     gender:   user.profile?.gender   || '',
   });
   const [saving, setSaving] = useState(false);
+  // 0 = kabhi save nahi hua; badhne par banner trigger hoga
+  const [gmailBannerKey, setGmailBannerKey] = useState(0);
 
   const set = (key: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm(f => ({ ...f, [key]: e.target.value }));
@@ -159,8 +198,16 @@ const ProfileTab: React.FC<{
         }),
       });
       const data = await res.json();
-      if (!res.ok) onToast(data.error || 'Save failed', 'error');
-      else { onToast('Profile saved successfully.', 'success'); onProfileUpdate(); }
+      if (!res.ok) {
+        onToast(data.error || 'Save failed', 'error');
+      } else {
+        onToast('Profile saved successfully.', 'success');
+        onProfileUpdate();
+        // Sirf save success hone par banner trigger karo
+        if (user.gmailLinked) {
+          setGmailBannerKey(k => k + 1);
+        }
+      }
     } catch { onToast('Network error', 'error'); }
     finally { setSaving(false); }
   };
@@ -194,15 +241,9 @@ const ProfileTab: React.FC<{
           </div>
         </div>
 
-        {/* Gmail linked banner */}
+        {/* Gmail linked banner — sirf save ke baad 3s ke liye */}
         {user.gmailLinked && (
-          <div className="flex items-center gap-2.5 px-5 py-3 border-t border-gray-100 bg-emerald-50">
-            <span className="text-emerald-500">{Icon.gmail}</span>
-            <p className="text-sm text-emerald-700">
-              <span className="font-medium">Gmail linked:</span>{' '}
-              <span className="text-emerald-600">{user.gmailLinked}</span>
-            </p>
-          </div>
+          <GmailLinkedBanner email={user.gmailLinked} triggerKey={gmailBannerKey} />
         )}
       </div>
 

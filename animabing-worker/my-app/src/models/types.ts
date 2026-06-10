@@ -1,4 +1,4 @@
-import { ObjectId } from 'mongodb'
+ import { ObjectId } from 'mongodb'
 
 // ============ ANIME ============
 export interface IVote {
@@ -336,4 +336,13 @@ export interface IShortMessage {
   readByAdmin: boolean
   readByUser: boolean
   createdAt?: Date
+}
+
+// ============ SHORT USER LOGIN LOG ============
+export interface IShortUserLogin {
+  _id?: ObjectId
+  userId: ObjectId
+  username: string
+  loginAt: Date
+  date: string   // "YYYY-MM-DD" format — dedup ke liye
 }

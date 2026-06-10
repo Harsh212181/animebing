@@ -80,6 +80,16 @@ shortUserRoutes.post('/login', async (c) => {
       { id: user._id!.toString(), username: user.username, role: 'shortuser' },
       c.env.JWT_SECRET
     )
+
+    // Login track karo
+    const today = new Date()
+    const dateStr = today.toISOString().split('T')[0] // "2025-06-10"
+    await db.collection('shortlogins').updateOne(
+      { userId: user._id, date: dateStr },
+      { $setOnInsert: { userId: user._id, username: user.username, loginAt: today, date: dateStr } },
+      { upsert: true }
+    )
+
     return c.json({
       success: true,
       token,
@@ -135,6 +145,16 @@ shortUserRoutes.post('/login/gmail', async (c) => {
       { id: user._id!.toString(), username: user.username, role: 'shortuser' },
       c.env.JWT_SECRET
     )
+
+    // Login track karo
+    const today = new Date()
+    const dateStr = today.toISOString().split('T')[0] // "2025-06-10"
+    await db.collection('shortlogins').updateOne(
+      { userId: user._id, date: dateStr },
+      { $setOnInsert: { userId: user._id, username: user.username, loginAt: today, date: dateStr } },
+      { upsert: true }
+    )
+
     return c.json({
       success: true,
       token,
@@ -154,11 +174,28 @@ shortUserRoutes.post('/login/gmail', async (c) => {
   }
 })
 
-// ============ USER DASHBOARD ============
+// ============ USER DASHBOARD (with daily tracking) ============
 shortUserRoutes.get('/dashboard', userAuth, async (c) => {
   try {
     const { id } = c.get('shortUser')
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    // ✅ Track daily visit — app open hone par
+    const today = new Date().toISOString().split('T')[0]
+    await db.collection('shortlogins').updateOne(
+      { userId: new ObjectId(id), date: today },
+      {
+        $setOnInsert: {
+          userId: new ObjectId(id),
+          date: today,
+          loginAt: new Date(),      // ← yeh add kiya
+          firstSeenAt: new Date()
+        },
+        $set: { lastSeenAt: new Date() },
+        $inc: { openCount: 1 }  // din mein kitni baar khola
+      },
+      { upsert: true }
+    )
 
     const user = await db.collection('shortusers').findOne(
       { _id: new ObjectId(id) }
@@ -902,6 +939,80 @@ shortUserRoutes.delete('/admin/links/by-id/:id', adminAuth, async (c) => {
       return c.json({ error: 'Link not found' }, 404)
     }
     return c.json({ success: true, message: 'Link deleted' })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============ ADMIN — USER LOGIN ACTIVITY ============
+shortUserRoutes.get('/admin/users/:id/activity', adminAuth, async (c) => {
+  try {
+    const userId = c.req.param('id')
+    const days = parseInt(c.req.query('days') || '30')
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    // Date range
+    const endDate = new Date()
+    const startDate = new Date()
+    startDate.setDate(startDate.getDate() - (days - 1))
+    startDate.setHours(0, 0, 0, 0)
+
+    // Login logs fetch
+    const loginLogs = await db.collection('shortlogins')
+      .find({ userId: new ObjectId(userId), loginAt: { $gte: startDate } })
+      .sort({ loginAt: 1 })
+      .toArray()
+
+    const loginDates = new Set(loginLogs.map((l: any) => l.date))
+
+    // Generate full calendar
+    const calendar = []
+    for (let i = 0; i < days; i++) {
+      const d = new Date(startDate)
+      d.setDate(d.getDate() + i)
+      const dateStr = d.toISOString().split('T')[0]
+      calendar.push({
+        date: dateStr,
+        loggedIn: loginDates.has(dateStr),
+        label: d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+      })
+    }
+
+    // Per-link click stats
+    const links = await db.collection('shortlinks')
+      .find({ userId: new ObjectId(userId) })
+      .sort({ clicks: -1 })
+      .toArray()
+
+    const linkStats = await Promise.all(links.map(async (link: any) => {
+      const clicksInRange = await db.collection('shortclicks').countDocuments({
+        code: link.code,
+        clickedAt: { $gte: startDate }
+      })
+      return {
+        _id: link._id,
+        code: link.code,
+        label: link.label,
+        url: link.url,
+        totalClicks: link.clicks || 0,
+        clicksInRange,
+        lastClicked: link.lastClicked,
+        createdAt: link.createdAt
+      }
+    }))
+
+    const activeDays = loginDates.size
+    const absentDays = days - activeDays
+
+    return c.json({
+      calendar,
+      activeDays,
+      absentDays,
+      totalDays: days,
+      loginRate: days > 0 ? Math.round((activeDays / days) * 100) : 0,
+      linkStats,
+      lastLogin: loginLogs.length > 0 ? loginLogs[loginLogs.length - 1].loginAt : null
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
