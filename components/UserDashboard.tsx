@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+ import React, { useState, useEffect, useRef } from 'react';
 import OverviewTab from './dashboard/OverviewTab';
 import LinksTab from './dashboard/LinksTab';
 import ProfileTab from './dashboard/ProfileTab';
 import MessagesTab from './dashboard/MessagesTab';
 import RequestsTab from './dashboard/RequestsTab';
 import CreateLinkTab from './dashboard/CreateLinkTab';
+import GettingStartedTab from './dashboard/GettingStartedTab'; // ← added
 
 const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api/short-users';
 
@@ -409,7 +410,8 @@ const UserDashboard: React.FC = () => {
     { id: 'profile',   label: 'Profile' },
     { id: 'messages',  label: 'Messages', badge: dashData.unreadMessages },
     { id: 'requests',  label: 'Requests', badge: (dashData.pendingPaymentRequest || dashData.pendingLinkRequest) ? 1 : 0 },
-    ...(showCreateTab ? [{ id: 'create', label: 'Create Link' }] : []),   // ✅ '+' removed
+    ...(showCreateTab ? [{ id: 'create', label: 'Create Link' }] : []),
+    { id: 'getting-started', label: 'Creator Guide' },    
   ];
 
   const switchTab = (tabId: string) => { setActiveTab(tabId); setMenuOpen(false); };
@@ -676,6 +678,7 @@ const UserDashboard: React.FC = () => {
             existingLinksCount={dashData.links.length}
           />
         )}
+        {activeTab === 'getting-started' && <GettingStartedTab />}   {/* ✅ Start tab rendering */}
       </main>
 
       {showAvatarPicker && (
