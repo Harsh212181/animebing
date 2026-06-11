@@ -1,5 +1,5 @@
 // src/components/AnalyticsTracker.tsx
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 
 declare global {
@@ -48,7 +48,7 @@ function sendToBackend(path: string) {
   const { pageType, slug } = getPageMeta(path);
   const payload = { path, pageType, slug, sessionId: getSessionId() };
 
-  // केवल StrictMode के कारण एक ही रेंडर में डुप्लीकेट भेजने से रोकें
+  // StrictMode double-mount / re-render guard
   if (path === lastSentPath) return;
   lastSentPath = path;
 
@@ -63,16 +63,12 @@ function sendToBackend(path: string) {
 // ─── Component ────────────────────────────────────────────────────────────
 const AnalyticsTracker = () => {
   const location = useLocation();
-  const sentRef = useRef<boolean>(false);
 
   useEffect(() => {
     const currentPath = location.pathname + location.search;
 
-    // पिछला time‑on‑page कोड हटा दिया
-    if (!sentRef.current) {
-      sentRef.current = true;
-      sendToBackend(currentPath);
-    }
+    // ✅ हर रूट चेंज पर एक पेज व्यू भेजें
+    sendToBackend(currentPath);
 
     // GA4
     if (typeof window.gtag === 'function') {
