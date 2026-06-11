@@ -41,47 +41,16 @@ function getSessionId(): string {
   return id;
 }
 
-// ─── Session-level dedupe: एक सेशन में एक पथ सिर्फ 1 बार काउंट हो ──────
-const VISITED_KEY = '_ab_visited_paths';
-
-function hasVisitedInSession(path: string): boolean {
-  try {
-    const raw = sessionStorage.getItem(VISITED_KEY);
-    const visited: string[] = raw ? JSON.parse(raw) : [];
-    return visited.includes(path);
-  } catch {
-    return false;
-  }
-}
-
-function markVisitedInSession(path: string) {
-  try {
-    const raw = sessionStorage.getItem(VISITED_KEY);
-    const visited: string[] = raw ? JSON.parse(raw) : [];
-    if (!visited.includes(path)) {
-      visited.push(path);
-      sessionStorage.setItem(VISITED_KEY, JSON.stringify(visited));
-    }
-  } catch {
-    // sessionStorage unavailable — ignore
-  }
-}
-
 // ─── Module-level guard: same render-cycle / StrictMode double-fire ─────
 let lastSentPath = '';
 
-// ✅ FIX: timeOnPage पूरी तरह हटाया, अब हर पेज सिर्फ पहली बार भेजा जाएगा
 function sendToBackend(path: string) {
   const { pageType, slug } = getPageMeta(path);
   const payload = { path, pageType, slug, sessionId: getSessionId() };
 
-  // StrictMode double-mount / re-render guard
+  // केवल StrictMode के कारण एक ही रेंडर में डुप्लीकेट भेजने से रोकें
   if (path === lastSentPath) return;
   lastSentPath = path;
-
-  // Session-level dedupe: अगर इस सेशन में पहले ही भेज चुके हैं तो न भेजें
-  if (hasVisitedInSession(path)) return;
-  markVisitedInSession(path);
 
   fetch(`${API_BASE}/analytics/pageview`, {
     method: 'POST',
@@ -94,20 +63,14 @@ function sendToBackend(path: string) {
 // ─── Component ────────────────────────────────────────────────────────────
 const AnalyticsTracker = () => {
   const location = useLocation();
-  const enterTimeRef = useRef<number>(Date.now());
-  const prevPathRef = useRef<string>('');
   const sentRef = useRef<boolean>(false);
 
   useEffect(() => {
     const currentPath = location.pathname + location.search;
 
-    // ❌ time‑on‑page भेजने का कोड हटा दिया (यही डबल काउंटिंग का कारण था)
-
-    // Send new page view only once
+    // पिछला time‑on‑page कोड हटा दिया
     if (!sentRef.current) {
       sentRef.current = true;
-      enterTimeRef.current = Date.now();
-      prevPathRef.current = currentPath;
       sendToBackend(currentPath);
     }
 
@@ -124,8 +87,6 @@ const AnalyticsTracker = () => {
       console.log('📊 Page View:', { path: currentPath, ...getPageMeta(location.pathname) });
     }
   }, [location]);
-
-  // ❌ Tab hide पर time‑on‑page भेजना हटाया
 
   return null;
 };
