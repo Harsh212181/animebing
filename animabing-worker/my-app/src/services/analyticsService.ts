@@ -192,13 +192,27 @@ export async function getPageDetail(
   since.setDate(since.getDate() - days)
   const sinceStr = since.toISOString().slice(0, 10)
 
-  const daily = await db
+  // Aggregate daily views for this path
+  const rawDaily = await db
     .collection('pageview_daily')
-    .find({ path, date: { $gte: sinceStr } })
-    .sort({ date: 1 })
+    .aggregate([
+      { $match: { path, date: { $gte: sinceStr } } },
+      { $group: { _id: '$date', views: { $sum: '$views' } } },
+      { $sort: { _id: 1 } },
+    ])
     .toArray()
 
-  const total = daily.reduce((s: number, d: any) => s + (d.views || 0), 0)
+  // Zero-fill missing dates so chart always has full range
+  const dailyMap = new Map<string, number>(rawDaily.map((d: any) => [d._id, d.views]))
+  const daily: { date: string; views: number }[] = []
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date()
+    d.setDate(d.getDate() - i)
+    const dateStr = d.toISOString().slice(0, 10)
+    daily.push({ date: dateStr, views: dailyMap.get(dateStr) || 0 })
+  }
+
+  const total = daily.reduce((s, d) => s + d.views, 0)
 
   return { path, total, daily }
 }
