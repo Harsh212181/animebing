@@ -1,19 +1,19 @@
 import { getDb } from './mongoService'
 
 export interface PageViewRecord {
-  path: string           // e.g. "/anime/naruto"
-  pageType: string       // "anime-detail" | "download" | "anime-list" | "home" | "contact" | "other"
-  slug?: string          // anime slug (if detail/download page)
-  animeTitle?: string    // anime title for display
+  path: string
+  pageType: string
+  slug?: string
+  animeTitle?: string
   ip: string
   country?: string
-  device?: string        // "mobile" | "desktop" | "tablet"
+  device?: string
   browser?: string
   referrer?: string
   sessionId?: string
-  timeOnPage?: number    // seconds
+  timeOnPage?: number
   timestamp: Date
-  date: string           // "YYYY-MM-DD" — grouping ke liye
+  date: string
 }
 
 // ─── Track single page view ───────────────────────────────────────────────
@@ -54,33 +54,38 @@ export async function trackPageView(
 export async function getPageViewStats(
   mongoUri: string,
   dbName: string,
-  days = 7
+  days = 7,
+  device?: string   // ✅ NEW: optional device filter
 ) {
   const db = await getDb(mongoUri, dbName)
   const since = new Date()
   since.setDate(since.getDate() - days)
   const sinceStr = since.toISOString().slice(0, 10)
 
+  // ✅ Base match — device filter lagao agar diya ho
+  const baseMatch: Record<string, any> = { date: { $gte: sinceStr } }
+  if (device) baseMatch.device = device
+
   // Total views last N days
-  const totalViews = await db.collection('pageviews').countDocuments({
-    date: { $gte: sinceStr },
-  })
+  const totalViews = await db.collection('pageviews').countDocuments(baseMatch)
 
   // Today's views
   const today = new Date().toISOString().slice(0, 10)
-  const todayViews = await db.collection('pageviews').countDocuments({ date: today })
+  const todayMatch: Record<string, any> = { date: today }
+  if (device) todayMatch.device = device
+  const todayViews = await db.collection('pageviews').countDocuments(todayMatch)
 
-  // Views per day (for chart)
+  // ✅ Daily chart — device filter ke saath pageviews collection use karo
   const dailyRaw = await db
-    .collection('pageview_daily')
+    .collection('pageviews')
     .aggregate([
-      { $match: { date: { $gte: sinceStr } } },
-      { $group: { _id: '$date', views: { $sum: '$views' } } },
+      { $match: baseMatch },
+      { $group: { _id: '$date', views: { $sum: 1 } } },
       { $sort: { _id: 1 } },
     ])
     .toArray()
 
-  // ─── Zero-fill missing dates so chart always has `days` points ─────────
+  // Zero-fill missing dates
   const dailyMap = new Map<string, number>(dailyRaw.map((d: any) => [d._id, d.views]))
   const dailyChart: { date: string; views: number }[] = []
   for (let i = days - 1; i >= 0; i--) {
@@ -90,36 +95,59 @@ export async function getPageViewStats(
     dailyChart.push({ date: dateStr, views: dailyMap.get(dateStr) || 0 })
   }
 
-  // Top pages
-  const topPages = await db
-    .collection('pageview_daily')
-    .aggregate([
-      { $match: { date: { $gte: sinceStr } } },
-      {
-        $group: {
-          _id: '$path',
-          views: { $sum: '$views' },
-          pageType: { $first: '$pageType' },
-          animeTitle: { $first: '$animeTitle' },
-          slug: { $first: '$slug' },
+  // ✅ Top pages — device filter ho toh pageviews collection use karo, warna pageview_daily (fast)
+  let topPages: any[]
+  if (device) {
+    // pageviews collection se device-filtered top pages
+    topPages = await db
+      .collection('pageviews')
+      .aggregate([
+        { $match: baseMatch },
+        {
+          $group: {
+            _id: '$path',
+            views: { $sum: 1 },
+            pageType: { $first: '$pageType' },
+            animeTitle: { $first: '$animeTitle' },
+            slug: { $first: '$slug' },
+          },
         },
-      },
-      { $sort: { views: -1 } },
-      { $limit: 20 },
-    ])
-    .toArray()
+        { $sort: { views: -1 } },
+        { $limit: 20 },
+      ])
+      .toArray()
+  } else {
+    // No device filter — pageview_daily use karo (fast)
+    topPages = await db
+      .collection('pageview_daily')
+      .aggregate([
+        { $match: { date: { $gte: sinceStr } } },
+        {
+          $group: {
+            _id: '$path',
+            views: { $sum: '$views' },
+            pageType: { $first: '$pageType' },
+            animeTitle: { $first: '$animeTitle' },
+            slug: { $first: '$slug' },
+          },
+        },
+        { $sort: { views: -1 } },
+        { $limit: 20 },
+      ])
+      .toArray()
+  }
 
-  // Views by page type
+  // Views by page type — device filter ke saath
   const byType = await db
-    .collection('pageview_daily')
+    .collection('pageviews')
     .aggregate([
-      { $match: { date: { $gte: sinceStr } } },
-      { $group: { _id: '$pageType', views: { $sum: '$views' } } },
+      { $match: baseMatch },
+      { $group: { _id: '$pageType', views: { $sum: 1 } } },
       { $sort: { views: -1 } },
     ])
     .toArray()
 
-  // Device breakdown (last N days)
+  // Device breakdown — always from full data (no device filter here)
   const byDevice = await db
     .collection('pageviews')
     .aggregate([
@@ -129,10 +157,10 @@ export async function getPageViewStats(
     ])
     .toArray()
 
-  // Unique IPs (approximate unique visitors)
+  // Unique visitors
   const uniqueVisitors = await db
     .collection('pageviews')
-    .distinct('ip', { date: { $gte: sinceStr } })
+    .distinct('ip', baseMatch)
     .then((arr: string[]) => arr.length)
 
   return {

@@ -1,4 +1,16 @@
- import React from 'react';
+ import React, { useEffect, useRef } from 'react';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  LineController,
+  Filler,
+  Tooltip as ChartTooltip,
+} from 'chart.js';
+
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, LineController, Filler, ChartTooltip);
 
 const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api/short-users';
 
@@ -25,102 +37,121 @@ interface DashboardData {
   pendingLinkRequest: boolean;
 }
 
-// ─── Clicks Line Chart ────────────────────────────────────────────────────────
+// ─── Professional Line Chart (Chart.js) ───────────────────────────────────
 
 const ClicksLineChart: React.FC<{ data: Array<{ date: string; clicks: number }> }> = ({ data }) => {
-  const [hoverIdx, setHoverIdx] = React.useState<number | null>(null);
-  const svgRef = React.useRef<SVGSVGElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const chartRef = useRef<ChartJS | null>(null);
 
-  if (!data.length)
+  useEffect(() => {
+    if (!canvasRef.current || !data.length) return;
+
+    if (chartRef.current) {
+      chartRef.current.destroy();
+      chartRef.current = null;
+    }
+
+    const ctx = canvasRef.current.getContext('2d');
+    if (!ctx) return;
+
+    const grad = ctx.createLinearGradient(0, 0, 0, 200);
+    grad.addColorStop(0, 'rgba(99,102,241,0.25)');
+    grad.addColorStop(0.7, 'rgba(99,102,241,0.05)');
+    grad.addColorStop(1, 'rgba(99,102,241,0.00)');
+
+    chartRef.current = new ChartJS(ctx, {
+      type: 'line',
+      data: {
+        labels: data.map(d => d.date),
+        datasets: [
+          {
+            data: data.map(d => d.clicks),
+            borderColor: '#6366f1',
+            borderWidth: 2.5,
+            backgroundColor: grad,
+            fill: true,
+            tension: 0.4,
+            pointRadius: 3,
+            pointBackgroundColor: '#6366f1',
+            pointBorderColor: '#ffffff',
+            pointBorderWidth: 2,
+            pointHoverRadius: 6,
+            pointHoverBackgroundColor: '#6366f1',
+            pointHoverBorderColor: '#fff',
+            pointHoverBorderWidth: 2,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 500, easing: 'easeInOutQuart' },
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1f2937',
+            borderColor: 'rgba(255,255,255,0.08)',
+            borderWidth: 1,
+            titleColor: '#9ca3af',
+            bodyColor: '#ffffff',
+            titleFont: { size: 11 },
+            bodyFont: { size: 13, weight: 'bold' as const },
+            padding: 10,
+            cornerRadius: 6,
+            displayColors: false,
+            callbacks: {
+              title: (items) => items[0]?.label ?? '',
+              label: (item) => `${Number(item.raw).toLocaleString()} clicks`,
+            },
+          },
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            border: { display: false },
+            ticks: {
+              color: '#9ca3af',
+              font: { size: 11 },
+              maxRotation: 0,
+              autoSkip: true,
+            },
+          },
+          y: {
+            beginAtZero: true,
+            grid: { color: 'rgba(0,0,0,0.04)' },
+            border: { display: false },
+            ticks: {
+              color: '#9ca3af',
+              font: { size: 11 },
+              maxTicksLimit: 5,
+              precision: 0,
+              callback: (v) =>
+                Number(v) >= 1000 ? (Number(v) / 1000).toFixed(1) + 'k' : v,
+            },
+          },
+        },
+      },
+    });
+
+    return () => {
+      chartRef.current?.destroy();
+      chartRef.current = null;
+    };
+  }, [data]);
+
+  if (!data.length) {
     return (
       <div className="flex items-center justify-center h-40 text-sm text-gray-400">
         No click data yet
       </div>
     );
-
-  const W = 620, H = 140;
-  const ml = 44, mr = 16, mt = 16, mb = 28;
-  const iW = W - ml - mr, iH = H - mt - mb;
-
-  const maxVal = Math.max(...data.map(d => d.clicks), 1);
-  const yMax = Math.ceil(maxVal * 1.15);
-
-  const px = (i: number) => ml + (i / Math.max(data.length - 1, 1)) * iW;
-  const py = (c: number) => mt + iH - (c / yMax) * iH;
-
-  const pts = data.map((d, i) => ({ x: px(i), y: py(d.clicks), ...d }));
-  const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
-  const area = `${line} L ${px(data.length - 1).toFixed(1)} ${mt + iH} L ${ml} ${mt + iH} Z`;
-
-  const yTicks = [0, Math.round(yMax / 2), yMax];
-
-  const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (!svgRef.current) return;
-    const rect = svgRef.current.getBoundingClientRect();
-    const xRel = ((e.clientX - rect.left) / rect.width) * W;
-    let best = -1, bestD = Infinity;
-    pts.forEach((p, i) => { const d = Math.abs(p.x - xRel); if (d < bestD) { bestD = d; best = i; } });
-    setHoverIdx(best !== -1 && bestD < 35 ? best : null);
-  };
+  }
 
   return (
-    <svg
-      ref={svgRef}
-      viewBox={`0 0 ${W} ${H}`}
-      className="w-full h-auto"
-      onMouseMove={onMove}
-      onMouseLeave={() => setHoverIdx(null)}
-    >
-      <defs>
-        <linearGradient id="cg-area" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#6366f1" stopOpacity="0.13" />
-          <stop offset="100%" stopColor="#6366f1" stopOpacity="0.01" />
-        </linearGradient>
-      </defs>
-
-      {/* Grid */}
-      {yTicks.map(t => {
-        const y = mt + iH - (t / yMax) * iH;
-        return (
-          <g key={t}>
-            <line x1={ml} y1={y} x2={ml + iW} y2={y} stroke="#e5e7eb" strokeWidth="0.75" strokeDasharray="4 3" />
-            <text x={ml - 8} y={y + 4} fill="#9ca3af" fontSize="10" textAnchor="end">{t}</text>
-          </g>
-        );
-      })}
-
-      {/* Axes */}
-      <line x1={ml} y1={mt} x2={ml} y2={mt + iH} stroke="#d1d5db" strokeWidth="1" />
-      <line x1={ml} y1={mt + iH} x2={ml + iW} y2={mt + iH} stroke="#d1d5db" strokeWidth="1" />
-
-      {/* Area + Line */}
-      <path d={area} fill="url(#cg-area)" />
-      <path d={line} fill="none" stroke="#6366f1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-
-      {/* Points */}
-      {pts.map((p, i) => (
-        <g key={i}>
-          <circle cx={p.x} cy={p.y} r={hoverIdx === i ? 5.5 : 3.5} fill="#6366f1" stroke="white" strokeWidth="2" />
-          {hoverIdx !== i && (
-            <text x={p.x} y={p.y - 9} fill="#374151" fontSize="10" textAnchor="middle">{p.clicks}</text>
-          )}
-          <text x={p.x} y={mt + iH + 18} fill="#9ca3af" fontSize="10" textAnchor="middle">{p.date}</text>
-        </g>
-      ))}
-
-      {/* Hover tooltip */}
-      {hoverIdx !== null && (() => {
-        const p = pts[hoverIdx];
-        const tx = Math.min(Math.max(p.x, ml + 32), ml + iW - 32);
-        return (
-          <g>
-            <line x1={p.x} y1={mt} x2={p.x} y2={mt + iH} stroke="#6366f1" strokeWidth="1" strokeDasharray="3 3" strokeOpacity="0.5" />
-            <rect x={tx - 28} y={p.y - 30} width={56} height={22} rx="5" fill="#1f2937" />
-            <text x={tx} y={p.y - 14} fill="#f9fafb" fontSize="11" textAnchor="middle" fontWeight="500">{p.clicks} clicks</text>
-          </g>
-        );
-      })()}
-    </svg>
+    <div style={{ position: 'relative', width: '100%', height: '200px' }}>
+      <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: '200px' }} />
+    </div>
   );
 };
 
@@ -256,7 +287,7 @@ const OverviewTab: React.FC<{ data: DashboardData; onRefresh: () => void; onToas
             Refresh
           </button>
         </div>
-          <ClicksLineChart data={last7Days} />
+        <ClicksLineChart data={last7Days} />
       </div>
 
       {/* ── Bottom Row ── */}

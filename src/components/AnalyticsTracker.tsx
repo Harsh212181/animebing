@@ -41,7 +41,33 @@ function getSessionId(): string {
   return id;
 }
 
-// ─── Dedupe: same path ka repeat pageview tab tak block jab tak path change na ho ──
+// ─── Session-level dedupe: ek session me ek path sirf 1 baar count ──────
+const VISITED_KEY = '_ab_visited_paths';
+
+function hasVisitedInSession(path: string): boolean {
+  try {
+    const raw = sessionStorage.getItem(VISITED_KEY);
+    const visited: string[] = raw ? JSON.parse(raw) : [];
+    return visited.includes(path);
+  } catch {
+    return false;
+  }
+}
+
+function markVisitedInSession(path: string) {
+  try {
+    const raw = sessionStorage.getItem(VISITED_KEY);
+    const visited: string[] = raw ? JSON.parse(raw) : [];
+    if (!visited.includes(path)) {
+      visited.push(path);
+      sessionStorage.setItem(VISITED_KEY, JSON.stringify(visited));
+    }
+  } catch {
+    // sessionStorage unavailable — ignore
+  }
+}
+
+// ─── Module-level guard: same render-cycle / StrictMode double-fire ─────
 let lastSentPath = '';
 
 function sendToBackend(path: string, timeOnPage?: number) {
@@ -49,9 +75,13 @@ function sendToBackend(path: string, timeOnPage?: number) {
   const payload: Record<string, any> = { path, pageType, slug, sessionId: getSessionId() };
 
   if (timeOnPage === undefined) {
-    // StrictMode double-mount / re-render guard — same path dobara count nahi hoga
+    // StrictMode double-mount / re-render guard
     if (path === lastSentPath) return;
     lastSentPath = path;
+
+    // Session-level dedupe — same page dobara visit/refresh pe count na ho
+    if (hasVisitedInSession(path)) return;
+    markVisitedInSession(path);
   }
 
   if (timeOnPage !== undefined) payload.timeOnPage = timeOnPage;

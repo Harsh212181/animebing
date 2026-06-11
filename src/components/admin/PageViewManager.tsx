@@ -1,4 +1,4 @@
- // src/components/admin/PageViewManager.tsx
+// src/components/admin/PageViewManager.tsx
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
@@ -27,6 +27,7 @@ interface TopPage {
   pageType: string;
   animeTitle?: string;
   slug?: string;
+  device?: string; // present only when API returns device-filtered data
 }
 interface ByType { type: string; views: number }
 interface ByDevice { device: string; count: number }
@@ -80,22 +81,27 @@ const PAGE_TYPE_LABEL: Record<string, string> = {
 };
 
 // ─── Google Analytics Style Line Chart ───────────────────────────────────
-const GALineChart: React.FC<{ data: DailyPoint[]; days: number }> = ({ data, days }) => {
+const GALineChart: React.FC<{ data: DailyPoint[]; days: number; height?: number }> = ({ data, days, height = 220 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const chartRef = useRef<ChartJS | null>(null);
 
   useEffect(() => {
-    if (!canvasRef.current || !data.length) return;
+    if (!canvasRef.current) return;
 
     if (chartRef.current) {
       chartRef.current.destroy();
       chartRef.current = null;
     }
 
+    // ✅ FIX: Even if data is empty, still render chart with zeros
+    const chartData = data.length > 0 ? data : [];
+
+    if (chartData.length === 0) return;
+
     const ctx = canvasRef.current.getContext('2d');
     if (!ctx) return;
 
-    const grad = ctx.createLinearGradient(0, 0, 0, 176);
+    const grad = ctx.createLinearGradient(0, 0, 0, height);
     grad.addColorStop(0, 'rgba(167,139,250,0.22)');
     grad.addColorStop(0.7, 'rgba(167,139,250,0.05)');
     grad.addColorStop(1, 'rgba(167,139,250,0.00)');
@@ -103,10 +109,10 @@ const GALineChart: React.FC<{ data: DailyPoint[]; days: number }> = ({ data, day
     chartRef.current = new ChartJS(ctx, {
       type: 'line',
       data: {
-        labels: data.map(d => d.date.slice(5)),
+        labels: chartData.map(d => d.date.slice(5)),
         datasets: [
           {
-            data: data.map(d => d.views),
+            data: chartData.map(d => d.views),
             borderColor: '#a78bfa',
             borderWidth: 2,
             backgroundColor: grad,
@@ -156,12 +162,14 @@ const GALineChart: React.FC<{ data: DailyPoint[]; days: number }> = ({ data, day
             },
           },
           y: {
+            beginAtZero: true,
             grid: { color: 'rgba(255,255,255,0.05)' },
             border: { display: false },
             ticks: {
               color: '#6b7280',
               font: { size: 11 },
               maxTicksLimit: 5,
+              precision: 0,
               callback: (v) =>
                 Number(v) >= 1000 ? (Number(v) / 1000).toFixed(1) + 'k' : v,
             },
@@ -174,19 +182,19 @@ const GALineChart: React.FC<{ data: DailyPoint[]; days: number }> = ({ data, day
       chartRef.current?.destroy();
       chartRef.current = null;
     };
-  }, [data, days]);
+  }, [data, days, height]);
 
   if (!data.length) {
     return (
-      <div className="flex items-center justify-center h-44 text-gray-600 text-xs">
+      <div className="flex items-center justify-center text-gray-600 text-xs" style={{ height }}>
         No data yet — start getting traffic!
       </div>
     );
   }
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '176px' }}>
-      <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: '176px' }} />
+    <div style={{ position: 'relative', width: '100%', height: `${height}px` }}>
+      <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: `${height}px` }} />
     </div>
   );
 };
@@ -261,20 +269,42 @@ const PageDetailModal: React.FC<{
         params: { path: page.path, days: 30 },
         headers: { Authorization: `Bearer ${token}` },
       })
-      .then(r => setDetail(r.data))
+      .then(r => {
+        const data = r.data;
+        // ✅ FIX: Normalize daily field — handle both 'daily' and 'dailyChart' keys, and missing/null cases
+        const rawDaily = data.daily ?? data.dailyChart ?? [];
+        const normalizedDaily: DailyPoint[] = rawDaily.map((d: any) => ({
+          date: d.date ?? d.day ?? '',
+          views: Number(d.views ?? d.count ?? d.pageViews ?? 0),
+        })).filter((d: DailyPoint) => d.date !== '');
+
+        setDetail({ path: data.path ?? page.path, total: data.total ?? 0, daily: normalizedDaily });
+      })
       .catch(() => toast.error('Failed to load page detail'))
       .finally(() => setLoading(false));
   }, [page.path]);
+
+  // ✅ Build full URL for the link
+  const fullUrl = page.path.startsWith('http') ? page.path : `https://animabingwatch.workers.dev${page.path}`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="bg-[#13121e] border border-white/10 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-4 border-b border-white/[0.06]">
           <div className="min-w-0">
-            <p className="text-xs text-gray-500 truncate">{page.path}</p>
+            {/* ✅ FIX: Show clickable link below page title */}
             <p className="text-sm font-semibold text-white truncate">
               {page.animeTitle || PAGE_TYPE_LABEL[page.pageType] || page.pageType}
             </p>
+            <a
+              href={fullUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-purple-400 hover:text-purple-300 truncate block mt-0.5 underline underline-offset-2 transition-colors"
+              title={fullUrl}
+            >
+              {page.path}
+            </a>
           </div>
           <button
             onClick={onClose}
@@ -296,9 +326,11 @@ const PageDetailModal: React.FC<{
               </div>
               <div>
                 <p className="text-xs text-gray-500 mb-3">Daily views (last 30 days)</p>
+                {/* ✅ FIX: Always render GALineChart — it handles empty state internally */}
                 <GALineChart
-                  data={detail.daily.map((d: any) => ({ date: d.date, views: d.views }))}
+                  data={detail.daily}
                   days={30}
+                  height={180}
                 />
               </div>
             </>
@@ -322,6 +354,7 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
   const [days, setDays] = useState(7);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [deviceFilter, setDeviceFilter] = useState('all');
   const [selectedPage, setSelectedPage] = useState<TopPage | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const PER_PAGE = 15;
@@ -329,8 +362,11 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
   const fetchStats = useCallback(async () => {
     setLoading(true);
     try {
+      const params: Record<string, any> = { days };
+      if (deviceFilter !== 'all') params.device = deviceFilter;
+
       const { data } = await axios.get(`${API_BASE}/analytics/stats`, {
-        params: { days },
+        params,
         headers: { Authorization: `Bearer ${token}` },
       });
       setStats(data);
@@ -340,9 +376,12 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
     } finally {
       setLoading(false);
     }
-  }, [days, token]);
+  }, [days, token, deviceFilter]);
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
+
+  // Get unique devices from byDevice data (always from full stats)
+  const allDevices = stats?.byDevice?.map(d => d.device) ?? [];
 
   // ── Filtered pages ──
   const filteredPages = (stats?.topPages || []).filter(p => {
@@ -388,7 +427,7 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
           <h2 className="text-base font-semibold text-white">Page View Manager</h2>
           <p className="text-xs text-gray-500 mt-0.5">Track how users engage with every page</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {[7, 14, 30].map(d => (
             <button
               key={d}
@@ -402,6 +441,7 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
               {d}d
             </button>
           ))}
+
           <button
             onClick={fetchStats}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border bg-white/5 text-gray-400 border-white/10 hover:bg-white/10 transition-colors"
@@ -439,7 +479,7 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
       {/* Chart + breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* GA-style line chart */}
-        <div className="lg:col-span-2 bg-white/[0.04] border border-white/[0.06] rounded-xl p-4">
+        <div className="lg:col-span-2 bg-white/[0.04] border border-white/[0.06] rounded-xl p-4 flex flex-col">
           <div className="flex items-center justify-between mb-4">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
               Daily Views — Last {days} Days
@@ -450,7 +490,9 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
               </span>
             ) : null}
           </div>
-          <GALineChart data={stats?.dailyChart ?? []} days={days} />
+          <div className="flex-1 flex items-stretch">
+            <GALineChart data={stats?.dailyChart ?? []} days={days} height={260} />
+          </div>
         </div>
 
         {/* Type + device rings */}
@@ -489,11 +531,25 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
           <select
             value={typeFilter}
             onChange={e => { setTypeFilter(e.target.value); setCurrentPage(1); }}
-            className="px-2 py-1.5 text-xs bg-white/5 border border-white/10 rounded-lg text-gray-300 focus:outline-none focus:border-purple-500/50"
+            className="px-2 py-1.5 text-xs bg-[#1c1b29] border border-white/10 rounded-lg text-gray-300 focus:outline-none focus:border-purple-500/50 [color-scheme:dark]"
           >
-            <option value="all">All Types</option>
+            <option value="all" className="bg-[#1c1b29] text-gray-300">All Types</option>
             {allTypes.map(t => (
-              <option key={t} value={t}>{PAGE_TYPE_LABEL[t] || t}</option>
+              <option key={t} value={t} className="bg-[#1c1b29] text-gray-300">{PAGE_TYPE_LABEL[t] || t}</option>
+            ))}
+          </select>
+
+          {/* Device filter */}
+          <select
+            value={deviceFilter}
+            onChange={e => { setDeviceFilter(e.target.value); setCurrentPage(1); }}
+            className="px-2 py-1.5 text-xs bg-[#1c1b29] border border-white/10 rounded-lg text-gray-300 focus:outline-none focus:border-purple-500/50 [color-scheme:dark]"
+          >
+            <option value="all" className="bg-[#1c1b29] text-gray-300">All Devices</option>
+            {allDevices.map(d => (
+              <option key={d} value={d} className="bg-[#1c1b29] text-gray-300">
+                {d.charAt(0).toUpperCase() + d.slice(1)}
+              </option>
             ))}
           </select>
 
@@ -522,8 +578,8 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
               ) : (
                 pagedResults.map((page, idx) => {
                   const rank = (currentPage - 1) * PER_PAGE + idx + 1;
-                  const totalAll = stats?.totalViews || 1;
-                  const share = ((page.views / totalAll) * 100).toFixed(1);
+                  const activeTotal = (stats?.topPages || []).reduce((s, p) => s + p.views, 0) || 1;
+                  const share = ((page.views / activeTotal) * 100).toFixed(1);
                   const barWidth = Math.max((page.views / (stats?.topPages[0]?.views || 1)) * 100, 2);
                   return (
                     <tr

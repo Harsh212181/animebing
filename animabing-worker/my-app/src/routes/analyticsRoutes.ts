@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+ import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
 import { trackPageView, getPageViewStats, getPageDetail } from '../services/analyticsService'
@@ -24,15 +24,10 @@ function detectBrowser(ua: string): string {
 // ─── Detect page type from path ──────────────────────────────────────────
 function detectPageType(path: string): string {
   if (path === '/' || path === '') return 'home'
-  // /detail/:slug/episode/:num
   if (/^\/detail\/[^/]+\/episode/.test(path)) return 'episode'
-  // /detail/:slug  — anime detail page
   if (/^\/detail\/[^/]+/.test(path)) return 'anime-detail'
-  // /download/:slug
   if (/^\/download\//.test(path)) return 'download'
-  // /anime — anime list page (exact or with query)
   if (path === '/anime' || path.startsWith('/anime?')) return 'anime-list'
-  // /anime-list — fallback slug
   if (path.startsWith('/anime-list')) return 'anime-list'
   if (/^\/top-100/.test(path)) return 'top-100'
   if (/^\/contact/.test(path)) return 'contact'
@@ -43,7 +38,7 @@ function detectPageType(path: string): string {
   return 'other'
 }
 
-// ─── POST /api/analytics/pageview — frontend calls this ──────────────────
+// ─── POST /api/analytics/pageview ────────────────────────────────────────
 analyticsRoutes.post('/pageview', async (c) => {
   try {
     const body = await c.req.json()
@@ -51,12 +46,10 @@ analyticsRoutes.post('/pageview', async (c) => {
 
     if (!path) return c.json({ error: 'path required' }, 400)
 
-    // Bot filter — basic
     const ua = c.req.header('user-agent') || ''
     const botPattern = /bot|crawl|spider|slurp|mediapartners|googlebot|bingbot|yandex|baidu/i
     if (botPattern.test(ua)) return c.json({ ok: true, skipped: 'bot' })
 
-    // IP — Cloudflare header
     const ip =
       c.req.header('cf-connecting-ip') ||
       c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
@@ -81,18 +74,20 @@ analyticsRoutes.post('/pageview', async (c) => {
   }
 })
 
-// ─── GET /api/analytics/stats?days=7 — admin only ────────────────────────
+// ─── GET /api/analytics/stats?days=7&device=mobile ───────────────────────
 analyticsRoutes.get('/stats', adminAuth, async (c) => {
   try {
     const days = parseInt(c.req.query('days') || '7', 10)
-    const stats = await getPageViewStats(c.env.MONGODB_URI, c.env.MONGODB_DB, days)
+    // ✅ NEW: device param read karo
+    const device = c.req.query('device') || undefined
+    const stats = await getPageViewStats(c.env.MONGODB_URI, c.env.MONGODB_DB, days, device)
     return c.json(stats)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// ─── GET /api/analytics/page-detail?path=...&days=30 — admin only ────────
+// ─── GET /api/analytics/page-detail?path=...&days=30 ─────────────────────
 analyticsRoutes.get('/page-detail', adminAuth, async (c) => {
   try {
     const path = c.req.query('path')
