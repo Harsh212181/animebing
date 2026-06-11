@@ -80,6 +80,16 @@ export async function getPageViewStats(
     ])
     .toArray()
 
+  // ─── Zero-fill missing dates so chart always has `days` points ─────────
+  const dailyMap = new Map<string, number>(dailyRaw.map((d: any) => [d._id, d.views]))
+  const dailyChart: { date: string; views: number }[] = []
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date()
+    d.setDate(d.getDate() - i)
+    const dateStr = d.toISOString().slice(0, 10)
+    dailyChart.push({ date: dateStr, views: dailyMap.get(dateStr) || 0 })
+  }
+
   // Top pages
   const topPages = await db
     .collection('pageview_daily')
@@ -129,7 +139,7 @@ export async function getPageViewStats(
     totalViews,
     todayViews,
     uniqueVisitors,
-    dailyChart: dailyRaw.map((d: any) => ({ date: d._id, views: d.views })),
+    dailyChart,
     topPages: topPages.map((p: any) => ({
       path: p._id,
       views: p.views,

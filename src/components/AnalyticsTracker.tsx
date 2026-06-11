@@ -12,23 +12,15 @@ const API_BASE =
   import.meta.env.VITE_API_BASE ||
   'https://animabing-backend.animabingwatch.workers.dev/api';
 
-// ─── Page type detect (path se) ──────────────────────────────────────────
-function getPageMeta(pathname: string): {
-  pageType: string;
-  slug?: string;
-  animeTitle?: string;
-} {
+// ─── Page type detect ────────────────────────────────────────────────────
+function getPageMeta(pathname: string): { pageType: string; slug?: string } {
   if (pathname === '/') return { pageType: 'home' };
-  // /detail/:slug/episode/:num
   const episodeMatch = pathname.match(/^\/detail\/([^/]+)\/episode/);
   if (episodeMatch) return { pageType: 'episode', slug: episodeMatch[1] };
-  // /detail/:slug
   const detailMatch = pathname.match(/^\/detail\/([^/]+)/);
   if (detailMatch) return { pageType: 'anime-detail', slug: detailMatch[1] };
-  // /download/:slug
   const downloadMatch = pathname.match(/^\/download\/([^/]+)/);
   if (downloadMatch) return { pageType: 'download', slug: downloadMatch[1] };
-  // /anime — list page
   if (pathname === '/anime' || pathname.startsWith('/anime?')) return { pageType: 'anime-list' };
   if (pathname.startsWith('/anime-list')) return { pageType: 'anime-list' };
   if (pathname.startsWith('/top-100')) return { pageType: 'top-100' };
@@ -40,7 +32,6 @@ function getPageMeta(pathname: string): {
   return { pageType: 'other' };
 }
 
-// ─── Simple session ID (tab-level) ───────────────────────────────────────
 function getSessionId(): string {
   let id = sessionStorage.getItem('_ab_sid');
   if (!id) {
@@ -50,51 +41,58 @@ function getSessionId(): string {
   return id;
 }
 
+// ─── Dedupe: ek hi path 2 seconds ke andar dobara na bheje ───────────────
+let lastSentPath = '';
+let lastSentTime = 0;
+
+function sendToBackend(path: string, timeOnPage?: number) {
+  const now = Date.now();
+
+  // Sirf timeOnPage update bhejo — dedupe skip karo
+  if (timeOnPage === undefined) {
+    if (path === lastSentPath && now - lastSentTime < 2000) return; // duplicate block
+    lastSentPath = path;
+    lastSentTime = now;
+  }
+
+  const { pageType, slug } = getPageMeta(path);
+  const payload: Record<string, any> = { path, pageType, slug, sessionId: getSessionId() };
+  if (timeOnPage !== undefined) payload.timeOnPage = timeOnPage;
+
+  fetch(`${API_BASE}/analytics/pageview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    keepalive: true,
+  }).catch(() => {});
+}
+
+// ─── Component ────────────────────────────────────────────────────────────
 const AnalyticsTracker = () => {
   const location = useLocation();
   const enterTimeRef = useRef<number>(Date.now());
   const prevPathRef = useRef<string>('');
-
-  // Send page view to our backend
-  const sendToBackend = (
-    path: string,
-    timeOnPage?: number
-  ) => {
-    const { pageType, slug } = getPageMeta(path);
-    const payload: any = {
-      path,
-      pageType,
-      slug,
-      sessionId: getSessionId(),
-    };
-    if (timeOnPage !== undefined) payload.timeOnPage = timeOnPage;
-
-    // fire-and-forget (non-blocking, no await needed)
-    fetch(`${API_BASE}/analytics/pageview`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      keepalive: true,    // page unload pe bhi send ho
-    }).catch(() => {});   // silently ignore errors
-  };
+  const sentRef = useRef<boolean>(false); // Strict Mode double-fire guard
 
   useEffect(() => {
     const currentPath = location.pathname + location.search;
 
-    // Time-on-page for PREVIOUS page before we navigate away
+    // Time-on-page for previous page
     if (prevPathRef.current && prevPathRef.current !== currentPath) {
       const timeOnPage = Math.round((Date.now() - enterTimeRef.current) / 1000);
       sendToBackend(prevPathRef.current, timeOnPage);
+      sentRef.current = false;
     }
 
-    // Reset timer for new page
-    enterTimeRef.current = Date.now();
-    prevPathRef.current = currentPath;
+    // Send new page view only once
+    if (!sentRef.current) {
+      sentRef.current = true;
+      enterTimeRef.current = Date.now();
+      prevPathRef.current = currentPath;
+      sendToBackend(currentPath);
+    }
 
-    // Send new page view (no timeOnPage — user just arrived)
-    sendToBackend(currentPath);
-
-    // GA4 page view
+    // GA4
     if (typeof window.gtag === 'function') {
       window.gtag('event', 'page_view', {
         page_path: currentPath,
@@ -108,18 +106,17 @@ const AnalyticsTracker = () => {
     }
   }, [location]);
 
-  // Send time-on-page when tab closes
+  // Tab close / hide pe time-on-page bhejo
   useEffect(() => {
-    const handleUnload = () => {
-      const timeOnPage = Math.round((Date.now() - enterTimeRef.current) / 1000);
-      const path = location.pathname + location.search;
-      sendToBackend(path, timeOnPage);
+    const handleHide = () => {
+      if (document.visibilityState === 'hidden') {
+        const timeOnPage = Math.round((Date.now() - enterTimeRef.current) / 1000);
+        sendToBackend(location.pathname + location.search, timeOnPage);
+      }
     };
-    window.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') handleUnload();
-    });
-    return () => window.removeEventListener('visibilitychange', handleUnload as any);
-  }, []);
+    document.addEventListener('visibilitychange', handleHide);
+    return () => document.removeEventListener('visibilitychange', handleHide);
+  }, [location]);
 
   return null;
 };

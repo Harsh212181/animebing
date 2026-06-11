@@ -1,7 +1,19 @@
-// src/components/admin/PageViewManager.tsx
-import React, { useState, useEffect, useCallback } from 'react';
+ // src/components/admin/PageViewManager.tsx
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  LineController,
+  Filler,
+  Tooltip as ChartTooltip,
+} from 'chart.js';
+
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, LineController, Filler, ChartTooltip);
 
 const API_BASE =
   import.meta.env.VITE_API_BASE ||
@@ -67,29 +79,114 @@ const PAGE_TYPE_LABEL: Record<string, string> = {
   'other':        'Other',
 };
 
-// ─── Small inline bar chart ───────────────────────────────────────────────
-const MiniBar: React.FC<{ data: DailyPoint[] }> = ({ data }) => {
-  if (!data.length) return null;
-  const max = Math.max(...data.map(d => d.views), 1);
+// ─── Google Analytics Style Line Chart ───────────────────────────────────
+const GALineChart: React.FC<{ data: DailyPoint[]; days: number }> = ({ data, days }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const chartRef = useRef<ChartJS | null>(null);
+
+  useEffect(() => {
+    if (!canvasRef.current || !data.length) return;
+
+    if (chartRef.current) {
+      chartRef.current.destroy();
+      chartRef.current = null;
+    }
+
+    const ctx = canvasRef.current.getContext('2d');
+    if (!ctx) return;
+
+    const grad = ctx.createLinearGradient(0, 0, 0, 176);
+    grad.addColorStop(0, 'rgba(167,139,250,0.22)');
+    grad.addColorStop(0.7, 'rgba(167,139,250,0.05)');
+    grad.addColorStop(1, 'rgba(167,139,250,0.00)');
+
+    chartRef.current = new ChartJS(ctx, {
+      type: 'line',
+      data: {
+        labels: data.map(d => d.date.slice(5)),
+        datasets: [
+          {
+            data: data.map(d => d.views),
+            borderColor: '#a78bfa',
+            borderWidth: 2,
+            backgroundColor: grad,
+            fill: true,
+            tension: 0.4,
+            pointRadius: 0,
+            pointHoverRadius: 5,
+            pointHoverBackgroundColor: '#a78bfa',
+            pointHoverBorderColor: '#fff',
+            pointHoverBorderWidth: 2,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        aspectRatio: undefined,
+        animation: { duration: 400, easing: 'easeInOutQuart' },
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1c1b29',
+            borderColor: 'rgba(255,255,255,0.1)',
+            borderWidth: 1,
+            titleColor: '#9ca3af',
+            bodyColor: '#ffffff',
+            titleFont: { size: 11 },
+            bodyFont: { size: 13, weight: 'bold' as const },
+            padding: 10,
+            callbacks: {
+              title: (items) => items[0]?.label ?? '',
+              label: (item) => `  ${Number(item.raw).toLocaleString()} views`,
+            },
+          },
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            border: { display: false },
+            ticks: {
+              color: '#6b7280',
+              font: { size: 11 },
+              maxRotation: 0,
+              autoSkip: true,
+              maxTicksLimit: days <= 7 ? 7 : days <= 14 ? 7 : 8,
+            },
+          },
+          y: {
+            grid: { color: 'rgba(255,255,255,0.05)' },
+            border: { display: false },
+            ticks: {
+              color: '#6b7280',
+              font: { size: 11 },
+              maxTicksLimit: 5,
+              callback: (v) =>
+                Number(v) >= 1000 ? (Number(v) / 1000).toFixed(1) + 'k' : v,
+            },
+          },
+        },
+      },
+    });
+
+    return () => {
+      chartRef.current?.destroy();
+      chartRef.current = null;
+    };
+  }, [data, days]);
+
+  if (!data.length) {
+    return (
+      <div className="flex items-center justify-center h-44 text-gray-600 text-xs">
+        No data yet — start getting traffic!
+      </div>
+    );
+  }
+
   return (
-    <div className="flex items-end gap-0.5 h-16 w-full">
-      {data.map((d, i) => {
-        const pct = Math.max((d.views / max) * 100, 2);
-        return (
-          <div key={i} className="flex-1 flex flex-col items-center gap-1 group relative">
-            <div
-              className="w-full rounded-t-sm bg-purple-500/70 hover:bg-purple-400 transition-colors cursor-default"
-              style={{ height: `${pct}%` }}
-            />
-            {/* Tooltip */}
-            <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 hidden group-hover:flex flex-col items-center z-10">
-              <div className="bg-[#1c1b29] border border-white/10 rounded px-2 py-1 text-[10px] text-white whitespace-nowrap shadow-lg">
-                {d.date.slice(5)} — {d.views.toLocaleString()} views
-              </div>
-            </div>
-          </div>
-        );
-      })}
+    <div style={{ position: 'relative', width: '100%', height: '176px' }}>
+      <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: '176px' }} />
     </div>
   );
 };
@@ -198,8 +295,11 @@ const PageDetailModal: React.FC<{
                 <StatCard label="Page Type" value={PAGE_TYPE_LABEL[page.pageType] || page.pageType} color="text-cyan-400" />
               </div>
               <div>
-                <p className="text-xs text-gray-500 mb-2">Daily views (last 30 days)</p>
-                <MiniBar data={detail.daily.map((d: any) => ({ date: d.date, views: d.views }))} />
+                <p className="text-xs text-gray-500 mb-3">Daily views (last 30 days)</p>
+                <GALineChart
+                  data={detail.daily.map((d: any) => ({ date: d.date, views: d.views }))}
+                  days={30}
+                />
               </div>
             </>
           ) : (
@@ -338,22 +438,19 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
 
       {/* Chart + breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Daily bar chart */}
+        {/* GA-style line chart */}
         <div className="lg:col-span-2 bg-white/[0.04] border border-white/[0.06] rounded-xl p-4">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
-            Daily Views — Last {days} Days
-          </p>
-          {stats?.dailyChart?.length ? (
-            <>
-              <MiniBar data={stats.dailyChart} />
-              <div className="flex justify-between mt-2">
-                <span className="text-[10px] text-gray-600">{stats.dailyChart[0]?.date}</span>
-                <span className="text-[10px] text-gray-600">{stats.dailyChart[stats.dailyChart.length - 1]?.date}</span>
-              </div>
-            </>
-          ) : (
-            <p className="text-gray-600 text-xs text-center py-6">No data yet — start getting traffic!</p>
-          )}
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+              Daily Views — Last {days} Days
+            </p>
+            {stats?.dailyChart?.length ? (
+              <span className="text-[11px] text-gray-600">
+                {stats.dailyChart[0]?.date} – {stats.dailyChart[stats.dailyChart.length - 1]?.date}
+              </span>
+            ) : null}
+          </div>
+          <GALineChart data={stats?.dailyChart ?? []} days={days} />
         </div>
 
         {/* Type + device rings */}

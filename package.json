@@ -20,6 +20,7 @@
     "@types/react-router-dom": "^5.3.3",
     "axios": "^1.13.2",
     "bcryptjs": "^3.0.3",
+    "chart.js": "^4.5.1",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
