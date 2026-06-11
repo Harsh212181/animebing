@@ -41,7 +41,7 @@ function getSessionId(): string {
   return id;
 }
 
-// ─── Session-level dedupe: ek session me ek path sirf 1 baar count ──────
+// ─── Session-level dedupe: एक सेशन में एक पथ सिर्फ 1 बार काउंट हो ──────
 const VISITED_KEY = '_ab_visited_paths';
 
 function hasVisitedInSession(path: string): boolean {
@@ -70,21 +70,18 @@ function markVisitedInSession(path: string) {
 // ─── Module-level guard: same render-cycle / StrictMode double-fire ─────
 let lastSentPath = '';
 
-function sendToBackend(path: string, timeOnPage?: number) {
+// ✅ FIX: timeOnPage पूरी तरह हटाया, अब हर पेज सिर्फ पहली बार भेजा जाएगा
+function sendToBackend(path: string) {
   const { pageType, slug } = getPageMeta(path);
-  const payload: Record<string, any> = { path, pageType, slug, sessionId: getSessionId() };
+  const payload = { path, pageType, slug, sessionId: getSessionId() };
 
-  if (timeOnPage === undefined) {
-    // StrictMode double-mount / re-render guard
-    if (path === lastSentPath) return;
-    lastSentPath = path;
+  // StrictMode double-mount / re-render guard
+  if (path === lastSentPath) return;
+  lastSentPath = path;
 
-    // Session-level dedupe — same page dobara visit/refresh pe count na ho
-    if (hasVisitedInSession(path)) return;
-    markVisitedInSession(path);
-  }
-
-  if (timeOnPage !== undefined) payload.timeOnPage = timeOnPage;
+  // Session-level dedupe: अगर इस सेशन में पहले ही भेज चुके हैं तो न भेजें
+  if (hasVisitedInSession(path)) return;
+  markVisitedInSession(path);
 
   fetch(`${API_BASE}/analytics/pageview`, {
     method: 'POST',
@@ -99,17 +96,12 @@ const AnalyticsTracker = () => {
   const location = useLocation();
   const enterTimeRef = useRef<number>(Date.now());
   const prevPathRef = useRef<string>('');
-  const sentRef = useRef<boolean>(false); // Strict Mode double-fire guard
+  const sentRef = useRef<boolean>(false);
 
   useEffect(() => {
     const currentPath = location.pathname + location.search;
 
-    // Time-on-page for previous page
-    if (prevPathRef.current && prevPathRef.current !== currentPath) {
-      const timeOnPage = Math.round((Date.now() - enterTimeRef.current) / 1000);
-      sendToBackend(prevPathRef.current, timeOnPage);
-      sentRef.current = false;
-    }
+    // ❌ time‑on‑page भेजने का कोड हटा दिया (यही डबल काउंटिंग का कारण था)
 
     // Send new page view only once
     if (!sentRef.current) {
@@ -133,17 +125,7 @@ const AnalyticsTracker = () => {
     }
   }, [location]);
 
-  // Tab close / hide pe time-on-page bhejo
-  useEffect(() => {
-    const handleHide = () => {
-      if (document.visibilityState === 'hidden') {
-        const timeOnPage = Math.round((Date.now() - enterTimeRef.current) / 1000);
-        sendToBackend(location.pathname + location.search, timeOnPage);
-      }
-    };
-    document.addEventListener('visibilitychange', handleHide);
-    return () => document.removeEventListener('visibilitychange', handleHide);
-  }, [location]);
+  // ❌ Tab hide पर time‑on‑page भेजना हटाया
 
   return null;
 };
