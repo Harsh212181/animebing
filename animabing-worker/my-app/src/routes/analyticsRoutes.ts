@@ -24,10 +24,16 @@ function detectBrowser(ua: string): string {
 // ─── Detect page type from path ──────────────────────────────────────────
 function detectPageType(path: string): string {
   if (path === '/' || path === '') return 'home'
-  if (/^\/anime\/[^/]+\/episode/.test(path)) return 'episode'
-  if (/^\/anime\/[^/]+/.test(path)) return 'anime-detail'
+  // /detail/:slug/episode/:num
+  if (/^\/detail\/[^/]+\/episode/.test(path)) return 'episode'
+  // /detail/:slug  — anime detail page
+  if (/^\/detail\/[^/]+/.test(path)) return 'anime-detail'
+  // /download/:slug
   if (/^\/download\//.test(path)) return 'download'
-  if (/^\/anime-list/.test(path) || path === '/anime-list') return 'anime-list'
+  // /anime — anime list page (exact or with query)
+  if (path === '/anime' || path.startsWith('/anime?')) return 'anime-list'
+  // /anime-list — fallback slug
+  if (path.startsWith('/anime-list')) return 'anime-list'
   if (/^\/top-100/.test(path)) return 'top-100'
   if (/^\/contact/.test(path)) return 'contact'
   if (/^\/privacy/.test(path)) return 'privacy'

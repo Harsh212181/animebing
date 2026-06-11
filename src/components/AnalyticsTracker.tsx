@@ -19,12 +19,17 @@ function getPageMeta(pathname: string): {
   animeTitle?: string;
 } {
   if (pathname === '/') return { pageType: 'home' };
-  const episodeMatch = pathname.match(/^\/anime\/([^/]+)\/episode/);
+  // /detail/:slug/episode/:num
+  const episodeMatch = pathname.match(/^\/detail\/([^/]+)\/episode/);
   if (episodeMatch) return { pageType: 'episode', slug: episodeMatch[1] };
-  const animeMatch = pathname.match(/^\/anime\/([^/]+)/);
-  if (animeMatch) return { pageType: 'anime-detail', slug: animeMatch[1] };
+  // /detail/:slug
+  const detailMatch = pathname.match(/^\/detail\/([^/]+)/);
+  if (detailMatch) return { pageType: 'anime-detail', slug: detailMatch[1] };
+  // /download/:slug
   const downloadMatch = pathname.match(/^\/download\/([^/]+)/);
   if (downloadMatch) return { pageType: 'download', slug: downloadMatch[1] };
+  // /anime — list page
+  if (pathname === '/anime' || pathname.startsWith('/anime?')) return { pageType: 'anime-list' };
   if (pathname.startsWith('/anime-list')) return { pageType: 'anime-list' };
   if (pathname.startsWith('/top-100')) return { pageType: 'top-100' };
   if (pathname.startsWith('/contact')) return { pageType: 'contact' };
