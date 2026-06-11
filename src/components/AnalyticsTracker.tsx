@@ -41,22 +41,19 @@ function getSessionId(): string {
   return id;
 }
 
-// ─── Dedupe: ek hi path 2 seconds ke andar dobara na bheje ───────────────
+// ─── Dedupe: same path ka repeat pageview tab tak block jab tak path change na ho ──
 let lastSentPath = '';
-let lastSentTime = 0;
 
 function sendToBackend(path: string, timeOnPage?: number) {
-  const now = Date.now();
-
-  // Sirf timeOnPage update bhejo — dedupe skip karo
-  if (timeOnPage === undefined) {
-    if (path === lastSentPath && now - lastSentTime < 2000) return; // duplicate block
-    lastSentPath = path;
-    lastSentTime = now;
-  }
-
   const { pageType, slug } = getPageMeta(path);
   const payload: Record<string, any> = { path, pageType, slug, sessionId: getSessionId() };
+
+  if (timeOnPage === undefined) {
+    // StrictMode double-mount / re-render guard — same path dobara count nahi hoga
+    if (path === lastSentPath) return;
+    lastSentPath = path;
+  }
+
   if (timeOnPage !== undefined) payload.timeOnPage = timeOnPage;
 
   fetch(`${API_BASE}/analytics/pageview`, {
