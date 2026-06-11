@@ -1,9 +1,8 @@
- // components/AppDownloadPopup.tsx
+// components/AppDownloadPopup.tsx
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 const TRACKING_URL = 'https://go.animebing.in/animebingapp';
-const APK_URL = 'https://english.animebing.in/animebing.apk';
 
 const AppDownloadPopup: React.FC = () => {
   const [visible, setVisible] = useState(false);
@@ -16,21 +15,8 @@ const AppDownloadPopup: React.FC = () => {
   const handleClose = () => setVisible(false);
 
   const handleDownload = () => {
-    // Tracking — hidden img pixel, fetch se zyada reliable
-    const img = new Image();
-    img.src = TRACKING_URL + '?t=' + Date.now();
-
-    // APK download — thoda delay do taaki tracking hit ho sake
-    setTimeout(() => {
-      const a = document.createElement('a');
-      a.href = APK_URL;
-      a.download = 'animebing.apk';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    }, 300);
-
     setVisible(false);
+    window.location.href = TRACKING_URL;
   };
 
   if (!visible) return null;

@@ -228,7 +228,7 @@ const Footer: React.FC = () => {
               <div className="mt-6 flex items-center gap-3 justify-center lg:justify-start">
                 {/* AnimeBing App */}
                 <a
-                  href="https://english.animebing.in/animebing.apk"
+                  href="go.animebing.in/animebingapp"
                   download
                   className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-purple-800/50 border border-purple-400/30 hover:border-purple-300/70 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-purple-500/20"
                 >
@@ -240,7 +240,7 @@ const Footer: React.FC = () => {
 
                 {/* AnimeBing Dashboard */}
                 <a
-                  href="https://english.animebing.in/animebing-dashboard.apk"
+                  href="go.animebing.in/dashboardapp"
                   download
                   className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-purple-800/50 border border-purple-400/30 hover:border-purple-300/70 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-purple-500/20"
                 >

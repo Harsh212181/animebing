@@ -1,5 +1,3 @@
-// File: ANIMABING/animabing-worker/my-app/src/routes/shortenerRoutes.ts
-
 import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { getDb } from '../services/mongoService'
@@ -37,7 +35,7 @@ function esc(input: unknown): string {
     .trim()
 }
 
-// ============ META HTML BUILDER ============
+// ============ META HTML BUILDER (bots only) ============
 function buildMetaHTML(opts: {
   title: string
   description: string
@@ -51,7 +49,6 @@ function buildMetaHTML(opts: {
   const d   = esc(opts.description.substring(0, 900))
   const img = opts.image || 'https://animebing.in/AnimeBinglogo.jpg'
   const safeRedirect = esc(opts.redirectUrl)
-  const safeCode     = esc(opts.code)
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -79,80 +76,6 @@ function buildMetaHTML(opts: {
   <meta name="twitter:description" content="${d}" />
   <meta name="twitter:image" content="${esc(img)}" />
 
-  <script>
-  (function() {
-    // Layer 2: UA check (client-side bhi)
-    var ua = navigator.userAgent.toLowerCase();
-    var botUA = ['bot','crawl','spider','facebookexternalhit','twitterbot',
-      'whatsapp','telegram','discord','slack','linkedin','preview','wget',
-      'curl','python','java','go-http','node-fetch','okhttp','axios','php','scraper'];
-    if (botUA.some(function(b){ return ua.indexOf(b) !== -1; })) return;
-
-    // Layer 2b: Headless browser detect
-    var clues = [
-      navigator.webdriver === true,
-      !window.chrome && ua.indexOf('chrome') !== -1,
-      !navigator.languages || navigator.languages.length === 0,
-      !navigator.plugins || navigator.plugins.length === 0,
-      window.outerWidth === 0 && window.outerHeight === 0,
-      !window.screen || window.screen.width === 0,
-      typeof window.Notification === 'undefined'
-    ];
-    if (clues.filter(Boolean).length >= 3) return;
-
-    // Layer 2c: Canvas fingerprint — headless blank canvas return karta hai
-    try {
-      var cv = document.createElement('canvas');
-      cv.getContext('2d').fillText('animabing', 2, 15);
-      if (cv.toDataURL().length < 200) return;
-    } catch(e) { return; }
-
-    // Layer 3: Minimum dwell + interaction required
-    var interacted = false, redirected = false;
-    var t0 = Date.now();
-
-    function go() {
-      if (redirected) return;
-      if (Date.now() - t0 < 1800) { setTimeout(go, 400); return; }
-      if (!interacted) return;
-      redirected = true;
-
-      // Layer 4: Server-side token validate karo
-      fetch('/api/shortener/validate-click', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code: '${safeCode}',
-          dwell: Date.now() - t0,
-          int: true,
-          hw: clues.filter(Boolean).length
-        }),
-        keepalive: true
-      }).catch(function(){});
-
-      window.location.replace('${safeRedirect}');
-    }
-
-    // Interaction sunna — mouse, touch, scroll, keyboard
-    ['mousemove','mousedown','touchstart','scroll','keydown'].forEach(function(ev) {
-      document.addEventListener(ev, function h() {
-        document.removeEventListener(ev, h);
-        interacted = true;
-        go();
-      }, { once: true, passive: true });
-    });
-
-    // Dwell timer start
-    setTimeout(go, 1800);
-
-    // Button text update
-    setTimeout(function() {
-      var btn = document.getElementById('watch-btn');
-      if (btn) { btn.textContent = 'Redirecting\u2026'; btn.style.opacity = '0.7'; }
-    }, 2000);
-  })();
-  </script>
-
   <noscript>
     <meta http-equiv="refresh" content="0;url=${safeRedirect}" />
   </noscript>
@@ -162,15 +85,12 @@ function buildMetaHTML(opts: {
     <img src="${esc(img)}" alt="${t}" style="width:100%;max-width:300px;border-radius:12px;margin-bottom:1.5rem;" onerror="this.style.display='none'" />
     <h1 style="font-size:1.4rem;margin-bottom:0.75rem;">${t}</h1>
     <p style="color:#94a3b8;font-size:0.95rem;margin-bottom:1.5rem;">${d}</p>
-    <a id="watch-btn" href="${safeRedirect}" style="background:#6366f1;color:#fff;padding:0.75rem 2rem;border-radius:8px;text-decoration:none;font-weight:600;">
-      Watch Now \u2192
-    </a>
   </div>
 </body>
 </html>`
 }
 
-// ============ ANIME META FETCHER — DIRECT DB (NO HTTP) ============
+// ============ ANIME META FETCHER — DIRECT DB ============
 async function fetchAnimeMeta(
   targetUrl: string,
   env: Env
@@ -344,75 +264,6 @@ shortenerRoutes.get('/dashboard', (c) => {
   return c.redirect('https://animebing.in/dashboard', 302)
 })
 
-// ============ VALIDATE CLICK — Bot filter server-side ============
-shortenerRoutes.post('/validate-click', async (c) => {
-  try {
-    const { code, dwell, int: interacted, hw: headlessScore } = await c.req.json()
-
-    if (!code)              return c.json({ ok: false, reason: 'no_code' })
-    if (headlessScore >= 3) return c.json({ ok: false, reason: 'headless' })
-    if (!interacted)        return c.json({ ok: false, reason: 'no_interaction' })
-    if (dwell < 1500)       return c.json({ ok: false, reason: 'too_fast' })
-
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const link = await db.collection('shortlinks').findOne({ code })
-    if (!link) return c.json({ ok: false, reason: 'not_found' })
-
-    const ip = c.req.header('CF-Connecting-IP') ||
-               c.req.header('X-Forwarded-For') || 'unknown'
-    const ua = (c.req.header('User-Agent') || '').toLowerCase()
-
-    // Server-side UA double-check
-    const BOT_UA = ['bot','crawl','spider','curl','wget','python','java',
-      'go-http','node-fetch','okhttp','axios','facebookexternalhit',
-      'twitterbot','whatsapp','telegram','discord','slack','php','scraper']
-    if (BOT_UA.some(p => ua.includes(p)))
-      return c.json({ ok: false, reason: 'bot_ua' })
-
-    // 24h dedup
-    const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000)
-    const dup = await db.collection('shortclicks').findOne({
-      code, ip, clickedAt: { $gte: last24h }
-    })
-    if (dup) return c.json({ ok: true, counted: false, reason: 'dedup' })
-
-    const country    = c.req.header('CF-IPCountry') || 'Unknown'
-    const rawUA      = c.req.header('User-Agent') || ''
-    const deviceType = /mobile|android|iphone|ipad/i.test(rawUA) ? 'mobile'
-                     : /tablet/i.test(rawUA) ? 'tablet' : 'desktop'
-
-    const clickData: any = {
-      code, ip, country,
-      city:      (c as any).req.raw?.cf?.city || 'Unknown',
-      device:    deviceType,
-      browser:   rawUA.substring(0, 100),
-      clickedAt: new Date()
-    }
-    if (link.userId) clickData.userId = link.userId
-
-    await db.collection('shortclicks').insertOne(clickData)
-    await db.collection('shortlinks').updateOne(
-      { code },
-      { $inc: { clicks: 1 }, $set: { lastClicked: new Date() } }
-    )
-
-    if (link.userId) {
-      const user = await db.collection('shortusers').findOne({ _id: link.userId })
-      if (user) {
-        const earn = (user.ratePerThousand || 10) / 1000
-        await db.collection('shortusers').updateOne(
-          { _id: link.userId },
-          { $inc: { totalClicks: 1, totalEarnings: earn, unpaidEarnings: earn } }
-        )
-      }
-    }
-
-    return c.json({ ok: true, counted: true })
-  } catch (err: any) {
-    return c.json({ error: err.message }, 500)
-  }
-})
-
 // ============ REDIRECT — LAST ============
 shortenerRoutes.get('/:code', async (c) => {
   try {
@@ -432,7 +283,7 @@ shortenerRoutes.get('/:code', async (c) => {
 
     const userAgent = c.req.header('User-Agent') || ''
 
-    // ============ BOT: Meta HTML serve karo ============
+    // ============ BOT: Meta HTML serve karo (OG preview ke liye) ============
     if (isBot(userAgent)) {
       const meta = await fetchAnimeMeta(link.url, c.env)
 
@@ -458,30 +309,60 @@ shortenerRoutes.get('/:code', async (c) => {
       )
     }
 
-    // ============ REAL USER: Meta HTML serve karo (JS redirect karega) ============
-    // Click counting ab validate-click endpoint mein hoti hai
-    const meta = await fetchAnimeMeta(link.url, c.env)
+    // ============ REAL USER: Server-side click count, phir instant 302 ============
+    const ip = c.req.header('CF-Connecting-IP') ||
+               c.req.header('X-Forwarded-For') || 'unknown'
 
-    const canonicalUrl = meta
-      ? `https://animebing.in/detail/${meta.slug}`
-      : link.url
+    // 24h dedup — same IP se ek baar hi count hoga
+    const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    const dup = await db.collection('shortclicks').findOne({
+      code, ip, clickedAt: { $gte: last24h }
+    })
 
-    const title       = meta?.title       || link.label || code
-    const description = meta?.description || `Visit ${link.url}`
-    const image       = meta?.image       || 'https://animebing.in/AnimeBinglogo.jpg'
+    if (!dup) {
+      const country    = c.req.header('CF-IPCountry') || 'Unknown'
+      const rawUA      = userAgent
+      const deviceType = /mobile|android|iphone|ipad/i.test(rawUA) ? 'mobile'
+                       : /tablet/i.test(rawUA) ? 'tablet' : 'desktop'
 
-    return c.html(
-      buildMetaHTML({
-        title,
-        description,
-        image,
-        canonicalUrl,
-        shortUrl:    `https://go.animebing.in/${code}`,
-        redirectUrl: link.url,
+      const clickData: any = {
         code,
-      }),
-      200
-    )
+        ip,
+        country,
+        city:      (c as any).req.raw?.cf?.city || 'Unknown',
+        device:    deviceType,
+        browser:   rawUA.substring(0, 100),
+        clickedAt: new Date()
+      }
+      if (link.userId) clickData.userId = link.userId
+
+      // Click insert + link update parallel mein
+      await Promise.all([
+        db.collection('shortclicks').insertOne(clickData),
+        db.collection('shortlinks').updateOne(
+          { code },
+          { $inc: { clicks: 1 }, $set: { lastClicked: new Date() } }
+        )
+      ])
+
+      // Earnings update — fire and forget, redirect block nahi hoga
+      if (link.userId) {
+        db.collection('shortusers').findOne({ _id: link.userId })
+          .then(user => {
+            if (user) {
+              const earn = (user.ratePerThousand || 10) / 1000
+              return db.collection('shortusers').updateOne(
+                { _id: link.userId },
+                { $inc: { totalClicks: 1, totalEarnings: earn, unpaidEarnings: earn } }
+              )
+            }
+          })
+          .catch(() => {})
+      }
+    }
+
+    // Instant 302 redirect
+    return c.redirect(link.url, 302)
 
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
