@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import adminRoutes from './routes/adminRoutes'
 import animeRoutes from './routes/animeRoutes'
@@ -15,6 +15,7 @@ import sitemapRoutes from './routes/sitemapRoutes'
 import socialRoutes from './routes/socialRoutes'
 import shortenerRoutes from './routes/shortenerRoutes'
 import shortUserRoutes from './routes/shortUserRoutes'
+import analyticsRoutes from './routes/analyticsRoutes'   // ← NAYA
 
 export type Env = {
   MONGODB_URI: string
@@ -23,7 +24,7 @@ export type Env = {
   JWT_SECRET: string
   ADMIN_USER: string
   ADMIN_PASS: string
-  API_URL: string         
+  API_URL: string
 }
 
 export type Variables = {
@@ -34,7 +35,7 @@ export type Variables = {
 
 const app = new Hono<{ Bindings: Env, Variables: Variables }>()
 
-// OPTIONS preflight — sabse pehle
+// OPTIONS preflight
 app.options('*', (c) => {
   return new Response(null, {
     status: 204,
@@ -71,9 +72,8 @@ app.route('/api/partners', partnerRoutes)
 app.route('/api/polls', pollRoutes)
 app.route('/api/reports', reportRoutes)
 app.route('/api/social', socialRoutes)
-
-// ============ SHORT USERS ============
 app.route('/api/short-users', shortUserRoutes)
+app.route('/api/analytics', analyticsRoutes)   // ← NAYA
 
 // ============ SITEMAP ============
 app.route('/', sitemapRoutes)
@@ -83,10 +83,7 @@ app.route('/', shortenerRoutes)
 
 // ============ HEALTH CHECK ============
 app.get('/health', (c) => {
-  return c.json({
-    message: 'Animabing Backend Working! 🚀',
-    status: 'ok'
-  })
+  return c.json({ message: 'Animabing Backend Working! 🚀', status: 'ok' })
 })
 
 export default app
