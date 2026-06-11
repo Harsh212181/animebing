@@ -65,7 +65,7 @@ export async function getPageViewStats(
   const baseMatch: Record<string, any> = { date: { $gte: sinceStr } }
   if (device) baseMatch.device = device
 
-  // Total views
+  // Total views (filtered by days/device)
   const totalViews = await db.collection('pageviews').countDocuments(baseMatch)
 
   // Today views
@@ -73,6 +73,29 @@ export async function getPageViewStats(
   const todayMatch: Record<string, any> = { date: today }
   if (device) todayMatch.device = device
   const todayViews = await db.collection('pageviews').countDocuments(todayMatch)
+
+  // ─── NEW: All-time total views (no date filter) ─────────────────────
+  const allTimeMatch: Record<string, any> = {}
+  if (device) allTimeMatch.device = device
+  const allTimeTotalViews = await db.collection('pageviews').countDocuments(allTimeMatch)
+
+  // ─── NEW: All-time unique visitors ─────────────────────────────────
+  const allTimeUniqueVisitors = await db
+    .collection('pageviews')
+    .distinct('ip', allTimeMatch)
+    .then((arr: string[]) => arr.length)
+
+  // ─── NEW: Last 7 days unique visitors (explicitly 7 days) ─────────
+  const sevenDaysAgo = new Date()
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+  const sevenDaysStr = sevenDaysAgo.toISOString().slice(0, 10)
+  const sevenDayMatch: Record<string, any> = { date: { $gte: sevenDaysStr } }
+  if (device) sevenDayMatch.device = device
+
+  const last7DaysUniqueVisitors = await db
+    .collection('pageviews')
+    .distinct('ip', sevenDayMatch)
+    .then((arr: string[]) => arr.length)
 
   // Daily chart
   const dailyRaw = await db
@@ -157,7 +180,7 @@ export async function getPageViewStats(
     ])
     .toArray()
 
-  // Unique visitors
+  // Unique visitors (for the selected period)
   const uniqueVisitors = await db
     .collection('pageviews')
     .distinct('ip', baseMatch)
@@ -166,7 +189,10 @@ export async function getPageViewStats(
   return {
     totalViews,
     todayViews,
-    uniqueVisitors,
+    uniqueVisitors,                    // selected period
+    allTimeTotalViews,                 // NEW
+    allTimeUniqueVisitors,             // NEW
+    last7DaysUniqueVisitors,           // NEW
     dailyChart,
     topPages: topPages.map((p: any) => ({
       path: p.path ?? '/' + p._id,

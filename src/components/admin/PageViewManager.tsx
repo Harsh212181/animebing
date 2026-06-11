@@ -1,4 +1,4 @@
-// src/components/admin/PageViewManager.tsx
+ // src/components/admin/PageViewManager.tsx
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
@@ -27,7 +27,7 @@ interface TopPage {
   pageType: string;
   animeTitle?: string;
   slug?: string;
-  device?: string; // present only when API returns device-filtered data
+  device?: string;
 }
 interface ByType { type: string; views: number }
 interface ByDevice { device: string; count: number }
@@ -40,6 +40,10 @@ interface Stats {
   topPages: TopPage[];
   byType: ByType[];
   byDevice: ByDevice[];
+  // ─── नए फ़ील्ड्स ──────────────────────────────────────────────
+  allTimeTotalViews: number;
+  allTimeUniqueVisitors: number;
+  last7DaysUniqueVisitors: number;
 }
 
 // ─── Color map for page types ─────────────────────────────────────────────
@@ -93,9 +97,7 @@ const GALineChart: React.FC<{ data: DailyPoint[]; days: number; height?: number 
       chartRef.current = null;
     }
 
-    // ✅ FIX: Even if data is empty, still render chart with zeros
     const chartData = data.length > 0 ? data : [];
-
     if (chartData.length === 0) return;
 
     const ctx = canvasRef.current.getContext('2d');
@@ -129,7 +131,6 @@ const GALineChart: React.FC<{ data: DailyPoint[]; days: number; height?: number 
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        aspectRatio: undefined,
         animation: { duration: 400, easing: 'easeInOutQuart' },
         interaction: { mode: 'index', intersect: false },
         plugins: {
@@ -271,7 +272,6 @@ const PageDetailModal: React.FC<{
       })
       .then(r => {
         const data = r.data;
-        // ✅ FIX: Normalize daily field — handle both 'daily' and 'dailyChart' keys, and missing/null cases
         const rawDaily = data.daily ?? data.dailyChart ?? [];
         const normalizedDaily: DailyPoint[] = rawDaily.map((d: any) => ({
           date: d.date ?? d.day ?? '',
@@ -284,7 +284,6 @@ const PageDetailModal: React.FC<{
       .finally(() => setLoading(false));
   }, [page.path]);
 
-  // ✅ Build full URL for the link
   const fullUrl = page.path.startsWith('http') ? page.path : `https://animabingwatch.workers.dev${page.path}`;
 
   return (
@@ -292,7 +291,6 @@ const PageDetailModal: React.FC<{
       <div className="bg-[#13121e] border border-white/10 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-4 border-b border-white/[0.06]">
           <div className="min-w-0">
-            {/* ✅ FIX: Show clickable link below page title */}
             <p className="text-sm font-semibold text-white truncate">
               {page.animeTitle || PAGE_TYPE_LABEL[page.pageType] || page.pageType}
             </p>
@@ -326,12 +324,7 @@ const PageDetailModal: React.FC<{
               </div>
               <div>
                 <p className="text-xs text-gray-500 mb-3">Daily views (last 30 days)</p>
-                {/* ✅ FIX: Always render GALineChart — it handles empty state internally */}
-                <GALineChart
-                  data={detail.daily}
-                  days={30}
-                  height={180}
-                />
+                <GALineChart data={detail.daily} days={30} height={180} />
               </div>
             </>
           ) : (
@@ -351,7 +344,7 @@ interface PageViewManagerProps {
 const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [days, setDays] = useState(7);
+  const [days, setDays] = useState(7); // global chart/stat period
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [deviceFilter, setDeviceFilter] = useState('all');
@@ -359,6 +352,18 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const PER_PAGE = 15;
 
+  // ── नया: Top Pages की अलग अवधि ──────────────────────────────
+  const topPeriodLabels: Record<string, { label: string; days: number }> = {
+    daily:   { label: 'Today', days: 1 },
+    weekly:  { label: 'Week', days: 7 },
+    monthly: { label: 'Month', days: 30 },
+    yearly:  { label: 'Year', days: 365 },
+  };
+  const [topPeriod, setTopPeriod] = useState<string>('weekly'); // default week
+  const [topPages, setTopPages] = useState<TopPage[]>([]);
+  const [topLoading, setTopLoading] = useState(false);
+
+  // ── मुख्य स्टैट्स (चार्ट व कार्ड) ──────────────────────────
   const fetchStats = useCallback(async () => {
     setLoading(true);
     try {
@@ -370,7 +375,6 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
         headers: { Authorization: `Bearer ${token}` },
       });
       setStats(data);
-      setCurrentPage(1);
     } catch (err: any) {
       toast.error(err.response?.data?.error || 'Failed to load analytics');
     } finally {
@@ -380,11 +384,33 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
-  // Get unique devices from byDevice data (always from full stats)
-  const allDevices = stats?.byDevice?.map(d => d.device) ?? [];
+  // ── Top Pages को अलग से फ़ेच करना (topPeriod के अनुसार) ──
+  const fetchTopPages = useCallback(async () => {
+    setTopLoading(true);
+    try {
+      const topDays = topPeriodLabels[topPeriod]?.days ?? 7;
+      const params: Record<string, any> = { days: topDays };
+      if (deviceFilter !== 'all') params.device = deviceFilter;
 
-  // ── Filtered pages ──
-  const filteredPages = (stats?.topPages || []).filter(p => {
+      const { data } = await axios.get(`${API_BASE}/analytics/stats`, {
+        params,
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setTopPages(data.topPages || []);
+    } catch (err: any) {
+      toast.error('Failed to load top pages for selected period');
+    } finally {
+      setTopLoading(false);
+    }
+  }, [topPeriod, token, deviceFilter]);
+
+  useEffect(() => {
+    fetchTopPages();
+    setCurrentPage(1);
+  }, [fetchTopPages]);
+
+  // ── filteredPages अब topPages स्टेट का इस्तेमाल करेगी ──
+  const filteredPages = (topPages || []).filter(p => {
     const matchSearch =
       !search ||
       p.path.toLowerCase().includes(search.toLowerCase()) ||
@@ -408,9 +434,10 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
     color: DEVICE_COLOR[d.device] || '#475569',
   }));
 
-  const allTypes = Array.from(new Set((stats?.topPages || []).map(p => p.pageType)));
+  const allTypes = Array.from(new Set((topPages || []).map(p => p.pageType)));
+  const allDevices = stats?.byDevice?.map(d => d.device) ?? [];
 
-  if (loading) {
+  if (loading && !stats) {
     return (
       <div className="flex items-center justify-center py-16">
         <span className="w-6 h-6 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
@@ -454,12 +481,12 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
         </div>
       </div>
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      {/* Stat cards – 6 cards in responsive grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <StatCard
           label={`Total Views (${days}d)`}
           value={stats?.totalViews ?? 0}
-          sub="All pages combined"
+          sub="Selected period"
           color="text-purple-400"
         />
         <StatCard
@@ -471,14 +498,32 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
         <StatCard
           label="Unique Visitors"
           value={stats?.uniqueVisitors ?? 0}
-          sub={`Approx. last ${days} days`}
+          sub={`Last ${days} days`}
           color="text-emerald-400"
+        />
+        {/* ─── नए कार्ड्स ────────────────────────────────────────── */}
+        <StatCard
+          label="All Time Views"
+          value={stats?.allTimeTotalViews ?? 0}
+          sub="Since launch"
+          color="text-blue-400"
+        />
+        <StatCard
+          label="All Time Unique Visitors"
+          value={stats?.allTimeUniqueVisitors ?? 0}
+          sub="Since launch"
+          color="text-amber-400"
+        />
+        <StatCard
+          label="7‑Day Unique Visitors"
+          value={stats?.last7DaysUniqueVisitors ?? 0}
+          sub="Last 7 days"
+          color="text-rose-400"
         />
       </div>
 
       {/* Chart + breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* GA-style line chart */}
         <div className="lg:col-span-2 bg-white/[0.04] border border-white/[0.06] rounded-xl p-4 flex flex-col">
           <div className="flex items-center justify-between mb-4">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
@@ -495,7 +540,6 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
           </div>
         </div>
 
-        {/* Type + device rings */}
         <div className="space-y-4">
           <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">By Page Type</p>
@@ -508,10 +552,27 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
         </div>
       </div>
 
-      {/* Top pages table */}
+      {/* Top pages table with PERIOD FILTER */}
       <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl overflow-hidden">
         <div className="p-4 border-b border-white/[0.06] flex flex-wrap items-center gap-3">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide flex-1">Top Pages</p>
+
+          {/* Period filter buttons */}
+          <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
+            {Object.entries(topPeriodLabels).map(([key, { label }]) => (
+              <button
+                key={key}
+                onClick={() => setTopPeriod(key)}
+                className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors
+                  ${topPeriod === key
+                    ? 'bg-purple-600/50 text-purple-200 shadow-sm'
+                    : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
+                  }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
 
           {/* Search */}
           <div className="relative">
@@ -556,125 +617,129 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
           <span className="text-[10px] text-gray-600">{filteredPages.length} pages</span>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-white/[0.06]">
-                <th className="px-4 py-2.5 text-left text-[10px] uppercase tracking-wide text-gray-500 font-medium">#</th>
-                <th className="px-4 py-2.5 text-left text-[10px] uppercase tracking-wide text-gray-500 font-medium">Page</th>
-                <th className="px-4 py-2.5 text-left text-[10px] uppercase tracking-wide text-gray-500 font-medium hidden sm:table-cell">Type</th>
-                <th className="px-4 py-2.5 text-right text-[10px] uppercase tracking-wide text-gray-500 font-medium">Views</th>
-                <th className="px-4 py-2.5 text-right text-[10px] uppercase tracking-wide text-gray-500 font-medium hidden md:table-cell">Share</th>
-                <th className="px-4 py-2.5"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {pagedResults.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-gray-600">
-                    {search || typeFilter !== 'all' ? 'No matching pages found' : 'No page view data yet'}
-                  </td>
-                </tr>
-              ) : (
-                pagedResults.map((page, idx) => {
-                  const rank = (currentPage - 1) * PER_PAGE + idx + 1;
-                  const activeTotal = (stats?.topPages || []).reduce((s, p) => s + p.views, 0) || 1;
-                  const share = ((page.views / activeTotal) * 100).toFixed(1);
-                  const barWidth = Math.max((page.views / (stats?.topPages[0]?.views || 1)) * 100, 2);
-                  return (
-                    <tr
-                      key={page.path}
-                      className="border-b border-white/[0.04] hover:bg-white/[0.03] transition-colors group"
-                    >
-                      <td className="px-4 py-3 text-gray-600 w-8">{rank}</td>
-                      <td className="px-4 py-3 min-w-0">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-white font-medium truncate max-w-xs">
-                            {page.animeTitle || page.path}
-                          </span>
-                          <span className="text-gray-600 truncate max-w-xs text-[10px]">{page.path}</span>
-                          {/* Mini bar */}
-                          <div className="mt-1 h-1 bg-white/5 rounded-full w-32 overflow-hidden">
-                            <div
-                              className="h-full rounded-full"
-                              style={{ width: `${barWidth}%`, background: TYPE_COLOR[page.pageType] || '#a78bfa' }}
-                            />
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 hidden sm:table-cell">
-                        <span
-                          className="px-2 py-0.5 rounded-full text-[10px] font-medium"
-                          style={{
-                            background: (TYPE_COLOR[page.pageType] || '#475569') + '22',
-                            color: TYPE_COLOR[page.pageType] || '#94a3b8',
-                          }}
-                        >
-                          {PAGE_TYPE_LABEL[page.pageType] || page.pageType}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right font-semibold text-white">
-                        {page.views.toLocaleString()}
-                      </td>
-                      <td className="px-4 py-3 text-right text-gray-500 hidden md:table-cell">
-                        {share}%
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          onClick={() => setSelectedPage(page)}
-                          className="opacity-0 group-hover:opacity-100 px-2 py-1 text-[10px] bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 rounded-md transition-all"
-                        >
-                          Detail
-                        </button>
+        {topLoading ? (
+          <div className="py-8 text-center text-gray-500 text-xs">Loading top pages…</div>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-white/[0.06]">
+                    <th className="px-4 py-2.5 text-left text-[10px] uppercase tracking-wide text-gray-500 font-medium">#</th>
+                    <th className="px-4 py-2.5 text-left text-[10px] uppercase tracking-wide text-gray-500 font-medium">Page</th>
+                    <th className="px-4 py-2.5 text-left text-[10px] uppercase tracking-wide text-gray-500 font-medium hidden sm:table-cell">Type</th>
+                    <th className="px-4 py-2.5 text-right text-[10px] uppercase tracking-wide text-gray-500 font-medium">Views</th>
+                    <th className="px-4 py-2.5 text-right text-[10px] uppercase tracking-wide text-gray-500 font-medium hidden md:table-cell">Share</th>
+                    <th className="px-4 py-2.5"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedResults.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-8 text-center text-gray-600">
+                        {search || typeFilter !== 'all' ? 'No matching pages found' : 'No page view data yet'}
                       </td>
                     </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="px-4 py-3 border-t border-white/[0.06] flex items-center justify-between">
-            <span className="text-[10px] text-gray-600">
-              Page {currentPage} of {totalPages}
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="px-2 py-1 text-xs rounded bg-white/5 text-gray-400 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                ←
-              </button>
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                const start = Math.max(1, Math.min(currentPage - 2, totalPages - 4));
-                const page = start + i;
-                return (
-                  <button
-                    key={page}
-                    onClick={() => setCurrentPage(page)}
-                    className={`w-7 h-7 text-xs rounded transition-colors
-                      ${page === currentPage
-                        ? 'bg-purple-600/40 text-purple-300'
-                        : 'bg-white/5 text-gray-500 hover:bg-white/10'
-                      }`}
-                  >
-                    {page}
-                  </button>
-                );
-              })}
-              <button
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="px-2 py-1 text-xs rounded bg-white/5 text-gray-400 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                →
-              </button>
+                  ) : (
+                    pagedResults.map((page, idx) => {
+                      const rank = (currentPage - 1) * PER_PAGE + idx + 1;
+                      const activeTotal = (topPages || []).reduce((s, p) => s + p.views, 0) || 1;
+                      const share = ((page.views / activeTotal) * 100).toFixed(1);
+                      const barWidth = Math.max((page.views / (topPages[0]?.views || 1)) * 100, 2);
+                      return (
+                        <tr
+                          key={page.path}
+                          className="border-b border-white/[0.04] hover:bg-white/[0.03] transition-colors group"
+                        >
+                          <td className="px-4 py-3 text-gray-600 w-8">{rank}</td>
+                          <td className="px-4 py-3 min-w-0">
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-white font-medium truncate max-w-xs">
+                                {page.animeTitle || page.path}
+                              </span>
+                              <span className="text-gray-600 truncate max-w-xs text-[10px]">{page.path}</span>
+                              <div className="mt-1 h-1 bg-white/5 rounded-full w-32 overflow-hidden">
+                                <div
+                                  className="h-full rounded-full"
+                                  style={{ width: `${barWidth}%`, background: TYPE_COLOR[page.pageType] || '#a78bfa' }}
+                                />
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 hidden sm:table-cell">
+                            <span
+                              className="px-2 py-0.5 rounded-full text-[10px] font-medium"
+                              style={{
+                                background: (TYPE_COLOR[page.pageType] || '#475569') + '22',
+                                color: TYPE_COLOR[page.pageType] || '#94a3b8',
+                              }}
+                            >
+                              {PAGE_TYPE_LABEL[page.pageType] || page.pageType}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right font-semibold text-white">
+                            {page.views.toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3 text-right text-gray-500 hidden md:table-cell">
+                            {share}%
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              onClick={() => setSelectedPage(page)}
+                              className="opacity-0 group-hover:opacity-100 px-2 py-1 text-[10px] bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 rounded-md transition-all"
+                            >
+                              Detail
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
-          </div>
+
+            {totalPages > 1 && (
+              <div className="px-4 py-3 border-t border-white/[0.06] flex items-center justify-between">
+                <span className="text-[10px] text-gray-600">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="px-2 py-1 text-xs rounded bg-white/5 text-gray-400 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                    ←
+                  </button>
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    const start = Math.max(1, Math.min(currentPage - 2, totalPages - 4));
+                    const page = start + i;
+                    return (
+                      <button
+                        key={page}
+                        onClick={() => setCurrentPage(page)}
+                        className={`w-7 h-7 text-xs rounded transition-colors
+                          ${page === currentPage
+                            ? 'bg-purple-600/40 text-purple-300'
+                            : 'bg-white/5 text-gray-500 hover:bg-white/10'
+                          }`}
+                      >
+                        {page}
+                      </button>
+                    );
+                  })}
+                  <button
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className="px-2 py-1 text-xs rounded bg-white/5 text-gray-400 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                    →
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
