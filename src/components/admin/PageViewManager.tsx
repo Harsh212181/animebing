@@ -40,7 +40,6 @@ interface Stats {
   topPages: TopPage[];
   byType: ByType[];
   byDevice: ByDevice[];
-  // ─── नए फ़ील्ड्स ──────────────────────────────────────────────
   allTimeTotalViews: number;
   allTimeUniqueVisitors: number;
   last7DaysUniqueVisitors: number;
@@ -344,26 +343,24 @@ interface PageViewManagerProps {
 const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [days, setDays] = useState(7); // global chart/stat period
+  const [days, setDays] = useState(7);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [deviceFilter, setDeviceFilter] = useState('all');
   const [selectedPage, setSelectedPage] = useState<TopPage | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const PER_PAGE = 15;
 
-  // ── नया: Top Pages की अलग अवधि ──────────────────────────────
+  // ── Top Pages अवधि ──────────────────────────────────
   const topPeriodLabels: Record<string, { label: string; days: number }> = {
     daily:   { label: 'Today', days: 1 },
     weekly:  { label: 'Week', days: 7 },
     monthly: { label: 'Month', days: 30 },
     yearly:  { label: 'Year', days: 365 },
   };
-  const [topPeriod, setTopPeriod] = useState<string>('weekly'); // default week
+  const [topPeriod, setTopPeriod] = useState<string>('daily'); // ✅ डिफ़ॉल्ट Today
   const [topPages, setTopPages] = useState<TopPage[]>([]);
   const [topLoading, setTopLoading] = useState(false);
 
-  // ── मुख्य स्टैट्स (चार्ट व कार्ड) ──────────────────────────
+  // ── मुख्य स्टैट्स (चार्ट + कार्ड) ──────────────────
   const fetchStats = useCallback(async () => {
     setLoading(true);
     try {
@@ -384,7 +381,7 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
-  // ── Top Pages को अलग से फ़ेच करना (topPeriod के अनुसार) ──
+  // ── Top Pages fetch ────────────────────────────────
   const fetchTopPages = useCallback(async () => {
     setTopLoading(true);
     try {
@@ -406,10 +403,9 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
 
   useEffect(() => {
     fetchTopPages();
-    setCurrentPage(1);
   }, [fetchTopPages]);
 
-  // ── filteredPages अब topPages स्टेट का इस्तेमाल करेगी ──
+  // ── Filtered pages (no pagination) ─────────────────
   const filteredPages = (topPages || []).filter(p => {
     const matchSearch =
       !search ||
@@ -418,9 +414,6 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
     const matchType = typeFilter === 'all' || p.pageType === typeFilter;
     return matchSearch && matchType;
   });
-
-  const totalPages = Math.ceil(filteredPages.length / PER_PAGE);
-  const pagedResults = filteredPages.slice((currentPage - 1) * PER_PAGE, currentPage * PER_PAGE);
 
   const typeChartData = (stats?.byType || []).map(t => ({
     label: PAGE_TYPE_LABEL[t.type] || t.type,
@@ -481,14 +474,8 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
         </div>
       </div>
 
-      {/* Stat cards – 6 cards in responsive grid */}
+      {/* ✅ Stat cards – नए क्रम में */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <StatCard
-          label={`Total Views (${days}d)`}
-          value={stats?.totalViews ?? 0}
-          sub="Selected period"
-          color="text-purple-400"
-        />
         <StatCard
           label="Today's Views"
           value={stats?.todayViews ?? 0}
@@ -496,12 +483,11 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
           color="text-cyan-400"
         />
         <StatCard
-          label="Unique Visitors"
-          value={stats?.uniqueVisitors ?? 0}
-          sub={`Last ${days} days`}
-          color="text-emerald-400"
+          label={`Total Views (${days}d)`}
+          value={stats?.totalViews ?? 0}
+          sub="Selected period"
+          color="text-purple-400"
         />
-        {/* ─── नए कार्ड्स ────────────────────────────────────────── */}
         <StatCard
           label="All Time Views"
           value={stats?.allTimeTotalViews ?? 0}
@@ -509,16 +495,22 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
           color="text-blue-400"
         />
         <StatCard
-          label="All Time Unique Visitors"
-          value={stats?.allTimeUniqueVisitors ?? 0}
-          sub="Since launch"
-          color="text-amber-400"
+          label="Unique Visitors"
+          value={stats?.uniqueVisitors ?? 0}
+          sub={`Last ${days} days`}
+          color="text-emerald-400"
         />
         <StatCard
           label="7‑Day Unique Visitors"
           value={stats?.last7DaysUniqueVisitors ?? 0}
           sub="Last 7 days"
           color="text-rose-400"
+        />
+        <StatCard
+          label="All Time Unique Visitors"
+          value={stats?.allTimeUniqueVisitors ?? 0}
+          sub="Since launch"
+          color="text-amber-400"
         />
       </div>
 
@@ -552,7 +544,7 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
         </div>
       </div>
 
-      {/* Top pages table with PERIOD FILTER */}
+      {/* Top pages table – INFINITE SCROLL (no pagination) */}
       <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl overflow-hidden">
         <div className="p-4 border-b border-white/[0.06] flex flex-wrap items-center gap-3">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide flex-1">Top Pages</p>
@@ -582,7 +574,7 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
             <input
               type="text"
               value={search}
-              onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
+              onChange={e => setSearch(e.target.value)}
               placeholder="Search pages…"
               className="pl-8 pr-3 py-1.5 text-xs bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-600 focus:outline-none focus:border-purple-500/50 w-44"
             />
@@ -591,7 +583,7 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
           {/* Type filter */}
           <select
             value={typeFilter}
-            onChange={e => { setTypeFilter(e.target.value); setCurrentPage(1); }}
+            onChange={e => setTypeFilter(e.target.value)}
             className="px-2 py-1.5 text-xs bg-[#1c1b29] border border-white/10 rounded-lg text-gray-300 focus:outline-none focus:border-purple-500/50 [color-scheme:dark]"
           >
             <option value="all" className="bg-[#1c1b29] text-gray-300">All Types</option>
@@ -603,7 +595,7 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
           {/* Device filter */}
           <select
             value={deviceFilter}
-            onChange={e => { setDeviceFilter(e.target.value); setCurrentPage(1); }}
+            onChange={e => setDeviceFilter(e.target.value)}
             className="px-2 py-1.5 text-xs bg-[#1c1b29] border border-white/10 rounded-lg text-gray-300 focus:outline-none focus:border-purple-500/50 [color-scheme:dark]"
           >
             <option value="all" className="bg-[#1c1b29] text-gray-300">All Devices</option>
@@ -620,126 +612,83 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
         {topLoading ? (
           <div className="py-8 text-center text-gray-500 text-xs">Loading top pages…</div>
         ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-white/[0.06]">
-                    <th className="px-4 py-2.5 text-left text-[10px] uppercase tracking-wide text-gray-500 font-medium">#</th>
-                    <th className="px-4 py-2.5 text-left text-[10px] uppercase tracking-wide text-gray-500 font-medium">Page</th>
-                    <th className="px-4 py-2.5 text-left text-[10px] uppercase tracking-wide text-gray-500 font-medium hidden sm:table-cell">Type</th>
-                    <th className="px-4 py-2.5 text-right text-[10px] uppercase tracking-wide text-gray-500 font-medium">Views</th>
-                    <th className="px-4 py-2.5 text-right text-[10px] uppercase tracking-wide text-gray-500 font-medium hidden md:table-cell">Share</th>
-                    <th className="px-4 py-2.5"></th>
+          <div className="overflow-x-auto max-h-[70vh] overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-[#0f0e1a]">
+                <tr className="border-b border-white/[0.06]">
+                  <th className="px-4 py-2.5 text-left text-[10px] uppercase tracking-wide text-gray-500 font-medium">#</th>
+                  <th className="px-4 py-2.5 text-left text-[10px] uppercase tracking-wide text-gray-500 font-medium">Page</th>
+                  <th className="px-4 py-2.5 text-left text-[10px] uppercase tracking-wide text-gray-500 font-medium hidden sm:table-cell">Type</th>
+                  <th className="px-4 py-2.5 text-right text-[10px] uppercase tracking-wide text-gray-500 font-medium">Views</th>
+                  <th className="px-4 py-2.5 text-right text-[10px] uppercase tracking-wide text-gray-500 font-medium hidden md:table-cell">Share</th>
+                  <th className="px-4 py-2.5"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredPages.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-gray-600">
+                      {search || typeFilter !== 'all' ? 'No matching pages found' : 'No page view data yet'}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {pagedResults.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center text-gray-600">
-                        {search || typeFilter !== 'all' ? 'No matching pages found' : 'No page view data yet'}
-                      </td>
-                    </tr>
-                  ) : (
-                    pagedResults.map((page, idx) => {
-                      const rank = (currentPage - 1) * PER_PAGE + idx + 1;
-                      const activeTotal = (topPages || []).reduce((s, p) => s + p.views, 0) || 1;
-                      const share = ((page.views / activeTotal) * 100).toFixed(1);
-                      const barWidth = Math.max((page.views / (topPages[0]?.views || 1)) * 100, 2);
-                      return (
-                        <tr
-                          key={page.path}
-                          className="border-b border-white/[0.04] hover:bg-white/[0.03] transition-colors group"
-                        >
-                          <td className="px-4 py-3 text-gray-600 w-8">{rank}</td>
-                          <td className="px-4 py-3 min-w-0">
-                            <div className="flex flex-col gap-0.5">
-                              <span className="text-white font-medium truncate max-w-xs">
-                                {page.animeTitle || page.path}
-                              </span>
-                              <span className="text-gray-600 truncate max-w-xs text-[10px]">{page.path}</span>
-                              <div className="mt-1 h-1 bg-white/5 rounded-full w-32 overflow-hidden">
-                                <div
-                                  className="h-full rounded-full"
-                                  style={{ width: `${barWidth}%`, background: TYPE_COLOR[page.pageType] || '#a78bfa' }}
-                                />
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 hidden sm:table-cell">
-                            <span
-                              className="px-2 py-0.5 rounded-full text-[10px] font-medium"
-                              style={{
-                                background: (TYPE_COLOR[page.pageType] || '#475569') + '22',
-                                color: TYPE_COLOR[page.pageType] || '#94a3b8',
-                              }}
-                            >
-                              {PAGE_TYPE_LABEL[page.pageType] || page.pageType}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-right font-semibold text-white">
-                            {page.views.toLocaleString()}
-                          </td>
-                          <td className="px-4 py-3 text-right text-gray-500 hidden md:table-cell">
-                            {share}%
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <button
-                              onClick={() => setSelectedPage(page)}
-                              className="opacity-0 group-hover:opacity-100 px-2 py-1 text-[10px] bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 rounded-md transition-all"
-                            >
-                              Detail
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {totalPages > 1 && (
-              <div className="px-4 py-3 border-t border-white/[0.06] flex items-center justify-between">
-                <span className="text-[10px] text-gray-600">
-                  Page {currentPage} of {totalPages}
-                </span>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                    disabled={currentPage === 1}
-                    className="px-2 py-1 text-xs rounded bg-white/5 text-gray-400 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                  >
-                    ←
-                  </button>
-                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                    const start = Math.max(1, Math.min(currentPage - 2, totalPages - 4));
-                    const page = start + i;
+                ) : (
+                  filteredPages.map((page, idx) => {
+                    const rank = idx + 1;
+                    const activeTotal = (topPages || []).reduce((s, p) => s + p.views, 0) || 1;
+                    const share = ((page.views / activeTotal) * 100).toFixed(1);
+                    const barWidth = Math.max((page.views / (topPages[0]?.views || 1)) * 100, 2);
                     return (
-                      <button
-                        key={page}
-                        onClick={() => setCurrentPage(page)}
-                        className={`w-7 h-7 text-xs rounded transition-colors
-                          ${page === currentPage
-                            ? 'bg-purple-600/40 text-purple-300'
-                            : 'bg-white/5 text-gray-500 hover:bg-white/10'
-                          }`}
+                      <tr
+                        key={page.path}
+                        className="border-b border-white/[0.04] hover:bg-white/[0.03] transition-colors group"
                       >
-                        {page}
-                      </button>
+                        <td className="px-4 py-3 text-gray-600 w-8">{rank}</td>
+                        <td className="px-4 py-3 min-w-0">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-white font-medium truncate max-w-xs">
+                              {page.animeTitle || page.path}
+                            </span>
+                            <span className="text-gray-600 truncate max-w-xs text-[10px]">{page.path}</span>
+                            <div className="mt-1 h-1 bg-white/5 rounded-full w-32 overflow-hidden">
+                              <div
+                                className="h-full rounded-full"
+                                style={{ width: `${barWidth}%`, background: TYPE_COLOR[page.pageType] || '#a78bfa' }}
+                              />
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 hidden sm:table-cell">
+                          <span
+                            className="px-2 py-0.5 rounded-full text-[10px] font-medium"
+                            style={{
+                              background: (TYPE_COLOR[page.pageType] || '#475569') + '22',
+                              color: TYPE_COLOR[page.pageType] || '#94a3b8',
+                            }}
+                          >
+                            {PAGE_TYPE_LABEL[page.pageType] || page.pageType}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold text-white">
+                          {page.views.toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3 text-right text-gray-500 hidden md:table-cell">
+                          {share}%
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            onClick={() => setSelectedPage(page)}
+                            className="opacity-0 group-hover:opacity-100 px-2 py-1 text-[10px] bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 rounded-md transition-all"
+                          >
+                            Detail
+                          </button>
+                        </td>
+                      </tr>
                     );
-                  })}
-                  <button
-                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                    disabled={currentPage === totalPages}
-                    className="px-2 py-1 text-xs rounded bg-white/5 text-gray-400 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                  >
-                    →
-                  </button>
-                </div>
-              </div>
-            )}
-          </>
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
