@@ -1,7 +1,7 @@
  import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
-import { trackPageView, getPageViewStats, getPageDetail } from '../services/analyticsService'
+import { trackPageView, getPageViewStats, getPageDetail, getGeoDetail } from '../services/analyticsService'
 
 const analyticsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
@@ -55,14 +55,32 @@ analyticsRoutes.post('/pageview', async (c) => {
       c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
       '0.0.0.0'
 
+    // Capture available geo headers from Cloudflare (if any)
     const country = c.req.header('cf-ipcountry') || undefined
+    const region = c.req.header('cf-region') || c.req.header('cf-region-code') || undefined
+    const city = undefined  // not available on free plan, enrichment will handle later
+
     const device = detectDevice(ua)
     const browser = detectBrowser(ua)
     const referrer = c.req.header('referer') || undefined
     const pageType = detectPageType(path)
 
     await trackPageView(
-      { path, pageType, slug, animeTitle, ip, country, device, browser, referrer, sessionId, timeOnPage },
+      {
+        path,
+        pageType,
+        slug,
+        animeTitle,
+        ip,
+        country,
+        region,        // ← may be undefined, will be enriched in service if missing
+        city,          // ← undefined, enriched in service
+        device,
+        browser,
+        referrer,
+        sessionId,
+        timeOnPage,
+      },
       c.env.MONGODB_URI,
       c.env.MONGODB_DB
     )
@@ -78,7 +96,6 @@ analyticsRoutes.post('/pageview', async (c) => {
 analyticsRoutes.get('/stats', adminAuth, async (c) => {
   try {
     const days = parseInt(c.req.query('days') || '7', 10)
-    // ✅ NEW: device param read karo
     const device = c.req.query('device') || undefined
     const stats = await getPageViewStats(c.env.MONGODB_URI, c.env.MONGODB_DB, days, device)
     return c.json(stats)
@@ -94,6 +111,19 @@ analyticsRoutes.get('/page-detail', adminAuth, async (c) => {
     const days = parseInt(c.req.query('days') || '30', 10)
     if (!path) return c.json({ error: 'path required' }, 400)
     const detail = await getPageDetail(path, c.env.MONGODB_URI, c.env.MONGODB_DB, days)
+    return c.json(detail)
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ─── GET /api/analytics/geo-detail?country=IN&days=30 ───────────────────
+analyticsRoutes.get('/geo-detail', adminAuth, async (c) => {
+  try {
+    const country = c.req.query('country')
+    const days = parseInt(c.req.query('days') || '30', 10)
+    if (!country) return c.json({ error: 'country required' }, 400)
+    const detail = await getGeoDetail(country, c.env.MONGODB_URI, c.env.MONGODB_DB, days)
     return c.json(detail)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)

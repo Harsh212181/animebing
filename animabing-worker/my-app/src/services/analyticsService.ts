@@ -1,4 +1,4 @@
-import { getDb } from './mongoService'
+ import { getDb } from './mongoService'
 
 export interface PageViewRecord {
   path: string
@@ -7,6 +7,8 @@ export interface PageViewRecord {
   animeTitle?: string
   ip: string
   country?: string
+  region?: string
+  city?: string
   device?: string
   browser?: string
   referrer?: string
@@ -23,6 +25,33 @@ function getISTDateStr(d: Date = new Date()): string {
   return istDate.toISOString().slice(0, 10)
 }
 
+// ─── GeoIP response type ─────────────────────────────────────────────────
+interface GeoIPResponse {
+  countryCode?: string
+  regionName?: string
+  city?: string
+}
+
+// ─── Free GeoIP enrichment (ip-api.com) ──────────────────────────────────
+async function enrichGeo(ip: string): Promise<{ country?: string; region?: string; city?: string }> {
+  try {
+    // Skip private/local IPs
+    if (ip === '0.0.0.0' || ip.startsWith('127.') || ip.startsWith('10.') || ip.startsWith('192.168.')) {
+      return {}
+    }
+    const res = await fetch(`http://ip-api.com/json/${ip}?fields=countryCode,regionName,city`)
+    if (!res.ok) return {}
+    const data: GeoIPResponse = await res.json()
+    return {
+      country: data.countryCode || undefined,
+      region: data.regionName || undefined,
+      city: data.city || undefined,
+    }
+  } catch {
+    return {}
+  }
+}
+
 // Track single page view
 export async function trackPageView(
   data: Omit<PageViewRecord, 'timestamp' | 'date'>,
@@ -33,14 +62,28 @@ export async function trackPageView(
   const now = new Date()
   const date = getISTDateStr(now)
 
+  // Enrich geo only if country or region is missing
+  let country = data.country
+  let region = data.region
+  let city = data.city
+
+  if (!country || !region) {
+    const geo = await enrichGeo(data.ip)
+    country = country || geo.country
+    region = region || geo.region
+    city = city || geo.city
+  }
+
   await db.collection('pageviews').insertOne({
     ...data,
+    country,
+    region,
+    city,
     timestamp: now,
     date,
     createdAt: now,
   })
 
-  // FIX: Upsert only on { date, path } — pageType alag hone par duplicate na bane
   await db.collection('pageview_daily').updateOne(
     { date, path: data.path },
     {
@@ -66,7 +109,7 @@ export async function getPageViewStats(
 ) {
   const db = await getDb(mongoUri, dbName)
   const since = new Date()
-  since.setDate(since.getDate() - (days - 1))   // includes today
+  since.setDate(since.getDate() - (days - 1))
   const sinceStr = getISTDateStr(since)
 
   const baseMatch: Record<string, any> = { date: { $gte: sinceStr } }
@@ -86,10 +129,10 @@ export async function getPageViewStats(
     .distinct('ip', todayMatch)
     .then((arr: string[]) => arr.length)
 
-  // Total views (filtered by days/device, includes today)
+  // Total views (filtered by days/device)
   const totalViews = await db.collection('pageviews').countDocuments(baseMatch)
 
-  // ─── All-time total views (no date filter) ────────────────────────────
+  // ─── All-time total views ─────────────────────────────────────────────
   const allTimeMatch: Record<string, any> = {}
   if (device) allTimeMatch.device = device
   const allTimeTotalViews = await db.collection('pageviews').countDocuments(allTimeMatch)
@@ -100,7 +143,7 @@ export async function getPageViewStats(
     .distinct('ip', allTimeMatch)
     .then((arr: string[]) => arr.length)
 
-  // ─── Last 7 days unique visitors (explicitly 7 days) ─────────────────
+  // ─── Last 7 days unique visitors ─────────────────────────────────────
   const sevenDaysAgo = new Date()
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
   const sevenDaysStr = getISTDateStr(sevenDaysAgo)
@@ -131,7 +174,7 @@ export async function getPageViewStats(
     dailyChart.push({ date: dateStr, views: dailyMap.get(dateStr) || 0 })
   }
 
-  // Top pages — normalize path to prevent duplicates from case/slash differences
+  // Top pages
   let topPages: any[]
   if (device) {
     topPages = await db
@@ -185,7 +228,7 @@ export async function getPageViewStats(
     ])
     .toArray()
 
-  // Device breakdown — always full data (uses updated sinceStr)
+  // Device breakdown
   const byDevice = await db
     .collection('pageviews')
     .aggregate([
@@ -195,21 +238,37 @@ export async function getPageViewStats(
     ])
     .toArray()
 
-  // Unique visitors (for the selected period, includes today)
+  // Unique visitors (selected period)
   const uniqueVisitors = await db
     .collection('pageviews')
     .distinct('ip', baseMatch)
     .then((arr: string[]) => arr.length)
 
+  // ─── Geo stats — views by country ─────────────────────────────────────
+  const byCountryRaw = await db
+    .collection('pageviews')
+    .aggregate([
+      { $match: baseMatch },
+      { $group: { _id: '$country', views: { $sum: 1 } } },
+      { $sort: { views: -1 } },
+      { $limit: 100 },
+    ])
+    .toArray()
+
+  const byCountry = byCountryRaw
+    .filter((c: any) => c._id && c._id !== 'XX')
+    .map((c: any) => ({ country: c._id as string, views: c.views as number }))
+
   return {
-    todayViews,                        // ← NEW: aaj ke views (IST midnight se)
-    todayUniqueVisitors,               // ← NEW: aaj ke unique visitors (IST)
-    totalViews,                        // selected period
-    uniqueVisitors,                    // selected period
+    todayViews,
+    todayUniqueVisitors,
+    totalViews,
+    uniqueVisitors,
     allTimeTotalViews,
     allTimeUniqueVisitors,
     last7DaysUniqueVisitors,
     dailyChart,
+    byCountry,
     topPages: topPages.map((p: any) => ({
       path: p.path ?? '/' + p._id,
       views: p.views,
@@ -219,6 +278,59 @@ export async function getPageViewStats(
     })),
     byType: byType.map((t: any) => ({ type: t._id, views: t.views })),
     byDevice: byDevice.map((d: any) => ({ device: d._id || 'unknown', count: d.count })),
+  }
+}
+
+// ─── Geo detail — groups by region (state) and city ───────────────────────
+export async function getGeoDetail(
+  country: string,
+  mongoUri: string,
+  dbName: string,
+  days = 30
+) {
+  const db = await getDb(mongoUri, dbName)
+  const since = new Date()
+  since.setDate(since.getDate() - (days - 1))
+  const sinceStr = getISTDateStr(since)
+
+  const result = await db
+    .collection('pageviews')
+    .aggregate([
+      { $match: { country, date: { $gte: sinceStr } } },
+      {
+        $group: {
+          _id: {
+            region: { $ifNull: ['$region', 'Unknown'] },
+            city: { $ifNull: ['$city', 'Unknown'] },
+          },
+          views: { $sum: 1 },
+          uniqueIps: { $addToSet: '$ip' },
+        },
+      },
+      { $sort: { views: -1 } },
+      { $limit: 20 },
+    ])
+    .toArray()
+
+  const totalViews = await db
+    .collection('pageviews')
+    .countDocuments({ country, date: { $gte: sinceStr } })
+
+  const uniqueVisitors = await db
+    .collection('pageviews')
+    .distinct('ip', { country, date: { $gte: sinceStr } })
+    .then((arr: string[]) => arr.length)
+
+  return {
+    country,
+    totalViews,
+    uniqueVisitors,
+    cities: result.map((r: any) => ({
+      city: r._id.city,
+      region: r._id.region,
+      views: r.views,
+      uniqueVisitors: r.uniqueIps.length,
+    })),
   }
 }
 
@@ -243,7 +355,6 @@ export async function getPageDetail(
     ])
     .toArray()
 
-  // Zero-fill missing dates
   const dailyMap = new Map<string, number>(rawDaily.map((d: any) => [d._id, d.views]))
   const daily: { date: string; views: number }[] = []
   for (let i = days - 1; i >= 0; i--) {
