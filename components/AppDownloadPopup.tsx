@@ -1,4 +1,4 @@
-// components/AppDownloadPopup.tsx
+// components/AppDownloadPopup.tsx (POPUP DISABLED)
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -8,8 +8,9 @@ const AppDownloadPopup: React.FC = () => {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    const timer = setTimeout(() => setVisible(true), 2000);
-    return () => clearTimeout(timer);
+    // ❌ Timer disabled — popup kabhi show nahi hoga
+    // const timer = setTimeout(() => setVisible(true), 2000);
+    // return () => clearTimeout(timer);
   }, []);
 
   const handleClose = () => setVisible(false);

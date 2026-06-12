@@ -224,9 +224,10 @@ const Footer: React.FC = () => {
                 ))}
               </div>
 
-              {/* Download Buttons - Side by side, no heading, no DOWNLOAD text */}
+              {/* Download Buttons - AnimeBing App temporarily hidden, only Dashboard remains */}
               <div className="mt-6 flex items-center gap-3 justify-center lg:justify-start">
-                {/* AnimeBing App */}
+                {/* AnimeBing App link removed for now */}
+                {/* 
                 <a
                   href="go.animebing.in/animebingapp"
                   download
@@ -237,6 +238,7 @@ const Footer: React.FC = () => {
                   </div>
                   <span className="text-white text-sm font-medium">AnimeBing App</span>
                 </a>
+                */}
 
                 {/* AnimeBing Dashboard */}
                 <a
