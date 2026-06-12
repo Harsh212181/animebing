@@ -1,4 +1,4 @@
- // src/components/admin/PageViewManager.tsx
+// src/components/admin/PageViewManager.tsx
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
@@ -43,6 +43,7 @@ interface Stats {
   allTimeTotalViews: number;
   allTimeUniqueVisitors: number;
   last7DaysUniqueVisitors: number;
+  todayUniqueVisitors?: number;
 }
 
 // ─── Color map for page types ─────────────────────────────────────────────
@@ -356,7 +357,7 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
     monthly: { label: 'Month', days: 30 },
     yearly:  { label: 'Year', days: 365 },
   };
-  const [topPeriod, setTopPeriod] = useState<string>('daily'); // ✅ डिफ़ॉल्ट Today
+  const [topPeriod, setTopPeriod] = useState<string>('daily');
   const [topPages, setTopPages] = useState<TopPage[]>([]);
   const [topLoading, setTopLoading] = useState(false);
 
@@ -474,13 +475,19 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
         </div>
       </div>
 
-      {/* ✅ Stat cards – नए क्रम में */}
+      {/* ✅ Stat cards – updated with Daily Unique Visitors */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <StatCard
           label="Today's Views"
           value={stats?.todayViews ?? 0}
           sub="Since midnight IST"
           color="text-cyan-400"
+        />
+        <StatCard
+          label="Daily Unique Visitors"
+          value={stats?.todayUniqueVisitors ?? 0}
+          sub="Today (IST)"
+          color="text-indigo-400"
         />
         <StatCard
           label={`Total Views (${days}d)`}
@@ -499,12 +506,6 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
           value={stats?.uniqueVisitors ?? 0}
           sub={`Last ${days} days`}
           color="text-emerald-400"
-        />
-        <StatCard
-          label="7‑Day Unique Visitors"
-          value={stats?.last7DaysUniqueVisitors ?? 0}
-          sub="Last 7 days"
-          color="text-rose-400"
         />
         <StatCard
           label="All Time Unique Visitors"
@@ -648,7 +649,10 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
                             <span className="text-white font-medium truncate max-w-xs">
                               {page.animeTitle || page.path}
                             </span>
-                            <span className="text-gray-600 truncate max-w-xs text-[10px]">{page.path}</span>
+                            {/* 👇 Path only shown when animeTitle exists to avoid duplication */}
+                            {page.animeTitle && (
+                              <span className="text-gray-600 truncate max-w-xs text-[10px]">{page.path}</span>
+                            )}
                             <div className="mt-1 h-1 bg-white/5 rounded-full w-32 overflow-hidden">
                               <div
                                 className="h-full rounded-full"

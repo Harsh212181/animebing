@@ -16,6 +16,13 @@ export interface PageViewRecord {
   date: string
 }
 
+// Helper: returns date string in Indian Standard Time (UTC+5:30)
+function getISTDateStr(d: Date = new Date()): string {
+  const IST_OFFSET = 5.5 * 60 * 60 * 1000
+  const istDate = new Date(d.getTime() + IST_OFFSET)
+  return istDate.toISOString().slice(0, 10)
+}
+
 // Track single page view
 export async function trackPageView(
   data: Omit<PageViewRecord, 'timestamp' | 'date'>,
@@ -24,7 +31,7 @@ export async function trackPageView(
 ): Promise<void> {
   const db = await getDb(mongoUri, dbName)
   const now = new Date()
-  const date = now.toISOString().slice(0, 10)
+  const date = getISTDateStr(now)
 
   await db.collection('pageviews').insertOne({
     ...data,
@@ -59,36 +66,44 @@ export async function getPageViewStats(
 ) {
   const db = await getDb(mongoUri, dbName)
   const since = new Date()
-  since.setDate(since.getDate() - days)
-  const sinceStr = since.toISOString().slice(0, 10)
+  since.setDate(since.getDate() - (days - 1))   // includes today
+  const sinceStr = getISTDateStr(since)
 
   const baseMatch: Record<string, any> = { date: { $gte: sinceStr } }
   if (device) baseMatch.device = device
 
-  // Total views (filtered by days/device)
-  const totalViews = await db.collection('pageviews').countDocuments(baseMatch)
+  // ─── Today's date string (IST) ────────────────────────────────────────
+  const todayStr = getISTDateStr()
 
-  // Today views
-  const today = new Date().toISOString().slice(0, 10)
-  const todayMatch: Record<string, any> = { date: today }
+  // ─── Today's views ────────────────────────────────────────────────────
+  const todayMatch: Record<string, any> = { date: todayStr }
   if (device) todayMatch.device = device
   const todayViews = await db.collection('pageviews').countDocuments(todayMatch)
 
-  // ─── NEW: All-time total views (no date filter) ─────────────────────
+  // ─── Today's unique visitors ──────────────────────────────────────────
+  const todayUniqueVisitors = await db
+    .collection('pageviews')
+    .distinct('ip', todayMatch)
+    .then((arr: string[]) => arr.length)
+
+  // Total views (filtered by days/device, includes today)
+  const totalViews = await db.collection('pageviews').countDocuments(baseMatch)
+
+  // ─── All-time total views (no date filter) ────────────────────────────
   const allTimeMatch: Record<string, any> = {}
   if (device) allTimeMatch.device = device
   const allTimeTotalViews = await db.collection('pageviews').countDocuments(allTimeMatch)
 
-  // ─── NEW: All-time unique visitors ─────────────────────────────────
+  // ─── All-time unique visitors ─────────────────────────────────────────
   const allTimeUniqueVisitors = await db
     .collection('pageviews')
     .distinct('ip', allTimeMatch)
     .then((arr: string[]) => arr.length)
 
-  // ─── NEW: Last 7 days unique visitors (explicitly 7 days) ─────────
+  // ─── Last 7 days unique visitors (explicitly 7 days) ─────────────────
   const sevenDaysAgo = new Date()
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-  const sevenDaysStr = sevenDaysAgo.toISOString().slice(0, 10)
+  const sevenDaysStr = getISTDateStr(sevenDaysAgo)
   const sevenDayMatch: Record<string, any> = { date: { $gte: sevenDaysStr } }
   if (device) sevenDayMatch.device = device
 
@@ -112,7 +127,7 @@ export async function getPageViewStats(
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date()
     d.setDate(d.getDate() - i)
-    const dateStr = d.toISOString().slice(0, 10)
+    const dateStr = getISTDateStr(d)
     dailyChart.push({ date: dateStr, views: dailyMap.get(dateStr) || 0 })
   }
 
@@ -170,7 +185,7 @@ export async function getPageViewStats(
     ])
     .toArray()
 
-  // Device breakdown — always full data
+  // Device breakdown — always full data (uses updated sinceStr)
   const byDevice = await db
     .collection('pageviews')
     .aggregate([
@@ -180,19 +195,20 @@ export async function getPageViewStats(
     ])
     .toArray()
 
-  // Unique visitors (for the selected period)
+  // Unique visitors (for the selected period, includes today)
   const uniqueVisitors = await db
     .collection('pageviews')
     .distinct('ip', baseMatch)
     .then((arr: string[]) => arr.length)
 
   return {
-    totalViews,
-    todayViews,
+    todayViews,                        // ← NEW: aaj ke views (IST midnight se)
+    todayUniqueVisitors,               // ← NEW: aaj ke unique visitors (IST)
+    totalViews,                        // selected period
     uniqueVisitors,                    // selected period
-    allTimeTotalViews,                 // NEW
-    allTimeUniqueVisitors,             // NEW
-    last7DaysUniqueVisitors,           // NEW
+    allTimeTotalViews,
+    allTimeUniqueVisitors,
+    last7DaysUniqueVisitors,
     dailyChart,
     topPages: topPages.map((p: any) => ({
       path: p.path ?? '/' + p._id,
@@ -216,7 +232,7 @@ export async function getPageDetail(
   const db = await getDb(mongoUri, dbName)
   const since = new Date()
   since.setDate(since.getDate() - days)
-  const sinceStr = since.toISOString().slice(0, 10)
+  const sinceStr = getISTDateStr(since)
 
   const rawDaily = await db
     .collection('pageview_daily')
@@ -233,7 +249,7 @@ export async function getPageDetail(
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date()
     d.setDate(d.getDate() - i)
-    const dateStr = d.toISOString().slice(0, 10)
+    const dateStr = getISTDateStr(d)
     daily.push({ date: dateStr, views: dailyMap.get(dateStr) || 0 })
   }
 
