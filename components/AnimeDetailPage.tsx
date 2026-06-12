@@ -1,4 +1,4 @@
-// components/AnimeDetailPage.tsx - FULL-WIDTH FIX (removed container mx-auto)
+ // components/AnimeDetailPage.tsx - FULL-WIDTH FIX (removed container mx-auto)
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import type { Anime, Episode, Chapter, DownloadPage } from '../src/types';
@@ -67,7 +67,7 @@ const shuffleArray = <T,>(array: T[]): T[] => {
   return shuffled;
 };
 
-// Image optimization
+// ✅ q_auto:eco — quality same, file ~30% kam
 const optimizeImageUrl = (url: string, width: number, height: number): string => {
   if (!url || !url.includes('cloudinary.com')) return url || '';
   try {
@@ -75,12 +75,13 @@ const optimizeImageUrl = (url: string, width: number, height: number): string =>
     const baseUrl = url.split('/upload/')[0];
     const rest = url.split('/upload/')[1];
     const imagePath = rest.split('/').slice(1).join('/');
-    return `${baseUrl}/upload/f_webp,q_auto:good,w_${width},h_${height},c_fill/${imagePath}`;
+    return `${baseUrl}/upload/f_webp,q_auto:eco,w_${width},h_${height},c_fill/${imagePath}`;
   } catch (error) {
     return url;
   }
 };
 
+// ✅ 1.5x srcSet — 2x hata diya (detail page pe bhi zaroorat nahi)
 const generateSrcSet = (url: string, baseWidth: number, baseHeight: number): string => {
   if (!url || !url.includes('cloudinary.com')) return '';
   try {
@@ -88,8 +89,8 @@ const generateSrcSet = (url: string, baseWidth: number, baseHeight: number): str
     const rest = url.split('/upload/')[1];
     const imagePath = rest.split('/').slice(1).join('/');
     return `
-      ${baseUrl}/upload/f_webp,q_auto:good,w_${baseWidth},h_${baseHeight},c_fill/${imagePath} ${baseWidth}w,
-      ${baseUrl}/upload/f_webp,q_auto:good,w_${baseWidth * 2},h_${baseHeight * 2},c_fill/${imagePath} ${baseWidth * 2}w
+      ${baseUrl}/upload/f_webp,q_auto:eco,w_${baseWidth},h_${baseHeight},c_fill/${imagePath} ${baseWidth}w,
+      ${baseUrl}/upload/f_webp,q_auto:eco,w_${Math.round(baseWidth * 1.5)},h_${Math.round(baseHeight * 1.5)},c_fill/${imagePath} ${Math.round(baseWidth * 1.5)}w
     `;
   } catch (error) {
     return '';
@@ -129,9 +130,6 @@ const generateAnimeKeywords = (anime: Anime): string => {
   if (anime.releaseYear) keywords.push(`${anime.title} ${anime.releaseYear}`);
   return [...new Set(keywords)].join(', ');
 };
-
-// ✅ FIX: generateAnimeStructuredData HATA DIYA
-// Middleware ab sahi structured data inject karta hai — React se duplicate nahi banana
 
 const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoading = false }) => {
   const [episodesLoading, setEpisodesLoading] = useState(true);
@@ -177,7 +175,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
 
   const displayAnime = fullAnime || anime;
 
-  // Fetch download pages
   useEffect(() => {
     const fetchDownloadPages = async () => {
       if (!displayAnime?._id) return;
@@ -204,7 +201,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     return map;
   }, [downloadPages]);
 
-  // Fetch vote data
   const fetchVoteData = async () => {
     if (!anime) return;
     try {
@@ -283,7 +279,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     }
   };
 
-  // Fetch link settings
   const fetchLinkSettings = async () => {
     try {
       setLinkSettingsLoading(true);
@@ -300,7 +295,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     }
   };
 
-  // Fetch similar content
   const fetchSimilarContent = useCallback(async () => {
     if (!anime) return;
     try {
@@ -345,7 +339,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     if (anime) fetchVoteData();
   }, [anime]);
 
-  // Fetch full anime details if needed
   useEffect(() => {
     const fetchFullAnimeDetails = async () => {
       if (!anime) return;
@@ -377,7 +370,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     fetchFullAnimeDetails();
   }, [anime]);
 
-  // ✅ FIX: description pehle, seoDescription baad mein (middleware ke saath consistent)
   const seoData = {
     title: displayAnime?.seoTitle || `${displayAnime?.title || 'Anime'} | AnimeBing`,
     description: displayAnime?.description || displayAnime?.seoDescription || 'Watch anime online in high quality',
@@ -389,12 +381,13 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     modifiedTime: displayAnime?.updatedAt,
   };
 
+  // ✅ Mobile thumbnail — 80x112 display, 1x aur 1.5x srcSet
   const mobileThumbnail = displayAnime?.thumbnail ? optimizeImageUrl(displayAnime.thumbnail, 80, 112) : 'https://via.placeholder.com/80x112/1e293b/64748b?text=No+Image';
   const mobileThumbnailSrcSet = displayAnime?.thumbnail ? generateSrcSet(displayAnime.thumbnail, 80, 112) : '';
+  // ✅ Desktop thumbnail — 320x448 display, 1x aur 1.5x srcSet
   const desktopThumbnail = displayAnime?.thumbnail ? optimizeImageUrl(displayAnime.thumbnail, 320, 448) : 'https://via.placeholder.com/320x448/1e293b/64748b?text=No+Image';
   const desktopThumbnailSrcSet = displayAnime?.thumbnail ? generateSrcSet(displayAnime.thumbnail, 320, 448) : '';
 
-  // Group items by session
   const itemsBySession = (isManga ? chapters : episodes)?.reduce((acc, item) => {
     const session = item.session || 1;
     if (!acc[session]) acc[session] = [];
@@ -403,7 +396,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
   }, {} as Record<number, any>) || {};
   const availableSessions = Object.keys(itemsBySession).map(Number).sort((a, b) => a - b);
 
-  // Fetch episodes/chapters
   useEffect(() => {
     const fetchContent = async () => {
       if (!anime) return;
@@ -491,7 +483,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
 
   return (
     <>
-      {/* ✅ FIX: structuredData prop HATA DIYA - middleware inject karta hai, duplicate nahi banana */}
       <SEO
         title={seoData.title}
         description={seoData.description}
@@ -506,7 +497,6 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
       
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
         <div className="w-full px-3 py-4">
-          {/* Back Button */}
           <button
             onClick={onBack}
             className="group bg-slate-800/60 hover:bg-slate-700/80 text-white px-4 py-2 rounded-lg mb-4 flex items-center gap-2 transition-all duration-300 font-medium backdrop-blur-sm border border-slate-700 hover:border-purple-500/30 text-sm"

@@ -1,4 +1,4 @@
- // components/AnimeCard.tsx
+// components/AnimeCard.tsx
 import React from 'react';
 import type { Anime } from '../src/types';
 import { PlayIcon } from './icons/PlayIcon';
@@ -17,7 +17,8 @@ const optimizeImageUrl = (url: string, width: number, height: number): string =>
     const baseUrl = url.split('/upload/')[0];
     const rest = url.split('/upload/')[1];
     const imagePath = rest.split('/').slice(1).join('/');
-    return `${baseUrl}/upload/f_webp,q_auto:good,w_${width},h_${height},c_fill/${imagePath}`;
+    // q_auto:eco — quality same dikhegi, file size ~30% kam hogi
+    return `${baseUrl}/upload/f_webp,q_auto:eco,w_${width},h_${height},c_fill/${imagePath}`;
   } catch {
     return url;
   }
@@ -29,9 +30,12 @@ const generateSrcSet = (url: string, baseWidth: number, baseHeight: number): str
     const baseUrl = url.split('/upload/')[0];
     const rest = url.split('/upload/')[1];
     const imagePath = rest.split('/').slice(1).join('/');
+
+    // ✅ 1x aur 1.5x sirf — 2x hata diya (360x540 ki zaroorat nahi jab display 193px hai)
+    // q_auto:eco compression use kar raha hai — visible quality same rahegi
     return `
-      ${baseUrl}/upload/f_webp,q_auto:good,w_${baseWidth},h_${baseHeight},c_fill/${imagePath} ${baseWidth}w,
-      ${baseUrl}/upload/f_webp,q_auto:good,w_${baseWidth * 2},h_${baseHeight * 2},c_fill/${imagePath} ${baseWidth * 2}w
+      ${baseUrl}/upload/f_webp,q_auto:eco,w_${baseWidth},h_${baseHeight},c_fill/${imagePath} ${baseWidth}w,
+      ${baseUrl}/upload/f_webp,q_auto:eco,w_${Math.round(baseWidth * 1.5)},h_${Math.round(baseHeight * 1.5)},c_fill/${imagePath} ${Math.round(baseWidth * 1.5)}w
     `;
   } catch {
     return '';
@@ -55,8 +59,6 @@ const AnimeCard: React.FC<AnimeCardProps> = ({
 
   const genreList = (anime.genreList ?? []).filter((g: string) => g && g.trim()).slice(0, 3).join(', ') || '';
 
-  // ✅ Scroll save ka kaam ab sirf App.tsx ka handleAnimeSelect karta hai
-  // AnimeCard ka kaam sirf onClick call karna hai — koi side effect nahi
   const handleClick = () => {
     onClick(anime);
   };
@@ -89,9 +91,10 @@ const AnimeCard: React.FC<AnimeCardProps> = ({
           loading="lazy"
           width={displayWidth}
           height={displayHeight}
+          // ✅ sizes fix — browser ko exact display size batao taaki sahi image choose kare
           sizes={compact
-            ? "(max-width: 640px) 45vw, (max-width: 768px) 30vw, (max-width: 1024px) 22vw, (max-width: 1280px) 18vw, 150px"
-            : "(max-width: 640px) 48vw, (max-width: 768px) 32vw, (max-width: 1024px) 24vw, (max-width: 1280px) 20vw, 193px"
+            ? "(max-width: 640px) 150px, 150px"
+            : "(max-width: 640px) calc(50vw - 16px), (max-width: 768px) calc(33vw - 16px), (max-width: 1024px) calc(25vw - 16px), 193px"
           }
           onError={(e) => {
             const img = e.currentTarget as HTMLImageElement;
