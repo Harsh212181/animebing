@@ -1,7 +1,6 @@
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
-// ❌ VitePWA removed — no more manifest / service worker
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
@@ -25,7 +24,6 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       react(),
-      // ❌ VitePWA({ ... }) removed
     ],
     define: {
       'process.env': env,
@@ -44,12 +42,31 @@ export default defineConfig(({ mode }) => {
     build: {
       minify: 'terser',
       sourcemap: false,
+      cssCodeSplit: true,
+      chunkSizeWarningLimit: 600,
       rollupOptions: {
         output: {
           manualChunks: {
-            vendor: ['react', 'react-dom', 'react-router-dom'],
-          }
-        }
+            // Core React — sabse pehle load hoga, sabse important
+            'vendor-react': ['react', 'react-dom'],
+            // Router + Helmet — alag chunk
+            'vendor-router': ['react-router-dom', 'react-helmet-async'],
+            // Admin panel — sirf admin use karta hai, lazy load hoga
+            'vendor-admin': [
+              './src/components/admin/AdminDashboard',
+              './src/components/admin/AdminLogin',
+              './src/components/admin/AddAnimeForm',
+              './src/components/admin/AnimeListTable',
+              './src/components/admin/EpisodesManager',
+              './src/components/admin/PartnerManager',
+              './src/components/admin/PollManager',
+              './src/components/admin/ReportsManager',
+              './src/components/admin/SettingsPanel',
+              './src/components/admin/SocialMediaManager',
+              './src/components/admin/FeaturedAnimeManager',
+            ],
+          },
+        },
       },
       terserOptions: {
         compress: {

@@ -1,5 +1,5 @@
-// App.tsx - FINAL FIXED VERSION (with HelmetProvider + AnimeContext - Service Worker REMOVED)
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+ // App.tsx - FINAL FIXED VERSION (with HelmetProvider + AnimeContext + Lazy Loading + Instant Init)
+import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 
@@ -8,24 +8,26 @@ import Header from './components/Header';
 import Footer from './components/Footer';
 import HomePage from './components/HomePage';
 import AnimeListPage from './components/AnimeListPage';
-import DownloadRedirectPage from './components/DownloadRedirectPage';
 import ScrollToTopButton from './components/ScrollToTopButton';
 import Spinner from './components/Spinner';
-import AdminLogin from './src/components/admin/AdminLogin';
-import AdminDashboard from './src/components/admin/AdminDashboard';
 import PrivacyPolicy from './components/PrivacyPolicy';
 import DMCA from './components/DMCA';
 import TermsAndConditions from './components/TermsAndConditions';
 import Contact from './components/Contact';
 import AnalyticsTracker from './src/components/AnalyticsTracker';
 import AnimeDetailWrapper from './components/AnimeDetailWrapper';
-import Top100Page from './components/Top100Page';
-import EarnMoney from './components/EarnMoney';
-import WelcomePage from './components/WelcomePage';
-import DownloadLinkPage from './components/DownloadLinkPage';
-import UserDashboard from './components/UserDashboard';
 
 import { AnimeProvider } from './src/context/AnimeContext';
+
+// ✅ LAZY LOADED IMPORTS
+const AdminLogin = React.lazy(() => import('./src/components/admin/AdminLogin'));
+const AdminDashboard = React.lazy(() => import('./src/components/admin/AdminDashboard'));
+const Top100Page = React.lazy(() => import('./components/Top100Page'));
+const EarnMoney = React.lazy(() => import('./components/EarnMoney'));
+const DownloadLinkPage = React.lazy(() => import('./components/DownloadLinkPage'));
+const DownloadRedirectPage = React.lazy(() => import('./components/DownloadRedirectPage'));
+const UserDashboard = React.lazy(() => import('./components/UserDashboard'));
+const WelcomePage = React.lazy(() => import('./components/WelcomePage'));
 
 // ✅ 404 ERROR PAGE COMPONENT
 const ErrorPage: React.FC = () => {
@@ -104,7 +106,7 @@ const ScrollToTop: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return <>{children}</>;
 };
 
-// ✅ NEW LOADING SCREEN — Anime Portal Style
+// ✅ NEW LOADING SCREEN — Anime Portal Style (only used when REALLY needed)
 const LoadingScreen: React.FC = () => {
   const [progress, setProgress] = useState(0);
   const [visible, setVisible] = useState(false);
@@ -463,10 +465,10 @@ const MainApp: React.FC = () => {
     setSearchQuery(urlSearchQuery);
   }, [location.search]);
 
+  // ✅ Instant initialization (2-second fake delay HATA DIYA GAYA)
   useEffect(() => {
-    const initializeApp = async () => {
+    const initializeApp = () => {
       try {
-        await new Promise(resolve => setTimeout(resolve, 2000));
         const token = localStorage.getItem('adminToken');
         const username = localStorage.getItem('adminUsername');
         if (token && username) {
@@ -602,12 +604,15 @@ const MainApp: React.FC = () => {
     });
   };
 
+  // ✅ NO MORE FAKE LOADING SCREEN — isAppLoading only true during instant token check
   if (isAppLoading) return <LoadingScreen />;
 
   if (adminView === 'login') {
     return (
       <div className="print:hidden">
-        <AdminLogin onLogin={handleAdminLogin} />
+        <Suspense fallback={<Spinner />}>
+          <AdminLogin onLogin={handleAdminLogin} />
+        </Suspense>
       </div>
     );
   }
@@ -615,7 +620,9 @@ const MainApp: React.FC = () => {
   if (adminView === 'dashboard' && isAdminAuthenticated) {
     return (
       <div className="print:hidden">
-        <AdminDashboard onLogout={handleAdminLogout} />
+        <Suspense fallback={<Spinner />}>
+          <AdminDashboard onLogout={handleAdminLogout} />
+        </Suspense>
       </div>
     );
   }
@@ -661,97 +668,99 @@ const MainApp: React.FC = () => {
               backdropFilter: 'blur(10px)'
             }}
           >
-            <Routes>
-              <Route path="/" element={
-                <div className="rounded-lg overflow-hidden">
-                  <HomePage
-                    onAnimeSelect={handleAnimeSelect}
-                    searchQuery={searchQuery}
-                    filter={filter}
-                    contentType={contentType}
-                  />
-                </div>
-              } />
+            <Suspense fallback={<Spinner />}>
+              <Routes>
+                <Route path="/" element={
+                  <div className="rounded-lg overflow-hidden">
+                    <HomePage
+                      onAnimeSelect={handleAnimeSelect}
+                      searchQuery={searchQuery}
+                      filter={filter}
+                      contentType={contentType}
+                    />
+                  </div>
+                } />
 
-              <Route path="/anime" element={
-                <div className="rounded-lg overflow-hidden">
-                  <AnimeListPage onAnimeSelect={handleAnimeSelect} />
-                </div>
-              } />
+                <Route path="/anime" element={
+                  <div className="rounded-lg overflow-hidden">
+                    <AnimeListPage onAnimeSelect={handleAnimeSelect} />
+                  </div>
+                } />
 
-              <Route path="/detail/:idOrSlug" element={
-                <div className="rounded-lg overflow-hidden">
-                  <AnimeDetailWrapper />
-                </div>
-              } />
+                <Route path="/detail/:idOrSlug" element={
+                  <div className="rounded-lg overflow-hidden">
+                    <AnimeDetailWrapper />
+                  </div>
+                } />
 
-              <Route path="/top-100" element={
-                <div className="rounded-lg overflow-hidden">
-                  <Top100Page
-                    onAnimeSelect={handleAnimeSelect}
-                    onBack={handleBackToHome}
-                  />
-                </div>
-              } />
+                <Route path="/top-100" element={
+                  <div className="rounded-lg overflow-hidden">
+                    <Top100Page
+                      onAnimeSelect={handleAnimeSelect}
+                      onBack={handleBackToHome}
+                    />
+                  </div>
+                } />
 
-              <Route path="/download" element={
-                <div className="rounded-lg overflow-hidden">
-                  <DownloadRedirectPage />
-                </div>
-              } />
-              <Route path="/download-redirect" element={
-                <div className="rounded-lg overflow-hidden">
-                  <DownloadRedirectPage />
-                </div>
-              } />
+                <Route path="/download" element={
+                  <div className="rounded-lg overflow-hidden">
+                    <DownloadRedirectPage />
+                  </div>
+                } />
+                <Route path="/download-redirect" element={
+                  <div className="rounded-lg overflow-hidden">
+                    <DownloadRedirectPage />
+                  </div>
+                } />
 
-              <Route path="/download/:slug" element={
-                <div className="rounded-lg overflow-hidden">
-                  <DownloadLinkPage />
-                </div>
-              } />
+                <Route path="/download/:slug" element={
+                  <div className="rounded-lg overflow-hidden">
+                    <DownloadLinkPage />
+                  </div>
+                } />
 
-              <Route path="/privacy" element={
-                <div className="rounded-lg overflow-hidden glow-green-border">
-                  <PrivacyPolicy />
-                </div>
-              } />
-              <Route path="/dmca" element={
-                <div className="rounded-lg overflow-hidden glow-green-border">
-                  <DMCA />
-                </div>
-              } />
-              <Route path="/terms" element={
-                <div className="rounded-lg overflow-hidden glow-green-border">
-                  <TermsAndConditions />
-                </div>
-              } />
-              <Route path="/contact" element={
-                <div className="rounded-lg overflow-hidden glow-green-border">
-                  <Contact />
-                </div>
-              } />
-              <Route path="/earn-money" element={
-                <div className="rounded-lg overflow-hidden glow-green-border">
-                  <EarnMoney />
-                </div>
-              } />
-              <Route path="/promotion-plan" element={
-                <div className="rounded-lg overflow-hidden glow-green-border">
-                  <EarnMoney />
-                </div>
-              } />
-              <Route path="/welcome" element={
-                <div className="rounded-lg overflow-hidden glow-green-border">
-                  <WelcomePage />
-                </div>
-              } />
-              <Route path="*" element={
-                <div className="rounded-lg overflow-hidden glow-green-border">
-                  <ErrorPage />
-                </div>
-              } />
-            </Routes>
+                <Route path="/privacy" element={
+                  <div className="rounded-lg overflow-hidden glow-green-border">
+                    <PrivacyPolicy />
+                  </div>
+                } />
+                <Route path="/dmca" element={
+                  <div className="rounded-lg overflow-hidden glow-green-border">
+                    <DMCA />
+                  </div>
+                } />
+                <Route path="/terms" element={
+                  <div className="rounded-lg overflow-hidden glow-green-border">
+                    <TermsAndConditions />
+                  </div>
+                } />
+                <Route path="/contact" element={
+                  <div className="rounded-lg overflow-hidden glow-green-border">
+                    <Contact />
+                  </div>
+                } />
+                <Route path="/earn-money" element={
+                  <div className="rounded-lg overflow-hidden glow-green-border">
+                    <EarnMoney />
+                  </div>
+                } />
+                <Route path="/promotion-plan" element={
+                  <div className="rounded-lg overflow-hidden glow-green-border">
+                    <EarnMoney />
+                  </div>
+                } />
+                <Route path="/welcome" element={
+                  <div className="rounded-lg overflow-hidden glow-green-border">
+                    <WelcomePage />
+                  </div>
+                } />
+                <Route path="*" element={
+                  <div className="rounded-lg overflow-hidden glow-green-border">
+                    <ErrorPage />
+                  </div>
+                } />
+              </Routes>
+            </Suspense>
           </div>
         </main>
 
@@ -770,7 +779,11 @@ const App: React.FC = () => {
         <AnimeProvider>
           <Routes>
             {/* Dashboard without Header/Footer */}
-            <Route path="/dashboard" element={<UserDashboard />} />
+            <Route path="/dashboard" element={
+              <Suspense fallback={<Spinner />}>
+                <UserDashboard />
+              </Suspense>
+            } />
             {/* All other routes with full layout */}
             <Route path="*" element={<MainApp />} />
           </Routes>

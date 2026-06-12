@@ -1,15 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <!-- Google tag (gtag.js) for Ads (AW-17992389992) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=AW-17992389992"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-      gtag('config', 'AW-17992389992');
-    </script>
-
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
@@ -30,22 +21,6 @@
     <meta name="twitter:title" content="AnimeBing - Watch Anime in Hindi &amp; English Online Free" />
     <meta name="twitter:description" content="Watch and Download latest anime series and movies in Hindi Dub, Hindi Sub and English Sub for free. Stream and download your favorite anime on AnimeBing." />
     <meta name="twitter:image" content="https://animebing.in/AnimeBinglogo.jpg" />
-
-    <!-- Google AdSense -->
-    <script
-      async
-      src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4562165881550636"
-      crossorigin="anonymous"
-    ></script>
-
-    <!-- Google Analytics (GA4 - SPA SAFE CONFIG) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-SCZXQXKFQD"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-      gtag('config', 'G-SCZXQXKFQD', { send_page_view: false });
-    </script>
 
     <meta name="author" content="Animebing" />
 
@@ -76,26 +51,52 @@
       .animate-pulse-soft { animation: pulse-soft 2s infinite; }
       .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
       .scrollbar-hide::-webkit-scrollbar { display: none; }
-      .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-      .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+      .line-clamp-2 {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .line-clamp-3 {
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
       @keyframes shimmer { 0% { background-position: -468px 0; } 100% { background-position: 468px 0; } }
       .animate-shimmer { animation: shimmer 2s infinite linear; background: linear-gradient(to right, #1e293b 8%, #334155 18%, #1e293b 33%); background-size: 800px 104px; }
     </style>
-
-    <!-- React CDN imports -->
-    <script type="importmap">
-      {
-        "imports": {
-          "react": "https://aistudiocdn.com/react@^19.2.0",
-          "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-          "react/": "https://aistudiocdn.com/react@^19.2.0/"
-        }
-      }
-    </script>
   </head>
 
   <body class="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
+
+    <!-- Google AdSense -->
+    <script
+      async
+      src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4562165881550636"
+      crossorigin="anonymous"
+    ></script>
+
+    <!-- Google Ads Tag (AW) -->
+    <script defer src="https://www.googletagmanager.com/gtag/js?id=AW-17992389992"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'AW-17992389992');
+    </script>
+
+    <!-- Google Analytics GA4 -->
+    <script defer src="https://www.googletagmanager.com/gtag/js?id=G-SCZXQXKFQD"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-SCZXQXKFQD', { send_page_view: false });
+    </script>
   </body>
 </html>
