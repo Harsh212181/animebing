@@ -95,8 +95,6 @@ const ScrollToTop: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
 
   useEffect(() => {
-    // ✅ Agar homeScrollPosition hai, user back aa raha hai
-    // Us case mein scroll restore HomePage khud karega — yahan kuch mat karo
     const isComingBack = !!sessionStorage.getItem('homeScrollPosition');
     if (isComingBack) return;
 
@@ -106,7 +104,7 @@ const ScrollToTop: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return <>{children}</>;
 };
 
-// ✅ NEW LOADING SCREEN — Anime Portal Style (only used when REALLY needed)
+// ✅ LOADING SCREEN — Anime Portal Style
 const LoadingScreen: React.FC = () => {
   const [progress, setProgress] = useState(0);
   const [visible, setVisible] = useState(false);
@@ -452,8 +450,6 @@ const MainApp: React.FC = () => {
   const dummyFilterFunction = (filter: 'Hindi Dub' | 'Hindi Sub' | 'English Sub') => {};
   const dummyContentTypeFunction = (contentType: ContentType) => {};
 
-  // ❌ SERVICE WORKER REGISTRATION REMOVED (was causing sw-main.js error)
-
   // ✅ URL params sync
   useEffect(() => {
     const urlFilter = searchParams.get('filter') as FilterType | null;
@@ -465,9 +461,11 @@ const MainApp: React.FC = () => {
     setSearchQuery(urlSearchQuery);
   }, [location.search]);
 
-  // ✅ Instant initialization (2-second fake delay HATA DIYA GAYA)
+  // ✅ FIXED: Minimum 2 second loading screen
   useEffect(() => {
-    const initializeApp = () => {
+    const initializeApp = async () => {
+      const startTime = Date.now();
+
       try {
         const token = localStorage.getItem('adminToken');
         const username = localStorage.getItem('adminUsername');
@@ -479,9 +477,16 @@ const MainApp: React.FC = () => {
           console.error('App initialization error:', error);
         }
       } finally {
-        setIsAppLoading(false);
+        // ✅ Minimum 2000ms (2 seconds) loading screen dikhao
+        const elapsed = Date.now() - startTime;
+        const remaining = Math.max(0, 2000 - elapsed);
+
+        setTimeout(() => {
+          setIsAppLoading(false);
+        }, remaining);
       }
     };
+
     initializeApp();
   }, []);
 
@@ -521,7 +526,6 @@ const MainApp: React.FC = () => {
         typingTimeoutRef.current = setTimeout(() => setTypedText(''), 3000);
       }
 
-      // Ctrl + Shift + Alt + H combo to trigger admin login
       if (e.ctrlKey && e.shiftKey && e.altKey && (e.key === 'h' || e.key === 'H')) {
         e.preventDefault();
         setAdminView('login');
@@ -604,7 +608,6 @@ const MainApp: React.FC = () => {
     });
   };
 
-  // ✅ NO MORE FAKE LOADING SCREEN — isAppLoading only true during instant token check
   if (isAppLoading) return <LoadingScreen />;
 
   if (adminView === 'login') {
