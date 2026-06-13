@@ -1,4 +1,4 @@
-// src/components/admin/PageViewManager.tsx
+ // src/components/admin/PageViewManager.tsx
 import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
@@ -90,6 +90,78 @@ interface FunnelStats {
     detailToDownloadRate: string;
     overallConversionRate: string;
   };
+}
+
+// ─── New analytics data types ─────────────────────────────────────────────
+interface ReferrerItem { source: string; views: number }
+interface BrowserItem { browser: string; count: number }
+interface TimeOnPageItem { pageType: string; avgSeconds: number; samples: number }
+interface LiveData { liveVisitors: number; currentPages: { path: string; count: number; animeTitle?: string; pageType?: string }[] }
+interface TopAnimeItem { animeTitle: string; slug?: string; totalViews: number; detailViews: number; episodeViews: number; downloadViews: number }
+interface HourlyItem { hour: number; views: number }
+interface NotFoundItem { path: string; views: number; referrer?: string }
+interface VisitorType { newVisitors: number; returningVisitors: number; total: number }
+
+// User Link Analytics
+interface UserLinkStat {
+  userId: string
+  username: string
+  realName: string
+  ratePerThousand: number
+  totalClicks: number
+  clicksInPeriod: number
+  uniqueVisitors: number
+  newVisitors: number
+  returningVisitors: number
+  byCountry: { country: string; count: number }[]
+  byDevice: { device: string; count: number }[]
+  dailyClicks: { date: string; clicks: number }[]
+  links: {
+    code: string
+    label: string
+    url: string
+    totalClicks: number
+    clicksInPeriod: number
+    lastClicked: string | null
+  }[]
+}
+
+// NEW interfaces for the 6 additional features
+interface EarningsUser {
+  userId: string; username: string; realName: string
+  totalEarnings: number; unpaidEarnings: number; paidEarnings: number
+  ratePerThousand: number; projectedMonthly: number
+  earningsTimeline: { date: string; clicks: number; earnings: number }[]
+  linkHealth: { code: string; label: string; url: string; totalClicks: number; recentClicks: number; status: string; lastClicked: string | null }[]
+  deadLinks: number; trendingLinks: number
+}
+interface FraudAlert {
+  userId: string; username: string; realName: string
+  totalClicks: number; riskScore: number; riskLevel: string
+  suspiciousIps: { ip: string; count: number; codes: string[] }[]
+  spikeHours: { date: string; hour: number; count: number; avgHourly: number }[]
+  unknownCountryClicks: number; unknownPct: number
+}
+interface LeaderUser {
+  userId: string; username: string; realName: string
+  totalClicks: number; todayClicks: number; weekClicks: number
+  totalEarnings: number; unpaidEarnings: number
+  clickStreak: number; loginStreak: number; ratePerThousand: number
+}
+interface PaymentUser {
+  userId: string; username: string; realName: string
+  totalClicks: number; totalEarnings: number
+  paidEarnings: number; unpaidEarnings: number; ratePerThousand: number
+}
+interface CohortRow {
+  month: string; total: number; active30: number; active60: number; active90: number
+  retention30: number; retention60: number; retention90: number
+  avgClicks: number; totalClicks: number; totalEarnings: number
+}
+interface JourneyUser {
+  userId: string; username: string; realName: string
+  totalClicks: number; detailVisits: number; downloadVisits: number
+  bounces: number; bounceRate: number; detailRate: number; downloadRate: number
 }
 
 // ─── Color maps ───────────────────────────────────────────────────────────
@@ -616,8 +688,72 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
   const [byCountry, setByCountry] = useState<ByCountry[]>([]);
   const [countryLoading, setCountryLoading] = useState(false);
 
+  // Funnel period (defaults to "Today")
+  const [funnelPeriod, setFunnelPeriod] = useState<string>('daily');
   const [funnel, setFunnel] = useState<FunnelStats | null>(null);
 
+  // ─── New analytics state — now all default to 'daily' ─────────────────
+  const [referrerPeriod, setReferrerPeriod] = useState<string>('daily');
+  const [referrers, setReferrers] = useState<ReferrerItem[]>([]);
+  const [referrerLoading, setReferrerLoading] = useState(false);
+
+  const [browserPeriod, setBrowserPeriod] = useState<string>('daily');
+  const [browsers, setBrowsers] = useState<BrowserItem[]>([]);
+  const [browserLoading, setBrowserLoading] = useState(false);
+
+  const [timeOnPagePeriod, setTimeOnPagePeriod] = useState<string>('daily');
+  const [timeOnPageData, setTimeOnPageData] = useState<TimeOnPageItem[]>([]);
+  const [timeOnPageLoading, setTimeOnPageLoading] = useState(false);
+
+  const [liveData, setLiveData] = useState<LiveData | null>(null);
+  const [liveLoading, setLiveLoading] = useState(false);
+
+  const [topAnimePeriod, setTopAnimePeriod] = useState<string>('daily');
+  const [topAnime, setTopAnime] = useState<TopAnimeItem[]>([]);
+  const [topAnimeLoading, setTopAnimeLoading] = useState(false);
+
+  const [hourlyPeriod, setHourlyPeriod] = useState<string>('daily');
+  const [hourlyData, setHourlyData] = useState<HourlyItem[]>([]);
+  const [hourlyLoading, setHourlyLoading] = useState(false);
+
+  const [notFoundPeriod, setNotFoundPeriod] = useState<string>('daily');
+  const [notFoundPages, setNotFoundPages] = useState<NotFoundItem[]>([]);
+  const [notFoundLoading, setNotFoundLoading] = useState(false);
+
+  const [visitorTypePeriod, setVisitorTypePeriod] = useState<string>('daily');
+  const [visitorType, setVisitorType] = useState<VisitorType | null>(null);
+  const [visitorTypeLoading, setVisitorTypeLoading] = useState(false);
+
+  // User Link Analytics state
+  const [userLinksPeriod, setUserLinksPeriod] = useState<string>('daily');
+  const [userLinksData, setUserLinksData] = useState<UserLinkStat[]>([]);
+  const [userLinksLoading, setUserLinksLoading] = useState(false);
+  const [expandedUser, setExpandedUser] = useState<string | null>(null);
+
+  // ─── NEW state for 6 additional features ─────────────────────────────
+  const [earningsData, setEarningsData] = useState<EarningsUser[]>([])
+  const [earningsLoading, setEarningsLoading] = useState(false)
+  const [expandedEarningsUser, setExpandedEarningsUser] = useState<string | null>(null)
+
+  const [fraudData, setFraudData] = useState<FraudAlert[]>([])
+  const [fraudLoading, setFraudLoading] = useState(false)
+  const [fraudDays, setFraudDays] = useState('weekly')
+
+  const [leaderData, setLeaderData] = useState<{ byToday: LeaderUser[]; byWeek: LeaderUser[]; byAllTime: LeaderUser[]; byStreak: LeaderUser[] } | null>(null)
+  const [leaderLoading, setLeaderLoading] = useState(false)
+  const [leaderTab, setLeaderTab] = useState<'byToday' | 'byWeek' | 'byAllTime' | 'byStreak'>('byToday')
+
+  const [paymentData, setPaymentData] = useState<any>(null)
+  const [paymentLoading, setPaymentLoading] = useState(false)
+
+  const [cohortData, setCohortData] = useState<CohortRow[]>([])
+  const [cohortLoading, setCohortLoading] = useState(false)
+
+  const [journeyData, setJourneyData] = useState<JourneyUser[]>([])
+  const [journeyLoading, setJourneyLoading] = useState(false)
+  const [journeyDays, setJourneyDays] = useState('weekly')
+
+  // ─── Existing fetch functions ────────────────────────────────────────
   const fetchStats = useCallback(async () => {
     setLoading(true);
     try {
@@ -675,18 +811,257 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
 
   const fetchFunnel = useCallback(async () => {
     try {
+      const funnelDays = topPeriodLabels[funnelPeriod]?.days ?? 7;
       const { data } = await axios.get(`${API_BASE}/analytics/funnel`, {
-        params: { days },
+        params: { days: funnelDays },
         headers: { Authorization: `Bearer ${token}` },
       });
       setFunnel(data);
     } catch {
       toast.error('Failed to load funnel data');
     }
-  }, [days, token]);
+  }, [funnelPeriod, token]);
 
   useEffect(() => { fetchFunnel(); }, [fetchFunnel]);
 
+  // ─── New fetch functions ─────────────────────────────────────────────
+  const fetchReferrers = useCallback(async () => {
+    setReferrerLoading(true);
+    try {
+      const rDays = topPeriodLabels[referrerPeriod]?.days ?? 7;
+      const { data } = await axios.get(`${API_BASE}/analytics/referrers`, {
+        params: { days: rDays },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setReferrers(data.byReferrer || []);
+    } catch {
+      toast.error('Failed to load referrer data');
+    } finally {
+      setReferrerLoading(false);
+    }
+  }, [referrerPeriod, token]);
+
+  useEffect(() => { fetchReferrers(); }, [fetchReferrers]);
+
+  const fetchBrowsers = useCallback(async () => {
+    setBrowserLoading(true);
+    try {
+      const bDays = topPeriodLabels[browserPeriod]?.days ?? 7;
+      const { data } = await axios.get(`${API_BASE}/analytics/browsers`, {
+        params: { days: bDays },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setBrowsers(data.byBrowser || []);
+    } catch {
+      toast.error('Failed to load browser data');
+    } finally {
+      setBrowserLoading(false);
+    }
+  }, [browserPeriod, token]);
+
+  useEffect(() => { fetchBrowsers(); }, [fetchBrowsers]);
+
+  const fetchTimeOnPage = useCallback(async () => {
+    setTimeOnPageLoading(true);
+    try {
+      const tDays = topPeriodLabels[timeOnPagePeriod]?.days ?? 7;
+      const { data } = await axios.get(`${API_BASE}/analytics/time-on-page`, {
+        params: { days: tDays },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setTimeOnPageData(data.byPageType || []);
+    } catch {
+      toast.error('Failed to load time on page');
+    } finally {
+      setTimeOnPageLoading(false);
+    }
+  }, [timeOnPagePeriod, token]);
+
+  useEffect(() => { fetchTimeOnPage(); }, [fetchTimeOnPage]);
+
+  const fetchLive = useCallback(async () => {
+    setLiveLoading(true);
+    try {
+      const { data } = await axios.get(`${API_BASE}/analytics/live`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setLiveData(data);
+    } catch {
+      toast.error('Failed to load live data');
+    } finally {
+      setLiveLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => { fetchLive(); }, [fetchLive]);
+
+  const fetchTopAnime = useCallback(async () => {
+    setTopAnimeLoading(true);
+    try {
+      const aDays = topPeriodLabels[topAnimePeriod]?.days ?? 7;
+      const { data } = await axios.get(`${API_BASE}/analytics/top-anime`, {
+        params: { days: aDays },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setTopAnime(data.topAnime || []);
+    } catch {
+      toast.error('Failed to load top anime');
+    } finally {
+      setTopAnimeLoading(false);
+    }
+  }, [topAnimePeriod, token]);
+
+  useEffect(() => { fetchTopAnime(); }, [fetchTopAnime]);
+
+  const fetchHourly = useCallback(async () => {
+    setHourlyLoading(true);
+    try {
+      const hDays = topPeriodLabels[hourlyPeriod]?.days ?? 7;
+      const { data } = await axios.get(`${API_BASE}/analytics/hourly`, {
+        params: { days: hDays },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setHourlyData(data.hourly || []);
+    } catch {
+      toast.error('Failed to load hourly data');
+    } finally {
+      setHourlyLoading(false);
+    }
+  }, [hourlyPeriod, token]);
+
+  useEffect(() => { fetchHourly(); }, [fetchHourly]);
+
+  const fetchNotFound = useCallback(async () => {
+    setNotFoundLoading(true);
+    try {
+      const nDays = topPeriodLabels[notFoundPeriod]?.days ?? 7;
+      const { data } = await axios.get(`${API_BASE}/analytics/not-found`, {
+        params: { days: nDays },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setNotFoundPages(data.notFoundPages || []);
+    } catch {
+      toast.error('Failed to load 404 stats');
+    } finally {
+      setNotFoundLoading(false);
+    }
+  }, [notFoundPeriod, token]);
+
+  useEffect(() => { fetchNotFound(); }, [fetchNotFound]);
+
+  const fetchVisitorType = useCallback(async () => {
+    setVisitorTypeLoading(true);
+    try {
+      const vDays = topPeriodLabels[visitorTypePeriod]?.days ?? 7;
+      const { data } = await axios.get(`${API_BASE}/analytics/visitor-type`, {
+        params: { days: vDays },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setVisitorType(data);
+    } catch {
+      toast.error('Failed to load visitor types');
+    } finally {
+      setVisitorTypeLoading(false);
+    }
+  }, [visitorTypePeriod, token]);
+
+  useEffect(() => { fetchVisitorType(); }, [fetchVisitorType]);
+
+  // User Link Analytics fetch
+  const fetchUserLinks = useCallback(async () => {
+    setUserLinksLoading(true)
+    try {
+      const d = topPeriodLabels[userLinksPeriod]?.days ?? 7
+      const { data } = await axios.get(`${API_BASE}/analytics/user-links`, {
+        params: { days: d },
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      setUserLinksData(data.users || [])
+    } catch {
+      toast.error('Failed to load user link analytics')
+    } finally {
+      setUserLinksLoading(false)
+    }
+  }, [userLinksPeriod, token])
+
+  useEffect(() => { fetchUserLinks() }, [fetchUserLinks])
+
+  // ─── NEW fetch functions for the 6 features ───────────────────────────
+  const fetchEarnings = useCallback(async () => {
+    setEarningsLoading(true)
+    try {
+      const { data } = await axios.get(`${API_BASE}/analytics/earnings-health`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      setEarningsData(data.users || [])
+    } catch { toast.error('Failed to load earnings data') }
+    finally { setEarningsLoading(false) }
+  }, [token])
+  useEffect(() => { fetchEarnings() }, [fetchEarnings])
+
+  const fetchFraud = useCallback(async () => {
+    setFraudLoading(true)
+    try {
+      const d = topPeriodLabels[fraudDays]?.days ?? 7
+      const { data } = await axios.get(`${API_BASE}/analytics/fraud`, {
+        params: { days: d }, headers: { Authorization: `Bearer ${token}` }
+      })
+      setFraudData(data.alerts || [])
+    } catch { toast.error('Failed to load fraud data') }
+    finally { setFraudLoading(false) }
+  }, [fraudDays, token])
+  useEffect(() => { fetchFraud() }, [fetchFraud])
+
+  const fetchLeader = useCallback(async () => {
+    setLeaderLoading(true)
+    try {
+      const { data } = await axios.get(`${API_BASE}/analytics/leaderboard`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      setLeaderData(data)
+    } catch { toast.error('Failed to load leaderboard') }
+    finally { setLeaderLoading(false) }
+  }, [token])
+  useEffect(() => { fetchLeader() }, [fetchLeader])
+
+  const fetchPayment = useCallback(async () => {
+    setPaymentLoading(true)
+    try {
+      const { data } = await axios.get(`${API_BASE}/analytics/payment-analytics`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      setPaymentData(data)
+    } catch { toast.error('Failed to load payment analytics') }
+    finally { setPaymentLoading(false) }
+  }, [token])
+  useEffect(() => { fetchPayment() }, [fetchPayment])
+
+  const fetchCohort = useCallback(async () => {
+    setCohortLoading(true)
+    try {
+      const { data } = await axios.get(`${API_BASE}/analytics/cohort`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      setCohortData(data.cohorts || [])
+    } catch { toast.error('Failed to load cohort data') }
+    finally { setCohortLoading(false) }
+  }, [token])
+  useEffect(() => { fetchCohort() }, [fetchCohort])
+
+  const fetchJourney = useCallback(async () => {
+    setJourneyLoading(true)
+    try {
+      const d = topPeriodLabels[journeyDays]?.days ?? 7
+      const { data } = await axios.get(`${API_BASE}/analytics/link-journey`, {
+        params: { days: d }, headers: { Authorization: `Bearer ${token}` }
+      })
+      setJourneyData(data.journeys || [])
+    } catch { toast.error('Failed to load journey data') }
+    finally { setJourneyLoading(false) }
+  }, [journeyDays, token])
+  useEffect(() => { fetchJourney() }, [fetchJourney])
+
+  // ─── Filtered pages for table ────────────────────────────────────────
   const filteredPages = (topPages || []).filter(p => {
     const matchSearch = !search ||
       p.path.toLowerCase().includes(search.toLowerCase()) ||
@@ -789,12 +1164,23 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
         loading={countryLoading}
       />
 
-      {/* ── Funnel ─────────────────────────────────────────────────────── */}
+      {/* ── Funnel ────────────────────────────────────────────────────── */}
       {funnel && (
         <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-4">
-            User Journey Funnel — Last {days} Days
-          </p>
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+              User Journey Funnel — {topPeriodLabels[funnelPeriod]?.label ?? 'Today'}
+            </p>
+            <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
+              {Object.entries(topPeriodLabels).map(([key, { label }]) => (
+                <button key={key} onClick={() => setFunnelPeriod(key)}
+                  className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors
+                    ${funnelPeriod === key ? 'bg-purple-600/50 text-purple-200 shadow-sm' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="grid grid-cols-3 gap-4">
             <div className="text-center">
               <p className="text-2xl font-semibold text-cyan-400">{funnel.homeOnly.toLocaleString()}</p>
@@ -819,6 +1205,907 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
           </div>
         </div>
       )}
+
+      {/* ── 1. Traffic Sources (Referrers) ────────────────────────────── */}
+      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Traffic Sources</p>
+          <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
+            {Object.entries(topPeriodLabels).map(([key, { label }]) => (
+              <button key={key} onClick={() => setReferrerPeriod(key)}
+                className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors
+                  ${referrerPeriod === key ? 'bg-purple-600/50 text-purple-200 shadow-sm' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {referrerLoading ? (
+          <div className="flex justify-center py-4"><span className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
+        ) : referrers.length === 0 ? (
+          <p className="text-gray-600 text-xs text-center py-4">No referrer data</p>
+        ) : (
+          <div className="space-y-2">
+            {referrers.slice(0, 10).map((r, i) => {
+              const max = referrers[0]?.views || 1;
+              const barWidth = (r.views / max) * 100;
+              return (
+                <div key={i} className="flex items-center gap-2 text-xs">
+                  <span className="text-gray-500 w-20 truncate">{r.source}</span>
+                  <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-purple-600/60 to-purple-400 rounded-full" style={{ width: `${barWidth}%` }} />
+                  </div>
+                  <span className="text-white font-medium w-16 text-right">{r.views.toLocaleString()}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── 2. Browser Breakdown ──────────────────────────────────────── */}
+      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Browsers</p>
+          <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
+            {Object.entries(topPeriodLabels).map(([key, { label }]) => (
+              <button key={key} onClick={() => setBrowserPeriod(key)}
+                className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors
+                  ${browserPeriod === key ? 'bg-purple-600/50 text-purple-200 shadow-sm' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {browserLoading ? (
+          <div className="flex justify-center py-4"><span className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
+        ) : browsers.length === 0 ? (
+          <p className="text-gray-600 text-xs text-center py-4">No browser data</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            {browsers.map((b, i) => (
+              <div key={i} className="flex items-center justify-between p-2 bg-white/5 rounded-lg">
+                <span className="text-gray-300 text-xs">{b.browser}</span>
+                <span className="text-white font-medium text-xs">{b.count.toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── 3. Average Time on Page ────────────────────────────────────── */}
+      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Avg. Time on Page</p>
+          <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
+            {Object.entries(topPeriodLabels).map(([key, { label }]) => (
+              <button key={key} onClick={() => setTimeOnPagePeriod(key)}
+                className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors
+                  ${timeOnPagePeriod === key ? 'bg-purple-600/50 text-purple-200 shadow-sm' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {timeOnPageLoading ? (
+          <div className="flex justify-center py-4"><span className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
+        ) : timeOnPageData.length === 0 ? (
+          <p className="text-gray-600 text-xs text-center py-4">No time-on-page data</p>
+        ) : (
+          <div className="space-y-2">
+            {timeOnPageData.map((t, i) => (
+              <div key={i} className="flex items-center gap-3 text-xs">
+                <span className="w-24 text-gray-400 truncate">{PAGE_TYPE_LABEL[t.pageType] || t.pageType}</span>
+                <span className="text-white font-medium">{Math.floor(t.avgSeconds / 60)}m {t.avgSeconds % 60}s</span>
+                <span className="text-gray-600">({t.samples} samples)</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── 4. Live Visitors ───────────────────────────────────────────── */}
+      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Live Visitors (last 5 min)</p>
+          <button onClick={fetchLive} className="text-[10px] text-purple-400 hover:text-purple-300 transition-colors">Refresh</button>
+        </div>
+        {liveLoading ? (
+          <div className="flex justify-center py-4"><span className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
+        ) : !liveData ? (
+          <p className="text-gray-600 text-xs text-center py-4">No live data</p>
+        ) : (
+          <div>
+            <StatCard label="Active Visitors" value={liveData.liveVisitors} color="text-green-400" />
+            {liveData.currentPages.length > 0 && (
+              <div className="mt-3 space-y-1">
+                {liveData.currentPages.map((p, i) => (
+                  <div key={i} className="flex items-center justify-between text-xs">
+                    <span className="text-gray-300 truncate max-w-xs">{p.animeTitle || p.path}</span>
+                    <span className="text-white font-medium">{p.count}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── 5. Top Anime Overall ───────────────────────────────────────── */}
+      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Top Anime</p>
+          <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
+            {Object.entries(topPeriodLabels).map(([key, { label }]) => (
+              <button key={key} onClick={() => setTopAnimePeriod(key)}
+                className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors
+                  ${topAnimePeriod === key ? 'bg-purple-600/50 text-purple-200 shadow-sm' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {topAnimeLoading ? (
+          <div className="flex justify-center py-4"><span className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
+        ) : topAnime.length === 0 ? (
+          <p className="text-gray-600 text-xs text-center py-4">No anime data</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-white/[0.06]">
+                  <th className="py-2 text-left text-gray-500">Anime</th>
+                  <th className="py-2 text-right text-gray-500">Total</th>
+                  <th className="py-2 text-right text-gray-500 hidden sm:table-cell">Detail</th>
+                  <th className="py-2 text-right text-gray-500 hidden sm:table-cell">Episode</th>
+                  <th className="py-2 text-right text-gray-500 hidden sm:table-cell">Download</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topAnime.slice(0, 15).map((a, i) => (
+                  <tr key={i} className="border-b border-white/[0.03]">
+                    <td className="py-2 text-gray-300 truncate max-w-xs">{a.animeTitle}</td>
+                    <td className="py-2 text-right text-white font-medium">{a.totalViews.toLocaleString()}</td>
+                    <td className="py-2 text-right text-gray-500 hidden sm:table-cell">{a.detailViews}</td>
+                    <td className="py-2 text-right text-gray-500 hidden sm:table-cell">{a.episodeViews}</td>
+                    <td className="py-2 text-right text-gray-500 hidden sm:table-cell">{a.downloadViews}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── 6. Hourly Heatmap ──────────────────────────────────────────── */}
+      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Hourly Activity (IST)</p>
+          <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
+            {Object.entries(topPeriodLabels).map(([key, { label }]) => (
+              <button key={key} onClick={() => setHourlyPeriod(key)}
+                className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors
+                  ${hourlyPeriod === key ? 'bg-purple-600/50 text-purple-200 shadow-sm' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {hourlyLoading ? (
+          <div className="flex justify-center py-4"><span className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
+        ) : hourlyData.length === 0 ? (
+          <p className="text-gray-600 text-xs text-center py-4">No hourly data</p>
+        ) : (
+          <div className="flex items-end gap-1 h-24">
+            {hourlyData.map((h, i) => {
+              const maxH = Math.max(...hourlyData.map(d => d.views), 1);
+              const heightPct = (h.views / maxH) * 100;
+              return (
+                <div key={i} className="flex-1 flex flex-col items-center justify-end gap-1">
+                  <span className="text-[9px] text-gray-500">{h.views > 0 ? h.views : ''}</span>
+                  <div className="w-full bg-purple-600/70 rounded-t" style={{ height: `${Math.max(heightPct, 2)}%` }} />
+                  <span className="text-[9px] text-gray-600">{h.hour}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── 7. 404 Pages ────────────────────────────────────────────────── */}
+      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">404 / Not Found Pages</p>
+          <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
+            {Object.entries(topPeriodLabels).map(([key, { label }]) => (
+              <button key={key} onClick={() => setNotFoundPeriod(key)}
+                className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors
+                  ${notFoundPeriod === key ? 'bg-purple-600/50 text-purple-200 shadow-sm' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {notFoundLoading ? (
+          <div className="flex justify-center py-4"><span className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
+        ) : notFoundPages.length === 0 ? (
+          <p className="text-gray-600 text-xs text-center py-4">No 404 pages recorded</p>
+        ) : (
+          <div className="space-y-2">
+            {notFoundPages.slice(0, 15).map((p, i) => (
+              <div key={i} className="flex items-center justify-between text-xs">
+                <span className="text-gray-300 truncate max-w-xs">{p.path}</span>
+                <span className="text-white font-medium">{p.views}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── 8. New vs Returning Visitors ───────────────────────────────── */}
+      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Visitor Loyalty</p>
+          <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
+            {Object.entries(topPeriodLabels).map(([key, { label }]) => (
+              <button key={key} onClick={() => setVisitorTypePeriod(key)}
+                className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors
+                  ${visitorTypePeriod === key ? 'bg-purple-600/50 text-purple-200 shadow-sm' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {visitorTypeLoading ? (
+          <div className="flex justify-center py-4"><span className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
+        ) : !visitorType ? (
+          <p className="text-gray-600 text-xs text-center py-4">No data</p>
+        ) : (
+          <div className="flex items-center gap-4">
+            <div className="flex-1 text-center">
+              <p className="text-lg font-semibold text-green-400">{visitorType.newVisitors.toLocaleString()}</p>
+              <p className="text-[11px] text-gray-500">New</p>
+            </div>
+            <div className="flex-1 text-center">
+              <p className="text-lg font-semibold text-blue-400">{visitorType.returningVisitors.toLocaleString()}</p>
+              <p className="text-[11px] text-gray-500">Returning</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── User Link Analytics ─────────────────────────────────────────── */}
+      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">User Link Analytics</p>
+            <p className="text-[10px] text-gray-600 mt-0.5">Per-user link performance, traffic sources & visitor loyalty</p>
+          </div>
+          <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
+            {Object.entries(topPeriodLabels).map(([key, { label }]) => (
+              <button key={key} onClick={() => setUserLinksPeriod(key)}
+                className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors
+                  ${userLinksPeriod === key ? 'bg-purple-600/50 text-purple-200 shadow-sm' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {userLinksLoading ? (
+          <div className="flex justify-center py-8">
+            <span className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : userLinksData.length === 0 ? (
+          <p className="text-gray-600 text-xs text-center py-8">No user link data</p>
+        ) : (
+          <div className="divide-y divide-white/[0.04]">
+            {userLinksData.map((u) => {
+              const isExpanded = expandedUser === u.userId
+              const topCountry = u.byCountry[0]
+              const returningPct = u.uniqueVisitors > 0
+                ? Math.round((u.returningVisitors / u.uniqueVisitors) * 100) : 0
+
+              return (
+                <div key={u.userId}>
+                  {/* User summary row */}
+                  <button
+                    onClick={() => setExpandedUser(isExpanded ? null : u.userId)}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/[0.03] transition-colors text-left group"
+                  >
+                    {/* Avatar */}
+                    <div className="w-8 h-8 rounded-full bg-purple-600/20 flex items-center justify-center flex-shrink-0">
+                      <span className="text-purple-300 text-xs font-semibold">
+                        {u.realName.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+
+                    {/* Name + username */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-white truncate">{u.realName}</p>
+                      <p className="text-[10px] text-gray-500">@{u.username} · {u.links.length} link{u.links.length !== 1 ? 's' : ''}</p>
+                    </div>
+
+                    {/* Period clicks */}
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-sm font-semibold text-purple-400">{u.clicksInPeriod.toLocaleString()}</p>
+                      <p className="text-[10px] text-gray-600">period clicks</p>
+                    </div>
+
+                    {/* Unique visitors */}
+                    <div className="text-right flex-shrink-0 hidden sm:block">
+                      <p className="text-sm font-semibold text-cyan-400">{u.uniqueVisitors.toLocaleString()}</p>
+                      <p className="text-[10px] text-gray-600">unique</p>
+                    </div>
+
+                    {/* Returning % */}
+                    <div className="text-right flex-shrink-0 hidden md:block">
+                      <p className="text-sm font-semibold text-emerald-400">{returningPct}%</p>
+                      <p className="text-[10px] text-gray-600">returning</p>
+                    </div>
+
+                    {/* Top country */}
+                    <div className="text-right flex-shrink-0 hidden lg:block w-16">
+                      <p className="text-xs text-gray-300">{topCountry ? (COUNTRY_NAMES[topCountry.country] || topCountry.country) : '—'}</p>
+                      <p className="text-[10px] text-gray-600">top country</p>
+                    </div>
+
+                    {/* Expand arrow */}
+                    <span className={`text-gray-600 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}>
+                      ▾
+                    </span>
+                  </button>
+
+                  {/* Expanded detail */}
+                  {isExpanded && (
+                    <div className="border-t border-white/[0.04] bg-white/[0.02] px-4 py-4 space-y-4">
+                      {/* Stats row */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="bg-white/5 rounded-lg p-3">
+                          <p className="text-[10px] text-gray-500 uppercase tracking-wide">Total (all time)</p>
+                          <p className="text-lg font-semibold text-white mt-1">{u.totalClicks.toLocaleString()}</p>
+                        </div>
+                        <div className="bg-white/5 rounded-lg p-3">
+                          <p className="text-[10px] text-gray-500 uppercase tracking-wide">New visitors</p>
+                          <p className="text-lg font-semibold text-green-400 mt-1">{u.newVisitors.toLocaleString()}</p>
+                        </div>
+                        <div className="bg-white/5 rounded-lg p-3">
+                          <p className="text-[10px] text-gray-500 uppercase tracking-wide">Returning</p>
+                          <p className="text-lg font-semibold text-blue-400 mt-1">{u.returningVisitors.toLocaleString()}</p>
+                        </div>
+                        <div className="bg-white/5 rounded-lg p-3">
+                          <p className="text-[10px] text-gray-500 uppercase tracking-wide">Rate/1000</p>
+                          <p className="text-lg font-semibold text-amber-400 mt-1">₹{u.ratePerThousand}</p>
+                        </div>
+                      </div>
+
+                      {/* Daily chart (mini bar chart) */}
+                      <div>
+                        <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-2">Daily clicks (last 7 days)</p>
+                        <div className="flex items-end gap-1 h-16">
+                          {u.dailyClicks.map((d, i) => {
+                            const maxC = Math.max(...u.dailyClicks.map(x => x.clicks), 1)
+                            const h = (d.clicks / maxC) * 100
+                            return (
+                              <div key={i} className="flex-1 flex flex-col items-center justify-end gap-0.5">
+                                {d.clicks > 0 && <span className="text-[8px] text-gray-500">{d.clicks}</span>}
+                                <div className="w-full bg-purple-500/70 rounded-t" style={{ height: `${Math.max(h, 3)}%` }} />
+                                <span className="text-[8px] text-gray-600">{d.date.split(' ')[0]}</span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Country + Device row */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {/* Countries */}
+                        <div>
+                          <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-2">Top countries</p>
+                          {u.byCountry.length === 0 ? (
+                            <p className="text-gray-600 text-xs">No data</p>
+                          ) : (
+                            <div className="space-y-1.5">
+                              {u.byCountry.map((c, i) => {
+                                const maxC = u.byCountry[0]?.count || 1
+                                return (
+                                  <div key={i} className="flex items-center gap-2 text-xs">
+                                    <span className="text-gray-400 w-20 truncate">
+                                      {COUNTRY_NAMES[c.country] || c.country}
+                                    </span>
+                                    <div className="flex-1 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                                      <div className="h-full bg-purple-500/60 rounded-full"
+                                        style={{ width: `${(c.count / maxC) * 100}%` }} />
+                                    </div>
+                                    <span className="text-white font-medium w-8 text-right">{c.count}</span>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Devices */}
+                        <div>
+                          <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-2">By device</p>
+                          {u.byDevice.length === 0 ? (
+                            <p className="text-gray-600 text-xs">No data</p>
+                          ) : (
+                            <div className="space-y-1.5">
+                              {u.byDevice.map((d, i) => {
+                                const maxD = u.byDevice[0]?.count || 1
+                                const color = DEVICE_COLOR[d.device] || '#475569'
+                                return (
+                                  <div key={i} className="flex items-center gap-2 text-xs">
+                                    <span className="text-gray-400 w-16 capitalize">{d.device}</span>
+                                    <div className="flex-1 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                                      <div className="h-full rounded-full"
+                                        style={{ width: `${(d.count / maxD) * 100}%`, background: color }} />
+                                    </div>
+                                    <span className="text-white font-medium w-8 text-right">{d.count}</span>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Per-link table */}
+                      <div>
+                        <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-2">Links performance</p>
+                        <div className="overflow-x-auto rounded-lg border border-white/[0.06]">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="border-b border-white/[0.06] bg-white/[0.03]">
+                                <th className="px-3 py-2 text-left text-gray-500">Label / Code</th>
+                                <th className="px-3 py-2 text-right text-gray-500">Period</th>
+                                <th className="px-3 py-2 text-right text-gray-500">Total</th>
+                                <th className="px-3 py-2 text-right text-gray-500 hidden sm:table-cell">Last click</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {u.links.map((link, i) => (
+                                <tr key={i} className="border-b border-white/[0.03]">
+                                  <td className="px-3 py-2">
+                                    <p className="text-white font-medium truncate max-w-[180px]">{link.label}</p>
+                                    <p className="text-gray-600 text-[10px]">go.animebing.in/{link.code}</p>
+                                  </td>
+                                  <td className="px-3 py-2 text-right text-purple-400 font-semibold">
+                                    {link.clicksInPeriod.toLocaleString()}
+                                  </td>
+                                  <td className="px-3 py-2 text-right text-gray-300">
+                                    {link.totalClicks.toLocaleString()}
+                                  </td>
+                                  <td className="px-3 py-2 text-right text-gray-500 hidden sm:table-cell">
+                                    {link.lastClicked
+                                      ? new Date(link.lastClicked).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+                                      : '—'}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── FEATURE 1+2: Earnings Timeline + Link Health ─────────────────── */}
+      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Earnings & Link Health</p>
+            <p className="text-[10px] text-gray-600 mt-0.5">30-day timeline, projected income & per-link status</p>
+          </div>
+          <button onClick={fetchEarnings} className="text-[10px] text-purple-400 hover:text-purple-300 transition-colors">Refresh</button>
+        </div>
+        {earningsLoading ? (
+          <div className="flex justify-center py-8"><span className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
+        ) : earningsData.length === 0 ? (
+          <p className="text-gray-600 text-xs text-center py-8">No data</p>
+        ) : (
+          <div className="divide-y divide-white/[0.04]">
+            {earningsData.map(u => {
+              const isExp = expandedEarningsUser === u.userId
+              const maxEarning = Math.max(...u.earningsTimeline.map(d => d.earnings), 0.001)
+              return (
+                <div key={u.userId}>
+                  <button onClick={() => setExpandedEarningsUser(isExp ? null : u.userId)}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/[0.03] transition-colors text-left group">
+                    <div className="w-8 h-8 rounded-full bg-amber-600/20 flex items-center justify-center flex-shrink-0">
+                      <span className="text-amber-300 text-xs font-semibold">{u.realName.charAt(0)}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-white">{u.realName}</p>
+                      <p className="text-[10px] text-gray-500">@{u.username} · ₹{u.ratePerThousand}/1000</p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-sm font-semibold text-amber-400">₹{u.projectedMonthly}</p>
+                      <p className="text-[10px] text-gray-600">projected/month</p>
+                    </div>
+                    <div className="text-right flex-shrink-0 hidden sm:block">
+                      <p className="text-sm font-semibold text-emerald-400">₹{u.unpaidEarnings.toFixed(2)}</p>
+                      <p className="text-[10px] text-gray-600">unpaid</p>
+                    </div>
+                    <div className="flex gap-1 flex-shrink-0">
+                      {u.deadLinks > 0 && <span className="px-1.5 py-0.5 rounded text-[9px] bg-red-500/20 text-red-400">{u.deadLinks} dead</span>}
+                      {u.trendingLinks > 0 && <span className="px-1.5 py-0.5 rounded text-[9px] bg-green-500/20 text-green-400">{u.trendingLinks} trending</span>}
+                    </div>
+                    <span className={`text-gray-600 flex-shrink-0 transition-transform ${isExp ? 'rotate-180' : ''}`}>▾</span>
+                  </button>
+                  {isExp && (
+                    <div className="border-t border-white/[0.04] bg-white/[0.02] px-4 py-4 space-y-4">
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="bg-white/5 rounded-lg p-3">
+                          <p className="text-[10px] text-gray-500 uppercase tracking-wide">Total earned</p>
+                          <p className="text-base font-semibold text-white mt-1">₹{u.totalEarnings.toFixed(2)}</p>
+                        </div>
+                        <div className="bg-white/5 rounded-lg p-3">
+                          <p className="text-[10px] text-gray-500 uppercase tracking-wide">Paid out</p>
+                          <p className="text-base font-semibold text-emerald-400 mt-1">₹{u.paidEarnings.toFixed(2)}</p>
+                        </div>
+                        <div className="bg-white/5 rounded-lg p-3">
+                          <p className="text-[10px] text-gray-500 uppercase tracking-wide">Pending</p>
+                          <p className="text-base font-semibold text-amber-400 mt-1">₹{u.unpaidEarnings.toFixed(2)}</p>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-2">Daily earnings (last 30 days)</p>
+                        <div className="flex items-end gap-0.5 h-20">
+                          {u.earningsTimeline.map((d, i) => (
+                            <div key={i} className="flex-1 flex flex-col items-center justify-end" title={`${d.date}: ₹${d.earnings}`}>
+                              <div className="w-full bg-amber-500/60 rounded-t" style={{ height: `${Math.max((d.earnings / maxEarning) * 100, d.earnings > 0 ? 4 : 1)}%` }} />
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex justify-between text-[9px] text-gray-600 mt-1">
+                          <span>{u.earningsTimeline[0]?.date}</span>
+                          <span>{u.earningsTimeline[29]?.date}</span>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-2">Link health</p>
+                        <div className="space-y-1.5">
+                          {u.linkHealth.map((lk, i) => {
+                            const statusColor = lk.status === 'dead' ? 'text-red-400 bg-red-500/10' :
+                              lk.status === 'trending' ? 'text-green-400 bg-green-500/10' :
+                              lk.status === 'declining' ? 'text-amber-400 bg-amber-500/10' : 'text-cyan-400 bg-cyan-500/10'
+                            return (
+                              <div key={i} className="flex items-center gap-2 text-xs">
+                                <span className={`px-1.5 py-0.5 rounded text-[9px] font-medium flex-shrink-0 ${statusColor}`}>{lk.status}</span>
+                                <span className="text-gray-300 truncate flex-1">{lk.label}</span>
+                                <span className="text-gray-500 text-[10px]">{lk.recentClicks} last 7d</span>
+                                <span className="text-white font-medium">{lk.totalClicks} total</span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── FEATURE 3: Fraud Detection ──────────────────────────────────── */}
+      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Fraud & Bot Detection</p>
+            <p className="text-[10px] text-gray-600 mt-0.5">Suspicious IPs, click spikes, unknown traffic</p>
+          </div>
+          <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
+            {Object.entries(topPeriodLabels).map(([key, { label }]) => (
+              <button key={key} onClick={() => setFraudDays(key)}
+                className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors
+                  ${fraudDays === key ? 'bg-purple-600/50 text-purple-200' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {fraudLoading ? (
+          <div className="flex justify-center py-8"><span className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
+        ) : fraudData.length === 0 ? (
+          <div className="flex items-center gap-2 justify-center py-8">
+            <span className="text-green-400 text-sm">All clear — no suspicious activity detected</span>
+          </div>
+        ) : (
+          <div className="divide-y divide-white/[0.04]">
+            {fraudData.map(alert => (
+              <div key={alert.userId} className="px-4 py-3">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${alert.riskLevel === 'high' ? 'bg-red-400' : alert.riskLevel === 'medium' ? 'bg-amber-400' : 'bg-yellow-400'}`} />
+                  <span className="text-xs font-medium text-white">{alert.realName}</span>
+                  <span className="text-[10px] text-gray-500">@{alert.username}</span>
+                  <span className={`ml-auto px-2 py-0.5 rounded text-[9px] font-medium
+                    ${alert.riskLevel === 'high' ? 'bg-red-500/20 text-red-400' : alert.riskLevel === 'medium' ? 'bg-amber-500/20 text-amber-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+                    {alert.riskLevel.toUpperCase()} RISK · {alert.riskScore}/100
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px]">
+                  {alert.suspiciousIps.length > 0 && (
+                    <div className="bg-red-500/5 border border-red-500/10 rounded-lg p-2">
+                      <p className="text-red-400 font-medium mb-1">Suspicious IPs ({alert.suspiciousIps.length})</p>
+                      {alert.suspiciousIps.slice(0, 3).map((ip, i) => (
+                        <p key={i} className="text-gray-400">{ip.ip} — {ip.count}x clicks</p>
+                      ))}
+                    </div>
+                  )}
+                  {alert.spikeHours.length > 0 && (
+                    <div className="bg-amber-500/5 border border-amber-500/10 rounded-lg p-2">
+                      <p className="text-amber-400 font-medium mb-1">Click spikes ({alert.spikeHours.length})</p>
+                      {alert.spikeHours.slice(0, 3).map((s, i) => (
+                        <p key={i} className="text-gray-400">{s.date} {s.hour}:00 — {s.count}x (avg {s.avgHourly})</p>
+                      ))}
+                    </div>
+                  )}
+                  {alert.unknownPct > 30 && (
+                    <div className="bg-yellow-500/5 border border-yellow-500/10 rounded-lg p-2">
+                      <p className="text-yellow-400 font-medium mb-1">Unknown traffic</p>
+                      <p className="text-gray-400">{alert.unknownCountryClicks} clicks ({alert.unknownPct}%) from unknown location</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── FEATURE 4: Leaderboard ───────────────────────────────────────── */}
+      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Leaderboard & Streaks</p>
+            <p className="text-[10px] text-gray-600 mt-0.5">Rankings, consecutive days, login streaks</p>
+          </div>
+          <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
+            {(['byToday', 'byWeek', 'byAllTime', 'byStreak'] as const).map(tab => (
+              <button key={tab} onClick={() => setLeaderTab(tab)}
+                className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors
+                  ${leaderTab === tab ? 'bg-purple-600/50 text-purple-200' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}>
+                {tab === 'byToday' ? 'Today' : tab === 'byWeek' ? 'Week' : tab === 'byAllTime' ? 'All time' : 'Streak'}
+              </button>
+            ))}
+          </div>
+        </div>
+        {leaderLoading ? (
+          <div className="flex justify-center py-8"><span className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
+        ) : !leaderData ? null : (
+          <div>
+            {(leaderData[leaderTab] || []).slice(0, 10).map((u, idx) => {
+              const medal = idx === 0 ? '1st' : idx === 1 ? '2nd' : idx === 2 ? '3rd' : `${idx + 1}th`
+              const medalColor = idx === 0 ? 'text-amber-400' : idx === 1 ? 'text-gray-300' : idx === 2 ? 'text-amber-700' : 'text-gray-600'
+              const value = leaderTab === 'byToday' ? u.todayClicks
+                : leaderTab === 'byWeek' ? u.weekClicks
+                : leaderTab === 'byStreak' ? u.clickStreak
+                : u.totalClicks
+              const label = leaderTab === 'byStreak' ? 'day streak' : 'clicks'
+              return (
+                <div key={u.userId} className="flex items-center gap-3 px-4 py-2.5 border-b border-white/[0.03]">
+                  <span className={`text-xs font-semibold w-8 ${medalColor}`}>{medal}</span>
+                  <div className="w-7 h-7 rounded-full bg-purple-600/20 flex items-center justify-center flex-shrink-0">
+                    <span className="text-purple-300 text-[10px] font-semibold">{u.realName.charAt(0)}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-white font-medium">{u.realName}</p>
+                    <p className="text-[10px] text-gray-600">Login streak: {u.loginStreak}d · Click streak: {u.clickStreak}d</p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-sm font-semibold text-purple-400">{value.toLocaleString()}</p>
+                    <p className="text-[10px] text-gray-600">{label}</p>
+                  </div>
+                  <div className="text-right flex-shrink-0 hidden sm:block">
+                    <p className="text-xs text-amber-400">₹{u.unpaidEarnings.toFixed(2)}</p>
+                    <p className="text-[10px] text-gray-600">unpaid</p>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── FEATURE 5: Payment Analytics ─────────────────────────────────── */}
+      {paymentData && (
+        <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-white/[0.06]">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Payment Analytics</p>
+            <p className="text-[10px] text-gray-600 mt-0.5">Earnings overview, pending requests, monthly trend</p>
+          </div>
+          <div className="p-4 space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-[10px] text-gray-500 uppercase tracking-wide">Total paid</p>
+                <p className="text-xl font-semibold text-emerald-400 mt-1">₹{paymentData.totalPaid.toFixed(2)}</p>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-[10px] text-gray-500 uppercase tracking-wide">Total unpaid</p>
+                <p className="text-xl font-semibold text-amber-400 mt-1">₹{paymentData.totalUnpaid.toFixed(2)}</p>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-[10px] text-gray-500 uppercase tracking-wide">Pending requests</p>
+                <p className="text-xl font-semibold text-red-400 mt-1">{paymentData.pendingCount}</p>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-[10px] text-gray-500 uppercase tracking-wide">Near threshold</p>
+                <p className="text-xl font-semibold text-cyan-400 mt-1">{paymentData.nearThreshold.length}</p>
+              </div>
+            </div>
+            {paymentData.monthlyTrend.length > 0 && (
+              <div>
+                <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-2">Monthly payments (last 6 months)</p>
+                <div className="flex items-end gap-2 h-16">
+                  {paymentData.monthlyTrend.map((m: any, i: number) => {
+                    const maxA = Math.max(...paymentData.monthlyTrend.map((x: any) => x.amount), 1)
+                    return (
+                      <div key={i} className="flex-1 flex flex-col items-center justify-end gap-1">
+                        {m.amount > 0 && <span className="text-[9px] text-gray-500">₹{m.amount}</span>}
+                        <div className="w-full bg-emerald-500/50 rounded-t" style={{ height: `${Math.max((m.amount / maxA) * 100, m.amount > 0 ? 4 : 2)}%` }} />
+                        <span className="text-[9px] text-gray-600">{m.month}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+            {paymentData.nearThreshold.length > 0 && (
+              <div>
+                <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-2">Users near 1000 click threshold</p>
+                <div className="space-y-2">
+                  {paymentData.nearThreshold.map((u: any) => (
+                    <div key={u.userId} className="flex items-center gap-2 text-xs">
+                      <span className="text-gray-300 flex-1">{u.realName}</span>
+                      <span className="text-gray-500">{u.totalClicks}/1000</span>
+                      <div className="w-24 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                        <div className="h-full bg-cyan-500/60 rounded-full" style={{ width: `${(u.totalClicks / 1000) * 100}%` }} />
+                      </div>
+                      <span className="text-cyan-400">{u.remaining} left</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {paymentData.recentPayments.length > 0 && (
+              <div>
+                <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-2">Recent payments</p>
+                <div className="space-y-1">
+                  {paymentData.recentPayments.map((p: any, i: number) => (
+                    <div key={i} className="flex items-center gap-2 text-xs">
+                      <span className="text-gray-400 flex-1">{p.realName}</span>
+                      <span className="text-emerald-400 font-medium">₹{p.amount}</span>
+                      <span className="text-gray-600">{new Date(p.paidAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── FEATURE 6: Cohort Analysis ───────────────────────────────────── */}
+      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-white/[0.06]">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">User Cohort Analysis</p>
+          <p className="text-[10px] text-gray-600 mt-0.5">Retention by join month — 30/60/90 day activity</p>
+        </div>
+        {cohortLoading ? (
+          <div className="flex justify-center py-8"><span className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
+        ) : cohortData.length === 0 ? (
+          <p className="text-gray-600 text-xs text-center py-8">No cohort data</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-white/[0.06] bg-white/[0.03]">
+                  <th className="px-4 py-2.5 text-left text-gray-500">Joined</th>
+                  <th className="px-4 py-2.5 text-right text-gray-500">Users</th>
+                  <th className="px-4 py-2.5 text-right text-gray-500">30d ret.</th>
+                  <th className="px-4 py-2.5 text-right text-gray-500">60d ret.</th>
+                  <th className="px-4 py-2.5 text-right text-gray-500">90d ret.</th>
+                  <th className="px-4 py-2.5 text-right text-gray-500">Avg clicks</th>
+                  <th className="px-4 py-2.5 text-right text-gray-500 hidden sm:table-cell">Total earned</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cohortData.map((c, i) => (
+                  <tr key={i} className="border-b border-white/[0.03]">
+                    <td className="px-4 py-2.5 text-white font-medium">{c.month}</td>
+                    <td className="px-4 py-2.5 text-right text-gray-300">{c.total}</td>
+                    <td className="px-4 py-2.5 text-right">
+                      <span className={`font-medium ${c.retention30 >= 70 ? 'text-green-400' : c.retention30 >= 40 ? 'text-amber-400' : 'text-red-400'}`}>
+                        {c.retention30}%
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <span className={`font-medium ${c.retention60 >= 60 ? 'text-green-400' : c.retention60 >= 30 ? 'text-amber-400' : 'text-red-400'}`}>
+                        {c.retention60}%
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <span className={`font-medium ${c.retention90 >= 50 ? 'text-green-400' : c.retention90 >= 20 ? 'text-amber-400' : 'text-red-400'}`}>
+                        {c.retention90}%
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-cyan-400">{c.avgClicks.toLocaleString()}</td>
+                    <td className="px-4 py-2.5 text-right text-amber-400 hidden sm:table-cell">₹{c.totalEarnings.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── FEATURE 7: Link Journey ───────────────────────────────────────── */}
+      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Link Journey Tracking</p>
+            <p className="text-[10px] text-gray-600 mt-0.5">Click → detail page → download funnel per user</p>
+          </div>
+          <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
+            {Object.entries(topPeriodLabels).map(([key, { label }]) => (
+              <button key={key} onClick={() => setJourneyDays(key)}
+                className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors
+                  ${journeyDays === key ? 'bg-purple-600/50 text-purple-200' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {journeyLoading ? (
+          <div className="flex justify-center py-8"><span className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
+        ) : journeyData.length === 0 ? (
+          <p className="text-gray-600 text-xs text-center py-8">No journey data for this period</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-white/[0.06] bg-white/[0.03]">
+                  <th className="px-4 py-2.5 text-left text-gray-500">User</th>
+                  <th className="px-4 py-2.5 text-right text-gray-500">Clicks</th>
+                  <th className="px-4 py-2.5 text-right text-gray-500">Detail visits</th>
+                  <th className="px-4 py-2.5 text-right text-gray-500">Downloads</th>
+                  <th className="px-4 py-2.5 text-right text-gray-500">Bounce rate</th>
+                  <th className="px-4 py-2.5 text-right text-gray-500 hidden sm:table-cell">Download rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {journeyData.map((j, i) => (
+                  <tr key={i} className="border-b border-white/[0.03]">
+                    <td className="px-4 py-2.5">
+                      <p className="text-white font-medium">{j.realName}</p>
+                      <p className="text-[10px] text-gray-600">@{j.username}</p>
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-white font-semibold">{j.totalClicks.toLocaleString()}</td>
+                    <td className="px-4 py-2.5 text-right text-purple-400">{j.detailVisits}</td>
+                    <td className="px-4 py-2.5 text-right text-emerald-400">{j.downloadVisits}</td>
+                    <td className="px-4 py-2.5 text-right">
+                      <span className={j.bounceRate > 60 ? 'text-red-400' : j.bounceRate > 30 ? 'text-amber-400' : 'text-green-400'}>
+                        {j.bounceRate}%
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-cyan-400 hidden sm:table-cell">{j.downloadRate}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {/* Top pages table */}
       <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl overflow-hidden">
