@@ -334,6 +334,109 @@ export async function getGeoDetail(
   }
 }
 
+// ─── Country breakdown by period — independent of main stats `days` ──────
+// Used by the "Top Countries" / World Map section with its own
+// daily / weekly / monthly / yearly filter.
+export async function getByCountryStats(
+  mongoUri: string,
+  dbName: string,
+  days = 1
+) {
+  const db = await getDb(mongoUri, dbName)
+  const since = new Date()
+  since.setDate(since.getDate() - (days - 1))
+  const sinceStr = getISTDateStr(since)
+
+  const match: Record<string, any> = { date: { $gte: sinceStr } }
+
+  const byCountryRaw = await db
+    .collection('pageviews')
+    .aggregate([
+      { $match: match },
+      { $group: { _id: '$country', views: { $sum: 1 } } },
+      { $sort: { views: -1 } },
+      { $limit: 100 },
+    ])
+    .toArray()
+
+  const byCountry = byCountryRaw
+    .filter((c: any) => c._id && c._id !== 'XX')
+    .map((c: any) => ({ country: c._id as string, views: c.views as number }))
+
+  return { byCountry }
+}
+
+// ─── Funnel: Home → Detail → Download per session ─────────────────────────
+export async function getFunnelStats(
+  mongoUri: string,
+  dbName: string,
+  days = 7
+) {
+  const db = await getDb(mongoUri, dbName)
+  const since = new Date()
+  since.setDate(since.getDate() - (days - 1))
+  const sinceStr = getISTDateStr(since)
+
+  const match: Record<string, any> = {
+    date: { $gte: sinceStr },
+    sessionId: { $exists: true, $ne: null },
+  }
+
+  // Get all pageviews grouped by session, sorted by timestamp
+  const sessions = await db
+    .collection('pageviews')
+    .aggregate([
+      { $match: match },
+      { $sort: { timestamp: 1 } },
+      {
+        $group: {
+          _id: '$sessionId',
+          pages: {
+            $push: {
+              pageType: '$pageType',
+              timestamp: '$timestamp',
+            },
+          },
+        },
+      },
+    ])
+    .toArray()
+
+  let homeOnly = 0
+  let homeToDetail = 0
+  let homeToDetailToDownload = 0
+  const totalSessions = sessions.length
+
+  for (const s of sessions) {
+    const pageTypes: string[] = s.pages.map((p: any) => p.pageType)
+    const hasHome = pageTypes.includes('home')
+    const hasDetail = pageTypes.includes('anime-detail')
+    const hasDownload = pageTypes.includes('download')
+
+    if (hasHome) {
+      homeOnly++
+      if (hasDetail) {
+        homeToDetail++
+        if (hasDownload) {
+          homeToDetailToDownload++
+        }
+      }
+    }
+  }
+
+  return {
+    totalSessions,
+    homeOnly,
+    homeToDetail,
+    homeToDetailToDownload,
+    conversionRates: {
+      homeToDetailRate: homeOnly ? ((homeToDetail / homeOnly) * 100).toFixed(1) : '0',
+      detailToDownloadRate: homeToDetail ? ((homeToDetailToDownload / homeToDetail) * 100).toFixed(1) : '0',
+      overallConversionRate: homeOnly ? ((homeToDetailToDownload / homeOnly) * 100).toFixed(1) : '0',
+    },
+  }
+}
+
 // Per-page detail for drill-down modal
 export async function getPageDetail(
   path: string,

@@ -1,4 +1,4 @@
- // src/components/admin/PageViewManager.tsx
+// src/components/admin/PageViewManager.tsx
 import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
@@ -80,6 +80,18 @@ interface GeoDetail {
   cities: { city: string; region: string; views: number; uniqueVisitors: number }[];
 }
 
+interface FunnelStats {
+  totalSessions: number;
+  homeOnly: number;
+  homeToDetail: number;
+  homeToDetailToDownload: number;
+  conversionRates: {
+    homeToDetailRate: string;
+    detailToDownloadRate: string;
+    overallConversionRate: string;
+  };
+}
+
 // ─── Color maps ───────────────────────────────────────────────────────────
 const TYPE_COLOR: Record<string, string> = {
   'anime-detail': '#a78bfa', 'download': '#34d399', 'anime-list': '#60a5fa',
@@ -112,15 +124,25 @@ interface WorldMapProps {
   byCountry: ByCountry[];
   token: string;
   days: number;
+  countryPeriod: string;
+  setCountryPeriod: (p: string) => void;
+  loading: boolean;
 }
 
-const WorldMap: React.FC<WorldMapProps> = ({ byCountry, token, days }) => {
+const WorldMap: React.FC<WorldMapProps> = ({ byCountry, token, days, countryPeriod, setCountryPeriod, loading }) => {
   const [zoom, setZoom] = useState(1);
   const [center, setCenter] = useState<[number, number]>([20, 10]);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; label: string } | null>(null);
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
   const [geoDetail, setGeoDetail] = useState<GeoDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+
+  const countryPeriodLabels: Record<string, { label: string; days: number }> = {
+    daily: { label: 'Today', days: 1 },
+    weekly: { label: 'Week', days: 7 },
+    monthly: { label: 'Month', days: 30 },
+    yearly: { label: 'Year', days: 365 },
+  };
 
   const countryMap = new Map(byCountry.map(c => [c.country, c.views]));
   const maxViews = Math.max(...byCountry.map(c => c.views), 1);
@@ -156,26 +178,30 @@ const WorldMap: React.FC<WorldMapProps> = ({ byCountry, token, days }) => {
             {byCountry.length} countries · Click a country for details
           </p>
         </div>
-        {/* Zoom controls */}
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setZoom(z => Math.min(z * 1.5, 12))}
-            className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 flex items-center justify-center text-sm font-bold transition-colors"
-          >+</button>
-          <button
-            onClick={() => setZoom(z => Math.max(z / 1.5, 1))}
-            className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 flex items-center justify-center text-sm font-bold transition-colors"
-          >−</button>
-          <button
-            onClick={() => { setZoom(1); setCenter([20, 10]); }}
-            className="px-2 h-7 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 text-[10px] transition-colors"
-          >Reset</button>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
+            {Object.entries(countryPeriodLabels).map(([key, { label }]) => (
+              <button key={key} onClick={() => setCountryPeriod(key)}
+                className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors
+                  ${countryPeriod === key ? 'bg-purple-600/50 text-purple-200 shadow-sm' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1">
+            <button onClick={() => setZoom(z => Math.min(z * 1.5, 12))}
+              className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 flex items-center justify-center text-sm font-bold transition-colors">+</button>
+            <button onClick={() => setZoom(z => Math.max(z / 1.5, 1))}
+              className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 flex items-center justify-center text-sm font-bold transition-colors">−</button>
+            <button onClick={() => { setZoom(1); setCenter([20, 10]); }}
+              className="px-2 h-7 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 text-[10px] transition-colors">Reset</button>
+          </div>
         </div>
       </div>
 
       <div className="relative">
         {/* Map */}
-        <div className="w-full" style={{ background: '#0c0b18' }}>
+        <div className="w-full" style={{ background: '#0c0b18', opacity: loading ? 0.5 : 1, transition: 'opacity 0.2s' }}>
           <ComposableMap
             projection="geoMercator"
             projectionConfig={{ scale: 130, center: [0, 20] }}
@@ -273,28 +299,33 @@ const WorldMap: React.FC<WorldMapProps> = ({ byCountry, token, days }) => {
             <p className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold">Top Countries</p>
           </div>
           <div className="max-h-48 overflow-y-auto">
-            {byCountry.slice(0, 20).map((c, i) => {
-              const pct = ((c.views / totalViews) * 100).toFixed(1);
-              const isActive = c.country === selectedCountry;
-              return (
-                <button
-                  key={c.country}
-                  onClick={() => handleCountryClick(c.country)}
-                  className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-white/[0.04] transition-colors text-left
-                    ${isActive ? 'bg-purple-600/10 border-l-2 border-purple-500' : 'border-l-2 border-transparent'}`}
-                >
-                  <span className="text-gray-600 w-5 text-right flex-shrink-0">{i + 1}</span>
-                  <span className="flex-1 text-gray-300 truncate">
-                    {COUNTRY_NAMES[c.country] || c.country}
-                    <span className="text-gray-600 ml-1 text-[10px]">{c.country}</span>
-                  </span>
-                  <span className="text-white font-semibold flex-shrink-0">{c.views.toLocaleString()}</span>
-                  <span className="text-gray-600 flex-shrink-0 w-10 text-right">{pct}%</span>
-                </button>
-              );
-            })}
-            {byCountry.length === 0 && (
+            {loading ? (
+              <div className="flex justify-center py-6">
+                <span className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : byCountry.length === 0 ? (
               <p className="text-gray-600 text-xs text-center py-6">No geo data yet</p>
+            ) : (
+              byCountry.slice(0, 20).map((c, i) => {
+                const pct = ((c.views / totalViews) * 100).toFixed(1);
+                const isActive = c.country === selectedCountry;
+                return (
+                  <button
+                    key={c.country}
+                    onClick={() => handleCountryClick(c.country)}
+                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs hover:bg-white/[0.04] transition-colors text-left
+                      ${isActive ? 'bg-purple-600/10 border-l-2 border-purple-500' : 'border-l-2 border-transparent'}`}
+                  >
+                    <span className="text-gray-600 w-5 text-right flex-shrink-0">{i + 1}</span>
+                    <span className="flex-1 text-gray-300 truncate">
+                      {COUNTRY_NAMES[c.country] || c.country}
+                      <span className="text-gray-600 ml-1 text-[10px]">{c.country}</span>
+                    </span>
+                    <span className="text-white font-semibold flex-shrink-0">{c.views.toLocaleString()}</span>
+                    <span className="text-gray-600 flex-shrink-0 w-10 text-right">{pct}%</span>
+                  </button>
+                );
+              })
             )}
           </div>
         </div>
@@ -581,6 +612,12 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
   const [topPages, setTopPages] = useState<TopPage[]>([]);
   const [topLoading, setTopLoading] = useState(false);
 
+  const [countryPeriod, setCountryPeriod] = useState<string>('daily');
+  const [byCountry, setByCountry] = useState<ByCountry[]>([]);
+  const [countryLoading, setCountryLoading] = useState(false);
+
+  const [funnel, setFunnel] = useState<FunnelStats | null>(null);
+
   const fetchStats = useCallback(async () => {
     setLoading(true);
     try {
@@ -617,6 +654,38 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
   }, [topPeriod, token, deviceFilter]);
 
   useEffect(() => { fetchTopPages(); }, [fetchTopPages]);
+
+  const fetchByCountry = useCallback(async () => {
+    setCountryLoading(true);
+    try {
+      const countryDays = topPeriodLabels[countryPeriod]?.days ?? 1;
+      const { data } = await axios.get(`${API_BASE}/analytics/by-country`, {
+        params: { days: countryDays },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setByCountry(data.byCountry || []);
+    } catch {
+      toast.error('Failed to load country data');
+    } finally {
+      setCountryLoading(false);
+    }
+  }, [countryPeriod, token]);
+
+  useEffect(() => { fetchByCountry(); }, [fetchByCountry]);
+
+  const fetchFunnel = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API_BASE}/analytics/funnel`, {
+        params: { days },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setFunnel(data);
+    } catch {
+      toast.error('Failed to load funnel data');
+    }
+  }, [days, token]);
+
+  useEffect(() => { fetchFunnel(); }, [fetchFunnel]);
 
   const filteredPages = (topPages || []).filter(p => {
     const matchSearch = !search ||
@@ -712,10 +781,44 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
 
       {/* ── World Map ──────────────────────────────────────────────────── */}
       <WorldMap
-        byCountry={stats?.byCountry ?? []}
+        byCountry={byCountry}
         token={token}
-        days={days}
+        days={topPeriodLabels[countryPeriod]?.days ?? 1}
+        countryPeriod={countryPeriod}
+        setCountryPeriod={setCountryPeriod}
+        loading={countryLoading}
       />
+
+      {/* ── Funnel ─────────────────────────────────────────────────────── */}
+      {funnel && (
+        <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-4">
+            User Journey Funnel — Last {days} Days
+          </p>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="text-center">
+              <p className="text-2xl font-semibold text-cyan-400">{funnel.homeOnly.toLocaleString()}</p>
+              <p className="text-[11px] text-gray-500 mt-1">Visited Home</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-semibold text-purple-400">{funnel.homeToDetail.toLocaleString()}</p>
+              <p className="text-[11px] text-gray-500 mt-1">Home → Detail</p>
+              <p className="text-[10px] text-gray-600 mt-0.5">{funnel.conversionRates.homeToDetailRate}% of Home</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-semibold text-emerald-400">{funnel.homeToDetailToDownload.toLocaleString()}</p>
+              <p className="text-[11px] text-gray-500 mt-1">Home → Detail → Download</p>
+              <p className="text-[10px] text-gray-600 mt-0.5">{funnel.conversionRates.detailToDownloadRate}% of Detail visitors</p>
+            </div>
+          </div>
+          <div className="mt-3 pt-3 border-t border-white/[0.06] text-center">
+            <p className="text-[11px] text-gray-500">
+              Overall conversion (Home → Download):
+              <span className="text-amber-400 font-semibold ml-1">{funnel.conversionRates.overallConversionRate}%</span>
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Top pages table */}
       <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl overflow-hidden">

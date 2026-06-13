@@ -1,7 +1,14 @@
- import { Hono } from 'hono'
+import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
-import { trackPageView, getPageViewStats, getPageDetail, getGeoDetail } from '../services/analyticsService'
+import {
+  trackPageView,
+  getPageViewStats,
+  getPageDetail,
+  getGeoDetail,
+  getFunnelStats,
+  getByCountryStats,
+} from '../services/analyticsService'
 
 const analyticsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
@@ -125,6 +132,31 @@ analyticsRoutes.get('/geo-detail', adminAuth, async (c) => {
     if (!country) return c.json({ error: 'country required' }, 400)
     const detail = await getGeoDetail(country, c.env.MONGODB_URI, c.env.MONGODB_DB, days)
     return c.json(detail)
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ─── GET /api/analytics/by-country?days=1 ─────────────────────────────────
+// Independent country breakdown for the World Map / Top Countries section,
+// filterable by period (daily=1, weekly=7, monthly=30, yearly=365)
+analyticsRoutes.get('/by-country', adminAuth, async (c) => {
+  try {
+    const days = parseInt(c.req.query('days') || '1', 10)
+    const data = await getByCountryStats(c.env.MONGODB_URI, c.env.MONGODB_DB, days)
+    return c.json(data)
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ─── GET /api/analytics/funnel?days=7 ─────────────────────────────────────
+// User journey funnel: Home → Detail → Download (per session)
+analyticsRoutes.get('/funnel', adminAuth, async (c) => {
+  try {
+    const days = parseInt(c.req.query('days') || '7', 10)
+    const funnel = await getFunnelStats(c.env.MONGODB_URI, c.env.MONGODB_DB, days)
+    return c.json(funnel)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
