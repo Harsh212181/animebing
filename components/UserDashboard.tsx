@@ -5,7 +5,8 @@ import ProfileTab from './dashboard/ProfileTab';
 import MessagesTab from './dashboard/MessagesTab';
 import RequestsTab from './dashboard/RequestsTab';
 import CreateLinkTab from './dashboard/CreateLinkTab';
-import GettingStartedTab from './dashboard/GettingStartedTab'; // ← added
+import GettingStartedTab from './dashboard/GettingStartedTab';
+import ReferralTab from './dashboard/ReferralTab';
 
 const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api/short-users';
 
@@ -169,14 +170,37 @@ const AvatarPicker: React.FC<{
   </div>
 );
 
-// ─── Login Form ───────────────────────────────────────────────────────────────
-const LoginForm: React.FC<{ onLogin: (cred: any) => void; loginError: string }> = ({
-  onLogin, loginError,
-}) => {
-  const [loginMode, setLoginMode] = useState<'password' | 'gmail'>('password');
+// ─── Login Form (with Register mode, info box removed) ────────────────────────
+const LoginForm: React.FC<{
+  onLogin: (cred: any) => void;
+  onRegister: (data: {
+    username: string; password: string; realName: string;
+    mobile: string; gmail: string; upiId: string;
+    upiPhone: string; age: string; gender: string;
+    referredBy: string;
+  }) => void;
+  loginError: string;
+}> = ({ onLogin, onRegister, loginError }) => {
+  const [loginMode, setLoginMode] = useState<'password' | 'gmail' | 'register'>('password');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [gmail, setGmail] = useState('');
+
+  // register fields
+  const [regUsername, setRegUsername] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+  const [regRealName, setRegRealName] = useState('');
+  const [regMobile, setRegMobile] = useState('');
+  const [regGmail, setRegGmail] = useState('');
+  const [regUpiId, setRegUpiId] = useState('');
+  const [regUpiPhone, setRegUpiPhone] = useState('');
+  const [regAge, setRegAge] = useState('');
+  const [regGender, setRegGender] = useState('');
+  const [regReferralCode, setRegReferralCode] = useState(() => {
+    // Auto-fill from ?ref=CODE in URL
+    const params = new URLSearchParams(window.location.search);
+    return params.get('ref')?.toUpperCase().trim() || '';
+  });
 
   const inputStyle: React.CSSProperties = {
     width: '100%', background: '#f8f8fc', border: '1px solid #e2e2f0',
@@ -217,10 +241,12 @@ const LoginForm: React.FC<{ onLogin: (cred: any) => void; loginError: string }> 
           <div style={{ fontSize: 22, fontWeight: 700, color: '#1a1a2e', letterSpacing: '-0.02em' }}>
             AnimaBing
           </div>
-          <div style={{ fontSize: 13, color: '#8888aa', marginTop: 3 }}>Creator Dashboard</div>
+          <div style={{ fontSize: 13, color: '#8888aa', marginTop: 3 }}>
+            {loginMode === 'register' ? 'Create your account' : 'Creator Dashboard'}
+          </div>
         </div>
 
-        {loginMode === 'password' ? (
+        {loginMode === 'password' && (
           <>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <input
@@ -254,8 +280,16 @@ const LoginForm: React.FC<{ onLogin: (cred: any) => void; loginError: string }> 
                 Continue with Gmail
               </span>
             </button>
+            <button
+              onClick={() => setLoginMode('register')}
+              style={{ ...btnSecondary, marginTop: 10, color: '#534AB7', fontWeight: 600 }}
+            >
+              ✨ Create New Account
+            </button>
           </>
-        ) : (
+        )}
+
+        {loginMode === 'gmail' && (
           <>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <input
@@ -282,12 +316,88 @@ const LoginForm: React.FC<{ onLogin: (cred: any) => void; loginError: string }> 
             </button>
           </>
         )}
+
+        {loginMode === 'register' && (
+          <>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <input
+                type="text" placeholder="Your Full Name" style={inputStyle}
+                value={regRealName} onChange={e => setRegRealName(e.target.value)}
+              />
+              <input
+                type="text" placeholder="Choose a Username" style={inputStyle}
+                value={regUsername}
+                onChange={e => setRegUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+              />
+              <input
+                type="password" placeholder="Choose a Password (min 4 chars)" style={inputStyle}
+                value={regPassword} onChange={e => setRegPassword(e.target.value)}
+              />
+              {/* New fields */}
+              <input
+                type="tel" placeholder="Mobile Number" style={inputStyle}
+                value={regMobile} onChange={e => setRegMobile(e.target.value)}
+              />
+              <input
+                type="email" placeholder="Gmail" style={inputStyle}
+                value={regGmail} onChange={e => setRegGmail(e.target.value)}
+              />
+              <input
+                type="text" placeholder="UPI ID" style={inputStyle}
+                value={regUpiId} onChange={e => setRegUpiId(e.target.value)}
+              />
+              <input
+                type="tel" placeholder="UPI Phone" style={inputStyle}
+                value={regUpiPhone} onChange={e => setRegUpiPhone(e.target.value)}
+              />
+              <input
+                type="number" placeholder="Age" style={inputStyle}
+                value={regAge} onChange={e => setRegAge(e.target.value)}
+              />
+              <select style={inputStyle} value={regGender} onChange={e => setRegGender(e.target.value)}>
+                <option value="">Select Gender</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
+              </select>
+
+              {/* Referral code field */}
+              <input
+                type="text" placeholder="Referral Code (optional)" style={inputStyle}
+                value={regReferralCode}
+                onChange={e => setRegReferralCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+              />
+
+              {loginError && (
+                <p style={{ color: '#d85a30', fontSize: 12, margin: 0 }}>{loginError}</p>
+              )}
+              <button
+                style={btnPrimary}
+                onClick={() => onRegister({
+                  username: regUsername, password: regPassword, realName: regRealName,
+                  mobile: regMobile, gmail: regGmail, upiId: regUpiId,
+                  upiPhone: regUpiPhone, age: regAge, gender: regGender,
+                  referredBy: regReferralCode
+                })}
+              >
+                Create Account
+              </button>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '20px 0', color: '#b0b0cc', fontSize: 12 }}>
+              <div style={{ flex: 1, height: 1, background: '#e8e8f4' }} />OR
+              <div style={{ flex: 1, height: 1, background: '#e8e8f4' }} />
+            </div>
+            <button onClick={() => setLoginMode('password')} style={btnSecondary}>
+              Already have an account? Sign In
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
 };
 
-// ─── Main Dashboard (FULL SCREEN WIDTH) ──────────────────────────────────────
+// ─── Main Dashboard ──────────────────────────────────────────────────────────
 const UserDashboard: React.FC = () => {
   const [token, setToken] = useState<string | null>(localStorage.getItem('shortUserToken'));
   const [dashData, setDashData] = useState<DashboardData | null>(null);
@@ -362,6 +472,64 @@ const UserDashboard: React.FC = () => {
     } catch { setLoginError('Network error'); }
   };
 
+  // ─── UPDATED handleRegister with format validations and referredBy ──────────
+  const handleRegister = async (data: {
+    username: string; password: string; realName: string;
+    mobile: string; gmail: string; upiId: string;
+    upiPhone: string; age: string; gender: string;
+    referredBy: string;
+  }) => {
+    setLoginError('');
+
+    if (!data.realName.trim()) { setLoginError('Please enter your name'); return; }
+    if (!data.username.trim() || data.username.length < 3) { setLoginError('Username must be at least 3 characters'); return; }
+    if (!data.password || data.password.length < 4) { setLoginError('Password must be at least 4 characters'); return; }
+
+    // Mobile validation
+    if (!data.mobile.trim()) { setLoginError('Mobile number is required'); return; }
+    if (!/^[6-9]\d{9}$/.test(data.mobile.trim())) { setLoginError('Enter a valid 10-digit mobile number'); return; }
+
+    // Gmail validation
+    if (!data.gmail.trim()) { setLoginError('Gmail is required'); return; }
+    if (!/^[a-zA-Z0-9._%+-]+@gmail\.com$/.test(data.gmail.trim().toLowerCase())) {
+      setLoginError('Enter a valid Gmail address (must end with @gmail.com)'); return;
+    }
+
+    // UPI validation
+    if (!data.upiId.trim() && !data.upiPhone.trim()) { setLoginError('UPI ID or UPI Phone is required'); return; }
+    if (data.upiId.trim() && !/^[\w.\-]{2,256}@[a-zA-Z]{2,64}$/.test(data.upiId.trim())) {
+      setLoginError('Enter a valid UPI ID (e.g. name@upi)'); return;
+    }
+    if (data.upiPhone.trim() && !/^[6-9]\d{9}$/.test(data.upiPhone.trim())) {
+      setLoginError('Enter a valid 10-digit UPI phone number'); return;
+    }
+
+    // Age validation
+    if (!data.age || parseInt(data.age) < 13 || parseInt(data.age) > 100) {
+      setLoginError('Please enter a valid age (13-100)'); return;
+    }
+
+    if (!data.gender) { setLoginError('Please select gender'); return; }
+
+    try {
+      const res = await fetch(`${API_BASE}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data), // includes referredBy
+      });
+      const resData = await res.json();
+      if (!res.ok || !resData.token) { setLoginError(resData.error || 'Registration failed'); return; }
+
+      localStorage.setItem('shortUserToken', resData.token);
+      localStorage.setItem('shortUserName', resData.user.realName);
+      localStorage.setItem('shortUsername', resData.user.username);
+      setToken(resData.token);
+      showToast('Account created! Welcome to AnimaBing 🎉', 'success');
+    } catch {
+      setLoginError('Network error');
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem('shortUserToken');
     localStorage.removeItem('shortUserName');
@@ -381,7 +549,7 @@ const UserDashboard: React.FC = () => {
     } catch {}
   };
 
-  if (!token) return <LoginForm onLogin={handleLogin} loginError={loginError} />;
+  if (!token) return <LoginForm onLogin={handleLogin} onRegister={handleRegister} loginError={loginError} />;
 
   if (!dashData) return (
     <div style={{
@@ -408,6 +576,7 @@ const UserDashboard: React.FC = () => {
     { id: 'overview',  label: 'Overview' },
     { id: 'links',     label: 'My Links' },
     { id: 'profile',   label: 'Profile' },
+    { id: 'referral',  label: 'Refer & Earn' },
     { id: 'messages',  label: 'Messages', badge: dashData.unreadMessages },
     { id: 'requests',  label: 'Requests', badge: (dashData.pendingPaymentRequest || dashData.pendingLinkRequest) ? 1 : 0 },
     ...(showCreateTab ? [{ id: 'create', label: 'Create Link' }] : []),
@@ -416,7 +585,6 @@ const UserDashboard: React.FC = () => {
 
   const switchTab = (tabId: string) => { setActiveTab(tabId); setMenuOpen(false); };
 
-  // ✅ Bell icon toggle: if already on messages → go to overview, else → messages
   const handleBellClick = () => {
     if (activeTab === 'messages') {
       setActiveTab('overview');
@@ -426,7 +594,6 @@ const UserDashboard: React.FC = () => {
     setMenuOpen(false);
   };
 
-  // ── FULL WIDTH STYLES (removed maxWidth constraints) ─────────────────────
   const S: Record<string, React.CSSProperties> = {
     page: {
       minHeight: '100vh',
@@ -525,7 +692,6 @@ const UserDashboard: React.FC = () => {
 
   return (
     <div style={S.page}>
-      {/* ── Header (full width) ─────────────────────────────────────────── */}
       <header style={S.header}>
         <div style={S.headerInner}>
           <div style={S.headerTop}>
@@ -538,7 +704,6 @@ const UserDashboard: React.FC = () => {
             </div>
 
             <div style={{ ...S.headerActions, display: 'flex' }}>
-              {/* ✅ Bell icon with toggle handler */}
               <button
                 onClick={handleBellClick}
                 style={{ ...S.notifBtn, border: '1px solid #ece9ff' } as React.CSSProperties}
@@ -658,6 +823,9 @@ const UserDashboard: React.FC = () => {
             onOpenAvatarPicker={() => setShowAvatarPicker(true)}
           />
         )}
+        {activeTab === 'referral' && (
+          <ReferralTab token={token!} onToast={showToast} />
+        )}
         {activeTab === 'messages'  && (
           <MessagesTab
             token={token!}
@@ -678,7 +846,7 @@ const UserDashboard: React.FC = () => {
             existingLinksCount={dashData.links.length}
           />
         )}
-        {activeTab === 'getting-started' && <GettingStartedTab />}   {/* ✅ Start tab rendering */}
+        {activeTab === 'getting-started' && <GettingStartedTab />}
       </main>
 
       {showAvatarPicker && (

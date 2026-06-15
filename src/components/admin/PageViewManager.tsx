@@ -164,6 +164,21 @@ interface JourneyUser {
   bounces: number; bounceRate: number; detailRate: number; downloadRate: number
 }
 
+// ─── NEW: Per‑link journey item ──────────────────────────────────────────
+interface LinkJourneyItem {
+  code: string
+  label: string
+  url: string
+  totalClicks: number
+  detailVisits: number
+  downloadVisits: number
+  bounces: number
+  bounceRate: number
+  detailRate: number
+  downloadRate: number
+  username?: string
+}
+
 // ─── Color maps ───────────────────────────────────────────────────────────
 const TYPE_COLOR: Record<string, string> = {
   'anime-detail': '#a78bfa', 'download': '#34d399', 'anime-list': '#60a5fa',
@@ -753,6 +768,10 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
   const [journeyLoading, setJourneyLoading] = useState(false)
   const [journeyDays, setJourneyDays] = useState('weekly')
 
+  // NEW: Link journey by link
+  const [journeyTab, setJourneyTab] = useState<'byUser' | 'byLink'>('byUser')
+  const [linkJourneyData, setLinkJourneyData] = useState<LinkJourneyItem[]>([])
+
   // ─── Existing fetch functions ────────────────────────────────────────
   const fetchStats = useCallback(async () => {
     setLoading(true);
@@ -1060,6 +1079,20 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
     finally { setJourneyLoading(false) }
   }, [journeyDays, token])
   useEffect(() => { fetchJourney() }, [fetchJourney])
+
+  // NEW: fetch per‑link journey
+  const fetchLinkJourney = useCallback(async () => {
+    setJourneyLoading(true)
+    try {
+      const d = topPeriodLabels[journeyDays]?.days ?? 7
+      const { data } = await axios.get(`${API_BASE}/analytics/link-journey-by-link`, {
+        params: { days: d }, headers: { Authorization: `Bearer ${token}` }
+      })
+      setLinkJourneyData(data.links || [])
+    } catch { toast.error('Failed to load per‑link journey') }
+    finally { setJourneyLoading(false) }
+  }, [journeyDays, token])
+  useEffect(() => { if (journeyTab === 'byLink') fetchLinkJourney() }, [journeyTab, fetchLinkJourney])
 
   // ─── Filtered pages for table ────────────────────────────────────────
   const filteredPages = (topPages || []).filter(p => {
@@ -2049,61 +2082,124 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
         )}
       </div>
 
-      {/* ── FEATURE 7: Link Journey ───────────────────────────────────────── */}
+      {/* ── FEATURE 7 (Updated): Link Journey Tracking ─────────────────────── */}
       <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
           <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Link Journey Tracking</p>
-            <p className="text-[10px] text-gray-600 mt-0.5">Click → detail page → download funnel per user</p>
+            <p className="text-[10px] text-gray-600 mt-0.5">
+              {journeyTab === 'byUser' ? 'Click → detail → download per user' : 'Per‑link journey: clicks → page visits'}
+            </p>
           </div>
-          <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
-            {Object.entries(topPeriodLabels).map(([key, { label }]) => (
-              <button key={key} onClick={() => setJourneyDays(key)}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
+              <button onClick={() => setJourneyTab('byUser')}
                 className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors
-                  ${journeyDays === key ? 'bg-purple-600/50 text-purple-200' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}>
-                {label}
+                  ${journeyTab === 'byUser' ? 'bg-purple-600/50 text-purple-200' : 'text-gray-400 hover:text-white'}`}>
+                By User
               </button>
-            ))}
+              <button onClick={() => setJourneyTab('byLink')}
+                className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors
+                  ${journeyTab === 'byLink' ? 'bg-purple-600/50 text-purple-200' : 'text-gray-400 hover:text-white'}`}>
+                By Link
+              </button>
+            </div>
+            <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
+              {Object.entries(topPeriodLabels).map(([key, { label }]) => (
+                <button key={key} onClick={() => setJourneyDays(key)}
+                  className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors
+                    ${journeyDays === key ? 'bg-purple-600/50 text-purple-200' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-        {journeyLoading ? (
-          <div className="flex justify-center py-8"><span className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
-        ) : journeyData.length === 0 ? (
-          <p className="text-gray-600 text-xs text-center py-8">No journey data for this period</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-white/[0.06] bg-white/[0.03]">
-                  <th className="px-4 py-2.5 text-left text-gray-500">User</th>
-                  <th className="px-4 py-2.5 text-right text-gray-500">Clicks</th>
-                  <th className="px-4 py-2.5 text-right text-gray-500">Detail visits</th>
-                  <th className="px-4 py-2.5 text-right text-gray-500">Downloads</th>
-                  <th className="px-4 py-2.5 text-right text-gray-500">Bounce rate</th>
-                  <th className="px-4 py-2.5 text-right text-gray-500 hidden sm:table-cell">Download rate</th>
-                </tr>
-              </thead>
-              <tbody>
-                {journeyData.map((j, i) => (
-                  <tr key={i} className="border-b border-white/[0.03]">
-                    <td className="px-4 py-2.5">
-                      <p className="text-white font-medium">{j.realName}</p>
-                      <p className="text-[10px] text-gray-600">@{j.username}</p>
-                    </td>
-                    <td className="px-4 py-2.5 text-right text-white font-semibold">{j.totalClicks.toLocaleString()}</td>
-                    <td className="px-4 py-2.5 text-right text-purple-400">{j.detailVisits}</td>
-                    <td className="px-4 py-2.5 text-right text-emerald-400">{j.downloadVisits}</td>
-                    <td className="px-4 py-2.5 text-right">
-                      <span className={j.bounceRate > 60 ? 'text-red-400' : j.bounceRate > 30 ? 'text-amber-400' : 'text-green-400'}>
-                        {j.bounceRate}%
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5 text-right text-cyan-400 hidden sm:table-cell">{j.downloadRate}%</td>
+
+        {journeyTab === 'byUser' ? (
+          /* By User view */
+          journeyLoading ? (
+            <div className="flex justify-center py-8"><span className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
+          ) : journeyData.length === 0 ? (
+            <p className="text-gray-600 text-xs text-center py-8">No journey data for this period</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-white/[0.06] bg-white/[0.03]">
+                    <th className="px-4 py-2.5 text-left text-gray-500">User</th>
+                    <th className="px-4 py-2.5 text-right text-gray-500">Clicks</th>
+                    <th className="px-4 py-2.5 text-right text-gray-500">Detail</th>
+                    <th className="px-4 py-2.5 text-right text-gray-500">Downloads</th>
+                    <th className="px-4 py-2.5 text-right text-gray-500">Bounce</th>
+                    <th className="px-4 py-2.5 text-right text-gray-500 hidden sm:table-cell">Detail Rate</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {journeyData.map((j) => (
+                    <tr key={j.userId} className="border-b border-white/[0.03]">
+                      <td className="px-4 py-2.5">
+                        <p className="text-white font-medium">{j.realName}</p>
+                        <p className="text-[10px] text-gray-600">@{j.username}</p>
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-white font-semibold">{j.totalClicks.toLocaleString()}</td>
+                      <td className="px-4 py-2.5 text-right text-purple-400">{j.detailVisits}</td>
+                      <td className="px-4 py-2.5 text-right text-emerald-400">{j.downloadVisits}</td>
+                      <td className="px-4 py-2.5 text-right">
+                        <span className={j.bounceRate > 60 ? 'text-red-400' : j.bounceRate > 30 ? 'text-amber-400' : 'text-green-400'}>
+                          {j.bounceRate}%
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-cyan-400 hidden sm:table-cell">{j.detailRate}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        ) : (
+          /* By Link view */
+          journeyLoading ? (
+            <div className="flex justify-center py-8"><span className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
+          ) : linkJourneyData.length === 0 ? (
+            <p className="text-gray-600 text-xs text-center py-8">No link journey data</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-white/[0.06] bg-white/[0.03]">
+                    <th className="px-4 py-2.5 text-left text-gray-500">Link</th>
+                    <th className="px-4 py-2.5 text-right text-gray-500">Clicks</th>
+                    <th className="px-4 py-2.5 text-right text-gray-500">Detail</th>
+                    <th className="px-4 py-2.5 text-right text-gray-500">Download</th>
+                    <th className="px-4 py-2.5 text-right text-gray-500">Bounce</th>
+                    <th className="px-4 py-2.5 text-right text-gray-500 hidden sm:table-cell">Download %</th>
+                    <th className="px-4 py-2.5 text-left text-gray-500 hidden sm:table-cell">User</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {linkJourneyData.map((l) => (
+                    <tr key={l.code} className="border-b border-white/[0.03]">
+                      <td className="px-4 py-2.5">
+                        <p className="text-white font-medium truncate max-w-[180px]">{l.label}</p>
+                        <p className="text-[10px] text-gray-600">go.animebing.in/{l.code}</p>
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-white font-semibold">{l.totalClicks.toLocaleString()}</td>
+                      <td className="px-4 py-2.5 text-right text-purple-400">{l.detailVisits}</td>
+                      <td className="px-4 py-2.5 text-right text-emerald-400">{l.downloadVisits}</td>
+                      <td className="px-4 py-2.5 text-right">
+                        <span className={l.bounceRate > 60 ? 'text-red-400' : l.bounceRate > 30 ? 'text-amber-400' : 'text-green-400'}>
+                          {l.bounceRate}%
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-cyan-400 hidden sm:table-cell">{l.downloadRate}%</td>
+                      <td className="px-4 py-2.5 text-left text-gray-400 hidden sm:table-cell">{l.username}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
         )}
       </div>
 

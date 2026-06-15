@@ -1,5 +1,6 @@
- // src/services/mongoService.ts
+ // src/services/analyticsService.ts
 import { getDb } from './mongoService'
+import { ObjectId } from 'mongodb'
 
 export interface PageViewRecord {
   path: string
@@ -1334,7 +1335,7 @@ export async function getCohortAnalysis(
   return { cohorts: cohortList }
 }
 
-// ─── FEATURE 7: Link Journey (shortclick → pageview join) ─────────────────
+// ─── FEATURE 7 (Updated): Link Journey – Per User + Per Link ─────────────
 export async function getLinkJourney(
   mongoUri: string,
   dbName: string,
@@ -1346,19 +1347,19 @@ export async function getLinkJourney(
 
   const users = await db.collection('shortusers').find({}).toArray()
 
-  const result = await Promise.all(users.map(async (user: any) => {
+  const userResults = await Promise.all(users.map(async (user: any) => {
     const userId = user._id
     const links = await db.collection('shortlinks').find({ userId }).toArray()
     if (links.length === 0) return null
     const codes = links.map((l: any) => l.code)
 
-    // All clicks with IP + timestamp
     const clicks = await db.collection('shortclicks')
       .find({ code: { $in: codes }, clickedAt: { $gte: since } })
       .toArray()
 
-    // For each click, find pageview within 5 minutes from same IP
     let detailVisits = 0, downloadVisits = 0, bounces = 0
+    const linkJourneyMap: Record<string, { detail: number; download: number; bounce: number }> = {}
+    for (const l of links) linkJourneyMap[l.code] = { detail: 0, download: 0, bounce: 0 }
 
     await Promise.all(clicks.map(async (click: any) => {
       const windowEnd = new Date(click.clickedAt.getTime() + 5 * 60 * 1000)
@@ -1366,12 +1367,35 @@ export async function getLinkJourney(
         ip: click.ip,
         timestamp: { $gte: click.clickedAt, $lte: windowEnd }
       })
-      if (!pv) { bounces++; return }
-      if (pv.pageType === 'anime-detail') detailVisits++
-      if (pv.pageType === 'download') downloadVisits++
+      if (!pv) {
+        bounces++
+        linkJourneyMap[click.code].bounce++
+      } else {
+        if (pv.pageType === 'anime-detail') {
+          detailVisits++
+          linkJourneyMap[click.code].detail++
+        }
+        if (pv.pageType === 'download') {
+          downloadVisits++
+          linkJourneyMap[click.code].download++
+        }
+      }
     }))
 
     const total = clicks.length
+    // Convert per-link map to array
+    const linkJourney = links.map((l: any) => ({
+      code: l.code,
+      label: l.label,
+      url: l.url,
+      totalClicks: clicks.filter(c => c.code === l.code).length,
+      detailVisits: linkJourneyMap[l.code].detail,
+      downloadVisits: linkJourneyMap[l.code].download,
+      bounces: linkJourneyMap[l.code].bounce,
+      bounceRate: clicks.filter(c => c.code === l.code).length > 0
+        ? Math.round((linkJourneyMap[l.code].bounce / clicks.filter(c => c.code === l.code).length) * 100) : 0,
+    }))
+
     return {
       userId: userId.toString(),
       username: user.username,
@@ -1383,13 +1407,240 @@ export async function getLinkJourney(
       bounceRate: total > 0 ? Math.round((bounces / total) * 100) : 0,
       detailRate: total > 0 ? Math.round((detailVisits / total) * 100) : 0,
       downloadRate: total > 0 ? Math.round((downloadVisits / total) * 100) : 0,
+      linkJourney,   // <-- per-link breakdown
     }
   }))
 
   return {
-    journeys: result
+    journeys: userResults
       .filter(Boolean)
       .filter((j: any) => j.totalClicks > 0)
       .sort((a: any, b: any) => b.totalClicks - a.totalClicks)
+  }
+}
+
+// Per‑link aggregate (saare users ke links combine)
+export async function getLinkJourneyByLink(
+  mongoUri: string,
+  dbName: string,
+  days = 7
+) {
+  const db = await getDb(mongoUri, dbName)
+  const since = new Date()
+  since.setDate(since.getDate() - days)
+
+  const allLinks = await db.collection('shortlinks').find({}).toArray()
+  const result = []
+
+  for (const link of allLinks) {
+    const clicks = await db.collection('shortclicks')
+      .find({ code: link.code, clickedAt: { $gte: since } })
+      .toArray()
+    if (clicks.length === 0) continue
+
+    let detail = 0, download = 0, bounce = 0
+    for (const click of clicks) {
+      const windowEnd = new Date(click.clickedAt.getTime() + 5 * 60 * 1000)
+      const pv = await db.collection('pageviews').findOne({
+        ip: click.ip,
+        timestamp: { $gte: click.clickedAt, $lte: windowEnd }
+      })
+      if (!pv) bounce++
+      else {
+        if (pv.pageType === 'anime-detail') detail++
+        if (pv.pageType === 'download') download++
+      }
+    }
+
+    result.push({
+      code: link.code,
+      label: link.label,
+      url: link.url,
+      totalClicks: clicks.length,
+      detailVisits: detail,
+      downloadVisits: download,
+      bounces: bounce,
+      bounceRate: Math.round((bounce / clicks.length) * 100),
+      detailRate: Math.round((detail / clicks.length) * 100),
+      downloadRate: Math.round((download / clicks.length) * 100),
+      username: link.username || '',
+    })
+  }
+
+  return { links: result.sort((a, b) => b.totalClicks - a.totalClicks) }
+}
+
+// ─── FEATURE 11: User Self Analytics ─────────────────────────────────────
+export async function getUserSelfAnalytics(
+  userId: string,
+  mongoUri: string,
+  dbName: string
+) {
+  const db = await getDb(mongoUri, dbName)
+  const uid = new ObjectId(userId)
+
+  const links = await db.collection('shortlinks')
+    .find({ userId: uid })
+    .sort({ clicks: -1 })
+    .toArray()
+
+  const linkCodes = links.map((l: any) => l.code)
+
+  // ── Daily clicks last 30 days ──────────────────────────────────────────
+  const dailyClicks30: { date: string; clicks: number; earnings: number }[] = []
+  const user = await db.collection('shortusers').findOne({ _id: uid })
+  const rate = user?.ratePerThousand || 10
+
+  for (let i = 29; i >= 0; i--) {
+    const dayStart = new Date()
+    dayStart.setDate(dayStart.getDate() - i)
+    dayStart.setHours(0, 0, 0, 0)
+    const dayEnd = new Date(dayStart)
+    dayEnd.setHours(23, 59, 59, 999)
+    const count = linkCodes.length
+      ? await db.collection('shortclicks').countDocuments({
+          code: { $in: linkCodes },
+          clickedAt: { $gte: dayStart, $lte: dayEnd }
+        })
+      : 0
+    dailyClicks30.push({
+      date: getISTDateStr(dayStart),
+      clicks: count,
+      earnings: parseFloat(((count * rate) / 1000).toFixed(4))
+    })
+  }
+
+  // ── Projected monthly (last 7 days avg) ───────────────────────────────
+  const last7Avg = dailyClicks30.slice(-7).reduce((s, d) => s + d.earnings, 0) / 7
+  const projectedMonthly = parseFloat((last7Avg * 30).toFixed(2))
+
+  // ── Country breakdown (all time) ──────────────────────────────────────
+  const byCountry = linkCodes.length
+    ? await db.collection('shortclicks').aggregate([
+        { $match: { code: { $in: linkCodes } } },
+        { $group: { _id: '$country', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 8 }
+      ]).toArray()
+    : []
+
+  // ── Device breakdown (all time) ───────────────────────────────────────
+  const byDevice = linkCodes.length
+    ? await db.collection('shortclicks').aggregate([
+        { $match: { code: { $in: linkCodes } } },
+        { $group: { _id: '$device', count: { $sum: 1 } } },
+        { $sort: { count: -1 } }
+      ]).toArray()
+    : []
+
+  // ── Per-link performance ───────────────────────────────────────────────
+  const since7 = new Date()
+  since7.setDate(since7.getDate() - 7)
+  since7.setHours(0, 0, 0, 0)
+
+  const linkStats = await Promise.all(links.map(async (link: any) => {
+    const recent = await db.collection('shortclicks').countDocuments({
+      code: link.code,
+      clickedAt: { $gte: since7 }
+    })
+    const last30count = await db.collection('shortclicks').countDocuments({
+      code: link.code,
+      clickedAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
+    })
+    const avg7 = last30count / 4.28
+    const status =
+      recent === 0 ? 'dead' :
+      recent < avg7 * 0.5 ? 'declining' :
+      recent > avg7 * 1.5 ? 'trending' : 'healthy'
+
+    return {
+      code: link.code,
+      label: link.label,
+      totalClicks: link.clicks || 0,
+      recentClicks: recent,
+      earnings: parseFloat(((link.clicks || 0) * rate / 1000).toFixed(2)),
+      status,
+      lastClicked: link.lastClicked,
+    }
+  }))
+
+  // ── New vs returning (all time) ───────────────────────────────────────
+  const allIps: string[] = linkCodes.length
+    ? await db.collection('shortclicks').distinct('ip', { code: { $in: linkCodes } })
+    : []
+
+  const since30 = new Date()
+  since30.setDate(since30.getDate() - 30)
+
+  const recentIps: string[] = linkCodes.length
+    ? await db.collection('shortclicks').distinct('ip', {
+        code: { $in: linkCodes },
+        clickedAt: { $gte: since30 }
+      })
+    : []
+
+  const priorIps: string[] = recentIps.length
+    ? await db.collection('shortclicks').distinct('ip', {
+        code: { $in: linkCodes },
+        clickedAt: { $lt: since30 },
+        ip: { $in: recentIps }
+      })
+    : []
+
+  // ── Click streak ──────────────────────────────────────────────────────
+  let clickStreak = 0
+  for (let i = 0; i < 30; i++) {
+    const d = new Date()
+    d.setDate(d.getDate() - i)
+    d.setHours(0, 0, 0, 0)
+    const dEnd = new Date(d)
+    dEnd.setHours(23, 59, 59, 999)
+    const count = linkCodes.length
+      ? await db.collection('shortclicks').countDocuments({
+          code: { $in: linkCodes },
+          clickedAt: { $gte: d, $lte: dEnd }
+        })
+      : 0
+    if (count > 0) clickStreak++
+    else break
+  }
+
+  // ── Best day ever ─────────────────────────────────────────────────────
+  const bestDayRaw = linkCodes.length
+    ? await db.collection('shortclicks').aggregate([
+        { $match: { code: { $in: linkCodes } } },
+        {
+          $group: {
+            _id: { $dateToString: { format: '%Y-%m-%d', date: '$clickedAt' } },
+            count: { $sum: 1 }
+          }
+        },
+        { $sort: { count: -1 } },
+        { $limit: 1 }
+      ]).toArray()
+    : []
+
+  const bestDay = bestDayRaw[0]
+    ? { date: bestDayRaw[0]._id, clicks: bestDayRaw[0].count }
+    : null
+
+  return {
+    rate,
+    projectedMonthly,
+    clickStreak,
+    bestDay,
+    dailyClicks30,
+    byCountry: byCountry.map((c: any) => ({
+      country: c._id || 'Unknown',
+      count: c.count
+    })),
+    byDevice: byDevice.map((d: any) => ({
+      device: d._id || 'unknown',
+      count: d.count
+    })),
+    linkStats,
+    newVisitors: recentIps.length - priorIps.length,
+    returningVisitors: priorIps.length,
+    totalUniqueVisitors: allIps.length,
   }
 }

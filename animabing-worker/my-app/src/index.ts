@@ -1,4 +1,4 @@
- import { Hono } from 'hono'
+import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import adminRoutes from './routes/adminRoutes'
 import animeRoutes from './routes/animeRoutes'
@@ -15,7 +15,8 @@ import sitemapRoutes from './routes/sitemapRoutes'
 import socialRoutes from './routes/socialRoutes'
 import shortenerRoutes from './routes/shortenerRoutes'
 import shortUserRoutes from './routes/shortUserRoutes'
-import analyticsRoutes from './routes/analyticsRoutes'   // ← NAYA
+import referralRoutes from './routes/referralRoutes'   // ← NEW
+import analyticsRoutes from './routes/analyticsRoutes'
 
 export type Env = {
   MONGODB_URI: string
@@ -73,7 +74,8 @@ app.route('/api/polls', pollRoutes)
 app.route('/api/reports', reportRoutes)
 app.route('/api/social', socialRoutes)
 app.route('/api/short-users', shortUserRoutes)
-app.route('/api/analytics', analyticsRoutes)   // ← NAYA
+app.route('/api/short-users/referral', referralRoutes)   // ← NEW
+app.route('/api/analytics', analyticsRoutes)
 
 // ============ SITEMAP ============
 app.route('/', sitemapRoutes)

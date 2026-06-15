@@ -170,7 +170,7 @@ const RequestsTab: React.FC<{ data: DashboardData; onRefresh: () => void; token:
               </p>
               <textarea
                 className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3.5 py-3 text-sm text-gray-800 placeholder-gray-400 resize-none h-28 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none transition"
-                placeholder="e.g. Mujhe Naruto Shippuden ke episodes ke liye ek link chahiye…"
+                placeholder="e.g. I want death noth custom link"
                 value={linkMsg}
                 onChange={e => setLinkMsg(e.target.value)}
               />

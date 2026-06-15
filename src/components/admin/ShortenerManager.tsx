@@ -1,4 +1,4 @@
- // src/components/admin/ShortenerManager.tsx – UPDATED (darker chat + unread indicators)
+ // src/components/admin/ShortenerManager.tsx – UPDATED (darker chat + unread indicators + source column)
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
@@ -61,6 +61,7 @@ interface ShortUser {
   paidEarnings: number;
   gmailLinked?: string;
   avatarId?: number | null;
+  createdBy?: 'admin' | 'self'; // ✅ NEW FIELD
   profile?: {
     mobile?: string;
     gmail?: string;
@@ -361,6 +362,9 @@ const css = `
 .sm-badge-rejected { background: var(--red-dim); color: var(--red); border: 1px solid var(--red-border); }
 .sm-badge-payment { background: var(--green-dim); color: var(--green); border: 1px solid var(--green-border); }
 .sm-badge-link { background: var(--teal-dim); color: var(--teal); border: 1px solid var(--teal-border); }
+/* source badges */
+.sm-badge-admin { background: var(--blue-dim); color: var(--blue); border: 1px solid var(--blue-border); }
+.sm-badge-self { background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent-border); }
 .sm-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; display: inline-block; flex-shrink: 0; }
 
 .sm-clicks-badge {
@@ -592,10 +596,10 @@ const ShortenerManager: React.FC = () => {
   // users
   const [users, setUsers] = useState<ShortUser[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
-  const [addUserForm, setAddUserForm] = useState({ username: '', password: '', realName: '', ratePerThousand: 10 });
+  const [addUserForm, setAddUserForm] = useState({ username: '', password: '', realName: '', ratePerThousand: 100 }); // ✅ default 100
   const [addingUser, setAddingUser] = useState(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
-  const [editUserForm, setEditUserForm] = useState({ password: '', realName: '', ratePerThousand: 10, isActive: true });
+  const [editUserForm, setEditUserForm] = useState({ password: '', realName: '', ratePerThousand: 100, isActive: true });
   const [paymentModal, setPaymentModal] = useState<ShortUser | null>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentNote, setPaymentNote] = useState('');
@@ -608,6 +612,7 @@ const ShortenerManager: React.FC = () => {
   const [deleteUserConfirm, setDeleteUserConfirm] = useState<ShortUser | null>(null);
   const [deletingUser, setDeletingUser] = useState(false);
   const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'admin' | 'self'>('all'); // ✅ source filter
 
   // requests
   const [requests, setRequests] = useState<ShortRequest[]>([]);
@@ -777,7 +782,7 @@ const ShortenerManager: React.FC = () => {
         { headers: { Authorization: `Bearer ${getToken()}` } }
       );
       toast.success(`User "${uname}" created! Password: ${pwd}`);
-      setAddUserForm({ username: '', password: '', realName: '', ratePerThousand: 10 });
+      setAddUserForm({ username: '', password: '', realName: '', ratePerThousand: 100 });
       setShowAddUser(false);
       fetchUsers();
     } catch (err: any) { toast.error(err.response?.data?.error || 'Create failed'); }
@@ -936,7 +941,9 @@ const ShortenerManager: React.FC = () => {
     return false;
   });
 
+  // ✅ filtered users with source filter
   const filteredUsers = users.filter(u => {
+    if (sourceFilter !== 'all' && (u.createdBy || 'admin') !== sourceFilter) return false;
     if (!userSearchQuery) return true;
     const q = userSearchQuery.toLowerCase();
     return (
@@ -1232,7 +1239,7 @@ const ShortenerManager: React.FC = () => {
           </>
         )}
 
-        {/* USERS TAB – unchanged except using filteredUsers */}
+        {/* USERS TAB – with source column and filter */}
         {activeTab === 'users' && (
           <>
             <div className="sm-toolbar">
@@ -1242,6 +1249,10 @@ const ShortenerManager: React.FC = () => {
                   <input className="sm-search" type="text" placeholder="Search users by name or username..." value={userSearchQuery} onChange={e => setUserSearchQuery(e.target.value)} />
                 </div>
                 {userSearchQuery && <span style={{ fontSize: 11, color: 'var(--t3)', fontFamily: 'var(--mono)' }}>{filteredUsers.length} / {users.length}</span>}
+                {/* Source filter buttons */}
+                <button className={`sm-btn ${sourceFilter === 'all' ? 'sm-btn-primary' : 'sm-btn-ghost'}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setSourceFilter('all')}>All</button>
+                <button className={`sm-btn ${sourceFilter === 'admin' ? 'sm-btn-primary' : 'sm-btn-ghost'}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setSourceFilter('admin')}>Admin Created</button>
+                <button className={`sm-btn ${sourceFilter === 'self' ? 'sm-btn-primary' : 'sm-btn-ghost'}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setSourceFilter('self')}>Self Created</button>
               </div>
               <button className="sm-btn sm-btn-new" onClick={() => setShowAddUser(v => !v)}>
                 <i className="ti ti-plus" style={{ fontSize: 13 }} /> New User
@@ -1300,14 +1311,15 @@ const ShortenerManager: React.FC = () => {
                   <table className="sm-table">
                     <thead>
                       <tr>
-                        <th style={{ width: '15%' }}>User</th>
-                        <th style={{ width: '12%' }}>Password</th>
-                        <th style={{ width: '8%' }}>Rate/1k</th>
-                        <th style={{ width: '9%' }}>Clicks</th>
-                        <th style={{ width: '10%' }}>Earned</th>
-                        <th style={{ width: '10%' }}>Pending</th>
-                        <th style={{ width: '9%' }}>Status</th>
-                        <th style={{ width: '27%' }}>Actions</th>
+                        <th style={{ width: '13%' }}>User</th>
+                        <th style={{ width: '10%' }}>Password</th>
+                        <th style={{ width: '7%' }}>Rate/1k</th>
+                        <th style={{ width: '8%' }}>Clicks</th>
+                        <th style={{ width: '9%' }}>Earned</th>
+                        <th style={{ width: '9%' }}>Pending</th>
+                        <th style={{ width: '8%' }}>Status</th>
+                        <th style={{ width: '10%' }}>Source</th>   {/* ✅ NEW COLUMN */}
+                        <th style={{ width: '26%' }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1316,7 +1328,7 @@ const ShortenerManager: React.FC = () => {
                           <tr className="sm-data-row">
                             <td>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                {renderUserAvatar(user, 24, 0)} {/* unread indicator not needed here */}
+                                {renderUserAvatar(user, 24, 0)}
                                 <div>
                                   <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--t1)' }}>{user.realName}</div>
                                   <div style={{ fontSize: 11, color: 'var(--t3)', fontFamily: 'var(--mono)', marginTop: 2 }}>@{user.username}</div>
@@ -1335,6 +1347,12 @@ const ShortenerManager: React.FC = () => {
                             <td>
                               <span className={user.isActive ? 'sm-badge sm-badge-active' : 'sm-badge sm-badge-inactive'}>
                                 <span className="sm-dot" />{user.isActive ? 'Active' : 'Inactive'}
+                              </span>
+                            </td>
+                            <td>
+                              <span className={`sm-badge ${(user.createdBy || 'admin') === 'admin' ? 'sm-badge-admin' : 'sm-badge-self'}`}>
+                                <span className="sm-dot" />
+                                {(user.createdBy || 'admin') === 'admin' ? 'Admin' : 'Self-Created'}
                               </span>
                             </td>
                             <td>
@@ -1366,7 +1384,7 @@ const ShortenerManager: React.FC = () => {
                           </tr>
                           {editingUserId === user._id && (
                             <tr className="sm-edit-expand">
-                              <td colSpan={8}>
+                              <td colSpan={9}>  {/* ✅ COLSPAN 9 */}
                                 <div className="sm-edit-inner">
                                   <div className="sm-edit-header">
                                     <span className="sm-edit-bar" />
@@ -1635,7 +1653,7 @@ const ShortenerManager: React.FC = () => {
           </div>
         )}
 
-        {/* MODALS (unchanged, but kept for completeness) */}
+        {/* MODALS (unchanged) */}
         {deleteConfirm && (
           <div className="sm-modal-backdrop" onClick={() => setDeleteConfirm(null)}>
             <div className="sm-modal" onClick={e => e.stopPropagation()}>

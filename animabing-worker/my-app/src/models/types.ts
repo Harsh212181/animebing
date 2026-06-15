@@ -267,6 +267,10 @@ export interface IShortUser {
   profile?: IShortUserProfile
   createdAt?: Date
   updatedAt?: Date
+  // Referral system fields
+  referralCode?: string        // unique referral code for the user
+  referredBy?: string          // referral code of the person who referred them
+  registrationIp?: string      // IP at the time of registration
 }
 
 // ============ SHORT LINK ============
@@ -345,4 +349,22 @@ export interface IShortUserLogin {
   username: string
   loginAt: Date
   date: string   // "YYYY-MM-DD" format — dedup ke liye
+}
+
+// ============ REFERRAL TYPES ============
+export interface IShortReferral {
+  _id?: ObjectId
+  referrerId: ObjectId      // jisne refer kiya
+  referrerUsername: string
+  referredId: ObjectId       // naya user
+  referredUsername: string
+  referrerReward: number     // ₹40
+  referredReward: number     // ₹25
+  commissionPercent: number  // 5
+  status: 'pending' | 'unlocked' | 'flagged'
+  referrerRewardCredited: boolean
+  referredRewardCredited: boolean
+  ip?: string
+  createdAt: Date
+  unlockedAt?: Date | null
 }

@@ -23,6 +23,7 @@ import {
   getPaymentAnalytics,
   getCohortAnalysis,
   getLinkJourney,
+  getLinkJourneyByLink,   // ✅ New import
 } from '../services/analyticsService'
 
 const analyticsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
@@ -342,11 +343,23 @@ analyticsRoutes.get('/cohort', adminAuth, async (c) => {
 })
 
 // ─── GET /api/analytics/link-journey?days=7 ───────────────────────────────
-// Link journey: shortclick → pageview conversion tracking
+// Link journey: shortclick → pageview conversion tracking (per user)
 analyticsRoutes.get('/link-journey', adminAuth, async (c) => {
   try {
     const days = parseInt(c.req.query('days') || '7', 10)
     const data = await getLinkJourney(c.env.MONGODB_URI, c.env.MONGODB_DB, days)
+    return c.json(data)
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ─── GET /api/analytics/link-journey-by-link?days=7 ───────────────────────
+// Per‑link journey: click → detail → download (aggregated by short link)
+analyticsRoutes.get('/link-journey-by-link', adminAuth, async (c) => {
+  try {
+    const days = parseInt(c.req.query('days') || '7', 10)
+    const data = await getLinkJourneyByLink(c.env.MONGODB_URI, c.env.MONGODB_DB, days)
     return c.json(data)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)

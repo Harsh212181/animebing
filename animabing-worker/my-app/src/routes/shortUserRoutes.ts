@@ -1,9 +1,11 @@
- import { Hono } from 'hono'
+import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { getDb } from '../services/mongoService'
 import { adminAuth } from '../middleware/auth'
 import { IShortUser } from '../models/types'
 import { ObjectId } from 'mongodb'
+import { getUserSelfAnalytics } from '../services/analyticsService'
+import { REFERRER_REWARD, REFERRED_REWARD, COMMISSION_PERCENT, UNLOCK_CLICK_THRESHOLD } from './referralRoutes'
 
 const shortUserRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
@@ -81,9 +83,8 @@ shortUserRoutes.post('/login', async (c) => {
       c.env.JWT_SECRET
     )
 
-    // Login track karo
     const today = new Date()
-    const dateStr = today.toISOString().split('T')[0] // "2025-06-10"
+    const dateStr = today.toISOString().split('T')[0]
     await db.collection('shortlogins').updateOne(
       { userId: user._id, date: dateStr },
       { $setOnInsert: { userId: user._id, username: user.username, loginAt: today, date: dateStr } },
@@ -146,9 +147,8 @@ shortUserRoutes.post('/login/gmail', async (c) => {
       c.env.JWT_SECRET
     )
 
-    // Login track karo
     const today = new Date()
-    const dateStr = today.toISOString().split('T')[0] // "2025-06-10"
+    const dateStr = today.toISOString().split('T')[0]
     await db.collection('shortlogins').updateOne(
       { userId: user._id, date: dateStr },
       { $setOnInsert: { userId: user._id, username: user.username, loginAt: today, date: dateStr } },
@@ -174,13 +174,179 @@ shortUserRoutes.post('/login/gmail', async (c) => {
   }
 })
 
+// ============ USER SELF-REGISTER (WITH FULL FORMAT VALIDATION & REFERRAL LOGIC) ============
+shortUserRoutes.post('/register', async (c) => {
+  try {
+    const { username, password, realName, mobile, gmail, upiId, upiPhone, age, gender, referredBy } = await c.req.json()
+
+    if (!username || !password || !realName) {
+      return c.json({ error: 'Username, password and realName are required' }, 400)
+    }
+    if (password.length < 4) {
+      return c.json({ error: 'Password must be at least 4 characters' }, 400)
+    }
+
+    // Mobile validation
+    if (!mobile?.trim() || !/^[6-9]\d{9}$/.test(mobile.trim())) {
+      return c.json({ error: 'Enter a valid 10-digit mobile number' }, 400)
+    }
+
+    // Gmail validation
+    if (!gmail?.trim() || !/^[a-zA-Z0-9._%+-]+@gmail\.com$/.test(gmail.trim().toLowerCase())) {
+      return c.json({ error: 'Enter a valid Gmail address (must end with @gmail.com)' }, 400)
+    }
+
+    // UPI validation
+    if (!upiId?.trim() && !upiPhone?.trim()) {
+      return c.json({ error: 'UPI ID or UPI Phone is required' }, 400)
+    }
+    if (upiId?.trim() && !/^[\w.\-]{2,256}@[a-zA-Z]{2,64}$/.test(upiId.trim())) {
+      return c.json({ error: 'Enter a valid UPI ID (e.g. name@upi)' }, 400)
+    }
+    if (upiPhone?.trim() && !/^[6-9]\d{9}$/.test(upiPhone.trim())) {
+      return c.json({ error: 'Enter a valid 10-digit UPI phone number' }, 400)
+    }
+
+    // Age validation
+    if (!age || parseInt(age) < 13 || parseInt(age) > 100) {
+      return c.json({ error: 'Enter a valid age (13-100)' }, 400)
+    }
+
+    if (!gender) {
+      return c.json({ error: 'Gender is required' }, 400)
+    }
+
+    const cleanUsername = username.toLowerCase().trim().replace(/\s/g, '')
+    if (!/^[a-zA-Z0-9_]{3,20}$/.test(cleanUsername)) {
+      return c.json({ error: 'Username 3-20 characters, letters/numbers/_ only' }, 400)
+    }
+
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const existing = await db.collection('shortusers').findOne({ username: cleanUsername })
+    if (existing) {
+      return c.json({ error: 'This username already exists' }, 400)
+    }
+
+    const normalizedGmail = gmail.toLowerCase().trim()
+
+    // ── Get registration IP for fraud check ──
+    const registrationIp = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || 'unknown'
+
+    // ── Validate referral code (if provided) ──
+    let referrer: any = null
+    let referralStatus: 'pending' | 'flagged' = 'pending'
+
+    if (referredBy?.trim()) {
+      const refCode = referredBy.trim().toUpperCase()
+      referrer = await db.collection('shortusers').findOne({ referralCode: refCode })
+
+      if (!referrer || !referrer.isActive) {
+        return c.json({ error: 'Invalid referral code' }, 400)
+      }
+
+      // ── Anti-fraud: same IP check ──
+      if (registrationIp !== 'unknown') {
+        const sameIpCount = await db.collection('shortusers').countDocuments({
+          registrationIp,
+          $or: [{ referredBy: refCode }, { _id: referrer._id }]
+        })
+        if (sameIpCount > 0) {
+          referralStatus = 'flagged'
+        }
+
+        // ── Anti-fraud: too many referrals from this referrer recently ──
+        const recentReferrals = await db.collection('shortreferrals').countDocuments({
+          referrerId: referrer._id,
+          createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+        })
+        if (recentReferrals >= 5) {
+          referralStatus = 'flagged'
+        }
+      }
+    }
+
+    const newUser = {
+      username: cleanUsername,
+      password,
+      realName: realName.trim(),
+      ratePerThousand: 50,
+      isActive: true,
+      canCreateLinks: true,
+      totalClicks: 0,
+      totalEarnings: 0,
+      unpaidEarnings: 0,
+      paidEarnings: 0,
+      gmailLinked: normalizedGmail,
+      createdBy: 'self',
+      profile: {
+        mobile: mobile.trim(),
+        gmail: normalizedGmail,
+        upiId: upiId?.trim() || '',
+        upiPhone: upiPhone?.trim() || '',
+        age: parseInt(age),
+        gender,
+      },
+      avatarId: null,
+      referralCode: null,
+      referredBy: referrer ? referrer.referralCode : null,
+      registrationIp,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }
+
+    const result = await db.collection('shortusers').insertOne(newUser)
+    const userId = result.insertedId.toString()
+
+    // ── Create referral record if referred ──
+    if (referrer) {
+      await db.collection('shortreferrals').insertOne({
+        referrerId: referrer._id,
+        referrerUsername: referrer.username,
+        referredId: result.insertedId,
+        referredUsername: newUser.username,
+        referrerReward: REFERRER_REWARD,
+        referredReward: REFERRED_REWARD,
+        commissionPercent: COMMISSION_PERCENT,
+        status: referralStatus,
+        referrerRewardCredited: false,
+        referredRewardCredited: false,
+        ip: registrationIp,
+        createdAt: new Date(),
+        unlockedAt: null
+      })
+    }
+
+    const token = await createJWT(
+      { id: userId, username: newUser.username, role: 'shortuser' },
+      c.env.JWT_SECRET
+    )
+
+    return c.json({
+      success: true,
+      message: 'Account created successfully!',
+      token,
+      user: {
+        username: newUser.username,
+        realName: newUser.realName,
+        totalClicks: newUser.totalClicks,
+        totalEarnings: newUser.totalEarnings,
+        unpaidEarnings: newUser.unpaidEarnings,
+        ratePerThousand: newUser.ratePerThousand,
+        profile: newUser.profile,
+        avatarId: null,
+      }
+    })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
 // ============ USER DASHBOARD (with daily tracking) ============
 shortUserRoutes.get('/dashboard', userAuth, async (c) => {
   try {
     const { id } = c.get('shortUser')
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    // ✅ Track daily visit — app open hone par
     const today = new Date().toISOString().split('T')[0]
     await db.collection('shortlogins').updateOne(
       { userId: new ObjectId(id), date: today },
@@ -188,11 +354,11 @@ shortUserRoutes.get('/dashboard', userAuth, async (c) => {
         $setOnInsert: {
           userId: new ObjectId(id),
           date: today,
-          loginAt: new Date(),      // ← yeh add kiya
+          loginAt: new Date(),
           firstSeenAt: new Date()
         },
         $set: { lastSeenAt: new Date() },
-        $inc: { openCount: 1 }  // din mein kitni baar khola
+        $inc: { openCount: 1 }
       },
       { upsert: true }
     )
@@ -327,7 +493,7 @@ shortUserRoutes.post('/create-link', userAuth, async (c) => {
     const { animeId, animeTitle, animeSlug, customCode, label } = await c.req.json()
 
     if (!animeId || !animeSlug) {
-      return c.json({ error: 'Anime select karna zaroori hai.' }, 400)
+      return c.json({ error: 'Please select an anime.' }, 400)
     }
 
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -338,7 +504,7 @@ shortUserRoutes.post('/create-link', userAuth, async (c) => {
     if (!user) return c.json({ error: 'User not found' }, 404)
 
     if (!(user as any).canCreateLinks) {
-      return c.json({ error: 'Aapko link create karne ki permission nahi hai. Admin se contact karo.' }, 403)
+      return c.json({ error: 'You do not have permission to create links. Please contact admin.' }, 403)
     }
 
     let finalCode: string
@@ -346,14 +512,14 @@ shortUserRoutes.post('/create-link', userAuth, async (c) => {
     if (customCode?.trim()) {
       finalCode = customCode.trim()
       if (!/^[a-zA-Z0-9-_]+$/.test(finalCode)) {
-        return c.json({ error: 'Code mein sirf letters, numbers, - aur _ use kar sakte hain.' }, 400)
+        return c.json({ error: 'Code can only contain letters, numbers, - and _' }, 400)
       }
       if (finalCode.length < 3 || finalCode.length > 30) {
-        return c.json({ error: 'Code 3 se 30 characters ka hona chahiye.' }, 400)
+        return c.json({ error: 'Code must be between 3 and 30 characters' }, 400)
       }
       const existingCode = await db.collection('shortlinks').findOne({ code: finalCode })
       if (existingCode) {
-        return c.json({ error: `"${finalCode}" code already use ho chuka hai. Koi aur code try karo.` }, 400)
+        return c.json({ error: `"${finalCode}" is already taken. Please try another code.` }, 400)
       }
     } else {
       const baseLabel = label?.trim() || animeTitle || 'link'
@@ -377,7 +543,7 @@ shortUserRoutes.post('/create-link', userAuth, async (c) => {
     })
     if (existingAnimeLink) {
       return c.json({
-        error: `Aapne "${animeTitle}" ke liye pehle se ek link bana rakha hai: go.animebing.in/${existingAnimeLink.code}`
+        error: `You already have a link for "${animeTitle}": go.animebing.in/${existingAnimeLink.code}`
       }, 400)
     }
 
@@ -402,7 +568,7 @@ shortUserRoutes.post('/create-link', userAuth, async (c) => {
 
     return c.json({
       success: true,
-      message: `Link successfully create ho gaya!`,
+      message: 'Link created successfully!',
       link: {
         code: finalCode,
         shortUrl: `https://go.animebing.in/${finalCode}`,
@@ -582,7 +748,7 @@ shortUserRoutes.post('/admin/users', adminAuth, async (c) => {
 
     const newUser = {
       username, password, realName,
-      ratePerThousand: ratePerThousand || 10,
+      ratePerThousand: ratePerThousand || 100,
       isActive: true,
       canCreateLinks: canCreateLinks || false,
       totalClicks: 0,
@@ -636,16 +802,11 @@ shortUserRoutes.delete('/admin/users/:id', adminAuth, async (c) => {
     ) as IShortUser | null
     if (!user) return c.json({ error: 'User not found' }, 404)
 
-    // Delete the user
     await db.collection('shortusers').deleteOne({ _id: new ObjectId(id) })
-
-    // Optionally: unassign their links (set userId to null instead of deleting)
     await db.collection('shortlinks').updateMany(
       { userId: new ObjectId(id) },
       { $set: { userId: null } }
     )
-
-    // Optionally: delete their messages and requests
     await db.collection('shortmessages').deleteMany({ userId: new ObjectId(id) })
     await db.collection('shortrequests').deleteMany({ userId: new ObjectId(id) })
 
@@ -928,7 +1089,7 @@ shortUserRoutes.get('/admin/stats', adminAuth, async (c) => {
   }
 })
 
-// ============ ADMIN — DELETE LINK BY ID (for broken links without a code) ============
+// ============ ADMIN — DELETE LINK BY ID ============
 shortUserRoutes.delete('/admin/links/by-id/:id', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
@@ -951,13 +1112,10 @@ shortUserRoutes.get('/admin/users/:id/activity', adminAuth, async (c) => {
     const days = parseInt(c.req.query('days') || '30')
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    // Date range
-    const endDate = new Date()
     const startDate = new Date()
     startDate.setDate(startDate.getDate() - (days - 1))
     startDate.setHours(0, 0, 0, 0)
 
-    // Login logs fetch
     const loginLogs = await db.collection('shortlogins')
       .find({ userId: new ObjectId(userId), loginAt: { $gte: startDate } })
       .sort({ loginAt: 1 })
@@ -965,7 +1123,6 @@ shortUserRoutes.get('/admin/users/:id/activity', adminAuth, async (c) => {
 
     const loginDates = new Set(loginLogs.map((l: any) => l.date))
 
-    // Generate full calendar
     const calendar = []
     for (let i = 0; i < days; i++) {
       const d = new Date(startDate)
@@ -978,7 +1135,6 @@ shortUserRoutes.get('/admin/users/:id/activity', adminAuth, async (c) => {
       })
     }
 
-    // Per-link click stats
     const links = await db.collection('shortlinks')
       .find({ userId: new ObjectId(userId) })
       .sort({ clicks: -1 })
@@ -1013,6 +1169,17 @@ shortUserRoutes.get('/admin/users/:id/activity', adminAuth, async (c) => {
       linkStats,
       lastLogin: loginLogs.length > 0 ? loginLogs[loginLogs.length - 1].loginAt : null
     })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============ USER SELF ANALYTICS ============
+shortUserRoutes.get('/my-analytics', userAuth, async (c) => {
+  try {
+    const { id } = c.get('shortUser')
+    const data = await getUserSelfAnalytics(id, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    return c.json(data)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
