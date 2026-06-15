@@ -1,4 +1,4 @@
- // App.tsx - FINAL FIXED VERSION (with HelmetProvider + AnimeContext + Lazy Loading + Instant Init)
+// App.tsx - FINAL FIXED VERSION (with HelmetProvider + AnimeContext + Lazy Loading + Instant Init)
 import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
@@ -28,6 +28,7 @@ const DownloadLinkPage = React.lazy(() => import('./components/DownloadLinkPage'
 const DownloadRedirectPage = React.lazy(() => import('./components/DownloadRedirectPage'));
 const UserDashboard = React.lazy(() => import('./components/UserDashboard'));
 const WelcomePage = React.lazy(() => import('./components/WelcomePage'));
+const AuthCallback = React.lazy(() => import('./components/AuthCallback'));   // ← Google OAuth callback
 
 // ✅ 404 ERROR PAGE COMPONENT
 const ErrorPage: React.FC = () => {
@@ -781,6 +782,12 @@ const App: React.FC = () => {
       <Router>
         <AnimeProvider>
           <Routes>
+            {/* Auth Callback – Google OAuth return URL */}
+            <Route path="/auth/callback" element={
+              <Suspense fallback={<Spinner />}>
+                <AuthCallback />
+              </Suspense>
+            } />
             {/* Dashboard without Header/Footer */}
             <Route path="/dashboard" element={
               <Suspense fallback={<Spinner />}>

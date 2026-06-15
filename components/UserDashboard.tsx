@@ -1,4 +1,4 @@
- import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import OverviewTab from './dashboard/OverviewTab';
 import LinksTab from './dashboard/LinksTab';
 import ProfileTab from './dashboard/ProfileTab';
@@ -181,7 +181,11 @@ const LoginForm: React.FC<{
   }) => void;
   loginError: string;
 }> = ({ onLogin, onRegister, loginError }) => {
-  const [loginMode, setLoginMode] = useState<'password' | 'gmail' | 'register'>('password');
+  // 🔥 ONLY THIS LINE CHANGED — auto‑open register form if ?ref= present in URL
+  const [loginMode, setLoginMode] = useState<'password' | 'gmail' | 'register'>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('ref') ? 'register' : 'password';
+  });
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [gmail, setGmail] = useState('');

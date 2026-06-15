@@ -17,6 +17,7 @@ import shortenerRoutes from './routes/shortenerRoutes'
 import shortUserRoutes from './routes/shortUserRoutes'
 import referralRoutes from './routes/referralRoutes'   // ← NEW
 import analyticsRoutes from './routes/analyticsRoutes'
+import authRoutes from './routes/authRoutes'           // ← Google OAuth routes
 
 export type Env = {
   MONGODB_URI: string
@@ -26,6 +27,9 @@ export type Env = {
   ADMIN_USER: string
   ADMIN_PASS: string
   API_URL: string
+  GOOGLE_CLIENT_ID: string         // ← new
+  GOOGLE_CLIENT_SECRET: string     // ← new
+  FRONTEND_URL: string             // ← new
 }
 
 export type Variables = {
@@ -76,6 +80,7 @@ app.route('/api/social', socialRoutes)
 app.route('/api/short-users', shortUserRoutes)
 app.route('/api/short-users/referral', referralRoutes)   // ← NEW
 app.route('/api/analytics', analyticsRoutes)
+app.route('/api/auth', authRoutes)                       // ← Google OAuth
 
 // ============ SITEMAP ============
 app.route('/', sitemapRoutes)

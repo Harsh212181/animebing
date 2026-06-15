@@ -1,8 +1,9 @@
-import { Hono } from 'hono'
+ import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { getDb } from '../services/mongoService'
 import { adminAuth } from '../middleware/auth'
 import { ObjectId } from 'mongodb'
+import { checkAndUnlockReferral, creditCommissionToReferrer } from './referralRoutes'
 
 const shortenerRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
@@ -283,7 +284,7 @@ shortenerRoutes.get('/:code', async (c) => {
 
     const userAgent = c.req.header('User-Agent') || ''
 
-    // ============ BOT: Meta HTML serve karo (OG preview ke liye) ============
+    // ============ BOT: Meta HTML serve karo ============
     if (isBot(userAgent)) {
       const meta = await fetchAnimeMeta(link.url, c.env)
 
@@ -309,7 +310,7 @@ shortenerRoutes.get('/:code', async (c) => {
       )
     }
 
-    // ============ REAL USER: Server-side click count, phir instant 302 ============
+    // ============ REAL USER: Click count + redirect ============
     const ip = c.req.header('CF-Connecting-IP') ||
                c.req.header('X-Forwarded-For') || 'unknown'
 
@@ -345,16 +346,28 @@ shortenerRoutes.get('/:code', async (c) => {
         )
       ])
 
-      // Earnings update — fire and forget, redirect block nahi hoga
+      // ============ EARNINGS + REFERRAL UNLOCK + COMMISSION ============
       if (link.userId) {
         db.collection('shortusers').findOne({ _id: link.userId })
-          .then(user => {
-            if (user) {
-              const earn = (user.ratePerThousand || 10) / 1000
-              return db.collection('shortusers').updateOne(
-                { _id: link.userId },
-                { $inc: { totalClicks: 1, totalEarnings: earn, unpaidEarnings: earn } }
-              )
+          .then(async (user) => {
+            if (!user) return
+
+            const earn = (user.ratePerThousand || 10) / 1000
+
+            // User ki earnings update karo
+            await db.collection('shortusers').updateOne(
+              { _id: link.userId },
+              { $inc: { totalClicks: 1, totalEarnings: earn, unpaidEarnings: earn } }
+            )
+
+            // ✅ REFERRAL UNLOCK CHECK — har click ke baad check karo
+            // Agar 1000 clicks ho gaye toh auto unlock hoga
+            await checkAndUnlockReferral(link.userId, db)
+
+            // ✅ COMMISSION CREDIT — referrer ka 5% commission
+            // Sirf tab kaam karega jab is user ka koi unlocked referral ho
+            if (earn > 0) {
+              await creditCommissionToReferrer(link.userId, earn, db)
             }
           })
           .catch(() => {})
