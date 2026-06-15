@@ -3,14 +3,6 @@
   "main": "src/index.ts",
   "compatibility_date": "2025-01-01",
   "compatibility_flags": ["nodejs_compat"],
-
-  "routes": [
-    { "pattern": "animebing.in/api/*", "zone_name": "animebing.in" },
-    { "pattern": "animebing.in/sitemap*", "zone_name": "animebing.in" },
-    { "pattern": "animebing.in/robots.txt", "zone_name": "animebing.in" },
-    { "pattern": "go.animebing.in", "zone_name": "animebing.in", "custom_domain": true }
-  ],
-
   "vars": {
     "MONGODB_DB": "animabing",
     "ALLOWED_ORIGIN": "*",

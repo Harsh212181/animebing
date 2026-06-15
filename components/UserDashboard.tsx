@@ -170,7 +170,7 @@ const AvatarPicker: React.FC<{
   </div>
 );
 
-// ─── Login Form (with Register mode, info box removed) ────────────────────────
+// ─── Login Form (Real Google OAuth + Register) ──────────────────────────────
 const LoginForm: React.FC<{
   onLogin: (cred: any) => void;
   onRegister: (data: {
@@ -181,16 +181,14 @@ const LoginForm: React.FC<{
   }) => void;
   loginError: string;
 }> = ({ onLogin, onRegister, loginError }) => {
-  // 🔥 ONLY THIS LINE CHANGED — auto‑open register form if ?ref= present in URL
-  const [loginMode, setLoginMode] = useState<'password' | 'gmail' | 'register'>(() => {
+
+  const [loginMode, setLoginMode] = useState<'password' | 'register'>(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get('ref') ? 'register' : 'password';
   });
+
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [gmail, setGmail] = useState('');
-
-  // register fields
   const [regUsername, setRegUsername] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regRealName, setRegRealName] = useState('');
@@ -201,10 +199,33 @@ const LoginForm: React.FC<{
   const [regAge, setRegAge] = useState('');
   const [regGender, setRegGender] = useState('');
   const [regReferralCode, setRegReferralCode] = useState(() => {
-    // Auto-fill from ?ref=CODE in URL
     const params = new URLSearchParams(window.location.search);
     return params.get('ref')?.toUpperCase().trim() || '';
   });
+
+  // ─── Google OAuth ────────────────────────────────────────────────────────────
+  const handleGoogleOAuth = async () => {
+    try {
+      const res = await fetch(
+        'https://animabing-backend.animabingwatch.workers.dev/api/auth/google/url'
+      )
+      const { url } = await res.json()
+      window.location.href = url
+    } catch {
+      alert('Google login fail hua, dobara try karo')
+    }
+  }
+
+  // ─── no_account error URL se check karo ─────────────────────────────────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const error = params.get('error')
+    const gmail = params.get('gmail')
+    if (error === 'no_account' && gmail) {
+      setLoginMode('register')
+      setRegGmail(decodeURIComponent(gmail))
+    }
+  }, [])
 
   const inputStyle: React.CSSProperties = {
     width: '100%', background: '#f8f8fc', border: '1px solid #e2e2f0',
@@ -250,6 +271,7 @@ const LoginForm: React.FC<{
           </div>
         </div>
 
+        {/* ── Password Login ── */}
         {loginMode === 'password' && (
           <>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -269,11 +291,14 @@ const LoginForm: React.FC<{
                 Sign In
               </button>
             </div>
+
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '20px 0', color: '#b0b0cc', fontSize: 12 }}>
               <div style={{ flex: 1, height: 1, background: '#e8e8f4' }} />OR
               <div style={{ flex: 1, height: 1, background: '#e8e8f4' }} />
             </div>
-            <button onClick={() => setLoginMode('gmail')} style={btnSecondary}>
+
+            {/* ✅ REAL GOOGLE OAUTH BUTTON */}
+            <button onClick={handleGoogleOAuth} style={btnSecondary}>
               <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                 <svg width="16" height="16" viewBox="0 0 24 24">
                   <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57C21.36 18.5 22.56 15.68 22.56 12.25z" fill="#4285F4"/>
@@ -281,9 +306,10 @@ const LoginForm: React.FC<{
                   <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
                   <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
                 </svg>
-                Continue with Gmail
+                Continue with Google
               </span>
             </button>
+
             <button
               onClick={() => setLoginMode('register')}
               style={{ ...btnSecondary, marginTop: 10, color: '#534AB7', fontWeight: 600 }}
@@ -293,36 +319,20 @@ const LoginForm: React.FC<{
           </>
         )}
 
-        {loginMode === 'gmail' && (
-          <>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <input
-                type="email" placeholder="yourname@gmail.com" style={inputStyle}
-                value={gmail} onChange={e => setGmail(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && onLogin({ gmail })}
-              />
-              <p style={{ color: '#9999bb', fontSize: 12, margin: 0 }}>
-                Your Gmail must be linked in your profile.
-              </p>
-              {loginError && (
-                <p style={{ color: '#d85a30', fontSize: 12, margin: 0 }}>{loginError}</p>
-              )}
-              <button style={btnPrimary} onClick={() => onLogin({ gmail })}>
-                Login via Gmail
-              </button>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '20px 0', color: '#b0b0cc', fontSize: 12 }}>
-              <div style={{ flex: 1, height: 1, background: '#e8e8f4' }} />OR
-              <div style={{ flex: 1, height: 1, background: '#e8e8f4' }} />
-            </div>
-            <button onClick={() => setLoginMode('password')} style={btnSecondary}>
-              Login with Username &amp; Password
-            </button>
-          </>
-        )}
-
+        {/* ── Register ── */}
         {loginMode === 'register' && (
           <>
+            {/* no_account warning */}
+            {new URLSearchParams(window.location.search).get('error') === 'no_account' && (
+              <div style={{
+                background: '#fff8f0', border: '1px solid #ffd9b0',
+                borderRadius: 10, padding: '10px 14px', marginBottom: 14,
+                fontSize: 13, color: '#c45c00',
+              }}>
+                ⚠️ Is Gmail se koi account nahi mila. Pehle register karo — Gmail auto-fill ho gaya hai.
+              </div>
+            )}
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <input
                 type="text" placeholder="Your Full Name" style={inputStyle}
@@ -337,7 +347,6 @@ const LoginForm: React.FC<{
                 type="password" placeholder="Choose a Password (min 4 chars)" style={inputStyle}
                 value={regPassword} onChange={e => setRegPassword(e.target.value)}
               />
-              {/* New fields */}
               <input
                 type="tel" placeholder="Mobile Number" style={inputStyle}
                 value={regMobile} onChange={e => setRegMobile(e.target.value)}
@@ -364,14 +373,11 @@ const LoginForm: React.FC<{
                 <option value="Female">Female</option>
                 <option value="Other">Other</option>
               </select>
-
-              {/* Referral code field */}
               <input
                 type="text" placeholder="Referral Code (optional)" style={inputStyle}
                 value={regReferralCode}
                 onChange={e => setRegReferralCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
               />
-
               {loginError && (
                 <p style={{ color: '#d85a30', fontSize: 12, margin: 0 }}>{loginError}</p>
               )}
@@ -381,12 +387,13 @@ const LoginForm: React.FC<{
                   username: regUsername, password: regPassword, realName: regRealName,
                   mobile: regMobile, gmail: regGmail, upiId: regUpiId,
                   upiPhone: regUpiPhone, age: regAge, gender: regGender,
-                  referredBy: regReferralCode
+                  referredBy: regReferralCode,
                 })}
               >
                 Create Account
               </button>
             </div>
+
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '20px 0', color: '#b0b0cc', fontSize: 12 }}>
               <div style={{ flex: 1, height: 1, background: '#e8e8f4' }} />OR
               <div style={{ flex: 1, height: 1, background: '#e8e8f4' }} />
@@ -396,6 +403,7 @@ const LoginForm: React.FC<{
             </button>
           </>
         )}
+
       </div>
     </div>
   );
