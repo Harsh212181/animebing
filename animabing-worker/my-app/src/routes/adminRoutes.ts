@@ -11,6 +11,11 @@ import { ObjectId } from 'mongodb'
 
 const adminRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
+// ============ RANDOM LIKES HELPER ============
+function getRandomLikes(): number {
+  return Math.floor(Math.random() * 1501) + 500 // 500 to 2000
+}
+
 // ============ JWT CREATE ============
 async function createJWT(payload: object, secret: string): Promise<string> {
   const encoder = new TextEncoder()
@@ -84,14 +89,21 @@ adminRoutes.post('/add-anime', adminAuth, async (c) => {
     const seoTitle = `Watch ${title} Online in ${subDubStatus} | AnimeBing`
     const seoDescription = `Watch ${title} online in ${subDubStatus}. HD quality streaming and downloads.`
 
+    // Random likes between 500 and 2000
+    const randomLikes = getRandomLikes()
+
     const anime = {
       title, description, thumbnail,
       status: status || 'Ongoing',
       subDubStatus, genreList, releaseYear,
       contentType: contentType || 'Anime',
       slug, seoTitle, seoDescription,
-      likes: 0, dislikes: 0, views: 0,
-      totalVotes: 0, monthlyLikes: 0, weeklyLikes: 0,
+      likes: randomLikes,
+      dislikes: 0,
+      views: 0,
+      totalVotes: randomLikes,
+      monthlyLikes: Math.floor(randomLikes * 0.3),
+      weeklyLikes: Math.floor(randomLikes * 0.1),
       featured: false, featuredOrder: 0,
       isHidden: false, lastContentAdded: new Date()
     }
@@ -419,8 +431,6 @@ adminRoutes.get('/analytics', adminAuth, async (c) => {
 })
 
 // ============ PROTECTED ALIAS ROUTES ============
-// Frontend purane /protected/ URLs use karta hai — yeh aliases unhe handle karte hain
-
 adminRoutes.get('/protected/anime-list', adminAuth, async (c) => {
   try {
     const status = c.req.query('status')
