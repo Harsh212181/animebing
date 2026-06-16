@@ -61,12 +61,12 @@ auth.get('/google/callback', async (c) => {
     }
 
     // Step 3: MongoDB mein Gmail se user dhundho
-    //         getDb(mongoUri, dbName) — yahi format hai
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
     const user = await db.collection('shortusers').findOne({
       $or: [
         { 'profile.gmail': gmail },
         { gmail: gmail },
+        { gmailLinked: gmail },
       ]
     })
 
@@ -85,6 +85,7 @@ auth.get('/google/callback', async (c) => {
         id: user._id.toString(),
         username: user.username,
         loginType: 'google',
+        role: 'shortuser',  // ✅ FIX: yahi missing tha
       },
       c.env.JWT_SECRET
     )

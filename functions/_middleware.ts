@@ -1,4 +1,4 @@
-interface Env {
+ interface Env {
   API_URL?: string;
 }
 
@@ -114,28 +114,23 @@ function buildStructuredData(anime: Record<string, unknown>, url: string, maxEp:
     }
   };
 
-  // Episode info
   if (!isMovie && !isManga && maxEp > 0) {
     data.numberOfEpisodes = maxEp;
     data.numberOfSeasons = 1;
   }
 
-  // Genre
   if (Array.isArray(anime.genreList) && (anime.genreList as any[]).length > 0) {
     data.genre = anime.genreList;
   }
 
-  // Release year
   if (anime.releaseYear) {
     data.dateCreated = String(anime.releaseYear);
   }
 
-  // ✅ FIX: Rating — sirf tab add karo jab ratingValue valid ho (1-10 range)
   const likes = Number(anime.likes || 0);
   const dislikes = Number(anime.dislikes || 0);
   const totalVotes = likes + dislikes;
   if (totalVotes > 10 && likes > 0) {
-    // Rating 1-10 range mein rakho
     const rawRating = (likes / totalVotes) * 9 + 1;
     const ratingValue = Math.min(10, Math.max(1, parseFloat(rawRating.toFixed(1))));
     data.aggregateRating = {
@@ -147,7 +142,6 @@ function buildStructuredData(anime: Record<string, unknown>, url: string, maxEp:
     };
   }
 
-  // ✅ FIX: JSON mein special chars properly escape karo
   return `<script type="application/ld+json">${JSON.stringify(data, null, 0)}</script>`;
 }
 
@@ -162,32 +156,25 @@ function injectMeta(html: string, meta: {
   const t = esc(meta.title);
   const d = esc(meta.description.substring(0, 900));
 
-  // ✅ Step 1: Saare existing OG / Twitter / ld+json tags remove karo
   html = html.replace(/<meta\s+property="og:[^"]*"[^>]*\/?>/gi, '');
   html = html.replace(/<meta\s+name="twitter:[^"]*"[^>]*\/?>/gi, '');
   html = html.replace(/<script\s+type="application\/ld\+json">[\s\S]*?<\/script>/gi, '');
 
-  // ✅ Step 2: <title> replace karo
   html = html.replace(/<title>[\s\S]*?<\/title>/, `<title>${t}</title>`);
 
-  // ✅ Step 3: <meta name="description"> replace karo
-  // index.html mein ab yeh tag hai, toh replace hoga
   if (/<meta\s[^>]*name="description"[^>]*>/i.test(html)) {
     html = html.replace(
       /<meta\s[^>]*name="description"[^>]*>/i,
       `<meta name="description" content="${d}" />`
     );
   } else {
-    // Fallback: agar tag nahi mila toh inject karo
     html = html.replace('<head>', `<head>\n  <meta name="description" content="${d}" />`);
   }
 
-  // ✅ Step 4: <link rel="canonical"> replace karo
   if (html.includes('rel="canonical"')) {
     html = html.replace(/<link\s+rel="canonical"[^>]*>/i, `<link rel="canonical" href="${meta.url}" />`);
   }
 
-  // ✅ Step 5: Fresh OG + Twitter tags + Structured Data </head> se PEHLE inject karo
   const sdTag = meta.structuredData || '';
   html = html.replace('</head>', buildMetaTags(meta) + '\n' + sdTag + '\n</head>');
 
@@ -237,7 +224,7 @@ export async function onRequest(context: CFContext): Promise<Response> {
     }, null, 2), { headers: { 'Content-Type': 'application/json' } });
   }
 
-  // ========== META DEBUG — live check karo ==========
+  // ========== META DEBUG ==========
   if (path === '/meta-debug') {
     const testSlug = url.searchParams.get('slug') || 'naruto';
     const API_BASE = getApiBase(env);
@@ -293,6 +280,38 @@ export async function onRequest(context: CFContext): Promise<Response> {
     }
   }
 
+  // ========== DASHBOARD REFERRAL META — /dashboard?ref=CODE ✅ NEW ==========
+  if (path === '/dashboard' && url.searchParams.has('ref')) {
+    const ref = (url.searchParams.get('ref') || '').toUpperCase().trim()
+
+    if (ref) {
+      try {
+        let html = await next().then(r => r.text())
+
+        const title = `Join AnimaBing — Use Referral Code ${ref}`
+        const description = `You have been invited to AnimaBing. Sign up using referral code ${ref} and receive a welcome bonus. Start earning real money by sharing anime links today.`
+        const pageUrl = `${SITE_URL}/dashboard?ref=${ref}`
+
+        html = injectMeta(html, {
+          title,
+          description,
+          image: LOGO_URL,
+          url:   pageUrl,
+          type:  'website',
+        })
+
+        return new Response(html, {
+          headers: {
+            'Content-Type':  'text/html;charset=UTF-8',
+            'Cache-Control': 'no-store',
+          }
+        })
+      } catch (e) {
+        return next()
+      }
+    }
+  }
+
   // ========== STATIC PAGES SEO ==========
   const STATIC_PAGES: Record<string, { title: string; description: string; type?: string }> = {
     '/': {
@@ -334,7 +353,6 @@ export async function onRequest(context: CFContext): Promise<Response> {
     try {
       let html = await next().then(r => r.text());
 
-      // WebSite structured data for homepage
       let structuredData = '';
       if (path === '/') {
         structuredData = `<script type="application/ld+json">${JSON.stringify({
@@ -357,7 +375,6 @@ export async function onRequest(context: CFContext): Promise<Response> {
         })}</script>`;
       }
 
-      // ItemList structured data for /anime and /top-100
       if (path === '/anime' || path === '/top-100') {
         structuredData = `<script type="application/ld+json">${JSON.stringify({
           "@context": "https://schema.org",
@@ -413,13 +430,11 @@ export async function onRequest(context: CFContext): Promise<Response> {
       if (data.success && data.data) {
         const anime = data.data;
 
-        // Episodes array se max nikalo
         const episodesArr = Array.isArray(anime.episodes) ? anime.episodes as any[] : [];
         let maxEp = episodesArr.length > 0
           ? Math.max(...episodesArr.map((e: any) => Number(e.episodeNumber || e.number || 0)))
           : Number(anime.currentEpisode || 0);
 
-        // Download pages se bhi max episode check karo
         try {
           const animeId = String((anime as any)._id || '');
           if (animeId) {
@@ -442,7 +457,6 @@ export async function onRequest(context: CFContext): Promise<Response> {
           }
         } catch (_) { /* fallback */ }
 
-        // Title: hamesha dynamic
         let titleText = String(anime.title || slug.replace(/-/g, ' '));
         if (anime.contentType === 'Movie')      titleText += ' (Movie)';
         else if (anime.contentType === 'Manga') titleText += ' Manga';
@@ -450,7 +464,6 @@ export async function onRequest(context: CFContext): Promise<Response> {
         else if (maxEp > 1)                     titleText += ` EP 1-${maxEp}`;
         const ogTitle = `${titleText} | ${SITE_NAME}`;
 
-        // ✅ Description: description > seoDescription > synopsis > fallback
         const rawDesc = String(
           anime.description ||
           (anime as any).seoDescription ||
@@ -472,7 +485,6 @@ export async function onRequest(context: CFContext): Promise<Response> {
         headers: {
           'Content-Type': 'text/html;charset=UTF-8',
           'X-Robots-Tag': 'index',
-          // ✅ Cache kam karo taaki description update jaldi reflect ho
           'Cache-Control': 'public, max-age=60, s-maxage=120',
         }
       });
