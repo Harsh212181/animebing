@@ -101,11 +101,13 @@ const ReferralTab: React.FC<{ token: string; onToast: (text: string, type?: 'suc
   const shareWhatsApp = () => {
     if (!info) return;
     const msg = encodeURIComponent(
-      `🎌 *AnimaBing* par join karo aur paise kamao!\n\n` +
-      `✅ Mera referral link use karo aur signup par *₹${info.rewards.referredReward} bonus* pao!\n` +
-      `💰 Main bhi *₹${info.rewards.referrerReward}* kamunga jab tu active hoga.\n\n` +
-      `👉 ${info.referralLink}\n\n` +
-      `Code: *${info.referralCode}*`
+      `*AnimaBing - Earn Money Online*\n\n` +
+      `I would like to invite you to join AnimaBing, a platform where you can earn real money by sharing links.\n\n` +
+      `Sign up using my referral link and receive a *Rs.${info.rewards.referredReward} welcome bonus* upon joining.\n\n` +
+      `Referral Link: ${info.referralLink}\n` +
+      `Referral Code: *${info.referralCode}*\n\n` +
+      `Once you complete ${info.rewards.unlockThreshold.toLocaleString()} clicks on your links, the reward will be unlocked automatically.\n\n` +
+      `Join now and start earning.`
     );
     window.open(`https://wa.me/?text=${msg}`, '_blank');
   };
