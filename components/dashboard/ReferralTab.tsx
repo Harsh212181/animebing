@@ -48,11 +48,6 @@ const ReferralTab: React.FC<{ token: string; onToast: (text: string, type?: 'suc
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
 
-  // ── Referral code validate on blur ──
-  const [validateCode, setValidateCode] = useState('');
-  const [validateStatus, setValidateStatus] = useState<'idle' | 'loading' | 'valid' | 'invalid'>('idle');
-  const [validateName, setValidateName] = useState('');
-
   useEffect(() => { load(); }, []);
 
   const load = async () => {
@@ -83,13 +78,12 @@ const ReferralTab: React.FC<{ token: string; onToast: (text: string, type?: 'suc
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // ── Native share ──
   const shareLink = () => {
     if (!info) return;
     if (navigator.share) {
       navigator.share({
         title: 'Join AnimaBing',
-        text: `Join AnimaBing using my referral link and get ₹${info.rewards.referredReward} bonus!`,
+        text: `Join AnimaBing using my referral link and get Rs.${info.rewards.referredReward} bonus!`,
         url: info.referralLink,
       }).catch(() => {});
     } else {
@@ -97,7 +91,6 @@ const ReferralTab: React.FC<{ token: string; onToast: (text: string, type?: 'suc
     }
   };
 
-  // ── WhatsApp share ──
   const shareWhatsApp = () => {
     if (!info) return;
     const msg = encodeURIComponent(
@@ -110,27 +103,6 @@ const ReferralTab: React.FC<{ token: string; onToast: (text: string, type?: 'suc
       `Join now and start earning.`
     );
     window.open(`https://wa.me/?text=${msg}`, '_blank');
-  };
-
-  // ── Validate referral code on blur ──
-  const handleValidateBlur = async () => {
-    const code = validateCode.trim().toUpperCase();
-    if (!code) { setValidateStatus('idle'); return; }
-    setValidateStatus('loading');
-    try {
-      const res = await fetch(`${API_BASE}/referral/validate/${code}`);
-      const json = await res.json();
-      if (json.valid) {
-        setValidateStatus('valid');
-        setValidateName(json.referrerName || '');
-      } else {
-        setValidateStatus('invalid');
-        setValidateName('');
-      }
-    } catch {
-      setValidateStatus('invalid');
-      setValidateName('');
-    }
   };
 
   const cardCls = "rounded-xl border border-gray-200 bg-white overflow-hidden";
@@ -201,69 +173,6 @@ const ReferralTab: React.FC<{ token: string; onToast: (text: string, type?: 'suc
           </button>
 
           <div className="mt-3 text-[11px] text-white/60 font-mono break-all">{info.referralLink}</div>
-        </div>
-      </div>
-
-      {/* ── Validate a referral code ── */}
-      <div className={cardCls}>
-        <div className="px-5 py-4 border-b border-gray-100">
-          <p className="text-sm font-medium text-gray-800">Check a Referral Code</p>
-          <p className="text-xs text-gray-400 mt-0.5">Kisi ka code valid hai ya nahi check karo</p>
-        </div>
-        <div className="px-5 py-4">
-          <div className="flex gap-2 items-center">
-            <div className="relative flex-1">
-              <input
-                type="text"
-                placeholder="Enter referral code (e.g. ABCD1234)"
-                value={validateCode}
-                onChange={e => {
-                  setValidateCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''));
-                  setValidateStatus('idle');
-                  setValidateName('');
-                }}
-                onBlur={handleValidateBlur}
-                maxLength={12}
-                style={{
-                  width: '100%', padding: '10px 40px 10px 14px',
-                  border: `1.5px solid ${validateStatus === 'valid' ? '#22c55e' : validateStatus === 'invalid' ? '#ef4444' : '#e2e2f0'}`,
-                  borderRadius: 10, fontSize: 14, outline: 'none',
-                  fontFamily: 'monospace', letterSpacing: '0.05em',
-                  background: validateStatus === 'valid' ? '#f0fdf4' : validateStatus === 'invalid' ? '#fff5f5' : '#f8f8fc',
-                  color: '#1a1a2e', transition: 'border-color 0.2s',
-                }}
-              />
-              {/* Status icon inside input */}
-              <div style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)' }}>
-                {validateStatus === 'loading' && (
-                  <div style={{ width: 16, height: 16, border: '2px solid #e0deff', borderTopColor: '#534AB7', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                )}
-                {validateStatus === 'valid' && <span style={{ color: '#22c55e', fontSize: 18 }}>✓</span>}
-                {validateStatus === 'invalid' && <span style={{ color: '#ef4444', fontSize: 18 }}>✗</span>}
-              </div>
-            </div>
-            <button
-              onClick={handleValidateBlur}
-              style={{
-                padding: '10px 16px', borderRadius: 10, fontSize: 13, fontWeight: 600,
-                background: 'linear-gradient(135deg,#534AB7,#7c72d8)', color: 'white',
-                border: 'none', cursor: 'pointer', whiteSpace: 'nowrap',
-              }}
-            >
-              Check
-            </button>
-          </div>
-          {/* Validate result message */}
-          {validateStatus === 'valid' && validateName && (
-            <div style={{ marginTop: 8, padding: '8px 12px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8 }}>
-              <span style={{ color: '#15803d', fontSize: 13 }}>✓ Valid code! Referrer: <strong>{validateName}</strong></span>
-            </div>
-          )}
-          {validateStatus === 'invalid' && (
-            <div style={{ marginTop: 8, padding: '8px 12px', background: '#fff5f5', border: '1px solid #fecaca', borderRadius: 8 }}>
-              <span style={{ color: '#b91c1c', fontSize: 13 }}>✗ Invalid or inactive referral code</span>
-            </div>
-          )}
         </div>
       </div>
 
