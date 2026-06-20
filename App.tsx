@@ -1,4 +1,4 @@
-// App.tsx - FINAL FIXED VERSION (with HelmetProvider + AnimeContext + Lazy Loading + Instant Init)
+ // App.tsx - FINAL FIXED VERSION (with HelmetProvider + AnimeContext + Lazy Loading + Instant Init)
 import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
@@ -105,7 +105,7 @@ const ScrollToTop: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return <>{children}</>;
 };
 
-// ✅ LOADING SCREEN — Anime Portal Style
+// ✅ LOADING SCREEN — Anime Portal Style (original, kept for main app)
 const LoadingScreen: React.FC = () => {
   const [progress, setProgress] = useState(0);
   const [visible, setVisible] = useState(false);
@@ -429,6 +429,81 @@ const LoadingScreen: React.FC = () => {
         ✦ Animebing — Watch Free ✦
       </p>
     </div>
+  );
+};
+
+// ✅ NEW: Dashboard specific white loading screen (shows exactly 1.5s)
+const DashboardLoadingScreen: React.FC = () => {
+  return (
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      background: '#ffffff',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 9999,
+      fontFamily: "'Segoe UI', system-ui, sans-serif",
+    }}>
+      <style>{`
+        @keyframes dash-spin {
+          to { transform: rotate(360deg); }
+        }
+        @keyframes dash-fade {
+          0% { opacity: 0; transform: translateY(8px); }
+          100% { opacity: 1; transform: translateY(0); }
+        }
+        .dash-spinner {
+          width: 32px;
+          height: 32px;
+          border: 3px solid #e5e7eb;
+          border-top-color: #7c3aed;
+          border-radius: 50%;
+          animation: dash-spin 0.6s linear infinite;
+        }
+        .dash-text {
+          margin-top: 20px;
+          color: #6b7280;
+          font-size: 14px;
+          font-weight: 500;
+          letter-spacing: 0.3px;
+          animation: dash-fade 0.4s ease both;
+        }
+        .dash-brand {
+          margin-top: 4px;
+          color: #9ca3af;
+          font-size: 11px;
+          font-weight: 500;
+          letter-spacing: 1.5px;
+          animation: dash-fade 0.4s ease 0.2s both;
+        }
+      `}</style>
+
+      <div className="dash-spinner" />
+      <div className="dash-text">Loading Dashboard…</div>
+      <div className="dash-brand">ANIMEBING</div>
+    </div>
+  );
+};
+
+// ✅ Dashboard wrapper with guaranteed 1.5s minimum loading screen
+const DashboardPage: React.FC = () => {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setReady(true), 1500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (!ready) {
+    return <DashboardLoadingScreen />;
+  }
+
+  return (
+    <Suspense fallback={<DashboardLoadingScreen />}>
+      <UserDashboard />
+    </Suspense>
   );
 };
 
@@ -784,16 +859,12 @@ const App: React.FC = () => {
           <Routes>
             {/* Auth Callback – Google OAuth return URL */}
             <Route path="/auth/callback" element={
-              <Suspense fallback={<Spinner />}>
+              <Suspense fallback={<LoadingScreen />}>
                 <AuthCallback />
               </Suspense>
             } />
-            {/* Dashboard without Header/Footer */}
-            <Route path="/dashboard" element={
-              <Suspense fallback={<Spinner />}>
-                <UserDashboard />
-              </Suspense>
-            } />
+            {/* Dashboard without Header/Footer – uses dedicated 1.5s white loader */}
+            <Route path="/dashboard" element={<DashboardPage />} />
             {/* All other routes with full layout */}
             <Route path="*" element={<MainApp />} />
           </Routes>
