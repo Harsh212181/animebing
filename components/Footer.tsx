@@ -242,7 +242,7 @@ const Footer: React.FC = () => {
 
                 {/* AnimeBing Dashboard */}
                 <a
-                  href="https://english.animebing.in/app-release.apk"
+                  href="https://english.animebing.in/animebing-dashboard.apk"
                   download
                   className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-purple-800/50 border border-purple-400/30 hover:border-purple-300/70 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-purple-500/20"
                 >
