@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "animebing.dashboard.app",
+      "sha256_cert_fingerprints": [
+        "3F:C4:42:99:EC:E6:E6:EF:85:74:AB:82:F1:D1:00:A8:6B:B6:A6:5C:7C:4B:50:D2:50:3A:AE:99:8B:8D:A0:71"
+      ]
+    }
+  }
+]
