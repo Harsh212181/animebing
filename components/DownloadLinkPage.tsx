@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { FaDownload, FaPlay, FaFilm, FaTv } from 'react-icons/fa';
 import Spinner from './Spinner';
 import VideoPlayer from './VideoPlayer';
-import VideoPlayerModal from './VideoPlayerModal'; // ✅ modal import
-import { isYouTubeUrl } from './utils/videoHelpers'; // ✅ only isYouTubeUrl needed
+import YouTubeEmbed from './YouTubeEmbed'; // ✅ new inline embed
+import { isYouTubeUrl } from './utils/videoHelpers';
 import { DownloadPage, Anime } from '../src/types';
 
 const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
@@ -386,18 +386,15 @@ const DownloadLinkPage: React.FC = () => {
                 <React.Fragment key={idx}>
                   <LinkCard link={link} isMovie={isMovie} onAction={() => togglePlayer(idx)} actionIcon={selectedIndex === idx ? undefined : <FaPlay />} actionLabel={selectedIndex === idx ? 'Close Player' : 'Watch Now'} isActive={selectedIndex === idx} />
                   {selectedIndex === idx && (
-                    <>
+                    <div className="mt-2 shadow-2xl animate-fadeIn">
                       {isYouTubeUrl(link.url) ? (
-                        <VideoPlayerModal
-                          videoUrl={link.url}
-                          onClose={() => setSelectedIndex(null)}
-                        />
+                        <YouTubeEmbed videoUrl={link.url} title={title} />
                       ) : (
-                        <div className="mt-2 rounded-xl overflow-hidden shadow-2xl border border-purple-500/30 animate-fadeIn">
+                        <div className="rounded-xl overflow-hidden border border-purple-500/30">
                           <VideoPlayer src={link.url} title={title} episode={!isMovie ? link.episode : undefined} />
                         </div>
                       )}
-                    </>
+                    </div>
                   )}
                 </React.Fragment>
               ))
