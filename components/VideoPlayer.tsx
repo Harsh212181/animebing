@@ -1,4 +1,17 @@
  import React, { useRef, useState, useEffect, useCallback } from 'react';
+import {
+  Play,
+  Pause,
+  Volume,
+  Volume1,
+  Volume2,
+  VolumeX,
+  Settings,
+  PictureInPicture2,
+  Maximize,
+  Minimize,
+  Check,
+} from 'lucide-react';
 
 interface VideoPlayerProps {
   src: string;
@@ -546,21 +559,21 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
 
   // ---- Title display logic ----
   const animeTitle = title || '';
-  
+
   // Only append episode if it exists and is not an empty string
   const hasEpisode = episode !== undefined && episode !== null && episode !== '';
   const episodeStr = hasEpisode ? ` Ep ${episode}` : '';
   const fullTitle = `${animeTitle}${episodeStr}`;
-  
+
   const MAX_TITLE_LEN = 30; // max characters for anime title before truncation
   const truncatedAnime = animeTitle.length > MAX_TITLE_LEN
     ? animeTitle.slice(0, MAX_TITLE_LEN) + '...'
     : animeTitle;
   const truncatedTitle = `${truncatedAnime}${episodeStr}`;
-  
+
   // Show full title when clicked, otherwise truncated
   const displayedTitle = showFullTitle ? fullTitle : truncatedTitle;
-  
+
   // Only show click-to-expand if the anime title actually got truncated
   const isTitleTruncated = animeTitle.length > MAX_TITLE_LEN;
 
@@ -576,11 +589,15 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
   const showLeftOverlay = skip.active && skip.direction === 'left';
   const showRightOverlay = skip.active && skip.direction === 'right';
 
-  // Fullscreen size classes
-  const fullscreenButtonClass = isFullscreen ? 'text-2xl' : 'text-xl';
-  const fullscreenControlTextClass = isFullscreen ? 'text-base' : 'text-xs';
-  const fullscreenControlButtonClass = isFullscreen ? 'text-2xl' : 'text-xl';
-  const fullscreenRangeClass = isFullscreen ? 'h-2' : 'h-1';
+  // Volume icon based on current level (YouTube-style behavior)
+  const VolumeIcon = volume === 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2;
+
+  // Fixed, uniform icon/button sizing so nothing looks oversized or undersized.
+  // Only a very slight bump in fullscreen so the bar reads proportionally, never a jump.
+  const ICON_SIZE = isFullscreen ? 20 : 18;
+  const BTN_CLASS =
+    'flex items-center justify-center rounded-full text-white/90 hover:text-white hover:bg-white/10 active:bg-white/20 transition-colors duration-150 flex-shrink-0';
+  const BTN_PAD = isFullscreen ? 'p-2.5' : 'p-2';
 
   return (
     <div
@@ -610,6 +627,10 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
           0% { transform: translate(-50%, -50%) scale(0); opacity: 1; }
           100% { transform: translate(-50%, -50%) scale(2); opacity: 0; }
         }
+        @keyframes centerPlayPulse {
+          0% { transform: scale(0.85); opacity: 0; }
+          100% { transform: scale(1); opacity: 1; }
+        }
         .watermark-container {
           animation: fadeInScale 0.5s ease-out forwards;
         }
@@ -619,17 +640,41 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
         .watermark-text {
           animation: fadeIn 0.8s ease-in forwards;
         }
-        .fullscreen-mode .controls-container {
-          padding: 1.5rem 1rem;
+        .center-play-btn {
+          animation: centerPlayPulse 0.2s ease-out forwards;
         }
-        .fullscreen-mode .control-button {
-          font-size: 2rem;
+        .fullscreen-mode .controls-container {
+          padding: 1.25rem 1rem;
         }
         .fullscreen-mode .time-display {
-          font-size: 1rem;
+          font-size: 0.9rem;
         }
         .fullscreen-mode .progress-bar {
-          height: 0.5rem;
+          height: 0.4rem;
+        }
+        input[type='range'].progress-bar {
+          -webkit-appearance: none;
+          appearance: none;
+          background: rgba(255,255,255,0.25);
+          border-radius: 9999px;
+          cursor: pointer;
+        }
+        input[type='range'].progress-bar::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 13px;
+          height: 13px;
+          border-radius: 50%;
+          background: #a855f7;
+          box-shadow: 0 0 0 3px rgba(168,85,247,0.25);
+          margin-top: -1px;
+        }
+        input[type='range'].progress-bar::-moz-range-thumb {
+          width: 13px;
+          height: 13px;
+          border: none;
+          border-radius: 50%;
+          background: #a855f7;
         }
       `}</style>
 
@@ -696,7 +741,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
       {/* Buffering spinner */}
       {isBuffering && (
         <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
-          <div className={`border-4 border-white border-t-transparent rounded-full animate-spin ${isFullscreen ? 'w-16 h-16' : 'w-12 h-12'}`} />
+          <div className={`border-4 border-white border-t-transparent rounded-full animate-spin ${isFullscreen ? 'w-14 h-14' : 'w-10 h-10'}`} />
         </div>
       )}
 
@@ -717,38 +762,41 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
         />
       )}
 
-      {/* Centered play overlay */}
+      {/* Centered play/pause overlay - YouTube-style circular button, fixed size */}
       {!playing && (
         <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
-          <span className={`text-white ${isFullscreen ? 'text-6xl' : 'text-4xl'}`} style={{ textShadow: '0 2px 8px rgba(0,0,0,0.7)' }}>
-            ▶
-          </span>
+          <div
+            className="center-play-btn flex items-center justify-center rounded-full bg-black/45"
+            style={{ width: 64, height: 64 }}
+          >
+            <Play size={28} className="text-white ml-1" fill="white" />
+          </div>
         </div>
       )}
 
       {/* Skip feedback overlays */}
       {showLeftOverlay && (
-        <div className={`absolute left-4 top-1/2 transform -translate-y-1/2 bg-black/70 text-white font-bold px-3 py-1 rounded z-30 ${isFullscreen ? 'text-5xl' : 'text-4xl'}`}>
-          -{skip.seconds}
+        <div className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black/70 text-white font-semibold px-3 py-1.5 rounded-lg z-30 text-2xl">
+          -{skip.seconds}s
         </div>
       )}
       {showRightOverlay && (
-        <div className={`absolute right-4 top-1/2 transform -translate-y-1/2 bg-black/70 text-white font-bold px-3 py-1 rounded z-30 ${isFullscreen ? 'text-5xl' : 'text-4xl'}`}>
-          +{skip.seconds}
+        <div className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black/70 text-white font-semibold px-3 py-1.5 rounded-lg z-30 text-2xl">
+          +{skip.seconds}s
         </div>
       )}
 
       {/* Brightness popup (2 seconds) */}
       {showBrightnessPopup && (
-        <div className={`absolute top-1/2 left-4 transform -translate-y-1/2 bg-yellow-500/80 px-3 py-1 rounded text-white z-30 ${isFullscreen ? 'text-base' : 'text-sm'}`}>
-          ☀ {Math.round(brightness * 100)}%
+        <div className="absolute top-1/2 left-4 transform -translate-y-1/2 bg-black/70 px-3 py-1.5 rounded-lg text-white z-30 text-sm flex items-center gap-2">
+          <span>☀</span> {Math.round(brightness * 100)}%
         </div>
       )}
 
       {/* Volume popup (2 seconds) */}
       {showVolumePopup && (
-        <div className={`absolute top-1/2 right-4 transform -translate-y-1/2 bg-purple-600/80 px-3 py-1 rounded text-white z-30 ${isFullscreen ? 'text-base' : 'text-sm'}`}>
-          🔊 {Math.round(volume * 100)}%
+        <div className="absolute top-1/2 right-4 transform -translate-y-1/2 bg-black/70 px-3 py-1.5 rounded-lg text-white z-30 text-sm flex items-center gap-2">
+          <VolumeIcon size={16} /> {Math.round(volume * 100)}%
         </div>
       )}
 
@@ -761,7 +809,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
 
       {/* Controls */}
       <div
-        className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-1 text-white z-20 transition-opacity duration-300 controls-container ${
+        className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-2 pt-3 pb-2 text-white z-20 transition-opacity duration-300 controls-container ${
           controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
       >
@@ -771,32 +819,52 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
           max={duration}
           value={currentTime}
           onChange={handleSeek}
-          className={`w-full mb-0 accent-purple-500 progress-bar ${fullscreenRangeClass}`}
+          className="w-full mb-1.5 progress-bar"
+          style={{ height: 4 }}
           onTouchStart={(e) => e.stopPropagation()}
           onTouchMove={(e) => e.stopPropagation()}
         />
 
-        <div className="overflow-x-auto pb-1 no-scrollbar relative">
-          <div className="flex items-center space-x-3 min-w-max">
+        <div className="flex items-center justify-between">
+          {/* Left cluster: play/pause, volume, time */}
+          <div className="flex items-center space-x-0.5 min-w-0">
+            <button
+              onClick={togglePlay}
+              onTouchStart={(e) => e.stopPropagation()}
+              className={`${BTN_CLASS} ${BTN_PAD}`}
+              aria-label={playing ? 'Pause' : 'Play'}
+            >
+              {playing ? (
+                <Pause size={ICON_SIZE} fill="currentColor" />
+              ) : (
+                <Play size={ICON_SIZE} fill="currentColor" />
+              )}
+            </button>
+
             <button
               onClick={volumeDown}
               onTouchStart={(e) => e.stopPropagation()}
-              className={`flex-shrink-0 text-white/80 hover:text-white control-button ${fullscreenControlButtonClass}`}
+              className={`${BTN_CLASS} ${BTN_PAD}`}
+              aria-label="Volume down"
             >
-              ♪–
+              <Volume size={ICON_SIZE} />
             </button>
             <button
               onClick={volumeUp}
               onTouchStart={(e) => e.stopPropagation()}
-              className={`flex-shrink-0 text-white/80 hover:text-white control-button ${fullscreenControlButtonClass}`}
+              className={`${BTN_CLASS} ${BTN_PAD}`}
+              aria-label="Volume up"
             >
-              ♪+
+              <VolumeIcon size={ICON_SIZE} />
             </button>
-            <span className={`whitespace-nowrap flex-shrink-0 text-white/60 time-display ${fullscreenControlTextClass}`}>
+
+            <span className="whitespace-nowrap flex-shrink-0 text-white/70 text-xs time-display px-1.5 tabular-nums">
               {formatTime(currentTime)} / {formatTime(duration)}
             </span>
+          </div>
 
-            {/* Quality Button */}
+          {/* Right cluster: quality, PiP, fullscreen */}
+          <div className="flex items-center space-x-0.5 flex-shrink-0">
             {qualities && qualities.length > 0 && (
               <div className="relative flex-shrink-0">
                 <button
@@ -805,23 +873,23 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
                     setShowQualityMenu(!showQualityMenu);
                   }}
                   onTouchStart={(e) => e.stopPropagation()}
-                  className={`text-white/80 hover:text-white px-2 py-1 ${fullscreenControlTextClass}`}
+                  className={`${BTN_CLASS} ${BTN_PAD}`}
+                  aria-label="Quality settings"
                 >
-                  Quality
+                  <Settings size={ICON_SIZE} />
                 </button>
                 {showQualityMenu && (
-                  <div className="absolute bottom-full right-0 mb-2 bg-gray-800/90 rounded shadow-lg z-50">
+                  <div className="absolute bottom-full right-0 mb-2 bg-neutral-900/95 border border-white/10 rounded-lg shadow-xl z-50 overflow-hidden min-w-[140px]">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         setAutoQuality(true);
                       }}
                       onTouchStart={(e) => e.stopPropagation()}
-                      className={`block w-full text-left px-4 py-2 hover:bg-purple-700 ${
-                        autoQuality ? 'text-green-400' : 'text-white/80'
-                      } ${fullscreenControlTextClass}`}
+                      className="w-full flex items-center justify-between gap-2 text-left px-3 py-2 hover:bg-white/10 text-sm text-white/85"
                     >
                       Auto
+                      {autoQuality && <Check size={14} className="text-purple-400" />}
                     </button>
                     {qualities.map(q => (
                       <button
@@ -832,11 +900,10 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
                           handleQualityChange(q.src);
                         }}
                         onTouchStart={(e) => e.stopPropagation()}
-                        className={`block w-full text-left px-4 py-2 hover:bg-purple-700 ${
-                          q.src === currentSrc && !autoQuality ? 'font-bold text-purple-400' : 'text-white/80'
-                        } ${fullscreenControlTextClass}`}
+                        className="w-full flex items-center justify-between gap-2 text-left px-3 py-2 hover:bg-white/10 text-sm text-white/85"
                       >
                         {q.label}
+                        {q.src === currentSrc && !autoQuality && <Check size={14} className="text-purple-400" />}
                       </button>
                     ))}
                   </div>
@@ -844,22 +911,22 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
               </div>
             )}
 
-            {/* PiP Button */}
             <button
               onClick={togglePiP}
               onTouchStart={(e) => e.stopPropagation()}
-              className={`flex-shrink-0 text-white/80 hover:text-white control-button ${fullscreenControlButtonClass}`}
+              className={`${BTN_CLASS} ${BTN_PAD}`}
+              aria-label="Picture in picture"
             >
-              PiP
+              <PictureInPicture2 size={ICON_SIZE} />
             </button>
 
-            {/* Fullscreen Button */}
             <button
               onClick={handleFullscreen}
               onTouchStart={(e) => e.stopPropagation()}
-              className={`flex-shrink-0 text-white/80 hover:text-white control-button ${fullscreenButtonClass}`}
+              className={`${BTN_CLASS} ${BTN_PAD}`}
+              aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
             >
-              {isFullscreen ? '⤫' : '⛶'}
+              {isFullscreen ? <Minimize size={ICON_SIZE} /> : <Maximize size={ICON_SIZE} />}
             </button>
           </div>
         </div>
