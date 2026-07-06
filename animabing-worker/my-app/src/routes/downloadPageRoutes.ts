@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+ import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
 import { findMany, findOne, insertOne, updateOne, deleteOne, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
@@ -59,7 +59,7 @@ downloadPageRoutes.get('/', adminAuth, async (c) => {
       .collection('animes')
       .find(
         { _id: { $in: animeIds.map((id: string) => toObjectId(id)) } },
-        { projection: { title: 1, contentType: 1, subDubStatus: 1, status: 1, thumbnail: 1 } }
+        { projection: { title: 1, contentType: 1, subDubStatus: 1, status: 1, thumbnail: 1, isHidden: 1 } }
       )
       .toArray()
 

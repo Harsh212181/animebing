@@ -83,11 +83,6 @@ sitemapRoutes.get('/sitemap-anime.xml', async (c) => {
   }
 })
 
-// EPISODES SITEMAP - DISABLED
-sitemapRoutes.get('/sitemap-episodes.xml', (c) => {
-  return c.text('Sitemap not available', 404)
-})
-
 // MASTER SITEMAP INDEX
 sitemapRoutes.get('/sitemap.xml', (c) => {
   const today = new Date().toISOString().split('T')[0]

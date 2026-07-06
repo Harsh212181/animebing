@@ -35,9 +35,14 @@ const getAnimeTitle = (page: DownloadPage): string => {
   return 'Unknown Anime';
 };
 
-// NOTE: `isHidden` is expected on DownloadPage. If your `types.ts` doesn't have
-// it yet, add: `isHidden?: boolean;` to the DownloadPage interface.
-const isPageHidden = (page: DownloadPage): boolean => !!(page as any).isHidden;
+// Hidden status now mirrors the ANIME's hidden state (set from Anime List Manager),
+// not a separate per-page control. This is display-only in this component.
+const isAnimeHidden = (page: DownloadPage): boolean => {
+  if (page.animeId && typeof page.animeId === 'object') {
+    return !!(page.animeId as any).isHidden;
+  }
+  return false;
+};
 
 // ----- Toast Component -----
 interface ToastState {
@@ -143,6 +148,12 @@ const DownloadPageManager: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [calculatingNext, setCalculatingNext] = useState(false);
 
+  // 🔧 FIX: tracks how many download/watch links already EXISTED (were saved)
+  // when the current editing session started. Used so that when adding new
+  // links we only offset by NEW additions in this session, not by links
+  // that the server-calculated "next episode" has already accounted for.
+  const initialLinkCountsRef = useRef<{ download: number; watch: number }>({ download: 0, watch: 0 });
+
   // Toast state
   const [toast, setToast] = useState<ToastState>({ message: '', type: 'info', visible: false });
   const showToast = (message: string, type: 'success' | 'error' | 'info') => {
@@ -158,9 +169,6 @@ const DownloadPageManager: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<'all' | 'ongoing' | 'complete'>('all');
   const [subDubFilter, setSubDubFilter] = useState<'all' | string>('all');
   const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'visible' | 'hidden'>('all');
-
-  // Hide/unhide in-flight tracker (disables the button being toggled)
-  const [hidingId, setHidingId] = useState<string | null>(null);
 
   const fetchPages = async () => {
     setLoading(true);
@@ -273,6 +281,7 @@ const DownloadPageManager: React.FC = () => {
     status?: string;
     thumbnail?: string;
     animeId: string;
+    isHidden?: boolean;
   } => {
     if (page.animeId && typeof page.animeId === 'object') {
       const animeObj = page.animeId as any;
@@ -294,7 +303,8 @@ const DownloadPageManager: React.FC = () => {
         subDubStatus: animeObj.subDubStatus,
         status: animeObj.status,
         thumbnail: thumbnail,
-        animeId: animeObj._id
+        animeId: animeObj._id,
+        isHidden: !!animeObj.isHidden
       };
     }
     return { title: 'Unknown Anime', animeId: typeof page.animeId === 'string' ? page.animeId : '' };
@@ -398,33 +408,15 @@ const DownloadPageManager: React.FC = () => {
     }
   };
 
-  // Toggle hide/unhide for a single download page.
-  // NOTE: expects a backend route like `PATCH /download-pages/:id/toggle-hide`
-  // in downloadPageRoutes.ts. Adjust the path below if your route differs.
-  const handleToggleHide = async (page: DownloadPage) => {
-    const currentlyHidden = isPageHidden(page);
-    setHidingId(page._id);
-    const toastId = currentlyHidden ? 'Showing page...' : 'Hiding page...';
-    try {
-      const token = getToken();
-      const res = await fetch(`${API_BASE}/download-pages/${page._id}/toggle-hide`, {
-        method: 'PATCH',
-        headers: token ? { Authorization: `Bearer ${token}` } : {}
-      });
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-      setPages(prev => prev.map(p => (p._id === page._id ? ({ ...p, isHidden: !currentlyHidden } as DownloadPage) : p)));
-      showToast(currentlyHidden ? 'Page is now visible!' : 'Page hidden from users!', 'success');
-    } catch (error) {
-      console.error('Toggle hide error:', error);
-      showToast('Failed to change visibility. Check backend route.', 'error');
-    } finally {
-      setHidingId(null);
-    }
-  };
+  // NOTE: hide/unhide control removed from here. Visibility is now shown
+  // read-only, mirrored from the anime's own `isHidden` status which is
+  // controlled from Anime List Manager.
 
   // addDownloadLink – uses global next episode
+  // 🔧 FIX: offset now only counts links added DURING this editing session
+  // (prev.links count minus how many already existed when editing started),
+  // instead of counting every existing download link — which double-counted
+  // episodes the server's "next episode" number already included.
   const addDownloadLink = async () => {
     if (!editingPage || !editingPage.animeId) return;
     setCalculatingNext(true);
@@ -432,8 +424,9 @@ const DownloadPageManager: React.FC = () => {
     setEditingPage(prev => {
       if (!prev) return null;
       const downloadCount = prev.links.filter(l => l.type === 'download').length;
+      const newInSessionCount = Math.max(0, downloadCount - initialLinkCountsRef.current.download);
       const newLink: DownloadPageLink = {
-        episode: baseEpisode + downloadCount,
+        episode: baseEpisode + newInSessionCount,
         url: '',
         type: 'download',
         quality: '',
@@ -445,6 +438,7 @@ const DownloadPageManager: React.FC = () => {
   };
 
   // addWatchLink – uses global next episode
+  // 🔧 FIX: same session-offset logic as addDownloadLink above.
   const addWatchLink = async () => {
     if (!editingPage || !editingPage.animeId) return;
     setCalculatingNext(true);
@@ -452,8 +446,9 @@ const DownloadPageManager: React.FC = () => {
     setEditingPage(prev => {
       if (!prev) return null;
       const watchCount = prev.links.filter(l => l.type === 'watch').length;
+      const newInSessionCount = Math.max(0, watchCount - initialLinkCountsRef.current.watch);
       const newLink: DownloadPageLink = {
-        episode: baseEpisode + watchCount,
+        episode: baseEpisode + newInSessionCount,
         url: '',
         type: 'watch',
         quality: '',
@@ -465,6 +460,7 @@ const DownloadPageManager: React.FC = () => {
   };
 
   // addBothLinks – adds one download and one watch link together
+  // 🔧 FIX: same session-offset logic applied to both link types.
   const addBothLinks = async () => {
     if (!editingPage || !editingPage.animeId) return;
     setCalculatingNext(true);
@@ -473,16 +469,18 @@ const DownloadPageManager: React.FC = () => {
       if (!prev) return null;
       const downloadCount = prev.links.filter(l => l.type === 'download').length;
       const watchCount = prev.links.filter(l => l.type === 'watch').length;
+      const newDownloadInSession = Math.max(0, downloadCount - initialLinkCountsRef.current.download);
+      const newWatchInSession = Math.max(0, watchCount - initialLinkCountsRef.current.watch);
 
       const newDownloadLink: DownloadPageLink = {
-        episode: baseEpisode + downloadCount,
+        episode: baseEpisode + newDownloadInSession,
         url: '',
         type: 'download',
         quality: '',
         language: ''
       };
       const newWatchLink: DownloadPageLink = {
-        episode: baseEpisode + watchCount,
+        episode: baseEpisode + newWatchInSession,
         url: '',
         type: 'watch',
         quality: '',
@@ -545,9 +543,9 @@ const DownloadPageManager: React.FC = () => {
         const subDub = details.subDubStatus;
         if (subDub !== subDubFilter) return false;
       }
-      // Visibility filter
-      if (visibilityFilter === 'visible' && isPageHidden(page)) return false;
-      if (visibilityFilter === 'hidden' && !isPageHidden(page)) return false;
+      // Visibility filter (mirrors the ANIME's hidden status)
+      if (visibilityFilter === 'visible' && details.isHidden) return false;
+      if (visibilityFilter === 'hidden' && !details.isHidden) return false;
       return true;
     });
   }, [pages, searchTerm, contentTypeFilter, statusFilter, subDubFilter, visibilityFilter]);
@@ -622,6 +620,8 @@ const DownloadPageManager: React.FC = () => {
                 setShowNewForm(false);
                 setEditingPage(null);
               } else {
+                // 🔧 FIX: new page starts with 0 existing links of each type
+                initialLinkCountsRef.current = { download: 0, watch: 0 };
                 setEditingPage({ animeId: '', slug: '', title: '', episodeNumber: 1, links: [] });
                 setShowNewForm(true);
               }
@@ -658,10 +658,9 @@ const DownloadPageManager: React.FC = () => {
         )}
       </div>
 
-      {/* Filters Section */}
+      {/* Filters Section — all filter groups side by side, wrapping together */}
       <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-6 space-y-4">
-        {/* Row 1: Type and Status filters + search */}
-        <div className="flex flex-wrap items-center gap-4">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
           {/* Content Type Filter */}
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-white/70">Type:</span>
@@ -746,33 +745,7 @@ const DownloadPageManager: React.FC = () => {
             </div>
           </div>
 
-          {/* Search Input */}
-          <div className="relative ml-auto">
-            <input
-              type="text"
-              placeholder="Search by anime title..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full sm:w-64 px-4 py-2 bg-gray-800/60 border border-gray-700/80 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition pl-10"
-            />
-            <svg
-              className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
-          </div>
-        </div>
-
-        {/* Row 2: Sub/Dub Filter */}
-        <div className="flex flex-wrap items-center gap-4">
+          {/* Sub/Dub Filter */}
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-white/70">Sub/Dub:</span>
             <div className="flex gap-2">
@@ -818,10 +791,8 @@ const DownloadPageManager: React.FC = () => {
               </button>
             </div>
           </div>
-        </div>
 
-        {/* Row 3: Visibility Filter */}
-        <div className="flex flex-wrap items-center gap-4">
+          {/* Visibility Filter */}
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-white/70">Visibility:</span>
             <div className="flex gap-2">
@@ -843,7 +814,7 @@ const DownloadPageManager: React.FC = () => {
                     : 'bg-white/10 text-white/70 hover:bg-white/20'
                 }`}
               >
-                👁 Visible
+                Visible
               </button>
               <button
                 onClick={() => setVisibilityFilter('hidden')}
@@ -853,9 +824,33 @@ const DownloadPageManager: React.FC = () => {
                     : 'bg-white/10 text-white/70 hover:bg-white/20'
                 }`}
               >
-                🔒 Hidden
+                Hidden
               </button>
             </div>
+          </div>
+
+          {/* Search Input */}
+          <div className="relative ml-auto">
+            <input
+              type="text"
+              placeholder="Search by anime title..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full sm:w-64 px-4 py-2 bg-gray-800/60 border border-gray-700/80 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition pl-10"
+            />
+            <svg
+              className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
           </div>
         </div>
 
@@ -898,7 +893,7 @@ const DownloadPageManager: React.FC = () => {
             // Find page index for this anime based on creation order (_id)
             const animePageList = pagesByAnime.get(animeDetails.animeId) || [];
             const pageIndex = animePageList.findIndex(p => p._id === page._id) + 1;
-            const hidden = isPageHidden(page);
+            const hidden = !!animeDetails.isHidden;
 
             // Compute episode range
             const episodeNumbers = page.links.map(l => l.episode);
@@ -912,8 +907,9 @@ const DownloadPageManager: React.FC = () => {
 
             return (
               <React.Fragment key={page._id}>
-                {/* Page Card */}
-                <div className={`group bg-white/5 backdrop-blur-sm border rounded-2xl overflow-hidden shadow-xl transition-all hover:shadow-2xl ${hidden ? 'border-red-500/30' : 'border-white/10 hover:border-white/20'}`}>
+                {/* Page Card – now contains the edit form inside */}
+                <div className={`group bg-white/5 backdrop-blur-sm border rounded-2xl overflow-hidden shadow-xl transition-all hover:shadow-2xl ${hidden ? 'border-red-500/30' : 'border-white/10 hover:border-white/20'} ${isEditingThis ? 'border-purple-500/30' : ''}`}>
+                  {/* Card header (existing content) */}
                   <div className="relative p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     {/* Colored left accent */}
                     <div className={`absolute left-0 top-0 bottom-0 w-1.5 rounded-l-2xl ${hidden ? 'bg-gradient-to-b from-red-500 to-rose-500' : 'bg-gradient-to-b from-purple-400 to-pink-400'}`}></div>
@@ -954,10 +950,14 @@ const DownloadPageManager: React.FC = () => {
                                 Page {pageIndex}
                               </span>
                             )}
-                            {/* Hidden badge */}
-                            {hidden && (
+                            {/* Visibility badge (Visible / Hidden) */}
+                            {hidden ? (
                               <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-red-600/30 text-red-300 border border-red-500/50">
-                                🔒 Hidden
+                                Hidden
+                              </span>
+                            ) : (
+                              <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-green-600/30 text-green-300 border border-green-500/50">
+                                Visible
                               </span>
                             )}
                             {/* Content Type Badge */}
@@ -1034,33 +1034,6 @@ const DownloadPageManager: React.FC = () => {
 
                     {/* Action buttons */}
                     <div className="flex gap-2 items-center">
-                      {/* Hide/Unhide button */}
-                      <button
-                        onClick={() => handleToggleHide(page)}
-                        disabled={hidingId === page._id}
-                        title={hidden ? 'Show page to users' : 'Hide page from users'}
-                        className={`p-2.5 border rounded-xl transition-all disabled:opacity-50 ${
-                          hidden
-                            ? 'bg-green-500/10 hover:bg-green-500/20 border-green-500/30 text-green-300'
-                            : 'bg-yellow-500/10 hover:bg-yellow-500/20 border-yellow-500/30 text-yellow-300'
-                        }`}
-                      >
-                        {hidingId === page._id ? (
-                          <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                          </svg>
-                        ) : hidden ? (
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                          </svg>
-                        ) : (
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 4.411m0 0L21 21" />
-                          </svg>
-                        )}
-                      </button>
                       {/* View button */}
                       <button
                         onClick={() => window.open(`${getFrontendBase()}/download/${page.slug}`, '_blank')}
@@ -1079,7 +1052,14 @@ const DownloadPageManager: React.FC = () => {
                             setEditingPage(null);
                           } else {
                             setShowNewForm(false);
-                            setEditingPage(convertToFormPage(page));
+                            const formPage = convertToFormPage(page);
+                            // 🔧 FIX: remember how many download/watch links
+                            // already existed BEFORE this editing session began
+                            initialLinkCountsRef.current = {
+                              download: formPage.links.filter(l => l.type === 'download').length,
+                              watch: formPage.links.filter(l => l.type === 'watch').length,
+                            };
+                            setEditingPage(formPage);
                           }
                         }}
                         title="Edit page"
@@ -1101,33 +1081,35 @@ const DownloadPageManager: React.FC = () => {
                       </button>
                     </div>
                   </div>
-                </div>
 
-                {/* Inline Edit Form */}
-                {isEditingThis && (
-                  <div className="mt-4 ml-8 mr-4 bg-white/5 backdrop-blur-sm border border-purple-500/30 rounded-2xl p-6 shadow-2xl">
-                    <h3 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
-                      <span className="w-1.5 h-8 bg-purple-400 rounded-full"></span>
-                      Editing Page {pageIndex}
-                    </h3>
-                    <PageForm
-                      editingPage={editingPage}
-                      setEditingPage={setEditingPage}
-                      animeOptions={animeOptions}
-                      onAnimeChange={handleEditAnimeChange}
-                      onSave={() => handleSave(editingPage)}
-                      onCancel={() => setEditingPage(null)}
-                      calculatingNext={calculatingNext}
-                      addDownloadLink={addDownloadLink}
-                      addWatchLink={addWatchLink}
-                      addBothLinks={addBothLinks}
-                      updateLink={updateLink}
-                      removeLink={removeLink}
-                      watchCount={editingPage.links.filter(l => l.type === 'watch').length}
-                      downloadCount={editingPage.links.filter(l => l.type === 'download').length}
-                    />
-                  </div>
-                )}
+                  {/* Inline Edit Form – now inside the card, full width, same padding */}
+                  {isEditingThis && (
+                    <div className="px-5 pb-5">
+                      <div className="border-t border-white/10 pt-4">
+                        <h3 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+                          <span className="w-1.5 h-8 bg-purple-400 rounded-full"></span>
+                          Editing Page {pageIndex}
+                        </h3>
+                        <PageForm
+                          editingPage={editingPage}
+                          setEditingPage={setEditingPage}
+                          animeOptions={animeOptions}
+                          onAnimeChange={handleEditAnimeChange}
+                          onSave={() => handleSave(editingPage)}
+                          onCancel={() => setEditingPage(null)}
+                          calculatingNext={calculatingNext}
+                          addDownloadLink={addDownloadLink}
+                          addWatchLink={addWatchLink}
+                          addBothLinks={addBothLinks}
+                          updateLink={updateLink}
+                          removeLink={removeLink}
+                          watchCount={editingPage.links.filter(l => l.type === 'watch').length}
+                          downloadCount={editingPage.links.filter(l => l.type === 'download').length}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
               </React.Fragment>
             );
           })
@@ -1173,7 +1155,7 @@ const PageForm: React.FC<{
     <div className="space-y-6">
       {/* Anime Selector */}
       <div>
-        <label className="block text-sm font-medium text-white/80 mb-2 flex items-center gap-2">
+        <label className="block text-sm font-medium text-white/80 mb-2 flexl items-center gap-2">
           <span className="w-1.5 h-5 bg-emerald-400 rounded-full"></span>
           Anime *
         </label>
@@ -1188,7 +1170,7 @@ const PageForm: React.FC<{
 
       {/* Slug */}
       <div>
-        <label className="block text-sm font-medium text-white/80 mb-2 flex items-center gap-2">
+        <label className="block text-sm font-medium text-white/80 mb-2 flexl items-center gap-2">
           <span className="w-1.5 h-5 bg-indigo-400 rounded-full"></span>
           Slug (unique) *
         </label>
@@ -1203,7 +1185,7 @@ const PageForm: React.FC<{
 
       {/* Starting Episode Number – independent */}
       <div>
-        <label className="block text-sm font-medium text-white/80 mb-2 flex items-center gap-2">
+        <label className="block text-sm font-medium text-white/80 mb-2 flexl items-center gap-2">
           <span className="w-1.5 h-5 bg-amber-400 rounded-full"></span>
           Starting Episode Number (reference only) *
         </label>
@@ -1223,7 +1205,7 @@ const PageForm: React.FC<{
 
       {/* Button Title */}
       <div>
-        <label className="block text-sm font-medium text-white/80 mb-2 flex items-center gap-2">
+        <label className="block text-sm font-medium text-white/80 mb-2 flexl items-center gap-2">
           <span className="w-1.5 h-5 bg-pink-400 rounded-full"></span>
           Button Title
         </label>
@@ -1238,7 +1220,7 @@ const PageForm: React.FC<{
 
       {/* Links */}
       <div>
-        <label className="block text-sm font-medium text-white/80 mb-3 flex items-center gap-2">
+        <label className="block text-sm font-medium text-white/80 mb-3 flexl items-center gap-2">
           <span className="w-1.5 h-5 bg-amber-400 rounded-full"></span>
           Links (unlimited)
         </label>

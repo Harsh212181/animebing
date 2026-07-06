@@ -13,7 +13,7 @@ const adminRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
 // ============ RANDOM LIKES HELPER ============
 function getRandomLikes(): number {
-  return Math.floor(Math.random() * 1501) + 500 // 500 to 2000
+  return Math.floor(Math.random() * 4851) + 150 
 }
 
 // ============ JWT CREATE ============
