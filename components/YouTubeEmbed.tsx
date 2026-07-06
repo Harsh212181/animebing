@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Maximize, Minimize } from 'lucide-react';
 import { getYouTubeId } from './utils/videoHelpers';
 
 interface YouTubeEmbedProps {
@@ -82,6 +83,12 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({ videoUrl, title }) => {
         height: '100%',
       };
 
+  // Same fixed icon size / button treatment as the main VideoPlayer, so
+  // both players feel like one consistent, professional control system.
+  const ICON_SIZE = 18;
+  const BTN_CLASS =
+    'flex items-center justify-center rounded-full text-white/90 hover:text-white hover:bg-white/10 active:bg-white/20 transition-colors duration-150 p-2';
+
   return (
     <div
       ref={wrapperRef}
@@ -100,10 +107,11 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({ videoUrl, title }) => {
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2 flex justify-end z-20">
           <button
             onClick={handleFullscreen}
-            className="text-white/90 hover:text-white text-xl px-2 transition-colors"
+            className={BTN_CLASS}
+            aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
             title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
           >
-            {isFullscreen ? '⤫' : '⛶'}
+            {isFullscreen ? <Minimize size={ICON_SIZE} /> : <Maximize size={ICON_SIZE} />}
           </button>
         </div>
       )}
@@ -111,9 +119,10 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({ videoUrl, title }) => {
       {forceRotate && (
         <button
           onClick={handleFullscreen}
-          className="fixed bottom-4 right-4 z-30 bg-black/60 text-white/90 hover:text-white text-xl px-3 py-2 rounded-lg transition-colors"
+          className={`fixed bottom-4 right-4 z-30 bg-black/60 ${BTN_CLASS}`}
+          aria-label="Exit fullscreen"
         >
-          ⤫
+          <Minimize size={ICON_SIZE} />
         </button>
       )}
     </div>
