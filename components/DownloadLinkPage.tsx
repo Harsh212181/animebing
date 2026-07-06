@@ -1,9 +1,10 @@
- import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { FaDownload, FaPlay, FaFilm, FaTv } from 'react-icons/fa';
 import Spinner from './Spinner';
 import VideoPlayer from './VideoPlayer';
-import { isYouTubeUrl, getYouTubeId } from './utils/videoHelpers';
+import VideoPlayerModal from './VideoPlayerModal'; // ✅ modal import
+import { isYouTubeUrl } from './utils/videoHelpers'; // ✅ only isYouTubeUrl needed
 import { DownloadPage, Anime } from '../src/types';
 
 const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
@@ -385,27 +386,18 @@ const DownloadLinkPage: React.FC = () => {
                 <React.Fragment key={idx}>
                   <LinkCard link={link} isMovie={isMovie} onAction={() => togglePlayer(idx)} actionIcon={selectedIndex === idx ? undefined : <FaPlay />} actionLabel={selectedIndex === idx ? 'Close Player' : 'Watch Now'} isActive={selectedIndex === idx} />
                   {selectedIndex === idx && (
-                    <div className="mt-2 shadow-2xl animate-fadeIn">
+                    <>
                       {isYouTubeUrl(link.url) ? (
-                        <div
-                          className="relative w-full aspect-video bg-black rounded-xl border border-purple-500/30"
-                          style={{ isolation: 'isolate' }}
-                        >
-                          <iframe
-                            className="absolute top-0 left-0 w-full h-full rounded-xl"
-                            style={{ pointerEvents: 'auto', touchAction: 'manipulation' }}
-                            src={`https://www.youtube-nocookie.com/embed/${getYouTubeId(link.url)}?autoplay=1&rel=0`}
-                            title={title}
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                            allowFullScreen
-                          />
-                        </div>
+                        <VideoPlayerModal
+                          videoUrl={link.url}
+                          onClose={() => setSelectedIndex(null)}
+                        />
                       ) : (
-                        <div className="rounded-xl overflow-hidden border border-purple-500/30">
+                        <div className="mt-2 rounded-xl overflow-hidden shadow-2xl border border-purple-500/30 animate-fadeIn">
                           <VideoPlayer src={link.url} title={title} episode={!isMovie ? link.episode : undefined} />
                         </div>
                       )}
-                    </div>
+                    </>
                   )}
                 </React.Fragment>
               ))
