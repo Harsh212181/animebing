@@ -1,13 +1,27 @@
-import React, { useEffect, useState } from 'react';
+ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { FaDownload, FaPlay, FaFilm, FaTv } from 'react-icons/fa';
 import Spinner from './Spinner';
 import VideoPlayer from './VideoPlayer';
+import { isYouTubeUrl, getYouTubeId } from './utils/videoHelpers';
 import { DownloadPage, Anime } from '../src/types';
 
 const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
 
 type TabType = 'download' | 'watch';
+
+// ✅ YouTube-style count formatter
+const formatCount = (count: number): string => {
+  if (count >= 1000000) {
+    const millions = (count / 1000000).toFixed(1);
+    return millions.endsWith('.0') ? millions.slice(0, -2) + 'M' : millions + 'M';
+  }
+  if (count >= 1000) {
+    const thousands = (count / 1000).toFixed(1);
+    return thousands.endsWith('.0') ? thousands.slice(0, -2) + 'K' : thousands + 'K';
+  }
+  return count.toString();
+};
 
 const getLanguageFlag = (lang: string): string => {
   const flags: Record<string, string> = {
@@ -250,11 +264,11 @@ const DownloadLinkPage: React.FC = () => {
       <div className="flex items-center gap-3 mt-4">
         <button onClick={() => handleVote('like')} disabled={isVoting} className={`${padding} ${textSize} rounded-lg font-medium transition-all duration-200 flex items-center gap-1.5 shadow-lg ${userVote === 'like' ? 'bg-gradient-to-r from-pink-600 to-rose-600 text-white shadow-pink-600/30 hover:shadow-pink-600/50' : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-600 hover:border-pink-500/50'} ${isVoting ? 'opacity-50 cursor-not-allowed' : ''} transform hover:scale-105`} title={userVote === 'like' ? 'Remove like' : 'Like this anime'}>
           <HeartIcon className={buttonSize} filled={userVote === 'like'} />
-          <span className="font-bold">{likes}</span>
+          <span className="font-bold">{formatCount(likes)}</span>
         </button>
         <button onClick={() => handleVote('dislike')} disabled={isVoting} className={`${padding} ${textSize} rounded-lg font-medium transition-all duration-200 flex items-center gap-1.5 shadow-lg ${userVote === 'dislike' ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-blue-600/30 hover:shadow-blue-600/50' : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-600 hover:border-blue-500/50'} ${isVoting ? 'opacity-50 cursor-not-allowed' : ''} transform hover:scale-105`} title={userVote === 'dislike' ? 'Remove dislike' : 'Dislike this anime'}>
           <HandThumbDownIcon className={buttonSize} filled={userVote === 'dislike'} />
-          <span className="font-bold">{dislikes}</span>
+          <span className="font-bold">{formatCount(dislikes)}</span>
         </button>
       </div>
     );
@@ -371,8 +385,26 @@ const DownloadLinkPage: React.FC = () => {
                 <React.Fragment key={idx}>
                   <LinkCard link={link} isMovie={isMovie} onAction={() => togglePlayer(idx)} actionIcon={selectedIndex === idx ? undefined : <FaPlay />} actionLabel={selectedIndex === idx ? 'Close Player' : 'Watch Now'} isActive={selectedIndex === idx} />
                   {selectedIndex === idx && (
-                    <div className="mt-2 rounded-xl overflow-hidden shadow-2xl border border-purple-500/30 animate-fadeIn">
-                      <VideoPlayer src={link.url} title={title} episode={!isMovie ? link.episode : undefined} />
+                    <div className="mt-2 shadow-2xl animate-fadeIn">
+                      {isYouTubeUrl(link.url) ? (
+                        <div
+                          className="relative w-full aspect-video bg-black rounded-xl border border-purple-500/30"
+                          style={{ isolation: 'isolate' }}
+                        >
+                          <iframe
+                            className="absolute top-0 left-0 w-full h-full rounded-xl"
+                            style={{ pointerEvents: 'auto', touchAction: 'manipulation' }}
+                            src={`https://www.youtube-nocookie.com/embed/${getYouTubeId(link.url)}?autoplay=1&rel=0`}
+                            title={title}
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                          />
+                        </div>
+                      ) : (
+                        <div className="rounded-xl overflow-hidden border border-purple-500/30">
+                          <VideoPlayer src={link.url} title={title} episode={!isMovie ? link.episode : undefined} />
+                        </div>
+                      )}
                     </div>
                   )}
                 </React.Fragment>

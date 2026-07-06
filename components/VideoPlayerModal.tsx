@@ -1,16 +1,16 @@
- import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import VideoPlayer from './VideoPlayer';
+import { isYouTubeUrl, getYouTubeId } from './utils/videoHelpers';
 
 interface VideoPlayerModalProps {
-  videoUrl: string;   // ✅ Must be exactly this name
+  videoUrl: string;
   onClose: () => void;
 }
 
 const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ videoUrl, onClose }) => {
   const modalRef = useRef<HTMLDivElement>(null);
 
-  // Lock body scroll
   useEffect(() => {
     document.body.style.overflow = 'hidden';
     return () => {
@@ -18,7 +18,6 @@ const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ videoUrl, onClose }
     };
   }, []);
 
-  // Close on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -30,6 +29,9 @@ const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ videoUrl, onClose }
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === modalRef.current) onClose();
   };
+
+  const isYouTube = isYouTubeUrl(videoUrl);
+  const youTubeId = isYouTube ? getYouTubeId(videoUrl) : null;
 
   const modalContent = (
     <div
@@ -44,7 +46,20 @@ const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ videoUrl, onClose }
         >
           ✕
         </button>
-        <VideoPlayer src={videoUrl} />   {/* ✅ Pass videoUrl as src */}
+
+        {isYouTube && youTubeId ? (
+          <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden">
+            <iframe
+              className="absolute top-0 left-0 w-full h-full"
+              src={`https://www.youtube-nocookie.com/embed/${youTubeId}?autoplay=1&rel=0`}
+              title="YouTube video player"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+            />
+          </div>
+        ) : (
+          <VideoPlayer src={videoUrl} />
+        )}
       </div>
     </div>
   );

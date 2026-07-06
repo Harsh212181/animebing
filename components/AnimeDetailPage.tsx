@@ -1,4 +1,4 @@
- // components/AnimeDetailPage.tsx - FULL-WIDTH FIX (removed container mx-auto)
+// components/AnimeDetailPage.tsx - FULL-WIDTH FIX + LIKE COUNT FORMATTING
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import type { Anime, Episode, Chapter, DownloadPage } from '../src/types';
@@ -28,6 +28,19 @@ const HandThumbDownIcon = ({ className = "w-5 h-5", filled = false }: { classNam
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.736 3h4.018a2 2 0 01.485.06l3.76.94m-7 10v5a2 2 0 002 2h.096c.5 0 .905-.405.905-.904 0-.715.211-1.413.608-2.008L17 13V4m-7 10h2m5-10h2a2 2 0 012 2v6a2 2 0 01-2 2h-2.5" />
   </svg>
 );
+
+// ✅ YouTube-style count formatter (e.g., 1100 → 1.1K, 2000 → 2K)
+const formatCount = (count: number): string => {
+  if (count >= 1000000) {
+    const millions = (count / 1000000).toFixed(1);
+    return millions.endsWith('.0') ? millions.slice(0, -2) + 'M' : millions + 'M';
+  }
+  if (count >= 1000) {
+    const thousands = (count / 1000).toFixed(1);
+    return thousands.endsWith('.0') ? thousands.slice(0, -2) + 'K' : thousands + 'K';
+  }
+  return count.toString();
+};
 
 // Interfaces
 interface DownloadLink {
@@ -435,6 +448,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     setDownloadingItem(null);
   };
 
+  // ✅ VoteAndShareButtons – using formatCount for likes and dislikes
   const VoteAndShareButtons = ({ isMobile = false }: { isMobile?: boolean }) => {
     const size = isMobile ? 'h-4 w-4' : 'h-5 w-5';
     const textSz = isMobile ? 'text-xs' : 'text-sm';
@@ -443,11 +457,11 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
       <div className="flex items-center gap-2 mt-4">
         <button onClick={() => handleVote('like')} disabled={isVoting} className={`${padding} ${textSz} rounded-lg font-medium transition-all duration-200 flex items-center gap-1.5 ${userVote === 'like' ? 'bg-gradient-to-r from-pink-600 to-rose-600 text-white shadow-lg' : 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50'} ${isVoting ? 'opacity-50 cursor-not-allowed' : ''}`}>
           <HeartIcon className={size} filled={userVote === 'like'} />
-          <span className="font-bold">{likes}</span>
+          <span className="font-bold">{formatCount(likes)}</span>
         </button>
         <button onClick={() => handleVote('dislike')} disabled={isVoting} className={`${padding} ${textSz} rounded-lg font-medium transition-all duration-200 flex items-center gap-1 ${userVote === 'dislike' ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg' : 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50'} ${isVoting ? 'opacity-50 cursor-not-allowed' : ''}`}>
           <HandThumbDownIcon className={size} filled={userVote === 'dislike'} />
-          <span className="font-bold">{dislikes}</span>
+          <span className="font-bold">{formatCount(dislikes)}</span>
         </button>
         <button onClick={handleShare} disabled={isSharing} className={`${padding} ${textSz} rounded-lg font-medium transition-all duration-200 flex items-center gap-1 ${isSharing ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white' : 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50'} ${isSharing ? 'opacity-50 cursor-not-allowed' : ''}`}>
           {isSharing ? <Spinner size="xs" className="mr-1" /> : <ShareIcon className={size} />}
