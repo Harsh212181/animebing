@@ -10,6 +10,7 @@ interface VideoPlayerModalProps {
 
 const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ videoUrl, onClose }) => {
   const modalRef = useRef<HTMLDivElement>(null);
+  const iframeContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     document.body.style.overflow = 'hidden';
@@ -25,6 +26,39 @@ const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ videoUrl, onClose }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
+
+  // ✅ Fullscreen change hote hi orientation lock karo
+  useEffect(() => {
+    const handleFullscreenChange = async () => {
+      const fsElement =
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement ||
+        (document as any).msFullscreenElement;
+
+      const isOurIframeFullscreen =
+        fsElement === iframeContainerRef.current ||
+        (iframeContainerRef.current && iframeContainerRef.current.contains(fsElement as Node));
+
+      if (isOurIframeFullscreen && screen.orientation && 'lock' in screen.orientation) {
+        try {
+          await (screen.orientation as any).lock('landscape');
+        } catch (err) {
+          console.warn('Orientation lock failed:', err);
+        }
+      } else if (!fsElement && screen.orientation && 'unlock' in screen.orientation) {
+        try {
+          (screen.orientation as any).unlock();
+        } catch {}
+      }
+    };
+
+    const events = ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'];
+    events.forEach(event => document.addEventListener(event, handleFullscreenChange));
+    return () => {
+      events.forEach(event => document.removeEventListener(event, handleFullscreenChange));
+    };
+  }, []);
 
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === modalRef.current) onClose();
@@ -48,12 +82,15 @@ const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({ videoUrl, onClose }
         </button>
 
         {isYouTube && youTubeId ? (
-          <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden">
+          <div
+            ref={iframeContainerRef}
+            className="relative w-full aspect-video bg-black rounded-lg overflow-hidden"
+          >
             <iframe
               className="absolute top-0 left-0 w-full h-full"
               src={`https://www.youtube-nocookie.com/embed/${youTubeId}?autoplay=1&rel=0`}
               title="YouTube video player"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
               allowFullScreen
             />
           </div>
