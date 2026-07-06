@@ -386,11 +386,15 @@ const DownloadLinkPage: React.FC = () => {
                 <React.Fragment key={idx}>
                   <LinkCard link={link} isMovie={isMovie} onAction={() => togglePlayer(idx)} actionIcon={selectedIndex === idx ? undefined : <FaPlay />} actionLabel={selectedIndex === idx ? 'Close Player' : 'Watch Now'} isActive={selectedIndex === idx} />
                   {selectedIndex === idx && (
-                    <div className="mt-2 shadow-2xl animate-fadeIn">
+                    // ✅ -mx-4 cancels out the page's px-4, pulling the player flush to
+                    // both screen edges on mobile (YouTube-style). From `sm` up, the
+                    // page has room to spare, so the negative margin is cancelled and
+                    // the player sits back inside the normal container width.
+                    <div className="mt-2 shadow-2xl animate-fadeIn -mx-4 sm:mx-0">
                       {isYouTubeUrl(link.url) ? (
                         <YouTubeEmbed videoUrl={link.url} title={title} />
                       ) : (
-                        <div className="rounded-xl overflow-hidden border border-purple-500/30">
+                        <div className="overflow-hidden rounded-none border-0 sm:rounded-xl sm:border sm:border-purple-500/30">
                           <VideoPlayer src={link.url} title={title} episode={!isMovie ? link.episode : undefined} />
                         </div>
                       )}

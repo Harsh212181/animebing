@@ -739,9 +739,9 @@ const MainApp: React.FC = () => {
           onContentTypeNavigate={dummyContentTypeFunction}
         />
 
-        <main className="w-full px-2 py-2">
+        <main className="w-full px-0 sm:px-2 py-2">
           <div
-            className="rounded-xl"
+            className="rounded-none sm:rounded-xl"
             style={{
               background: 'rgba(30, 41, 59, 0.5)',
               backdropFilter: 'blur(10px)'
@@ -750,7 +750,7 @@ const MainApp: React.FC = () => {
             <Suspense fallback={<Spinner />}>
               <Routes>
                 <Route path="/" element={
-                  <div className="rounded-lg overflow-hidden">
+                  <div className="rounded-none sm:rounded-lg overflow-hidden">
                     <HomePage
                       onAnimeSelect={handleAnimeSelect}
                       searchQuery={searchQuery}
@@ -761,19 +761,19 @@ const MainApp: React.FC = () => {
                 } />
 
                 <Route path="/anime" element={
-                  <div className="rounded-lg overflow-hidden">
+                  <div className="rounded-none sm:rounded-lg overflow-hidden">
                     <AnimeListPage onAnimeSelect={handleAnimeSelect} />
                   </div>
                 } />
 
                 <Route path="/detail/:idOrSlug" element={
-                  <div className="rounded-lg overflow-hidden">
+                  <div className="rounded-none sm:rounded-lg overflow-hidden">
                     <AnimeDetailWrapper />
                   </div>
                 } />
 
                 <Route path="/top-100" element={
-                  <div className="rounded-lg overflow-hidden">
+                  <div className="rounded-none sm:rounded-lg overflow-hidden">
                     <Top100Page
                       onAnimeSelect={handleAnimeSelect}
                       onBack={handleBackToHome}
@@ -782,59 +782,59 @@ const MainApp: React.FC = () => {
                 } />
 
                 <Route path="/download" element={
-                  <div className="rounded-lg overflow-hidden">
+                  <div className="rounded-none sm:rounded-lg overflow-hidden">
                     <DownloadRedirectPage />
                   </div>
                 } />
                 <Route path="/download-redirect" element={
-                  <div className="rounded-lg overflow-hidden">
+                  <div className="rounded-none sm:rounded-lg overflow-hidden">
                     <DownloadRedirectPage />
                   </div>
                 } />
 
                 <Route path="/download/:slug" element={
-                  <div className="rounded-lg overflow-hidden">
+                  <div className="rounded-none sm:rounded-lg overflow-hidden">
                     <DownloadLinkPage />
                   </div>
                 } />
 
                 <Route path="/privacy" element={
-                  <div className="rounded-lg overflow-hidden glow-green-border">
+                  <div className="rounded-none sm:rounded-lg overflow-hidden glow-green-border">
                     <PrivacyPolicy />
                   </div>
                 } />
                 <Route path="/dmca" element={
-                  <div className="rounded-lg overflow-hidden glow-green-border">
+                  <div className="rounded-none sm:rounded-lg overflow-hidden glow-green-border">
                     <DMCA />
                   </div>
                 } />
                 <Route path="/terms" element={
-                  <div className="rounded-lg overflow-hidden glow-green-border">
+                  <div className="rounded-none sm:rounded-lg overflow-hidden glow-green-border">
                     <TermsAndConditions />
                   </div>
                 } />
                 <Route path="/contact" element={
-                  <div className="rounded-lg overflow-hidden glow-green-border">
+                  <div className="rounded-none sm:rounded-lg overflow-hidden glow-green-border">
                     <Contact />
                   </div>
                 } />
                 <Route path="/earn-money" element={
-                  <div className="rounded-lg overflow-hidden glow-green-border">
+                  <div className="rounded-none sm:rounded-lg overflow-hidden glow-green-border">
                     <EarnMoney />
                   </div>
                 } />
                 <Route path="/promotion-plan" element={
-                  <div className="rounded-lg overflow-hidden glow-green-border">
+                  <div className="rounded-none sm:rounded-lg overflow-hidden glow-green-border">
                     <EarnMoney />
                   </div>
                 } />
                 <Route path="/welcome" element={
-                  <div className="rounded-lg overflow-hidden glow-green-border">
+                  <div className="rounded-none sm:rounded-lg overflow-hidden glow-green-border">
                     <WelcomePage />
                   </div>
                 } />
                 <Route path="*" element={
-                  <div className="rounded-lg overflow-hidden glow-green-border">
+                  <div className="rounded-none sm:rounded-lg overflow-hidden glow-green-border">
                     <ErrorPage />
                   </div>
                 } />

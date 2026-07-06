@@ -92,7 +92,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({ videoUrl, title }) => {
   return (
     <div
       ref={wrapperRef}
-      className="relative w-full aspect-video bg-black rounded-xl overflow-hidden border border-purple-500/30"
+      className="relative w-full aspect-video bg-black rounded-none border-0 sm:rounded-xl sm:border sm:border-purple-500/30 overflow-hidden"
     >
       <div style={rotatedStyle}>
         <iframe
