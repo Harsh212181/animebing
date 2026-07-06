@@ -35,6 +35,10 @@ const getAnimeTitle = (page: DownloadPage): string => {
   return 'Unknown Anime';
 };
 
+// NOTE: `isHidden` is expected on DownloadPage. If your `types.ts` doesn't have
+// it yet, add: `isHidden?: boolean;` to the DownloadPage interface.
+const isPageHidden = (page: DownloadPage): boolean => !!(page as any).isHidden;
+
 // ----- Toast Component -----
 interface ToastState {
   message: string;
@@ -153,6 +157,10 @@ const DownloadPageManager: React.FC = () => {
   const [contentTypeFilter, setContentTypeFilter] = useState<'all' | ContentType>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'ongoing' | 'complete'>('all');
   const [subDubFilter, setSubDubFilter] = useState<'all' | string>('all');
+  const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'visible' | 'hidden'>('all');
+
+  // Hide/unhide in-flight tracker (disables the button being toggled)
+  const [hidingId, setHidingId] = useState<string | null>(null);
 
   const fetchPages = async () => {
     setLoading(true);
@@ -332,16 +340,7 @@ const DownloadPageManager: React.FC = () => {
       return;
     }
 
-    const watchCount = pageToSave.links.filter(l => l.type === 'watch').length;
-    const downloadCount = pageToSave.links.filter(l => l.type === 'download').length;
-    if (watchCount > 12) {
-      showToast(`You cannot have more than 12 watch links. Currently: ${watchCount}`, 'error');
-      return;
-    }
-    if (downloadCount > 12) {
-      showToast(`You cannot have more than 12 download links. Currently: ${downloadCount}`, 'error');
-      return;
-    }
+    // ✅ No cap on link count anymore — watch/download links are unlimited
 
     const method = pageToSave._id ? 'PUT' : 'POST';
     const url = pageToSave._id
@@ -399,6 +398,32 @@ const DownloadPageManager: React.FC = () => {
     }
   };
 
+  // Toggle hide/unhide for a single download page.
+  // NOTE: expects a backend route like `PATCH /download-pages/:id/toggle-hide`
+  // in downloadPageRoutes.ts. Adjust the path below if your route differs.
+  const handleToggleHide = async (page: DownloadPage) => {
+    const currentlyHidden = isPageHidden(page);
+    setHidingId(page._id);
+    const toastId = currentlyHidden ? 'Showing page...' : 'Hiding page...';
+    try {
+      const token = getToken();
+      const res = await fetch(`${API_BASE}/download-pages/${page._id}/toggle-hide`, {
+        method: 'PATCH',
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      setPages(prev => prev.map(p => (p._id === page._id ? ({ ...p, isHidden: !currentlyHidden } as DownloadPage) : p)));
+      showToast(currentlyHidden ? 'Page is now visible!' : 'Page hidden from users!', 'success');
+    } catch (error) {
+      console.error('Toggle hide error:', error);
+      showToast('Failed to change visibility. Check backend route.', 'error');
+    } finally {
+      setHidingId(null);
+    }
+  };
+
   // addDownloadLink – uses global next episode
   const addDownloadLink = async () => {
     if (!editingPage || !editingPage.animeId) return;
@@ -448,16 +473,7 @@ const DownloadPageManager: React.FC = () => {
       if (!prev) return null;
       const downloadCount = prev.links.filter(l => l.type === 'download').length;
       const watchCount = prev.links.filter(l => l.type === 'watch').length;
-      
-      if (downloadCount + 1 > 12) {
-        showToast('Download limit reached (max 12)', 'error');
-        return prev;
-      }
-      if (watchCount + 1 > 12) {
-        showToast('Watch limit reached (max 12)', 'error');
-        return prev;
-      }
-      
+
       const newDownloadLink: DownloadPageLink = {
         episode: baseEpisode + downloadCount,
         url: '',
@@ -503,14 +519,14 @@ const DownloadPageManager: React.FC = () => {
       if (!map.has(animeId)) map.set(animeId, []);
       map.get(animeId)!.push(page);
     });
-    // Sort each anime's pages by _id ascending (oldest first)
+    // Sort each anime's pages by _id ascending (oldest first) -> Page 1, Page 2, Page 3...
     map.forEach((list) => {
       list.sort((a, b) => a._id.localeCompare(b._id));
     });
     return map;
   }, [pages]);
 
-  // Filter pages based on search, contentType, status, and sub/dub status
+  // Filter pages based on search, contentType, status, sub/dub status, and visibility
   const filteredPages = useMemo(() => {
     return pages.filter(page => {
       const animeTitle = getAnimeTitle(page).toLowerCase();
@@ -529,9 +545,29 @@ const DownloadPageManager: React.FC = () => {
         const subDub = details.subDubStatus;
         if (subDub !== subDubFilter) return false;
       }
+      // Visibility filter
+      if (visibilityFilter === 'visible' && isPageHidden(page)) return false;
+      if (visibilityFilter === 'hidden' && !isPageHidden(page)) return false;
       return true;
-    }).sort((a, b) => a._id.localeCompare(b._id));
-  }, [pages, searchTerm, contentTypeFilter, statusFilter, subDubFilter]);
+    });
+  }, [pages, searchTerm, contentTypeFilter, statusFilter, subDubFilter, visibilityFilter]);
+
+  // Final display order:
+  // - Newest anime shows first (grouped by anime, groups ordered by anime _id desc)
+  // - Within each anime, pages keep their natural order (oldest page first) so
+  //   "Page 1 / Page 2 / Page 3" labels stay correct.
+  const sortedPages = useMemo(() => {
+    const groups = new Map<string, DownloadPage[]>();
+    filteredPages.forEach(page => {
+      const animeId = getAnimeDetails(page).animeId;
+      if (!groups.has(animeId)) groups.set(animeId, []);
+      groups.get(animeId)!.push(page);
+    });
+    groups.forEach(list => list.sort((a, b) => a._id.localeCompare(b._id)));
+    const groupEntries = Array.from(groups.entries());
+    groupEntries.sort((a, b) => b[0].localeCompare(a[0])); // newest anime (_id) first
+    return groupEntries.flatMap(([, list]) => list);
+  }, [filteredPages]);
 
   if (loading) return (
     <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
@@ -784,15 +820,55 @@ const DownloadPageManager: React.FC = () => {
           </div>
         </div>
 
+        {/* Row 3: Visibility Filter */}
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-white/70">Visibility:</span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setVisibilityFilter('all')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  visibilityFilter === 'all'
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                    : 'bg-white/10 text-white/70 hover:bg-white/20'
+                }`}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setVisibilityFilter('visible')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  visibilityFilter === 'visible'
+                    ? 'bg-green-600 text-white shadow-lg shadow-green-600/20'
+                    : 'bg-white/10 text-white/70 hover:bg-white/20'
+                }`}
+              >
+                👁 Visible
+              </button>
+              <button
+                onClick={() => setVisibilityFilter('hidden')}
+                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                  visibilityFilter === 'hidden'
+                    ? 'bg-red-600 text-white shadow-lg shadow-red-600/20'
+                    : 'bg-white/10 text-white/70 hover:bg-white/20'
+                }`}
+              >
+                🔒 Hidden
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Active filters info */}
         <div className="text-xs text-white/40">
           {filteredPages.length} / {pages.length} pages shown
-          {(contentTypeFilter !== 'all' || statusFilter !== 'all' || subDubFilter !== 'all') && (
+          {(contentTypeFilter !== 'all' || statusFilter !== 'all' || subDubFilter !== 'all' || visibilityFilter !== 'all') && (
             <button
               onClick={() => {
                 setContentTypeFilter('all');
                 setStatusFilter('all');
                 setSubDubFilter('all');
+                setVisibilityFilter('all');
               }}
               className="ml-2 text-purple-400 hover:text-purple-300 underline"
             >
@@ -804,7 +880,7 @@ const DownloadPageManager: React.FC = () => {
 
       {/* List of Pages */}
       <div className="space-y-4">
-        {filteredPages.length === 0 && !error ? (
+        {sortedPages.length === 0 && !error ? (
           <div className="text-center py-16 bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl">
             <svg className="w-16 h-16 mx-auto text-white/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -817,11 +893,12 @@ const DownloadPageManager: React.FC = () => {
             </p>
           </div>
         ) : (
-          filteredPages.map(page => {
+          sortedPages.map(page => {
             const animeDetails = getAnimeDetails(page);
             // Find page index for this anime based on creation order (_id)
             const animePageList = pagesByAnime.get(animeDetails.animeId) || [];
             const pageIndex = animePageList.findIndex(p => p._id === page._id) + 1;
+            const hidden = isPageHidden(page);
 
             // Compute episode range
             const episodeNumbers = page.links.map(l => l.episode);
@@ -836,10 +913,10 @@ const DownloadPageManager: React.FC = () => {
             return (
               <React.Fragment key={page._id}>
                 {/* Page Card */}
-                <div className="group bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden shadow-xl transition-all hover:shadow-2xl hover:border-white/20">
+                <div className={`group bg-white/5 backdrop-blur-sm border rounded-2xl overflow-hidden shadow-xl transition-all hover:shadow-2xl ${hidden ? 'border-red-500/30' : 'border-white/10 hover:border-white/20'}`}>
                   <div className="relative p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     {/* Colored left accent */}
-                    <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-gradient-to-b from-purple-400 to-pink-400 rounded-l-2xl"></div>
+                    <div className={`absolute left-0 top-0 bottom-0 w-1.5 rounded-l-2xl ${hidden ? 'bg-gradient-to-b from-red-500 to-rose-500' : 'bg-gradient-to-b from-purple-400 to-pink-400'}`}></div>
 
                     <div className="flex-1 pl-3">
                       <div className="flex items-start gap-4">
@@ -875,6 +952,12 @@ const DownloadPageManager: React.FC = () => {
                             {pageIndex > 0 && (
                               <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-purple-600/30 text-purple-300 border border-purple-500/50">
                                 Page {pageIndex}
+                              </span>
+                            )}
+                            {/* Hidden badge */}
+                            {hidden && (
+                              <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-red-600/30 text-red-300 border border-red-500/50">
+                                🔒 Hidden
                               </span>
                             )}
                             {/* Content Type Badge */}
@@ -951,6 +1034,33 @@ const DownloadPageManager: React.FC = () => {
 
                     {/* Action buttons */}
                     <div className="flex gap-2 items-center">
+                      {/* Hide/Unhide button */}
+                      <button
+                        onClick={() => handleToggleHide(page)}
+                        disabled={hidingId === page._id}
+                        title={hidden ? 'Show page to users' : 'Hide page from users'}
+                        className={`p-2.5 border rounded-xl transition-all disabled:opacity-50 ${
+                          hidden
+                            ? 'bg-green-500/10 hover:bg-green-500/20 border-green-500/30 text-green-300'
+                            : 'bg-yellow-500/10 hover:bg-yellow-500/20 border-yellow-500/30 text-yellow-300'
+                        }`}
+                      >
+                        {hidingId === page._id ? (
+                          <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                          </svg>
+                        ) : hidden ? (
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                        ) : (
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 4.411m0 0L21 21" />
+                          </svg>
+                        )}
+                      </button>
                       {/* View button */}
                       <button
                         onClick={() => window.open(`${getFrontendBase()}/download/${page.slug}`, '_blank')}
@@ -1130,7 +1240,7 @@ const PageForm: React.FC<{
       <div>
         <label className="block text-sm font-medium text-white/80 mb-3 flex items-center gap-2">
           <span className="w-1.5 h-5 bg-amber-400 rounded-full"></span>
-          Links (Max 12 watch, 12 download)
+          Links (unlimited)
         </label>
         {editingPage.links?.map((link, idx) => (
           <div key={idx} className="bg-gray-800/40 border border-white/5 rounded-xl p-4 mb-3">
@@ -1198,7 +1308,7 @@ const PageForm: React.FC<{
         <div className="flex gap-3 mt-2 flex-wrap">
           <button
             onClick={addDownloadLink}
-            disabled={downloadCount >= 12 || calculatingNext}
+            disabled={calculatingNext}
             className="px-4 py-2 bg-blue-600/20 hover:bg-blue-600/40 border border-blue-500/30 rounded-xl text-blue-200 text-sm font-medium transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {calculatingNext ? (
@@ -1208,11 +1318,11 @@ const PageForm: React.FC<{
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
               </svg>
             )}
-            + Add Download Link ({downloadCount}/12)
+            + Add Download Link ({downloadCount})
           </button>
           <button
             onClick={addWatchLink}
-            disabled={watchCount >= 12 || calculatingNext}
+            disabled={calculatingNext}
             className="px-4 py-2 bg-green-600/20 hover:bg-green-600/40 border border-green-500/30 rounded-xl text-green-200 text-sm font-medium transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {calculatingNext ? (
@@ -1223,11 +1333,11 @@ const PageForm: React.FC<{
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             )}
-            + Add Watch Link ({watchCount}/12)
+            + Add Watch Link ({watchCount})
           </button>
           <button
             onClick={addBothLinks}
-            disabled={downloadCount >= 12 || watchCount >= 12 || calculatingNext}
+            disabled={calculatingNext}
             className="px-4 py-2 bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/30 rounded-xl text-purple-200 text-sm font-medium transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1237,12 +1347,6 @@ const PageForm: React.FC<{
             + Add Both (Download + Watch)
           </button>
         </div>
-        {(downloadCount >= 12 || watchCount >= 12) && (
-          <p className="text-xs text-yellow-500 mt-2">
-            {downloadCount >= 12 && 'Download limit reached. '}
-            {watchCount >= 12 && 'Watch limit reached.'}
-          </p>
-        )}
       </div>
 
       {/* Form Actions */}

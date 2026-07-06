@@ -1,4 +1,4 @@
- import { ObjectId } from 'mongodb'
+import { ObjectId } from 'mongodb'
 
 // ============ ANIME ============
 export interface IVote {
@@ -198,6 +198,7 @@ export interface IDownloadPage {
   title?: string
   episodeNumber?: number
   links: IDownloadPageLink[]
+  isHidden?: boolean
   createdAt?: Date
   updatedAt?: Date
 }

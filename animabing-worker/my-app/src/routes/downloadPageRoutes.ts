@@ -1,4 +1,4 @@
- import { Hono } from 'hono'
+import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
 import { findMany, findOne, insertOne, updateOne, deleteOne, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
@@ -94,17 +94,13 @@ downloadPageRoutes.post('/', adminAuth, async (c) => {
     const anime = await findOne('animes', { _id: toObjectId(animeId) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
     if (!anime) return c.json({ error: 'Anime not found' }, 400)
 
-    if (links.length > 24) return c.json({ error: 'Maximum 24 links allowed' }, 400)
-    const counts = countLinksByType(links)
-    if (counts.watch > 12) return c.json({ error: `Max 12 watch links allowed` }, 400)
-    if (counts.download > 12) return c.json({ error: `Max 12 download links allowed` }, 400)
-
+    // ✅ No cap on link count anymore — watch/download links are unlimited
     for (const link of links) {
       if (!link.episode || !link.url) return c.json({ error: 'Each link needs episode and url' }, 400)
       if (!link.type) link.type = 'download'
     }
 
-    const page = { animeId: toObjectId(animeId), slug, title: title || 'Download', episodeNumber, links }
+    const page = { animeId: toObjectId(animeId), slug, title: title || 'Download', episodeNumber, links, isHidden: false }
     await insertOne('downloadpages', page, c.env.MONGODB_URI, c.env.MONGODB_DB)
     return c.json(page, 201)
   } catch (err: any) {
@@ -134,10 +130,7 @@ downloadPageRoutes.put('/:id', adminAuth, async (c) => {
       updateData.episodeNumber = episodeNumber
     }
     if (links) {
-      if (links.length > 24) return c.json({ error: 'Maximum 24 links allowed' }, 400)
-      const counts = countLinksByType(links)
-      if (counts.watch > 12) return c.json({ error: 'Max 12 watch links' }, 400)
-      if (counts.download > 12) return c.json({ error: 'Max 12 download links' }, 400)
+      // ✅ No cap on link count anymore — watch/download links are unlimited
       for (const link of links) {
         if (!link.episode || !link.url) return c.json({ error: 'Each link needs episode and url' }, 400)
         if (!link.type) link.type = 'download'
@@ -146,6 +139,28 @@ downloadPageRoutes.put('/:id', adminAuth, async (c) => {
     }
 
     const updated = await updateOne('downloadpages', { _id: toObjectId(id) }, updateData, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    return c.json(updated)
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ✅ TOGGLE HIDE / UNHIDE
+downloadPageRoutes.patch('/:id/toggle-hide', adminAuth, async (c) => {
+  try {
+    const id = c.req.param('id')
+    if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
+
+    const page = await findOne<IDownloadPage>('downloadpages', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    if (!page) return c.json({ error: 'Page not found' }, 404)
+
+    const newHiddenState = !(page as any).isHidden
+    const updated = await updateOne(
+      'downloadpages',
+      { _id: toObjectId(id) },
+      { isHidden: newHiddenState },
+      c.env.MONGODB_URI, c.env.MONGODB_DB
+    )
     return c.json(updated)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -178,6 +193,11 @@ downloadPageRoutes.get('/:slug', async (c) => {
       c.env.MONGODB_DB
     )
     if (!page) return c.json({ error: 'Page not found' }, 404)
+
+    // ✅ Public page ke liye hidden pages block karo
+    if ((page as any).isHidden) {
+      return c.json({ error: 'Page not found' }, 404)
+    }
 
     // ✅ animeId se anime fetch karo — thumbnail aur description ke liye
     let animeData = null
