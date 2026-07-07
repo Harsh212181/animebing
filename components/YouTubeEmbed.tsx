@@ -100,6 +100,16 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
           const state = data.info.playerState;
           if (state === 1) setPlaying(true); // playing
           else if (state === 2) setPlaying(false); // paused
+          // ✅ FIX: YouTube broadcasts a playerState change EVERY time
+          // play/pause/seek/buffer happens — no matter whether it was
+          // triggered by our custom button or by the user tapping
+          // YouTube's own native controls inside the iframe. Using this
+          // real event (instead of the old window-'blur' + iframe.blur()
+          // hack) reliably re-shows our controls on every interaction
+          // without ever touching the iframe's focus — so it can no
+          // longer interfere with clicks on YouTube's native play button,
+          // seek bar, volume, or settings gear.
+          showControlsTemporarily();
         }
       } catch {
         // Ignore non-JSON / unrelated messages
@@ -107,6 +117,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ✅ Controls ko 3 second ke baad auto-hide karo
@@ -133,18 +144,19 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoUrl]);
 
-  // ✅ Cross-origin iframe ke andar click hone par window 'blur' fire hota hai
-  // (kyunki focus iframe ke andar chala jaata hai) — isi se detect karte hain
-  // ki user ne video pe tap/click kiya hai.
-  useEffect(() => {
-    const handleWindowBlur = () => {
-      if (document.activeElement === iframeRef.current) {
-        showControlsTemporarily();
-      }
-    };
-    window.addEventListener('blur', handleWindowBlur);
-    return () => window.removeEventListener('blur', handleWindowBlur);
-  }, []);
+  // ❌ HATA DIYA: pehle hum window 'blur' + iframeRef.current.blur() wala
+  // hack use kar rahe the taake har tap detect ho sake. Lekin cross-origin
+  // iframe ko programmatically blur() karna EXACTLY usi waqt ho raha tha
+  // jab mobile browser tap ko iframe ke andar deliver kar raha hota tha —
+  // isse browser wo tap/click hi cancel kar deta tha. Yahi wajah thi ki
+  // YouTube ke apne saare controls (center play, progress bar, volume,
+  // settings) click hona band ho gaye the.
+  //
+  // ✅ NAYA FIX: neeche "tap-catcher" overlay use kiya hai (return JSX mein)
+  // jo sirf tab render hota hai jab controls hidden hain. Pehla tap us
+  // invisible overlay ko milta hai (controls show karke khud hat jaata
+  // hai), agla tap seedha iframe/YouTube tak pahunchta hai. Isse iframe ka
+  // focus ya click event kabhi bhi disturb nahi hota.
 
   const handleFullscreen = async () => {
     if (!wrapperRef.current) return;
@@ -267,17 +279,34 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
         />
       </div>
 
+      {/* ❌ HATA DIYA: pehle yahan ek full-screen "tap-catcher" tha jo
+          controls hidden hone par poore video ke upar phail jaata tha.
+          Isse HAR click pehle usi invisible div ko lagta tha (sirf
+          controls dikhane ke liye), aur YouTube ke asli play/pause,
+          settings, seek bar tak pahunchne ke liye user ko DO baar tap
+          karna padta tha. Ab hum sirf window-focus + YouTube ke apne
+          playerState messages (neeche useEffect) se controls dobara
+          dikhate hain — bina kisi overlay ke jo click ko roke. */}
+
       {!forceRotate && (
+        // ✅ FIX: container ab hamesha `pointer-events-none` hai — ye khud
+        // kabhi click nahi khaata. Sirf iske andar ke actual buttons
+        // (EpisodeControls aur Fullscreen) par `pointer-events-auto` hai.
+        // Isse beech ka khaali/gap area (jahan YouTube ka apna seek bar,
+        // settings gear, volume, audio-track button hote hain) click ke
+        // liye seedha iframe tak "through" chala jaata hai.
         <div
-          className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2 flex items-center justify-between z-20 transition-opacity duration-300 ${
-            controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2 flex items-center justify-between z-20 pointer-events-none transition-opacity duration-300 ${
+            controlsVisible ? 'opacity-100' : 'opacity-0'
           }`}
         >
-          <EpisodeControls />
+          <div className={controlsVisible ? 'pointer-events-auto' : 'pointer-events-none'}>
+            <EpisodeControls />
+          </div>
 
           <button
             onClick={handleFullscreen}
-            className={BTN_CLASS}
+            className={`${BTN_CLASS} ${controlsVisible ? 'pointer-events-auto' : 'pointer-events-none'}`}
             aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
             title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
           >
