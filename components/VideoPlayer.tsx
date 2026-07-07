@@ -694,7 +694,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
 
       {/* Watermark - now hides with controls */}
       <div
-        className={`absolute top-1 right-3 flex items-center space-x-2 z-40 pointer-events-none watermark-container transition-opacity duration-300 ${
+        className={`absolute top-1 right-2 flex items-center space-x-0.5 z-40 pointer-events-none watermark-container transition-opacity duration-300 ${
           controlsVisible ? 'opacity-100' : 'opacity-0'
         }`}
       >
