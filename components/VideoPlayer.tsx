@@ -11,6 +11,8 @@ import {
   Maximize,
   Minimize,
   Check,
+  SkipBack,
+  SkipForward,
 } from 'lucide-react';
 
 interface VideoPlayerProps {
@@ -19,9 +21,23 @@ interface VideoPlayerProps {
   poster?: string;
   title?: string;
   episode?: number | string;
+  onNextEpisode?: () => void;
+  onPreviousEpisode?: () => void;
+  hasNextEpisode?: boolean;
+  hasPreviousEpisode?: boolean;
 }
 
-const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title, episode }) => {
+const VideoPlayer: React.FC<VideoPlayerProps> = ({
+  src,
+  qualities,
+  poster,
+  title,
+  episode,
+  onNextEpisode,
+  onPreviousEpisode,
+  hasNextEpisode = false,
+  hasPreviousEpisode = false,
+}) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const tapTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -100,11 +116,23 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
     setCurrentSrc(src);
   }, [src]);
 
+  // ✅ FIX: play (and reload) whenever the actual video source changes —
+  // on first mount, on episode switch, or on quality change. This is keyed
+  // off `currentSrc` (state), not the `src` prop, so it only runs after the
+  // <video> element's src attribute has actually been updated in the DOM.
+  // The player component itself is no longer unmounted/remounted when the
+  // episode changes (that's fixed in the parent), so we can't rely on a
+  // mount-only effect to start playback for a new episode anymore.
+  const isFirstSrcEffect = useRef(true);
   useEffect(() => {
     if (videoRef.current) {
-      videoRef.current.play().catch(err => console.error('Autoplay failed:', err));
+      if (!isFirstSrcEffect.current) {
+        videoRef.current.load();
+      }
+      isFirstSrcEffect.current = false;
+      videoRef.current.play().catch(err => console.error('Play failed:', err));
     }
-  }, []);
+  }, [currentSrc]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -184,6 +212,14 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
 
   const handleLoadedMetadata = () => {
     if (videoRef.current) setDuration(videoRef.current.duration);
+  };
+
+  // ✅ Video khatam hone par agla episode apne aap chalao (agar available hai)
+  const handleEnded = () => {
+    setPlaying(false);
+    if (hasNextEpisode && onNextEpisode) {
+      onNextEpisode();
+    }
   };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -270,14 +306,10 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
   };
 
   const handleQualityChange = (newSrc: string) => {
-    const wasPlaying = playing;
+    // The currentSrc-effect above now takes care of reloading + playing,
+    // so we just need to update the state here — no manual DOM mutation.
     setCurrentSrc(newSrc);
     setShowQualityMenu(false);
-    if (videoRef.current) {
-      videoRef.current.src = newSrc;
-      videoRef.current.load();
-      if (wasPlaying) videoRef.current.play().catch(err => console.error('Play after quality change failed:', err));
-    }
     showControlsTemporarily();
   };
 
@@ -313,6 +345,16 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
     } catch (err) {
       console.error('PiP failed:', err);
     }
+    showControlsTemporarily();
+  };
+
+  const handleNextEpisode = () => {
+    if (onNextEpisode) onNextEpisode();
+    showControlsTemporarily();
+  };
+
+  const handlePreviousEpisode = () => {
+    if (onPreviousEpisode) onPreviousEpisode();
     showControlsTemporarily();
   };
 
@@ -598,6 +640,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
   const BTN_CLASS =
     'flex items-center justify-center rounded-full text-white/90 hover:text-white hover:bg-white/10 active:bg-white/20 transition-colors duration-150 flex-shrink-0';
   const BTN_PAD = isFullscreen ? 'p-2.5' : 'p-2';
+  const DISABLED_BTN_CLASS =
+    'flex items-center justify-center rounded-full text-white/25 cursor-not-allowed flex-shrink-0';
 
   return (
     <div
@@ -732,6 +776,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
           }}
           onWaiting={() => setIsBuffering(true)}
           onPlaying={() => setIsBuffering(false)}
+          onEnded={handleEnded}
           onError={(e) => console.error('Video error:', e)}
           className="w-full h-full object-contain"
           playsInline
@@ -826,8 +871,20 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
         />
 
         <div className="flex items-center justify-between">
-          {/* Left cluster: play/pause, volume, time */}
+          {/* Left cluster: previous-ep, play/pause, next-ep, volume, time */}
           <div className="flex items-center space-x-0.5 min-w-0">
+            {/* ✅ Previous Episode */}
+            <button
+              onClick={handlePreviousEpisode}
+              onTouchStart={(e) => e.stopPropagation()}
+              disabled={!hasPreviousEpisode}
+              className={`${hasPreviousEpisode ? BTN_CLASS : DISABLED_BTN_CLASS} ${BTN_PAD}`}
+              aria-label="Previous episode"
+              title="Previous Episode"
+            >
+              <SkipBack size={ICON_SIZE} fill="currentColor" />
+            </button>
+
             <button
               onClick={togglePlay}
               onTouchStart={(e) => e.stopPropagation()}
@@ -839,6 +896,18 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, qualities, poster, title
               ) : (
                 <Play size={ICON_SIZE} fill="currentColor" />
               )}
+            </button>
+
+            {/* ✅ Next Episode */}
+            <button
+              onClick={handleNextEpisode}
+              onTouchStart={(e) => e.stopPropagation()}
+              disabled={!hasNextEpisode}
+              className={`${hasNextEpisode ? BTN_CLASS : DISABLED_BTN_CLASS} ${BTN_PAD}`}
+              aria-label="Next episode"
+              title="Next Episode"
+            >
+              <SkipForward size={ICON_SIZE} fill="currentColor" />
             </button>
 
             <button

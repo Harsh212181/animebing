@@ -244,6 +244,15 @@ const DownloadLinkPage: React.FC = () => {
   const downloadLinks = page.links.filter(link => link.type !== 'watch');
   const watchLinks = page.links.filter(link => link.type === 'watch');
 
+  // ✅ FIX: sort watch links by episode number so "Next/Previous Episode"
+  // always moves in the correct order, regardless of the order they were
+  // saved in on the backend. Movies just keep their (single) position.
+  const sortedWatchLinks = [...watchLinks].sort((a, b) => {
+    const epA = isMovie ? 0 : Number(a.episode) || 0;
+    const epB = isMovie ? 0 : Number(b.episode) || 0;
+    return epA - epB;
+  });
+
   const thumbnail = animeDetails?.thumbnail;
   const releaseYear = animeDetails?.releaseYear || 'N/A';
   const status = animeDetails?.status || 'Unknown';
@@ -379,29 +388,61 @@ const DownloadLinkPage: React.FC = () => {
 
         {activeTab === 'watch' && (
           <div className="space-y-3">
-            {watchLinks.length === 0 ? (
+            {sortedWatchLinks.length === 0 ? (
               <p className="text-center text-gray-500 py-8">No watch links available.</p>
             ) : (
-              watchLinks.map((link, idx) => (
-                <React.Fragment key={idx}>
-                  <LinkCard link={link} isMovie={isMovie} onAction={() => togglePlayer(idx)} actionIcon={selectedIndex === idx ? undefined : <FaPlay />} actionLabel={selectedIndex === idx ? 'Close Player' : 'Watch Now'} isActive={selectedIndex === idx} />
-                  {selectedIndex === idx && (
-                    // ✅ -mx-4 cancels out the page's px-4, pulling the player flush to
-                    // both screen edges on mobile (YouTube-style). From `sm` up, the
-                    // page has room to spare, so the negative margin is cancelled and
-                    // the player sits back inside the normal container width.
-                    <div className="mt-2 shadow-2xl animate-fadeIn -mx-4 sm:mx-0">
-                      {isYouTubeUrl(link.url) ? (
-                        <YouTubeEmbed videoUrl={link.url} title={title} />
-                      ) : (
-                        <div className="overflow-hidden rounded-none border-0 sm:rounded-xl sm:border sm:border-purple-500/30">
-                          <VideoPlayer src={link.url} title={title} episode={!isMovie ? link.episode : undefined} />
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </React.Fragment>
-              ))
+              <>
+                {sortedWatchLinks.map((link, idx) => (
+                  <LinkCard
+                    key={idx}
+                    link={link}
+                    isMovie={isMovie}
+                    onAction={() => togglePlayer(idx)}
+                    actionIcon={selectedIndex === idx ? undefined : <FaPlay />}
+                    actionLabel={selectedIndex === idx ? 'Close Player' : 'Watch Now'}
+                    isActive={selectedIndex === idx}
+                  />
+                ))}
+
+                {/* ✅ FIX: single, stable player instance rendered OUTSIDE the
+                    per-card loop, with a fixed `key`. Previously the player was
+                    interleaved inside whichever card was active, so switching
+                    episodes moved it to a different spot in the list — React
+                    unmounted the old one and mounted a brand new one elsewhere.
+                    Removing an element that's currently fullscreen makes the
+                    browser force-exit fullscreen automatically, which is why
+                    Next/Previous Episode was kicking you out of fullscreen.
+                    Now the same DOM node just gets new props (src/episode),
+                    so fullscreen stays active across Next/Previous. */}
+                {selectedIndex !== null && sortedWatchLinks[selectedIndex] && (
+                  <div className="mt-2 shadow-2xl animate-fadeIn -mx-4 sm:mx-0">
+                    {isYouTubeUrl(sortedWatchLinks[selectedIndex].url) ? (
+                      <YouTubeEmbed
+                        key="active-youtube-player"
+                        videoUrl={sortedWatchLinks[selectedIndex].url}
+                        title={title}
+                        onNextEpisode={() => setSelectedIndex(selectedIndex + 1)}
+                        onPreviousEpisode={() => setSelectedIndex(selectedIndex - 1)}
+                        hasNextEpisode={!isMovie && selectedIndex < sortedWatchLinks.length - 1}
+                        hasPreviousEpisode={!isMovie && selectedIndex > 0}
+                      />
+                    ) : (
+                      <div className="overflow-hidden rounded-none border-0 sm:rounded-xl sm:border sm:border-purple-500/30">
+                        <VideoPlayer
+                          key="active-video-player"
+                          src={sortedWatchLinks[selectedIndex].url}
+                          title={title}
+                          episode={!isMovie ? sortedWatchLinks[selectedIndex].episode : undefined}
+                          onNextEpisode={() => setSelectedIndex(selectedIndex + 1)}
+                          onPreviousEpisode={() => setSelectedIndex(selectedIndex - 1)}
+                          hasNextEpisode={!isMovie && selectedIndex < sortedWatchLinks.length - 1}
+                          hasPreviousEpisode={!isMovie && selectedIndex > 0}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}

@@ -89,8 +89,10 @@ adminRoutes.post('/add-anime', adminAuth, async (c) => {
     const seoTitle = `Watch ${title} Online in ${subDubStatus} | AnimeBing`
     const seoDescription = `Watch ${title} online in ${subDubStatus}. HD quality streaming and downloads.`
 
-    // Random likes between 500 and 2000
+    // Random likes between 150 and 5000
     const randomLikes = getRandomLikes()
+    // Random dislikes between 0 and 50
+    const randomDislikes = Math.floor(Math.random() * 51)
 
     const anime = {
       title, description, thumbnail,
@@ -99,9 +101,9 @@ adminRoutes.post('/add-anime', adminAuth, async (c) => {
       contentType: contentType || 'Anime',
       slug, seoTitle, seoDescription,
       likes: randomLikes,
-      dislikes: 0,
+      dislikes: randomDislikes,
       views: 0,
-      totalVotes: randomLikes,
+      totalVotes: randomLikes + randomDislikes, // likes + dislikes
       monthlyLikes: Math.floor(randomLikes * 0.3),
       weeklyLikes: Math.floor(randomLikes * 0.1),
       featured: false, featuredOrder: 0,
