@@ -551,7 +551,7 @@ const DownloadPageManager: React.FC = () => {
   }, [pages, searchTerm, contentTypeFilter, statusFilter, subDubFilter, visibilityFilter]);
 
   // Final display order:
-  // - Newest anime shows first (grouped by anime, groups ordered by anime _id desc)
+  // - Anime groups sorted by their latest page's _id (newest anime group with recent activity on top)
   // - Within each anime, pages keep their natural order (oldest page first) so
   //   "Page 1 / Page 2 / Page 3" labels stay correct.
   const sortedPages = useMemo(() => {
@@ -561,9 +561,21 @@ const DownloadPageManager: React.FC = () => {
       if (!groups.has(animeId)) groups.set(animeId, []);
       groups.get(animeId)!.push(page);
     });
+    // Pages within each anime sorted oldest -> newest, so "Page 1, Page 2..." numbering stays correct
     groups.forEach(list => list.sort((a, b) => a._id.localeCompare(b._id)));
+
     const groupEntries = Array.from(groups.entries());
-    groupEntries.sort((a, b) => b[0].localeCompare(a[0])); // newest anime (_id) first
+    // 🔧 FIX: anime GROUPS ab unke sabse latest (naye) page ke hisaab se
+    // order hote hain, anime ki apni creation date se nahi. Isse jis anime
+    // mein abhi-abhi naya page add hua ho, wo list ke top pe aa jaati hai —
+    // lekin har group ke andar page numbering (Page 1/2/3) hamesha
+    // chronological hi rehti hai.
+    groupEntries.sort((a, b) => {
+      const aLatestPageId = a[1][a[1].length - 1]._id; // list ascending hai, to last = newest page
+      const bLatestPageId = b[1][b[1].length - 1]._id;
+      return bLatestPageId.localeCompare(aLatestPageId);
+    });
+
     return groupEntries.flatMap(([, list]) => list);
   }, [filteredPages]);
 
