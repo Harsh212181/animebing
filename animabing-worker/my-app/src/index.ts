@@ -15,9 +15,10 @@ import sitemapRoutes from './routes/sitemapRoutes'
 import socialRoutes from './routes/socialRoutes'
 import shortenerRoutes from './routes/shortenerRoutes'
 import shortUserRoutes from './routes/shortUserRoutes'
-import referralRoutes from './routes/referralRoutes'   // ← NEW
+import referralRoutes from './routes/referralRoutes'   
 import analyticsRoutes from './routes/analyticsRoutes'
-import authRoutes from './routes/authRoutes'           // ← Google OAuth routes
+import authRoutes from './routes/authRoutes'            
+import { runWithDbContext } from './services/mongoService'    
 
 export type Env = {
   MONGODB_URI: string
@@ -27,9 +28,9 @@ export type Env = {
   ADMIN_USER: string
   ADMIN_PASS: string
   API_URL: string
-  GOOGLE_CLIENT_ID: string         // ← new
-  GOOGLE_CLIENT_SECRET: string     // ← new
-  FRONTEND_URL: string             // ← new
+  GOOGLE_CLIENT_ID: string          
+  GOOGLE_CLIENT_SECRET: string     
+  FRONTEND_URL: string              
 }
 
 export type Variables = {
@@ -64,6 +65,10 @@ app.use('*', async (c, next) => {
   return corsMiddleware(c, next)
 })
 
+app.use('*', async (c, next) => {
+  await runWithDbContext(() => next())
+})
+
 // ============ API ROUTES ============
 app.route('/api/admin', adminRoutes)
 app.route('/api/anime', animeRoutes)
@@ -78,9 +83,9 @@ app.route('/api/polls', pollRoutes)
 app.route('/api/reports', reportRoutes)
 app.route('/api/social', socialRoutes)
 app.route('/api/short-users', shortUserRoutes)
-app.route('/api/short-users/referral', referralRoutes)   // ← NEW
+app.route('/api/short-users/referral', referralRoutes)    
 app.route('/api/analytics', analyticsRoutes)
-app.route('/api/auth', authRoutes)                       // ← Google OAuth
+app.route('/api/auth', authRoutes)                        
 
 // ============ SITEMAP ============
 app.route('/', sitemapRoutes)

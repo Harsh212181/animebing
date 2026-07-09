@@ -1,8 +1,41 @@
- import { MongoClient, Db, ObjectId, Filter, Document } from 'mongodb'
+ import { AsyncLocalStorage } from 'node:async_hooks'
+import { MongoClient, Db, ObjectId, Filter, Document } from 'mongodb'
+
+type RequestStore = { clients: MongoClient[] }
+const dbRequestContext = new AsyncLocalStorage<RequestStore>()
+
+export async function runWithDbContext<T>(fn: () => Promise<T>): Promise<T> {
+  const store: RequestStore = { clients: [] }
+  return dbRequestContext.run(store, async () => {
+    try {
+      return await fn()
+    } finally {
+      
+      await Promise.all(store.clients.map((c) => c.close().catch(() => {})))
+    }
+  })
+}
 
 export async function getDb(mongoUri: string, dbName: string): Promise<Db> {
-  const client = new MongoClient(mongoUri)
+  const client = new MongoClient(mongoUri, {
+    maxPoolSize: 5,
+    minPoolSize: 0,
+    serverSelectionTimeoutMS: 8000,
+    maxIdleTimeMS: 10000,
+  } as any)
   await client.connect()
+
+  const store = dbRequestContext.getStore()
+  if (store) {
+    store.clients.push(client)
+  } else {
+    
+    console.warn(
+      '[mongoService] getDb() called outside runWithDbContext — this connection will leak. ' +
+      'Make sure index.ts wraps the app with the dbContext middleware.'
+    )
+  }
+
   return client.db(dbName)
 }
 
