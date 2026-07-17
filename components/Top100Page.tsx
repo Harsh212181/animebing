@@ -7,18 +7,30 @@ import AnimeCard from './AnimeCard';
 import { SkeletonLoader } from './SkeletonLoader';
 import SEO from '../src/components/SEO';
 
-// Define ranking period types
+function compactNumber(num: number): string {
+  if (num === undefined || num === null) return '0';
+
+  if (num >= 1_000_000_000) {
+    return (num / 1_000_000_000).toFixed(1).replace(/\.0$/, '') + 'B';
+  }
+  if (num >= 1_000_000) {
+    return (num / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
+  }
+  if (num >= 1_000) {
+    return (num / 1_000).toFixed(1).replace(/\.0$/, '') + 'K';
+  }
+  return num.toString();
+}
+
 type RankingPeriod = 'all-time' | 'monthly' | 'weekly';
 type ContentTypeFilter = 'all' | 'Anime' | 'Movie' | 'Manga';
 
-// Ranking periods with descriptions
 const rankingPeriods: { id: RankingPeriod; label: string; description: string }[] = [
   { id: 'all-time', label: 'All Time', description: 'Top 100 based on total likes' },
   { id: 'monthly', label: 'This Month', description: 'Top 100 based on likes this month' },
   { id: 'weekly', label: 'This Week', description: 'Top 100 based on likes this week' }
 ];
 
-// Content type filters
 const contentTypeFilters: { id: ContentTypeFilter; label: string; icon: string }[] = [
   { id: 'all', label: 'All', icon: '🎉' },
   { id: 'Anime', label: 'Anime', icon: '🎗️' },
@@ -26,7 +38,6 @@ const contentTypeFilters: { id: ContentTypeFilter; label: string; icon: string }
   { id: 'Manga', label: 'Manga', icon: '🐦‍🔥' }
 ];
 
-// Enhanced border colors with stronger gradients (same as HomePage)
 const BORDER_COLORS = [
   'from-purple-500 via-blue-400 to-purple-500',
   'from-red-400 via-pink-400 to-red-400',
@@ -38,7 +49,6 @@ const BORDER_COLORS = [
   'from-emerald-400 via-green-400 to-emerald-400',
 ];
 
-// Softer glow colors for hover effects (same as HomePage)
 const GLOW_COLORS = [
   ['#7C3AED', '#3B82F6', '#7C3AED'],
   ['#DC2626', '#DB2777', '#DC2626'],
@@ -50,7 +60,6 @@ const GLOW_COLORS = [
   ['#059669', '#047857', '#059669'],
 ];
 
-// ✅ UPDATED: Vibrant new colors for A, B, C tiers
 const getTierFromRank = (rank: number): { tier: string; bgGradient: string; textColor: string; glow: string } => {
   if (rank === 1) {
     return {
@@ -124,7 +133,6 @@ const getTierFromRank = (rank: number): { tier: string; bgGradient: string; text
   };
 };
 
-// ✅ Ranking badge – ONLY TIER, no number
 const RankingBadge: React.FC<{ rank: number }> = ({ rank }) => {
   const { tier, bgGradient, textColor, glow } = getTierFromRank(rank);
   return (
@@ -134,7 +142,6 @@ const RankingBadge: React.FC<{ rank: number }> = ({ rank }) => {
   );
 };
 
-// ✅ TIER LEGEND – “How Rankings Work” के ऊपर दिखेगा
 const TierLegend: React.FC = () => {
   const tiers = [
     { tier: 'SSS', range: '1', bg: 'bg-gradient-to-r from-yellow-400 to-yellow-600', text: 'text-black' },
@@ -186,9 +193,9 @@ const Top100Page: React.FC<Top100PageProps> = ({ onAnimeSelect, onBack }) => {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   
   const isMounted = useRef(true);
-  const ITEMS_PER_PAGE = 100; // ✅ अब 45+ एनीमे एक साथ दिखेंगे
+  const ITEMS_PER_PAGE = 100;
 
-  // Border color interval
+  // Border color rotation
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentBorderColorIndex((prev) => (prev + 1) % BORDER_COLORS.length);
@@ -425,7 +432,7 @@ const Top100Page: React.FC<Top100PageProps> = ({ onAnimeSelect, onBack }) => {
                   const globalRank = getAnimeRank(anime);
                   return (
                     <div key={`${getAnimeId(anime)}-${index}`} className="group relative">
-                      {/* SINGLE STATIC GLOW DIV – HomePage style */}
+                      {/* Single static glow div */}
                       <div
                         className="absolute -inset-[1px] rounded-xl border-transition"
                         style={{
@@ -440,26 +447,27 @@ const Top100Page: React.FC<Top100PageProps> = ({ onAnimeSelect, onBack }) => {
                       
                       {/* Card */}
                       <div className="card-hover-effect relative rounded-xl border border-purple-700/30 bg-gradient-to-b from-purple-900/95 to-purple-800/90 p-1 transition-all duration-300 overflow-hidden group-hover:border-transparent">
-                        {/* Removed shimmer-effect, sparkle particles, and radial glow */}
-                        
                         <div className="absolute inset-0 bg-gradient-to-t from-purple-900/80 via-transparent to-transparent opacity-40 group-hover:opacity-30 transition-opacity duration-300"></div>
                         
                         {/* Anime Card - No status badge */}
                         <AnimeCard anime={anime} onClick={() => onAnimeSelect(anime)} index={index} showStatus={false} />
                         
-                        {/* Bottom section: Type & Likes */}
+                        {/* Bottom section: Type & Likes (with YouTube-style numbers) */}
                         <div className="mt-1 pt-1 border-t border-purple-700/50">
                           <div className="flex justify-between items-center text-xs">
                             <span className="text-purple-300">{anime.contentType || 'Anime'}</span>
                             <div className="flex items-center gap-1">
-                              <span className="text-green-400 font-bold">{anime.likes?.toLocaleString() || '0'}</span>
+                              {/* ✅ यहाँ compactNumber का उपयोग किया गया है */}
+                              <span className="text-green-400 font-bold">{compactNumber(anime.likes || 0)}</span>
                               <span className="text-purple-300 font-medium">Like</span>
                             </div>
                           </div>
                         </div>
                         
                         {/* Corner accents & floating dots (keep as before) */}
-                        {/* ... (omitted for brevity, but keep your existing code) ... */}
+                        <div className="absolute top-2 right-2 w-1.5 h-1.5 bg-purple-400/30 rounded-full group-hover:bg-purple-300/60 transition-colors"></div>
+                        <div className="absolute bottom-2 left-2 w-1.5 h-1.5 bg-purple-400/30 rounded-full group-hover:bg-purple-300/60 transition-colors"></div>
+                        <div className="absolute bottom-2 right-2 w-1.5 h-1.5 bg-purple-400/30 rounded-full group-hover:bg-purple-300/60 transition-colors"></div>
                       </div>
                     </div>
                   );
@@ -477,19 +485,21 @@ const Top100Page: React.FC<Top100PageProps> = ({ onAnimeSelect, onBack }) => {
                   ))}
                 </div>
               )}
-               {/* ✅ End of List - Total items वाली लाइन हटा दी गई */}
-               {!hasMore && filteredAnime.length > 0 && (
-                 <div className="text-center py-6">
+              
+              {/* End of List */}
+              {!hasMore && filteredAnime.length > 0 && (
+                <div className="text-center py-6">
                   <div className="bg-gradient-to-r from-yellow-900/20 to-orange-900/20 border border-yellow-700/30 rounded-xl p-4 max-w-md mx-auto">
-                   <div className="text-yellow-300 text-xl mb-1">🏆 Ranking Complete!</div>
-                   <p className="text-purple-300 text-sm">
-                    You've reached the end of the Top 100 rankings.
-                  </p>
-                 {/* ✅ पूरी लाइन हटाई – Total items अब नहीं दिखेगा */}
-               </div>
-             </div>
-             )} </>
+                    <div className="text-yellow-300 text-xl mb-1">🏆 Ranking Complete!</div>
+                    <p className="text-purple-300 text-sm">
+                      You've reached the end of the Top 100 rankings.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </>
           )}
+          
           {/* Empty State */}
           {!loading && !error && filteredAnime.length === 0 && (
             <div className="text-center py-12">
@@ -504,7 +514,7 @@ const Top100Page: React.FC<Top100PageProps> = ({ onAnimeSelect, onBack }) => {
             </div>
           )}
 
-          {/* ✅ TIER LEGEND – अब “How Rankings Work” के ऊपर दिख रहा है */}
+          {/* ✅ TIER LEGEND – How Rankings Work के ऊपर */}
           <TierLegend />
 
           {/* Information Section */}

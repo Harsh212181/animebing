@@ -387,35 +387,35 @@ const DownloadLinkPage: React.FC = () => {
         </div>
 
         {activeTab === 'watch' && (
-          <div className="space-y-3">
+          <div className="flex flex-col gap-3">
             {sortedWatchLinks.length === 0 ? (
               <p className="text-center text-gray-500 py-8">No watch links available.</p>
             ) : (
               <>
                 {sortedWatchLinks.map((link, idx) => (
-                  <LinkCard
-                    key={idx}
-                    link={link}
-                    isMovie={isMovie}
-                    onAction={() => togglePlayer(idx)}
-                    actionIcon={selectedIndex === idx ? undefined : <FaPlay />}
-                    actionLabel={selectedIndex === idx ? 'Close Player' : 'Watch Now'}
-                    isActive={selectedIndex === idx}
-                  />
+                  <div key={idx} style={{ order: idx * 2 }}>
+                    <LinkCard
+                      link={link}
+                      isMovie={isMovie}
+                      onAction={() => togglePlayer(idx)}
+                      actionIcon={selectedIndex === idx ? undefined : <FaPlay />}
+                      actionLabel={selectedIndex === idx ? 'Close Player' : 'Watch Now'}
+                      isActive={selectedIndex === idx}
+                    />
+                  </div>
                 ))}
 
-                {/* ✅ FIX: single, stable player instance rendered OUTSIDE the
-                    per-card loop, with a fixed `key`. Previously the player was
-                    interleaved inside whichever card was active, so switching
-                    episodes moved it to a different spot in the list — React
-                    unmounted the old one and mounted a brand new one elsewhere.
-                    Removing an element that's currently fullscreen makes the
-                    browser force-exit fullscreen automatically, which is why
-                    Next/Previous Episode was kicking you out of fullscreen.
-                    Now the same DOM node just gets new props (src/episode),
-                    so fullscreen stays active across Next/Previous. */}
+                {/* ✅ Player abhi bhi wahi ek single, stable DOM node hai — kabhi
+                    unmount nahi hota jab Next/Previous Episode se index change hota
+                    hai, isliye fullscreen bilkul pehle jaisa hi kaam karega, koi
+                    change nahi. Bas iski *visual* position ab flex `order` se set
+                    hoti hai, taake ye hamesha list ke end ki jagah, jis card pe
+                    click hua usi ke neeche dikhe. */}
                 {selectedIndex !== null && sortedWatchLinks[selectedIndex] && (
-                  <div className="mt-2 shadow-2xl animate-fadeIn -mx-4 sm:mx-0">
+                  <div
+                    className="shadow-2xl animate-fadeIn -mx-4 sm:mx-0"
+                    style={{ order: selectedIndex * 2 + 1 }}
+                  >
                     {isYouTubeUrl(sortedWatchLinks[selectedIndex].url) ? (
                       <YouTubeEmbed
                         key="active-youtube-player"

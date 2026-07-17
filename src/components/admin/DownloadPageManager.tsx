@@ -912,7 +912,7 @@ const DownloadPageManager: React.FC = () => {
             const minEp = episodeNumbers.length ? Math.min(...episodeNumbers) : null;
             const maxEp = episodeNumbers.length ? Math.max(...episodeNumbers) : null;
             const episodeRange = minEp !== null 
-              ? (minEp === maxEp ? `Ep ${minEp}` : `Ep ${minEp}-${maxEp}`)
+              ? (minEp === maxEp ? `Episode ${minEp}` : `Episode ${minEp}-${maxEp}`)
               : 'No episodes';
 
             const isEditingThis = editingPage?._id === page._id;
