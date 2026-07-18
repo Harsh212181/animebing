@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { FaDownload, FaPlay, FaFilm, FaTv } from 'react-icons/fa';
 import Spinner from './Spinner';
 import VideoPlayer from './VideoPlayer';
-import YouTubeEmbed from './YouTubeEmbed'; // ✅ new inline embed
+import YouTubeEmbed from './YouTubeEmbed';
 import { isYouTubeUrl } from './utils/videoHelpers';
 import { DownloadPage, Anime } from '../src/types';
 
@@ -88,6 +88,9 @@ const HandThumbDownIcon = ({ className = "w-5 h-5", filled = false }: { classNam
   </svg>
 );
 
+// ✅ Show More/Less threshold
+const DESCRIPTION_TRUNCATE_LIMIT = 300;
+
 const DownloadLinkPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
@@ -104,6 +107,9 @@ const DownloadLinkPage: React.FC = () => {
   const [dislikes, setDislikes] = useState<number>(0);
   const [userVote, setUserVote] = useState<'like' | 'dislike' | null>(null);
   const [isVoting, setIsVoting] = useState(false);
+
+  // ✅ State for description Show More / Less
+  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -244,9 +250,7 @@ const DownloadLinkPage: React.FC = () => {
   const downloadLinks = page.links.filter(link => link.type !== 'watch');
   const watchLinks = page.links.filter(link => link.type === 'watch');
 
-  // ✅ FIX: sort watch links by episode number so "Next/Previous Episode"
-  // always moves in the correct order, regardless of the order they were
-  // saved in on the backend. Movies just keep their (single) position.
+  // ✅ sorted watch links
   const sortedWatchLinks = [...watchLinks].sort((a, b) => {
     const epA = isMovie ? 0 : Number(a.episode) || 0;
     const epB = isMovie ? 0 : Number(b.episode) || 0;
@@ -319,9 +323,34 @@ const DownloadLinkPage: React.FC = () => {
                 </div>
                 <VoteButtons isMobile={true} />
               </div>
+              {/* ✅ Mobile Description – Show More / Less */}
               <div className="mt-4">
                 <h3 className="text-sm font-semibold text-slate-300 mb-2">Description</h3>
-                <p className="text-slate-400 text-xs leading-relaxed">{description}</p>
+                <div className="text-slate-400 text-xs leading-relaxed">
+                  {description.length > DESCRIPTION_TRUNCATE_LIMIT && !isDescriptionExpanded ? (
+                    <>
+                      {description.slice(0, DESCRIPTION_TRUNCATE_LIMIT)}...{' '}
+                      <button
+                        onClick={() => setIsDescriptionExpanded(true)}
+                        className="text-purple-400 hover:text-purple-300 font-medium inline"
+                      >
+                        Show More
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {description}
+                      {description.length > DESCRIPTION_TRUNCATE_LIMIT && (
+                        <button
+                          onClick={() => setIsDescriptionExpanded(false)}
+                          className="text-purple-400 hover:text-purple-300 font-medium inline ml-1"
+                        >
+                          Show Less
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -337,7 +366,32 @@ const DownloadLinkPage: React.FC = () => {
               <div className="flex-1 space-y-6">
                 <div>
                   <h1 className={`font-bold bg-gradient-to-r from-white via-purple-100 to-pink-100 bg-clip-text text-transparent mb-3 ${title.length > 60 ? 'text-2xl lg:text-3xl' : 'text-3xl lg:text-4xl'}`}>{title}</h1>
-                  <p className="text-slate-300 leading-relaxed text-lg">{description}</p>
+                  {/* ✅ Desktop Description – Show More / Less */}
+                  <div className="text-slate-300 leading-relaxed text-lg">
+                    {description.length > DESCRIPTION_TRUNCATE_LIMIT && !isDescriptionExpanded ? (
+                      <>
+                        {description.slice(0, DESCRIPTION_TRUNCATE_LIMIT)}...{' '}
+                        <button
+                          onClick={() => setIsDescriptionExpanded(true)}
+                          className="text-purple-400 hover:text-purple-300 font-medium inline"
+                        >
+                          Show More
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        {description}
+                        {description.length > DESCRIPTION_TRUNCATE_LIMIT && (
+                          <button
+                            onClick={() => setIsDescriptionExpanded(false)}
+                            className="text-purple-400 hover:text-purple-300 font-medium inline ml-1"
+                          >
+                            Show Less
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
                 <div className="space-y-4">
                   <div className="flex flex-wrap items-center gap-2">
@@ -405,12 +459,6 @@ const DownloadLinkPage: React.FC = () => {
                   </div>
                 ))}
 
-                {/* ✅ Player abhi bhi wahi ek single, stable DOM node hai — kabhi
-                    unmount nahi hota jab Next/Previous Episode se index change hota
-                    hai, isliye fullscreen bilkul pehle jaisa hi kaam karega, koi
-                    change nahi. Bas iski *visual* position ab flex `order` se set
-                    hoti hai, taake ye hamesha list ke end ki jagah, jis card pe
-                    click hua usi ke neeche dikhe. */}
                 {selectedIndex !== null && sortedWatchLinks[selectedIndex] && (
                   <div
                     className="shadow-2xl animate-fadeIn -mx-4 sm:mx-0"

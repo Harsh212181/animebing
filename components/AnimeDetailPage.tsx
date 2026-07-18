@@ -1,4 +1,4 @@
-// components/AnimeDetailPage.tsx - FULL-WIDTH FIX + LIKE COUNT FORMATTING
+ // components/AnimeDetailPage.tsx - FULL-WIDTH FIX + LIKE COUNT FORMATTING + DESCRIPTION SHOW MORE
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import type { Anime, Episode, Chapter, DownloadPage } from '../src/types';
@@ -166,6 +166,9 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
   const [isVoting, setIsVoting] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [downloadPages, setDownloadPages] = useState<DownloadPage[]>([]);
+
+  // ✅ Show More/Less for description
+  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
 
   const isManga = anime?.contentType === 'Manga';
   const isMovie = anime?.contentType === 'Movie';
@@ -494,6 +497,8 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
   }
 
   const currentSessionItems = itemsBySession[selectedSession] || [];
+  const descriptionText = displayAnime?.description || '';
+  const truncateThreshold = 300;
 
   return (
     <>
@@ -578,13 +583,36 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                 </div>
                 <div className="mt-3">
                   <h3 className="text-sm font-semibold text-slate-300 mb-1">Description</h3>
-                  <p className="text-slate-400 text-xs leading-relaxed">
-                    {displayAnime?.description || 'No description available for this content.'}
-                  </p>
+                  <div className="text-slate-400 text-xs leading-relaxed">
+                    {descriptionText.length > truncateThreshold && !isDescriptionExpanded ? (
+                      <>
+                        {descriptionText.slice(0, truncateThreshold)}...{' '}
+                        <button
+                          onClick={() => setIsDescriptionExpanded(true)}
+                          className="text-purple-400 hover:text-purple-300 font-medium inline"
+                        >
+                          Show More
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        {descriptionText || 'No description available for this content.'}
+                        {descriptionText.length > truncateThreshold && (
+                          <button
+                            onClick={() => setIsDescriptionExpanded(false)}
+                            className="text-purple-400 hover:text-purple-300 font-medium inline ml-1"
+                          >
+                            Show Less
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
 
+            {/* ... rest of mobile view (sessions, episodes) unchanged ... */}
             {availableSessions.length > 1 && (
               <div className="bg-slate-800/40 backdrop-blur-sm rounded-xl p-3 mt-0 border border-slate-700 shadow-xl">
                 <div className="flex gap-2 overflow-x-auto pb-1">
@@ -669,7 +697,32 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                 <div className="flex-1 space-y-6">
                   <div>
                     <h1 className={`font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mb-1 ${displayAnime?.title && displayAnime.title.length > 60 ? 'text-xl lg:text-2xl' : 'text-2xl lg:text-3xl'}`}>{displayAnime?.title}</h1>
-                    <p className="text-slate-300 leading-relaxed text-lg mt-1">{displayAnime?.description || 'No description available for this content.'}</p>
+                    {/* PC Description with Show More/Less */}
+                    <div className="text-slate-300 leading-relaxed text-lg mt-1">
+                      {descriptionText.length > truncateThreshold && !isDescriptionExpanded ? (
+                        <>
+                          {descriptionText.slice(0, truncateThreshold)}...{' '}
+                          <button
+                            onClick={() => setIsDescriptionExpanded(true)}
+                            className="text-purple-400 hover:text-purple-300 font-medium inline"
+                          >
+                            Show More
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          {descriptionText || 'No description available for this content.'}
+                          {descriptionText.length > truncateThreshold && (
+                            <button
+                              onClick={() => setIsDescriptionExpanded(false)}
+                              className="text-purple-400 hover:text-purple-300 font-medium inline ml-1"
+                            >
+                              Show Less
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
                   <div className="space-y-1">
                     <div className="flex flex-wrap items-center gap-1">
@@ -701,6 +754,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
               </div>
             </div>
 
+            {/* ... rest of PC view unchanged ... */}
             <div className="bg-slate-800/40 backdrop-blur-sm rounded-2xl p-1 border border-slate-700 shadow-xl">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                 <h2 className="text-2xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent">{getContentLabel()}</h2>
