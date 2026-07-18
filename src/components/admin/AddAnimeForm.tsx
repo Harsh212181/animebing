@@ -1,7 +1,4 @@
- // src/components/admin/AddAnimeForm.tsx - FULL SCREEN VERSION (PREMIUM DESIGN)
-// Thumbnail Preview now inside Basic Information section, fixed size
-// Description textarea now has a fixed height regardless of content length
-import React, { useState, useEffect, useRef } from 'react';
+ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import type { SubDubStatus } from '../../types';
 import Spinner from '../Spinner';
@@ -463,7 +460,7 @@ const AddAnimeForm: React.FC = () => {
             <div className="space-y-4">
               {/* Title */}
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1.5 flex items-center gap-2">
+                <label className="block text-sm font-medium text-slate-300 mb-1.5 flexl items-center gap-2">
                   <Icons.Title className="w-4 h-4 text-slate-400" />
                   Title <span className="text-red-400">*</span>
                 </label>
@@ -487,7 +484,7 @@ const AddAnimeForm: React.FC = () => {
               {/* Content Type & Year & Status */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1.5 flex items-center gap-2">
+                  <label className="block text-sm font-medium text-slate-300 mb-1.5 flexl items-center gap-2">
                     <Icons.Type className="w-4 h-4 text-slate-400" />
                     Type
                   </label>
@@ -502,7 +499,7 @@ const AddAnimeForm: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1.5 flex items-center gap-2">
+                  <label className="block text-sm font-medium text-slate-300 mb-1.5 flexl items-center gap-2">
                     <Icons.Calendar className="w-4 h-4 text-slate-400" />
                     Year
                   </label>
@@ -517,7 +514,7 @@ const AddAnimeForm: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1.5 flex items-center gap-2">
+                  <label className="block text-sm font-medium text-slate-300 mb-1.5 flexl items-center gap-2">
                     <Icons.Status className="w-4 h-4 text-slate-400" />
                     Status
                   </label>
@@ -534,7 +531,7 @@ const AddAnimeForm: React.FC = () => {
 
               {/* Sub/Dub */}
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1.5 flex items-center gap-2">
+                <label className="block text-sm font-medium text-slate-300 mb-1.5 flexl items-center gap-2">
                   <Icons.Info className="w-4 h-4 text-slate-400" />
                   Sub / Dub Status
                 </label>
@@ -554,7 +551,7 @@ const AddAnimeForm: React.FC = () => {
 
               {/* Thumbnail Preview (LEFT) + Description (RIGHT) — side by side, both fixed size */}
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1.5 flex items-center gap-2">
+                <label className="block text-sm font-medium text-slate-300 mb-1.5 flexl items-center gap-2">
                   <Icons.Description className="w-4 h-4 text-slate-400" />
                   Description <span className="text-slate-500 text-xs font-normal">(optional)</span>
                   <span className="ml-auto text-[10px] text-slate-500 font-normal">Box size is fixed — text scrolls inside</span>
@@ -608,7 +605,7 @@ const AddAnimeForm: React.FC = () => {
 
               {/* Thumbnail URL input (full width, on its own) */}
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1.5 flex items-center gap-2">
+                <label className="block text-sm font-medium text-slate-300 mb-1.5 flexl items-center gap-2">
                   <Icons.Image className="w-4 h-4 text-slate-400" />
                   Thumbnail URL <span className="text-red-400">*</span>
                 </label>
@@ -693,7 +690,7 @@ const AddAnimeForm: React.FC = () => {
 
             {/* Custom Genre Input */}
             <div className="mb-5">
-              <label className="block text-xs font-medium text-slate-400 mb-1.5 flex items-center gap-1">
+              <label className="block text-xs font-medium text-slate-400 mb-1.5 flexl items-center gap-1">
                 <Icons.AddCircle className="w-3 h-3" />
                 Add Custom Genre
               </label>
@@ -805,7 +802,7 @@ const AddAnimeForm: React.FC = () => {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5 flex items-center gap-2">
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5 flexl items-center gap-2">
                     <Icons.Title className="w-3 h-3" />
                     SEO Title
                     <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${form.seoTitle.length <= 60 ? 'bg-emerald-900/30 text-emerald-400' : 'bg-red-900/30 text-red-400'}`}>
@@ -822,7 +819,7 @@ const AddAnimeForm: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5 flex items-center gap-2">
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5 flexl items-center gap-2">
                     <Icons.Description className="w-3 h-3" />
                     SEO Description
                     <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${form.seoDescription.length <= 160 ? 'bg-emerald-900/30 text-emerald-400' : 'bg-red-900/30 text-red-400'}`}>
@@ -841,7 +838,7 @@ const AddAnimeForm: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5 flex items-center gap-2">
+                <label className="block text-xs font-medium text-slate-400 mb-1.5 flexl items-center gap-2">
                   <Icons.Keyword className="w-3 h-3" />
                   SEO Keywords
                 </label>
@@ -855,7 +852,7 @@ const AddAnimeForm: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5 flex items-center gap-2">
+                <label className="block text-xs font-medium text-slate-400 mb-1.5 flexl items-center gap-2">
                   <Icons.Slug className="w-3 h-3" />
                   URL Slug
                   <span className="text-red-400 text-xs">*</span>
