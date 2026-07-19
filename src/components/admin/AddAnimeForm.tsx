@@ -11,10 +11,10 @@ const GENRE_OPTIONS = [
   'Action', 'Adventure', 'Comedy', 'Drama', 'Fantasy', 'Romance', 'Sci-Fi', 'Horror',
   'Mystery', 'Thriller', 'Psychological', 'Slice of Life', 'Supernatural', 'Magic',
   'Isekai', 'Mecha', 'Sports', 'Music', 'School', 'Historical', 'Military', 'Samurai',
-  'Martial Arts', 'Detective', 'Crime', 'Survival', 'Post-Apocalyptic', 'Cyberpunk',
+  'Martial Arts', 'Detective', 'Crime', 'Survival', 'Apocalyptic', 'Cyberpunk',
   'Space', 'Time Travel', 'Vampire', 'Demons', 'Ecchi', 'Harem', 'Reverse Harem',
   'Seinen', 'Shounen', 'Shoujo', 'Josei', 'Parody', 'Idol', 'Cooking', 'Game',
-  'Racing', 'Workplace', 'Iyashikei'
+  'Racing', 'Workplace', 'Iyashikei', 'Murim', 'Reincarnation', 'Trap','Vr Game',
 ] as const;
 
 // =============== CUSTOM SVG ICONS ===============
