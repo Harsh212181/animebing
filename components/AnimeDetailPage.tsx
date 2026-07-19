@@ -553,13 +553,29 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                       <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-2 py-1 rounded text-xs font-bold whitespace-nowrap">{displayAnime?.releaseYear}</span>
                       <span className={`px-4 py-1 rounded text-xs font-bold whitespace-nowrap ${displayAnime?.status === 'Ongoing' ? 'bg-gradient-to-r from-yellow-500 to-orange-600 text-white' : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white'}`}>{displayAnime?.status}</span>
                       <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-3 py-1 rounded text-xs font-bold whitespace-nowrap">{displayAnime?.contentType}</span>
-                      {!isManga && displayAnime?.subDubStatus && (
+                      {/* ✅ UPDATED: all sub/dub/dual badges for mobile */}
+                      {displayAnime?.subDubStatus && (
                         <div className="flex flex-wrap gap-0">
                           {displayAnime.subDubStatus.split(',').map(s => s.trim().toLowerCase()).includes('hindi dub') && (
                             <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-3 py-1 rounded text-xs font-bold">Hindi Dub</span>
                           )}
                           {displayAnime.subDubStatus.split(',').map(s => s.trim().toLowerCase()).includes('hindi sub') && (
                             <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-3 py-1 rounded text-xs font-bold">Hindi Sub</span>
+                          )}
+                          {displayAnime.subDubStatus.split(',').map(s => s.trim().toLowerCase()).includes('english sub') && (
+                            <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-3 py-1 rounded text-xs font-bold">English Sub</span>
+                          )}
+                          {displayAnime.subDubStatus.toLowerCase().includes('both') && (
+                            <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-3 py-1 rounded text-xs font-bold">Hindi Dub</span>
+                          )}
+                          {displayAnime.subDubStatus.toLowerCase().includes('sub & dub') && (
+                            <>
+                              <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-3 py-1 rounded text-xs font-bold">Hindi Sub</span>
+                              <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-3 py-1 rounded text-xs font-bold">Hindi Dub</span>
+                            </>
+                          )}
+                          {displayAnime.subDubStatus.toLowerCase().includes('dual audio') && (
+                            <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-3 py-1 rounded text-xs font-bold">Dual Audio</span>
                           )}
                         </div>
                       )}
@@ -583,12 +599,17 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                 </div>
                 <div className="mt-3">
                   <h3 className="text-sm font-semibold text-slate-300 mb-1">Description</h3>
-                  <div className="text-slate-400 text-xs leading-relaxed">
+                  {/* ✅ Double-click toggle for mobile description */}
+                  <div
+                    className="text-slate-400 text-xs leading-relaxed cursor-pointer select-none"
+                    onDoubleClick={() => setIsDescriptionExpanded(prev => !prev)}
+                    title="Double-click to expand/collapse"
+                  >
                     {descriptionText.length > truncateThreshold && !isDescriptionExpanded ? (
                       <>
                         {descriptionText.slice(0, truncateThreshold)}...{' '}
                         <button
-                          onClick={() => setIsDescriptionExpanded(true)}
+                          onClick={(e) => { e.stopPropagation(); setIsDescriptionExpanded(true); }}
                           className="text-purple-400 hover:text-purple-300 font-medium inline"
                         >
                           Show More
@@ -599,7 +620,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                         {descriptionText || 'No description available for this content.'}
                         {descriptionText.length > truncateThreshold && (
                           <button
-                            onClick={() => setIsDescriptionExpanded(false)}
+                            onClick={(e) => { e.stopPropagation(); setIsDescriptionExpanded(false); }}
                             className="text-purple-400 hover:text-purple-300 font-medium inline ml-1"
                           >
                             Show Less
@@ -697,13 +718,17 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                 <div className="flex-1 space-y-6">
                   <div>
                     <h1 className={`font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mb-1 ${displayAnime?.title && displayAnime.title.length > 60 ? 'text-xl lg:text-2xl' : 'text-2xl lg:text-3xl'}`}>{displayAnime?.title}</h1>
-                    {/* PC Description with Show More/Less */}
-                    <div className="text-slate-300 leading-relaxed text-lg mt-1">
+                    {/* ✅ Double-click toggle for PC description */}
+                    <div
+                      className="text-slate-300 leading-relaxed text-lg mt-1 cursor-pointer select-none"
+                      onDoubleClick={() => setIsDescriptionExpanded(prev => !prev)}
+                      title="Double-click to expand/collapse"
+                    >
                       {descriptionText.length > truncateThreshold && !isDescriptionExpanded ? (
                         <>
                           {descriptionText.slice(0, truncateThreshold)}...{' '}
                           <button
-                            onClick={() => setIsDescriptionExpanded(true)}
+                            onClick={(e) => { e.stopPropagation(); setIsDescriptionExpanded(true); }}
                             className="text-purple-400 hover:text-purple-300 font-medium inline"
                           >
                             Show More
@@ -714,7 +739,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                           {descriptionText || 'No description available for this content.'}
                           {descriptionText.length > truncateThreshold && (
                             <button
-                              onClick={() => setIsDescriptionExpanded(false)}
+                              onClick={(e) => { e.stopPropagation(); setIsDescriptionExpanded(false); }}
                               className="text-purple-400 hover:text-purple-300 font-medium inline ml-1"
                             >
                               Show Less
@@ -729,13 +754,29 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                       <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg font-bold">{displayAnime?.releaseYear}</div>
                       <div className={`px-4 py-2 rounded-lg font-bold ${displayAnime?.status === 'Ongoing' ? 'bg-gradient-to-r from-yellow-500 to-orange-600 text-white' : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white'}`}>{displayAnime?.status}</div>
                       <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg font-bold">{displayAnime?.contentType}</div>
-                      {!isManga && displayAnime?.subDubStatus && (
+                      {/* ✅ UPDATED: all sub/dub/dual badges for PC */}
+                      {displayAnime?.subDubStatus && (
                         <div className="flex flex-wrap gap-2">
                           {displayAnime.subDubStatus.split(',').map(s => s.trim().toLowerCase()).includes('hindi dub') && (
                             <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg font-bold">Hindi Dub</span>
                           )}
                           {displayAnime.subDubStatus.split(',').map(s => s.trim().toLowerCase()).includes('hindi sub') && (
                             <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg font-bold">Hindi Sub</span>
+                          )}
+                          {displayAnime.subDubStatus.split(',').map(s => s.trim().toLowerCase()).includes('english sub') && (
+                            <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg font-bold">English Sub</span>
+                          )}
+                          {displayAnime.subDubStatus.toLowerCase().includes('both') && (
+                            <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg font-bold">Hindi Dub</span>
+                          )}
+                          {displayAnime.subDubStatus.toLowerCase().includes('sub & dub') && (
+                            <>
+                              <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg font-bold">Hindi Sub</span>
+                              <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg font-bold">Hindi Dub</span>
+                            </>
+                          )}
+                          {displayAnime.subDubStatus.toLowerCase().includes('dual audio') && (
+                            <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg font-bold">Dual Audio</span>
                           )}
                         </div>
                       )}

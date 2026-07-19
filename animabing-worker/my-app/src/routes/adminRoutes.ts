@@ -74,20 +74,26 @@ adminRoutes.get('/anime-list', adminAuth, async (c) => {
   }
 })
 
-// ============ ADD ANIME ============
+// ============ ADD ANIME (FIXED) ============
 adminRoutes.post('/add-anime', adminAuth, async (c) => {
   try {
-    const { title, description, thumbnail, status, subDubStatus, genreList, releaseYear, contentType } = await c.req.json()
+    const {
+      title, description, thumbnail, status, subDubStatus, genreList, releaseYear, contentType,
+      seoTitle, seoDescription, seoKeywords, slug: providedSlug
+    } = await c.req.json()
 
     const existing = await findOne('animes', { title }, c.env.MONGODB_URI, c.env.MONGODB_DB)
     if (existing) return c.json({ error: 'Anime/Movie already exists' }, 400)
 
-    let slug = title.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').trim()
+    let slug = (providedSlug && providedSlug.trim())
+      ? providedSlug.trim()
+      : title.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').trim()
     const slugExists = await findOne('animes', { slug }, c.env.MONGODB_URI, c.env.MONGODB_DB)
     if (slugExists) slug = `${slug}-${Date.now()}`
 
-    const seoTitle = `Watch ${title} Online in ${subDubStatus} | AnimeBing`
-    const seoDescription = `Watch ${title} online in ${subDubStatus}. HD quality streaming and downloads.`
+    const finalSeoTitle = (seoTitle && seoTitle.trim()) || `Watch ${title} Online in ${subDubStatus} | AnimeBing`
+    const finalSeoDescription = (seoDescription && seoDescription.trim()) || `Watch ${title} online in ${subDubStatus}. HD quality streaming and downloads.`
+    const finalSeoKeywords = (seoKeywords && seoKeywords.trim()) || ''
 
     // Random likes between 150 and 5000
     const randomLikes = getRandomLikes()
@@ -99,11 +105,14 @@ adminRoutes.post('/add-anime', adminAuth, async (c) => {
       status: status || 'Ongoing',
       subDubStatus, genreList, releaseYear,
       contentType: contentType || 'Anime',
-      slug, seoTitle, seoDescription,
+      slug,
+      seoTitle: finalSeoTitle,
+      seoDescription: finalSeoDescription,
+      seoKeywords: finalSeoKeywords,
       likes: randomLikes,
       dislikes: randomDislikes,
       views: 0,
-      totalVotes: randomLikes + randomDislikes, // likes + dislikes
+      totalVotes: randomLikes + randomDislikes,
       monthlyLikes: Math.floor(randomLikes * 0.3),
       weeklyLikes: Math.floor(randomLikes * 0.1),
       featured: false, featuredOrder: 0,

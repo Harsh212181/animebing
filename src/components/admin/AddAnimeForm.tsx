@@ -242,6 +242,11 @@ const AddAnimeForm: React.FC = () => {
   const [isGenreDropdownOpen, setIsGenreDropdownOpen] = useState(false);
   const [searchGenre, setSearchGenre] = useState('');
   const [focusedField, setFocusedField] = useState<string | null>(null);
+  
+  // ✅ New touched states for SEO manual editing detection
+  const [seoTitleTouched, setSeoTitleTouched] = useState(false);
+  const [seoDescriptionTouched, setSeoDescriptionTouched] = useState(false);
+  const [seoKeywordsTouched, setSeoKeywordsTouched] = useState(false);
 
   const genreDropdownRef = useRef<HTMLDivElement>(null);
   const successTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -283,6 +288,7 @@ const AddAnimeForm: React.FC = () => {
     try {
       const formData = { ...form };
       if (!formData.slug?.trim()) formData.slug = generateSlug(form.title);
+      // If autoGenerateSEO is ON and fields are empty, auto-generate them once more before submit
       if (autoGenerateSEO && form.title.trim()) {
         if (!formData.seoTitle?.trim()) {
           formData.seoTitle = `Watch ${form.title} Online in ${form.subDubStatus} | AnimeBing`;
@@ -300,6 +306,11 @@ const AddAnimeForm: React.FC = () => {
       });
 
       setSuccess(`Anime added successfully. Details will appear in Google Search within 24-48 hours.`);
+      // ✅ Reset touched flags on success
+      setSeoTitleTouched(false);
+      setSeoDescriptionTouched(false);
+      setSeoKeywordsTouched(false);
+      
       setForm({
         title: '',
         description: '',
@@ -347,65 +358,103 @@ const AddAnimeForm: React.FC = () => {
     return [...new Set(keywords)].join(', ');
   };
 
-  const toggleGenre = (genre: string) => {
+  // ===== HANDLERS WITH TOUCH FLAG LOGIC =====
+
+  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newTitle = e.target.value;
     setForm(prev => ({
       ...prev,
-      genreList: prev.genreList.includes(genre) ? prev.genreList.filter(g => g !== genre) : [...prev.genreList, genre]
+      title: newTitle,
+      slug: autoGenerateSEO ? generateSlug(newTitle) : prev.slug,
+      seoTitle: (autoGenerateSEO && !seoTitleTouched)
+        ? `Watch ${newTitle} Online in ${prev.subDubStatus} | AnimeBing`
+        : prev.seoTitle,
+      seoDescription: (autoGenerateSEO && !seoDescriptionTouched)
+        ? generateSEODescription(newTitle, prev.subDubStatus, prev.contentType)
+        : prev.seoDescription,
+      seoKeywords: (autoGenerateSEO && !seoKeywordsTouched)
+        ? generateSEOKeywords(newTitle, prev.genreList, prev.subDubStatus, prev.contentType)
+        : prev.seoKeywords,
     }));
   };
 
-  const clearAllGenres = () => setForm(prev => ({ ...prev, genreList: [] }));
+  const handleSubDubStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newStatus = e.target.value as SubDubStatus;
+    setForm(prev => ({
+      ...prev,
+      subDubStatus: newStatus,
+      seoTitle: (autoGenerateSEO && !seoTitleTouched && prev.title.trim())
+        ? `Watch ${prev.title} Online in ${newStatus} | AnimeBing`
+        : prev.seoTitle,
+      seoDescription: (autoGenerateSEO && !seoDescriptionTouched && prev.title.trim())
+        ? generateSEODescription(prev.title, newStatus, prev.contentType)
+        : prev.seoDescription,
+      seoKeywords: (autoGenerateSEO && !seoKeywordsTouched && prev.title.trim())
+        ? generateSEOKeywords(prev.title, prev.genreList, newStatus, prev.contentType)
+        : prev.seoKeywords,
+    }));
+  };
+
+  const handleContentTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newContentType = e.target.value as 'Anime' | 'Movie' | 'Manga';
+    setForm(prev => ({
+      ...prev,
+      contentType: newContentType,
+      seoTitle: (autoGenerateSEO && !seoTitleTouched && prev.title.trim())
+        ? `Watch ${prev.title} Online in ${prev.subDubStatus} | AnimeBing`
+        : prev.seoTitle,
+      seoDescription: (autoGenerateSEO && !seoDescriptionTouched && prev.title.trim())
+        ? generateSEODescription(prev.title, prev.subDubStatus, newContentType)
+        : prev.seoDescription,
+      seoKeywords: (autoGenerateSEO && !seoKeywordsTouched && prev.title.trim())
+        ? generateSEOKeywords(prev.title, prev.genreList, prev.subDubStatus, newContentType)
+        : prev.seoKeywords,
+    }));
+  };
+
+  const toggleGenre = (genre: string) => {
+    setForm(prev => {
+      const newGenreList = prev.genreList.includes(genre)
+        ? prev.genreList.filter(g => g !== genre)
+        : [...prev.genreList, genre];
+      return {
+        ...prev,
+        genreList: newGenreList,
+        seoKeywords: (autoGenerateSEO && !seoKeywordsTouched && prev.title.trim())
+          ? generateSEOKeywords(prev.title, newGenreList, prev.subDubStatus, prev.contentType)
+          : prev.seoKeywords,
+      };
+    });
+  };
+
+  const clearAllGenres = () => {
+    setForm(prev => ({
+      ...prev,
+      genreList: [],
+      seoKeywords: (autoGenerateSEO && !seoKeywordsTouched && prev.title.trim())
+        ? generateSEOKeywords(prev.title, [], prev.subDubStatus, prev.contentType)
+        : prev.seoKeywords,
+    }));
+  };
 
   const addCustomGenre = () => {
     if (customGenre.trim() && !form.genreList.includes(customGenre.trim())) {
-      setForm(prev => ({ ...prev, genreList: [...prev.genreList, customGenre.trim()] }));
+      setForm(prev => {
+        const newGenreList = [...prev.genreList, customGenre.trim()];
+        return {
+          ...prev,
+          genreList: newGenreList,
+          seoKeywords: (autoGenerateSEO && !seoKeywordsTouched && prev.title.trim())
+            ? generateSEOKeywords(prev.title, newGenreList, prev.subDubStatus, prev.contentType)
+            : prev.seoKeywords,
+        };
+      });
       setCustomGenre('');
     }
   };
 
   const handleCustomGenreKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') { e.preventDefault(); addCustomGenre(); }
-  };
-
-  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newTitle = e.target.value;
-    setForm(prev => ({ ...prev, title: newTitle }));
-    if (autoGenerateSEO && newTitle.trim()) {
-      const generatedSlug = generateSlug(newTitle);
-      setForm(prev => ({
-        ...prev,
-        slug: generatedSlug,
-        seoTitle: prev.seoTitle || `Watch ${newTitle} Online in ${prev.subDubStatus} | AnimeBing`,
-        seoDescription: prev.seoDescription || generateSEODescription(newTitle, prev.subDubStatus, prev.contentType),
-        seoKeywords: prev.seoKeywords || generateSEOKeywords(newTitle, prev.genreList, prev.subDubStatus, prev.contentType)
-      }));
-    }
-  };
-
-  const handleSubDubStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newStatus = e.target.value as SubDubStatus;
-    setForm(prev => ({ ...prev, subDubStatus: newStatus }));
-    if (autoGenerateSEO && form.title.trim()) {
-      setForm(prev => ({
-        ...prev,
-        seoTitle: `Watch ${prev.title} Online in ${newStatus} | AnimeBing`,
-        seoDescription: generateSEODescription(prev.title, newStatus, prev.contentType),
-        seoKeywords: generateSEOKeywords(prev.title, prev.genreList, newStatus, prev.contentType)
-      }));
-    }
-  };
-
-  const handleContentTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newContentType = e.target.value as 'Anime' | 'Movie' | 'Manga';
-    setForm(prev => ({ ...prev, contentType: newContentType }));
-    if (autoGenerateSEO && form.title.trim()) {
-      setForm(prev => ({
-        ...prev,
-        seoTitle: `Watch ${prev.title} Online in ${prev.subDubStatus} | AnimeBing`,
-        seoDescription: generateSEODescription(prev.title, prev.subDubStatus, newContentType),
-        seoKeywords: generateSEOKeywords(prev.title, prev.genreList, prev.subDubStatus, newContentType)
-      }));
-    }
   };
 
   const filteredGenres = GENRE_OPTIONS.filter(g => g.toLowerCase().includes(searchGenre.toLowerCase()));
@@ -805,6 +854,9 @@ const AddAnimeForm: React.FC = () => {
                   <label className="block text-xs font-medium text-slate-400 mb-1.5 flexl items-center gap-2">
                     <Icons.Title className="w-3 h-3" />
                     SEO Title
+                    {seoTitleTouched && (
+                      <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-900/30 text-blue-400">Manual</span>
+                    )}
                     <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${form.seoTitle.length <= 60 ? 'bg-emerald-900/30 text-emerald-400' : 'bg-red-900/30 text-red-400'}`}>
                       {form.seoTitle.length}/60
                     </span>
@@ -812,7 +864,7 @@ const AddAnimeForm: React.FC = () => {
                   <input
                     type="text"
                     value={form.seoTitle}
-                    onChange={(e) => setForm({ ...form, seoTitle: e.target.value })}
+                    onChange={(e) => { setForm({ ...form, seoTitle: e.target.value }); setSeoTitleTouched(true); }}
                     className={`w-full bg-slate-900/80 border ${form.seoTitle.length <= 60 ? 'border-slate-700' : 'border-red-500/50'} text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-500`}
                     placeholder="Watch Naruto Shippuden Online..."
                     maxLength={60}
@@ -822,6 +874,9 @@ const AddAnimeForm: React.FC = () => {
                   <label className="block text-xs font-medium text-slate-400 mb-1.5 flexl items-center gap-2">
                     <Icons.Description className="w-3 h-3" />
                     SEO Description
+                    {seoDescriptionTouched && (
+                      <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-900/30 text-blue-400">Manual</span>
+                    )}
                     <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${form.seoDescription.length <= 160 ? 'bg-emerald-900/30 text-emerald-400' : 'bg-red-900/30 text-red-400'}`}>
                       {form.seoDescription.length}/160
                     </span>
@@ -829,7 +884,7 @@ const AddAnimeForm: React.FC = () => {
                   <input
                     type="text"
                     value={form.seoDescription}
-                    onChange={(e) => setForm({ ...form, seoDescription: e.target.value })}
+                    onChange={(e) => { setForm({ ...form, seoDescription: e.target.value }); setSeoDescriptionTouched(true); }}
                     className={`w-full bg-slate-900/80 border ${form.seoDescription.length <= 160 ? 'border-slate-700' : 'border-red-500/50'} text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-500`}
                     placeholder="Watch Naruto Shippuden online in Hindi Dub..."
                     maxLength={160}
@@ -837,20 +892,40 @@ const AddAnimeForm: React.FC = () => {
                 </div>
               </div>
 
+              {/* SEO Keywords with Regenerate button */}
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1.5 flexl items-center gap-2">
                   <Icons.Keyword className="w-3 h-3" />
                   SEO Keywords
+                  {seoKeywordsTouched && (
+                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-900/30 text-blue-400">Manual</span>
+                  )}
                 </label>
-                <input
-                  type="text"
-                  value={form.seoKeywords}
-                  onChange={(e) => setForm({ ...form, seoKeywords: e.target.value })}
-                  className="w-full bg-slate-900/80 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-500"
-                  placeholder="naruto shippuden hindi dub, watch naruto online..."
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={form.seoKeywords}
+                    onChange={(e) => { setForm({ ...form, seoKeywords: e.target.value }); setSeoKeywordsTouched(true); }}
+                    className="flex-1 bg-slate-900/80 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-500"
+                    placeholder="naruto shippuden hindi dub, watch naruto online..."
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const regenerated = generateSEOKeywords(form.title, form.genreList, form.subDubStatus, form.contentType);
+                      setForm(prev => ({ ...prev, seoKeywords: regenerated }));
+                      setSeoKeywordsTouched(false);
+                    }}
+                    disabled={!form.title.trim()}
+                    className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-xl transition-all text-sm font-medium shadow-lg shadow-amber-500/20 flex items-center gap-1 whitespace-nowrap"
+                  >
+                    <Icons.Generate className="w-4 h-4" />
+                    Regenerate
+                  </button>
+                </div>
               </div>
 
+              {/* URL Slug */}
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1.5 flexl items-center gap-2">
                   <Icons.Slug className="w-3 h-3" />
