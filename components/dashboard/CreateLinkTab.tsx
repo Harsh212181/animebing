@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
+ import React, { useState, useEffect } from 'react';
 
 const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api/short-users';
-const ANIME_API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api/anime';
 
 interface AnimeItem { _id: string; title: string; slug?: string; }
 
@@ -21,7 +20,9 @@ const CreateLinkTab: React.FC<{ token: string; onRefresh: () => void; onToast: a
     const fetchAnime = async () => {
       setFetchingAnime(true); setAnimeFetchError(null);
       try {
-        const res = await fetch(`${ANIME_API_BASE}?limit=1000`);
+        const res = await fetch(`${API_BASE}/anime-list`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
         if (json.success && Array.isArray(json.data)) setAnimeList(json.data);
@@ -30,7 +31,7 @@ const CreateLinkTab: React.FC<{ token: string; onRefresh: () => void; onToast: a
       finally { setFetchingAnime(false); }
     };
     fetchAnime();
-  }, []);
+  }, [token]);
 
   const filteredAnime = animeSearch.trim()
     ? animeList.filter(a => a.title.toLowerCase().includes(animeSearch.toLowerCase()))

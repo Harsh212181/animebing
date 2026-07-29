@@ -1,4 +1,4 @@
- // components/DownloadRedirectPage.tsx - FIXED VERSION
+ // components/DownloadRedirectPage.tsx - FIXED VERSION (with anime-specific link control)
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
@@ -58,7 +58,7 @@ const DownloadRedirectPage: React.FC = () => {
     return () => window.removeEventListener('resize', () => {});
   }, []);
 
-  // ✅ FIXED: Fetch link settings and process links
+  // ✅ FIXED: Fetch link settings and process links (with anime-specific control)
   useEffect(() => {
     const initializeDownload = async () => {
       try {
@@ -99,16 +99,21 @@ const DownloadRedirectPage: React.FC = () => {
         setTitle(contentTitle);
         console.log('📊 Raw links found:', rawLinks.length);
         
-        // 2. Fetch global link settings
-        console.log('🔧 Fetching global link settings...');
+        // 2. Fetch link settings (use anime-specific if animeId present)
+        console.log('🔧 Fetching link settings...');
         let settings: LinkSettings;
         try {
-          const settingsResponse = await fetch('/api/link-settings');
+          // ✅ Use anime-specific endpoint if animeId is available, else global
+          const settingsUrl = state?.animeId
+            ? `/api/anime-link-control/effective/${state.animeId}`
+            : '/api/link-settings';
+          const settingsResponse = await fetch(settingsUrl);
           if (!settingsResponse.ok) {
             throw new Error(`HTTP ${settingsResponse.status}`);
           }
-          settings = await settingsResponse.json();
-          console.log('✅ Global settings fetched:', settings);
+          const raw = await settingsResponse.json();
+          settings = raw.data || raw;
+          console.log('✅ Settings fetched:', settings);
         } catch (err) {
           console.error('⚠️ Using default settings (API failed):', err);
           settings = {
@@ -122,7 +127,7 @@ const DownloadRedirectPage: React.FC = () => {
         
         setLinkSettings(settings);
         
-        // 3. Filter links based on global settings
+        // 3. Filter links based on settings
         console.log('🎯 Filtering active links...');
         const filteredLinks: string[] = [];
         
@@ -130,7 +135,7 @@ const DownloadRedirectPage: React.FC = () => {
           const linkNum = i + 1;
           const linkKey = `link${linkNum}` as keyof LinkSettings;
           
-          // Check if link is globally enabled and has a valid URL
+          // Check if link is enabled and has a valid URL
           if (settings[linkKey] && rawLinks[i] && rawLinks[i].trim() !== '') {
             filteredLinks.push(rawLinks[i]);
             console.log(`✅ Link ${linkNum} is active:`, rawLinks[i].substring(0, 50) + '...');

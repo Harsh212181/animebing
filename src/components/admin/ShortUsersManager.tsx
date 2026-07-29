@@ -52,6 +52,8 @@ interface ShortUser {
   paidEarnings: number;
   gmailLinked?: string;
   avatarId?: number | null;
+  createdByAdminId?: string;
+  createdByAdminUsername?: string;
   profile?: {
     mobile?: string;
     gmail?: string;
@@ -68,15 +70,48 @@ interface Message {
   text: string;
   fromAdmin: boolean;
   createdAt: string;
+  senderRole?: string;
+  senderName?: string;
 }
 
 type PanelAction = 'pay' | 'link' | 'messages' | 'profile' | 'activity';
 type SortKey = 'realName' | 'totalClicks' | 'totalEarnings' | 'unpaidEarnings' | 'ratePerThousand';
 type SortDir = 'asc' | 'desc';
 
-// Helper: render user avatar from AVATARS list
-const renderUserAvatar = (user: ShortUser, size = 28) => {
+// ✅ AdminSenderBadge component (unchanged)
+const AdminSenderBadge: React.FC<{ senderRole?: string; senderName?: string }> = ({ senderRole, senderName }) => {
+  const isSubAdmin = senderRole === 'subadmin';
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4,
+      fontSize: 9.5, fontWeight: 700, letterSpacing: '0.2px',
+      color: isSubAdmin ? 'var(--accent)' : 'var(--blue)',
+      background: isSubAdmin ? 'var(--accent-dim)' : 'var(--blue-dim)',
+      border: `1px solid ${isSubAdmin ? 'var(--accent-border)' : 'var(--blue-border)'}`,
+      borderRadius: 6, padding: '1.5px 6px', marginBottom: 3,
+    }}>
+      {isSubAdmin ? `🎙️ ${senderName || 'Sub-Admin'}` : `🛡️ ${senderName || 'Main Admin'}`}
+    </span>
+  );
+};
+
+// Helper: render user avatar (with unread badge)
+const renderUserAvatar = (user: ShortUser, size = 28, unreadCount = 0) => {
   const av = AVATARS.find(a => a.id === user.avatarId);
+  const hasUnread = unreadCount > 0;
+  const badge = hasUnread ? (
+    <span style={{
+      position: 'absolute', top: -3, right: -3,
+      width: size * 0.4, height: size * 0.4, minWidth: 14, minHeight: 14,
+      background: '#f87171', borderRadius: '50%',
+      border: '1px solid #0a0a0c',
+      fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      color: 'white', fontWeight: 'bold', lineHeight: 1,
+    }}>
+      {unreadCount > 9 ? '9+' : unreadCount}
+    </span>
+  ) : null;
+
   if (av) {
     return (
       <div style={{
@@ -84,15 +119,17 @@ const renderUserAvatar = (user: ShortUser, size = 28) => {
         background: av.bg,
         borderRadius: size * 0.28,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: size * 0.48, flexShrink: 0
+        fontSize: size * 0.48, flexShrink: 0, position: 'relative'
       }}>
         {av.emoji}
+        {badge}
       </div>
     );
   }
   return (
-    <div className="sum-user-avatar" style={{ width: size, height: size, fontSize: size * 0.4, marginRight: 8 }}>
+    <div className="sum-user-avatar" style={{ width: size, height: size, fontSize: size * 0.4, marginRight: 8, position: 'relative' }}>
       {user.realName.charAt(0).toUpperCase()}
+      {badge}
     </div>
   );
 };
@@ -332,6 +369,7 @@ const css = `
   font-weight: 700;
   flex-shrink: 0;
   margin-right: 8px;
+  position: relative;
 }
 
 /* ── messages (WhatsApp style) ── */
@@ -458,7 +496,12 @@ const css = `
 `;
 
 /* ═══════════════════════════════════════════ component */
-const ShortUsersManager: React.FC = () => {
+interface ShortUsersManagerProps {
+  token?: string;
+  subAdminMode?: boolean;
+}
+
+const ShortUsersManager: React.FC<ShortUsersManagerProps> = ({ token: propToken, subAdminMode = false }) => {
   const [users, setUsers]         = useState<ShortUser[]>([]);
   const [loading, setLoading]     = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -471,6 +514,7 @@ const ShortUsersManager: React.FC = () => {
   const [search, setSearch]       = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
   const [filterLinks, setFilterLinks]   = useState<'all' | 'yes' | 'no'>('all');
+  const [filterCreator, setFilterCreator] = useState<'all' | 'admin' | 'subadmin'>('all');
   const [sortKey, setSortKey]     = useState<SortKey>('realName');
   const [sortDir, setSortDir]     = useState<SortDir>('asc');
 
@@ -491,6 +535,7 @@ const ShortUsersManager: React.FC = () => {
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [sendLoading, setSendLoading]         = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatListRef = useRef<HTMLDivElement>(null); // ✅ ref for scroll container
 
   /* create */
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -502,7 +547,10 @@ const ShortUsersManager: React.FC = () => {
   const [activityDays, setActivityDays]   = useState<7 | 15 | 30>(30)
   const [activityLoading, setActivityLoading] = useState(false)
 
-  const token       = localStorage.getItem('adminToken');
+  // per-user unread message counts
+  const [userUnreadCounts, setUserUnreadCounts] = useState<Record<string, number>>({});
+
+  const token       = propToken || localStorage.getItem('adminToken');
   const authHeaders = () => ({ headers: { Authorization: `Bearer ${token}` } });
 
   /* ── data ── */
@@ -515,7 +563,31 @@ const ShortUsersManager: React.FC = () => {
       toast.error(err.response?.data?.error || 'Failed to load users');
     } finally { setLoading(false); }
   };
-  useEffect(() => { fetchUsers(); }, []);
+
+  // fetch per‑user unread counts
+  const fetchUserUnreadCounts = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/short-users/admin/messages/unread-per-user`, authHeaders());
+      const map: Record<string, number> = {};
+      (Array.isArray(res.data) ? res.data : []).forEach((item: any) => {
+        map[item.userId] = item.unreadCount;
+      });
+      setUserUnreadCounts(map);
+    } catch {
+      // endpoint failure — silently ignore, red dots just won't show
+    }
+  };
+
+  useEffect(() => {
+    fetchUsers();
+    fetchUserUnreadCounts();
+  }, []);
+
+  // periodic refresh of unread counts
+  useEffect(() => {
+    const interval = setInterval(fetchUserUnreadCounts, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   /* ── derived: filtered + sorted ── */
   const processed = useMemo(() => {
@@ -532,14 +604,29 @@ const ShortUsersManager: React.FC = () => {
     if (filterStatus === 'inactive') out = out.filter(u => !u.isActive);
     if (filterLinks  === 'yes') out = out.filter(u => u.canCreateLinks);
     if (filterLinks  === 'no')  out = out.filter(u => !u.canCreateLinks);
+    if (filterCreator === 'admin') {
+      out = out.filter(u => !u.createdByAdminId || u.createdByAdminId === 'admin');
+    }
+    if (filterCreator === 'subadmin') {
+      out = out.filter(u => u.createdByAdminId && u.createdByAdminId !== 'admin');
+    }
 
+    // 👇 SORT: unread-message users always float to the top
     out.sort((a, b) => {
+      const unreadA = userUnreadCounts[a._id] || 0;
+      const unreadB = userUnreadCounts[b._id] || 0;
+      if (unreadA > 0 && unreadB === 0) return -1;
+      if (unreadA === 0 && unreadB > 0) return 1;
+      if (unreadA > 0 && unreadB > 0 && unreadA !== unreadB) {
+        return unreadB - unreadA;   // zyada unread wala pehle
+      }
+
       const va = a[sortKey] as any, vb = b[sortKey] as any;
       const cmp = typeof va === 'string' ? va.localeCompare(vb) : va - vb;
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return out;
-  }, [users, search, filterStatus, filterLinks, sortKey, sortDir]);
+  }, [users, search, filterStatus, filterLinks, filterCreator, sortKey, sortDir, userUnreadCounts]);
 
   /* ── stats ── */
   const stats = useMemo(() => ({
@@ -636,10 +723,24 @@ const ShortUsersManager: React.FC = () => {
     try {
       const res = await axios.get(`${API_BASE}/short-users/admin/messages/${userId}`, authHeaders());
       setMessages(res.data);
-      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+      // ✅ Scroll is now handled by the useEffect below – no manual scroll here
+      setUserUnreadCounts(prev => ({ ...prev, [userId]: 0 }));
+      fetchUserUnreadCounts();
     } catch { toast.error('Failed to load messages'); }
     finally { setMessagesLoading(false); }
   };
+
+  // ✅ Auto‑scroll to bottom whenever messages update (and panel is open)
+  useEffect(() => {
+    if (chatListRef.current && expandedAction === 'messages') {
+      requestAnimationFrame(() => {
+        if (chatListRef.current) {
+          chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
+        }
+      });
+    }
+  }, [messages, expandedAction]);
+
   const sendMessage = async (userId: string) => {
     if (!newMessage.trim()) return;
     setSendLoading(true);
@@ -712,6 +813,13 @@ const ShortUsersManager: React.FC = () => {
               <button className={`sum-filter-btn${filterStatus === 'active' ? ' sum-filter-btn-on' : ''}`} onClick={() => setFilterStatus(v => v === 'active' ? 'all' : 'active')}><i className="ti ti-circle-check" style={{ fontSize:12 }} /> Active</button>
               <button className={`sum-filter-btn${filterStatus === 'inactive' ? ' sum-filter-btn-on' : ''}`} onClick={() => setFilterStatus(v => v === 'inactive' ? 'all' : 'inactive')}><i className="ti ti-circle-x" style={{ fontSize:12 }} /> Inactive</button>
               <button className={`sum-filter-btn${filterLinks === 'yes' ? ' sum-filter-btn-on' : ''}`} onClick={() => setFilterLinks(v => v === 'yes' ? 'all' : 'yes')}><i className="ti ti-link" style={{ fontSize:12 }} /> Can Link</button>
+              {!subAdminMode && (
+                <>
+                  <button className={`sum-filter-btn${filterCreator === 'all' ? ' sum-filter-btn-on' : ''}`} onClick={() => setFilterCreator('all')}>All</button>
+                  <button className={`sum-filter-btn${filterCreator === 'admin' ? ' sum-filter-btn-on' : ''}`} onClick={() => setFilterCreator('admin')}><i className="ti ti-crown" style={{ fontSize:12 }} /> Admin</button>
+                  <button className={`sum-filter-btn${filterCreator === 'subadmin' ? ' sum-filter-btn-on' : ''}`} onClick={() => setFilterCreator('subadmin')}><i className="ti ti-user" style={{ fontSize:12 }} /> Sub Admin</button>
+                </>
+              )}
             </div>
             <select className="sum-sort-select" value={`${sortKey}-${sortDir}`} onChange={e => { const [k, d] = e.target.value.split('-') as [SortKey, SortDir]; setSortKey(k); setSortDir(d); }}>
               <option value="realName-asc">Name A-Z</option>
@@ -779,10 +887,20 @@ const ShortUsersManager: React.FC = () => {
                               <input className="sum-inline-input" value={editForm.realName || ''} onChange={e => setEditForm({ ...editForm, realName: e.target.value })} />
                             ) : (
                               <div style={{ display: 'flex', alignItems: 'center' }}>
-                                {renderUserAvatar(user, 24)}
+                                {renderUserAvatar(user, 24, userUnreadCounts[user._id] || 0)}
                                 <div>
                                   <div className="sum-user-name">{user.realName}</div>
                                   <div className="sum-user-handle">@{user.username}</div>
+                                  {!subAdminMode && (
+                                    <div style={{
+                                      fontSize: 10, marginTop: 2, fontFamily: 'var(--mono)',
+                                      color: (!user.createdByAdminId || user.createdByAdminId === 'admin') ? 'var(--t3)' : 'var(--accent)'
+                                    }}>
+                                      {(!user.createdByAdminId || user.createdByAdminId === 'admin')
+                                        ? '🏛️Admin'
+                                        : `👻${user.createdByAdminUsername || 'Sub-Admin'}`}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             )}
@@ -824,7 +942,16 @@ const ShortUsersManager: React.FC = () => {
                                   <span className="sum-act-sep" />
                                   <button className={`sum-act-btn${isOpen && expandedAction === 'pay' ? ' sum-act-btn-on' : ''}`} onClick={() => togglePanel(user._id, 'pay')} title="Mark payment"><i className="ti ti-currency-rupee" /></button>
                                   <button className={`sum-act-btn${isOpen && expandedAction === 'link' ? ' sum-act-btn-on' : ''}`} onClick={() => togglePanel(user._id, 'link')} title="Create link"><i className="ti ti-link" /></button>
-                                  <button className={`sum-act-btn${isOpen && expandedAction === 'messages' ? ' sum-act-btn-on' : ''}`} onClick={() => togglePanel(user._id, 'messages')} title="Messages"><i className="ti ti-message-circle" /></button>
+                                  <button className={`sum-act-btn${isOpen && expandedAction === 'messages' ? ' sum-act-btn-on' : ''}`} onClick={() => togglePanel(user._id, 'messages')} title="Messages" style={{ position: 'relative' }}>
+                                    <i className="ti ti-message-circle" />
+                                    {(userUnreadCounts[user._id] || 0) > 0 && (
+                                      <span style={{
+                                        position: 'absolute', top: 2, right: 2,
+                                        width: 6, height: 6, borderRadius: '50%',
+                                        background: 'var(--red)',
+                                      }} />
+                                    )}
+                                  </button>
                                   <button className={`sum-act-btn${isOpen && expandedAction === 'profile' ? ' sum-act-btn-on' : ''}`} onClick={() => togglePanel(user._id, 'profile')} title="Profile"><i className="ti ti-user" /></button>
                                   <button
                                     className={`sum-act-btn${isOpen && expandedAction === 'activity' ? ' sum-act-btn-on' : ''}`}
@@ -885,7 +1012,7 @@ const ShortUsersManager: React.FC = () => {
                           </tr>
                         )}
 
-                        {/* ── Messages panel (with avatars) ── */}
+                        {/* ── Messages panel (with auto‑scroll fix) ── */}
                         {isOpen && expandedAction === 'messages' && (
                           <tr className="sum-expand-row">
                             <td colSpan={9}>
@@ -895,7 +1022,7 @@ const ShortUsersManager: React.FC = () => {
                                   <span className="sum-panel-user">{user.realName}</span>
                                 </div>
 
-                                <div className="sum-chat-list">
+                                <div className="sum-chat-list" ref={chatListRef}>
                                   {messagesLoading ? (
                                     <div style={{ display:'flex', justifyContent:'center', padding:20 }}><Spinner /></div>
                                   ) : messages.length === 0 ? (
@@ -907,6 +1034,7 @@ const ShortUsersManager: React.FC = () => {
                                           <div style={{ display:'flex', alignItems:'flex-end', gap:8, maxWidth:'75%' }}>
                                             <div className="sum-chat-avatar">A</div>
                                             <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-start' }}>
+                                              <AdminSenderBadge senderRole={msg.senderRole} senderName={msg.senderName} />
                                               <div className="sum-bubble sum-bubble-admin">{msg.text}</div>
                                               <div className="sum-bubble-time">
                                                 {new Date(msg.createdAt).toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', hour12:true })}
@@ -1142,8 +1270,8 @@ const ShortUsersManager: React.FC = () => {
           {processed.length > 0 && (
             <div className="sum-table-footer">
               <span className="sum-footer-count">{processed.length === users.length ? `${users.length} users` : `${processed.length} of ${users.length} users`}</span>
-              {(search || filterStatus !== 'all' || filterLinks !== 'all') && (
-                <button className="sum-btn sum-btn-ghost" style={{ padding:'5px 12px', fontSize:11 }} onClick={() => { setSearch(''); setFilterStatus('all'); setFilterLinks('all'); }}>
+              {(search || filterStatus !== 'all' || filterLinks !== 'all' || filterCreator !== 'all') && (
+                <button className="sum-btn sum-btn-ghost" style={{ padding:'5px 12px', fontSize:11 }} onClick={() => { setSearch(''); setFilterStatus('all'); setFilterLinks('all'); setFilterCreator('all'); }}>
                   <i className="ti ti-x" style={{ fontSize:11 }} /> Clear filters
                 </button>
               )}

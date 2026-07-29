@@ -1,4 +1,14 @@
- // App.tsx - FINAL FIXED VERSION (with HelmetProvider + AnimeContext + Lazy Loading + Instant Init)
+ // App.tsx - COMBINED FINAL VERSION
+// ✅ Merged from both versions:
+//    - Sub-Admin login/dashboard flow (kept)
+//    - Google OAuth AuthCallback (kept)
+//    - Elaborate "Anime Portal Style" LoadingScreen -> ONLY used for MainApp's
+//      initial app boot (home/site first load). NOWHERE ELSE.
+//    - Everywhere else (Admin login/dashboard, Sub-Admin login/dashboard,
+//      Admin login transition, Auth callback fallback) uses the simple
+//      deep-purple SimpleLoadingScreen.
+//    - User Dashboard keeps its own dedicated white DashboardLoadingScreen.
+
 import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
@@ -22,13 +32,15 @@ import { AnimeProvider } from './src/context/AnimeContext';
 // ✅ LAZY LOADED IMPORTS
 const AdminLogin = React.lazy(() => import('./src/components/admin/AdminLogin'));
 const AdminDashboard = React.lazy(() => import('./src/components/admin/AdminDashboard'));
+const SubAdminLogin = React.lazy(() => import('./src/components/admin/SubAdminLogin'));
+const SubAdminDashboard = React.lazy(() => import('./src/components/admin/SubAdminDashboard'));
 const Top100Page = React.lazy(() => import('./components/Top100Page'));
 const EarnMoney = React.lazy(() => import('./components/EarnMoney'));
 const DownloadLinkPage = React.lazy(() => import('./components/DownloadLinkPage'));
 const DownloadRedirectPage = React.lazy(() => import('./components/DownloadRedirectPage'));
 const UserDashboard = React.lazy(() => import('./components/UserDashboard'));
 const WelcomePage = React.lazy(() => import('./components/WelcomePage'));
-const AuthCallback = React.lazy(() => import('./components/AuthCallback'));   // ← Google OAuth callback
+const AuthCallback = React.lazy(() => import('./components/AuthCallback')); // ← Google OAuth callback
 
 // ✅ 404 ERROR PAGE COMPONENT
 const ErrorPage: React.FC = () => {
@@ -105,7 +117,11 @@ const ScrollToTop: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return <>{children}</>;
 };
 
-// ✅ LOADING SCREEN — Anime Portal Style (original, kept for main app)
+// ============================================================================
+// ✅ ELABORATE "ANIME PORTAL STYLE" LOADING SCREEN
+// ⚠️ USE THIS ONLY FOR MainApp's initial app boot (isAppLoading).
+//    DO NOT use this anywhere else (admin, sub-admin, dashboard, auth callback).
+// ============================================================================
 const LoadingScreen: React.FC = () => {
   const [progress, setProgress] = useState(0);
   const [visible, setVisible] = useState(false);
@@ -432,7 +448,59 @@ const LoadingScreen: React.FC = () => {
   );
 };
 
-// ✅ NEW: Dashboard specific white loading screen (shows exactly 1.5s)
+// ============================================================================
+// ✅ SIMPLE DEEP-PURPLE LOADING SCREEN
+// Used EVERYWHERE ELSE: Admin login/dashboard wrappers, Admin login transition,
+// Sub-Admin login/dashboard, Auth callback fallback.
+// ============================================================================
+const SimpleLoadingScreen: React.FC = () => {
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9999,
+      background: 'radial-gradient(ellipse at 50% 40%, #4c1d95 0%, #3b0764 40%, #1e0533 100%)',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      fontFamily: "'Segoe UI', system-ui, sans-serif",
+      isolation: 'isolate',
+    }}>
+      <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.035, mixBlendMode: 'overlay', pointerEvents: 'none' }}>
+        <filter id="ls-noise">
+          <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch" />
+        </filter>
+        <rect width="100%" height="100%" filter="url(#ls-noise)" />
+      </svg>
+
+      <style>{`
+        @keyframes ls-spin { to { transform: rotate(360deg); } }
+        @keyframes ls-fadeInSimple { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .ls-spinner {
+          width: 56px; height: 56px;
+          border: 4px solid rgba(192,132,252,0.15);
+          border-top-color: #c084fc;
+          border-radius: 50%;
+          animation: ls-spin 0.8s linear infinite;
+        }
+        .ls-card-simple { animation: ls-fadeInSimple 0.4s ease both; }
+      `}</style>
+
+      <div className="ls-card-simple" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', zIndex: 1 }}>
+        <div className="ls-spinner" style={{ marginBottom: 24 }} />
+        <h1 style={{ margin: '0 0 6px', fontSize: 32, fontWeight: 900 }}>
+          <span style={{ color: '#e9d5ff' }}>Anime</span>
+          <span style={{
+            background: 'linear-gradient(90deg, #c084fc, #a855f7, #7c3aed)',
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text',
+          }}>bing</span>
+        </h1>
+        <p style={{ margin: 0, color: 'rgba(196,181,253,0.55)', fontSize: 11, fontWeight: 600, letterSpacing: 2 }}>
+          Loading...
+        </p>
+      </div>
+    </div>
+  );
+};
+
+// ✅ WHITE LOADING SCREEN (used only for user dashboard)
 const DashboardLoadingScreen: React.FC = () => {
   return (
     <div style={{
@@ -487,7 +555,77 @@ const DashboardLoadingScreen: React.FC = () => {
   );
 };
 
-// ✅ Dashboard wrapper with guaranteed 1.5s minimum loading screen
+// ✅ Admin Login Page wrapper — NO artificial delay. Only genuine Suspense
+//    loading while the lazy AdminLogin chunk downloads.
+const AdminLoginPage: React.FC<{ onLogin: (token: string, username: string) => void }> = ({ onLogin }) => {
+  return (
+    <Suspense fallback={<SimpleLoadingScreen />}>
+      <AdminLogin onLogin={onLogin} />
+    </Suspense>
+  );
+};
+
+// ✅ Admin Dashboard wrapper — instant token check (no artificial delay).
+//    AdminDashboard.tsx already shows its own loading screen while it
+//    fetches real data, so no duplicate loader needed here.
+const AdminDashboardPage: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
+  const token = localStorage.getItem('adminToken');
+
+  useEffect(() => {
+    if (!token) {
+      window.location.href = '/';
+    }
+  }, [token]);
+
+  if (!token) return null;
+
+  return (
+    <Suspense fallback={<SimpleLoadingScreen />}>
+      <AdminDashboard onLogout={onLogout} />
+    </Suspense>
+  );
+};
+
+// ✅ Sub Admin Login Page wrapper — NO artificial delay. Instant redirect after
+//    login; genuine Suspense loading only while the lazy chunk downloads.
+const SubAdminLoginPage: React.FC = () => {
+  const handleLogin = (token: string, username: string) => {
+    window.location.href = '/sub-admin-dashboard';
+  };
+
+  return (
+    <Suspense fallback={<SimpleLoadingScreen />}>
+      <SubAdminLogin onLogin={handleLogin} />
+    </Suspense>
+  );
+};
+
+// ✅ Sub-Admin Dashboard guard — instant token check (no artificial delay).
+const SubAdminDashboardPage: React.FC = () => {
+  const token = sessionStorage.getItem('subAdminToken');
+
+  useEffect(() => {
+    if (!token) {
+      window.location.href = '/sub-admin-login';
+    }
+  }, [token]);
+
+  if (!token) return null;
+
+  return (
+    <Suspense fallback={<SimpleLoadingScreen />}>
+      <SubAdminDashboard onLogout={() => {
+        sessionStorage.removeItem('subAdminToken');
+        sessionStorage.removeItem('subAdminUsername');
+        sessionStorage.removeItem('subAdminPermissions');
+        sessionStorage.removeItem('subAdminAnimeAccess');
+        window.location.href = '/sub-admin-login';
+      }} />
+    </Suspense>
+  );
+};
+
+// ✅ User Dashboard wrapper — guaranteed 1.5s minimum white loading screen
 const DashboardPage: React.FC = () => {
   const [ready, setReady] = useState(false);
 
@@ -537,7 +675,8 @@ const MainApp: React.FC = () => {
     setSearchQuery(urlSearchQuery);
   }, [location.search]);
 
-  // ✅ FIXED: Minimum 2 second loading screen
+  // ✅ Minimum 2 second initial app loading (this is what shows the elaborate
+  //    Anime Portal Style LoadingScreen — home/site's very first load only)
   useEffect(() => {
     const initializeApp = async () => {
       const startTime = Date.now();
@@ -553,7 +692,6 @@ const MainApp: React.FC = () => {
           console.error('App initialization error:', error);
         }
       } finally {
-        // ✅ Minimum 2000ms (2 seconds) loading screen dikhao
         const elapsed = Date.now() - startTime;
         const remaining = Math.max(0, 2000 - elapsed);
 
@@ -684,14 +822,17 @@ const MainApp: React.FC = () => {
     });
   };
 
-  if (isAppLoading) return <LoadingScreen />;
+  // ✅ Elaborate Anime Portal Style LoadingScreen shows ONLY on the home page ("/").
+  //    Every other route (detail, download, anime list, top100, etc.) uses the
+  //    simple loader even during the initial app boot.
+  if (isAppLoading) {
+    return location.pathname === '/' ? <LoadingScreen /> : <SimpleLoadingScreen />;
+  }
 
   if (adminView === 'login') {
     return (
       <div className="print:hidden">
-        <Suspense fallback={<Spinner />}>
-          <AdminLogin onLogin={handleAdminLogin} />
-        </Suspense>
+        <AdminLoginPage onLogin={handleAdminLogin} />
       </div>
     );
   }
@@ -699,9 +840,7 @@ const MainApp: React.FC = () => {
   if (adminView === 'dashboard' && isAdminAuthenticated) {
     return (
       <div className="print:hidden">
-        <Suspense fallback={<Spinner />}>
-          <AdminDashboard onLogout={handleAdminLogout} />
-        </Suspense>
+        <AdminDashboardPage onLogout={handleAdminLogout} />
       </div>
     );
   }
@@ -857,15 +996,18 @@ const App: React.FC = () => {
       <Router>
         <AnimeProvider>
           <Routes>
-            {/* Auth Callback – Google OAuth return URL */}
+            {/* Auth Callback – Google OAuth return URL — SIMPLE loader, not elaborate one */}
             <Route path="/auth/callback" element={
-              <Suspense fallback={<LoadingScreen />}>
+              <Suspense fallback={<SimpleLoadingScreen />}>
                 <AuthCallback />
               </Suspense>
             } />
-            {/* Dashboard without Header/Footer – uses dedicated 1.5s white loader */}
+            {/* User Dashboard – dedicated white loader */}
             <Route path="/dashboard" element={<DashboardPage />} />
-            {/* All other routes with full layout */}
+            {/* Sub-Admin routes – SIMPLE loader */}
+            <Route path="/sub-admin-login" element={<SubAdminLoginPage />} />
+            <Route path="/sub-admin-dashboard" element={<SubAdminDashboardPage />} />
+            {/* All other routes with full layout — elaborate loader shows ONLY here on first boot */}
             <Route path="*" element={<MainApp />} />
           </Routes>
         </AnimeProvider>

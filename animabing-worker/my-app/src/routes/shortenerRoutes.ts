@@ -1,11 +1,11 @@
  import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { getDb } from '../services/mongoService'
-import { adminAuth } from '../middleware/auth'
+import { adminAuth, requirePermission } from '../middleware/auth'
 import { ObjectId } from 'mongodb'
 import { checkAndUnlockReferral, creditCommissionToReferrer } from './referralRoutes'
 
-const shortenerRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
+const shortenerRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
 // ============ BOT DETECTION ============
 const BOT_PATTERNS = [
@@ -22,7 +22,7 @@ const BOT_PATTERNS = [
 function isBot(userAgent: string | null | undefined): boolean {
   if (!userAgent) return false
   const ua = userAgent.toLowerCase()
-  return BOT_PATTERNS.some(p => ua.includes(p))
+  return BOT_PATTERNS.some((p) => ua.includes(p))
 }
 
 // ============ HTML ESCAPE ============
@@ -46,8 +46,8 @@ function buildMetaHTML(opts: {
   redirectUrl: string
   code: string
 }): string {
-  const t   = esc(opts.title)
-  const d   = esc(opts.description.substring(0, 900))
+  const t = esc(opts.title)
+  const d = esc(opts.description.substring(0, 900))
   const img = opts.image || 'https://animebing.in/AnimeBinglogo.jpg'
   const safeRedirect = esc(opts.redirectUrl)
 
@@ -110,16 +110,16 @@ async function fetchAnimeMeta(
     const title = String(anime.title || slug.replace(/-/g, ' '))
     const epCount = Number(anime.currentEpisode || 0)
     let titleFull = title
-    if (anime.contentType === 'Movie')      titleFull += ' (Movie)'
+    if (anime.contentType === 'Movie') titleFull += ' (Movie)'
     else if (anime.contentType === 'Manga') titleFull += ' Manga'
-    else if (epCount > 1)                   titleFull += ` EP 1-${epCount}`
-    else if (epCount === 1)                 titleFull += ' EP 1'
+    else if (epCount > 1) titleFull += ` EP 1-${epCount}`
+    else if (epCount === 1) titleFull += ' EP 1'
 
     const description = String(
       anime.description ||
-      anime.seoDescription ||
-      anime.synopsis ||
-      `Watch ${title} online in HD quality on AnimeBing. Free streaming and downloads.`
+        anime.seoDescription ||
+        anime.synopsis ||
+        `Watch ${title} online in HD quality on AnimeBing. Free streaming and downloads.`
     ).trim()
 
     const image = String(anime.thumbnail || 'https://animebing.in/AnimeBinglogo.jpg')
@@ -136,12 +136,46 @@ async function fetchAnimeMeta(
   }
 }
 
+// ============ PERMISSION HELPER ============
+// Updated: now async, checks both direct creator and ownership via shortuser
+async function canManageShortLink(link: any, admin: any, db: any): Promise<boolean> {
+  if (!admin || admin.role !== 'subadmin') return true
+  if (link?.createdByAdminId === admin.id) return true
+
+  // link.userId wale shortuser ko check karo — kya wo isi subadmin ne banaya tha?
+  if (link?.userId) {
+    const owner = await db.collection('shortusers').findOne({ _id: link.userId })
+    return owner?.createdByAdminId === admin.id
+  }
+  return false
+}
+
 // ============ ADMIN — ALL LINKS ============
-shortenerRoutes.get('/admin/links', adminAuth, async (c) => {
+shortenerRoutes.get('/admin/links', adminAuth, requirePermission('shortener'), async (c) => {
   try {
+    const admin = c.get('admin')
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const links = await db.collection('shortlinks')
-      .find({})
+
+    let filter: any = {}
+    if (admin.role === 'subadmin') {
+      // ✅ Sub-admin ke banaye hue shortusers dhoondo
+      const ownUsers = await db
+        .collection('shortusers')
+        .find({ createdByAdminId: admin.id }, { projection: { _id: 1 } })
+        .toArray()
+      const ownUserIds = ownUsers.map((u: any) => u._id)
+
+      filter = {
+        $or: [
+          { createdByAdminId: admin.id }, // sub-admin ne khud jo link banaya
+          { userId: { $in: ownUserIds } }, // sub-admin ke user ne khud-se (self) banaya link
+        ],
+      }
+    }
+
+    const links = await db
+      .collection('shortlinks')
+      .find(filter)
       .sort({ createdAt: -1 })
       .toArray()
     return c.json(links)
@@ -151,7 +185,7 @@ shortenerRoutes.get('/admin/links', adminAuth, async (c) => {
 })
 
 // ============ ADMIN — CREATE LINK ============
-shortenerRoutes.post('/admin/links', adminAuth, async (c) => {
+shortenerRoutes.post('/admin/links', adminAuth, requirePermission('shortener'), async (c) => {
   try {
     const { code, url, label, userId } = await c.req.json()
     if (!code || !url) {
@@ -165,14 +199,20 @@ shortenerRoutes.post('/admin/links', adminAuth, async (c) => {
     if (existing) {
       return c.json({ error: `"${code}" already exists` }, 400)
     }
+
+    const admin = c.get('admin')
+
     const newLink = {
       code,
       url,
       label: label || code,
       userId: userId ? new ObjectId(userId) : null,
       clicks: 0,
+      // ✅ creator tracking — same pattern as anime/shortusers
+      createdByAdminId: admin.role === 'subadmin' ? admin.id : 'admin',
+      createdByAdminUsername: admin.username,
       createdAt: new Date(),
-      lastClicked: null
+      lastClicked: null,
     }
     await db.collection('shortlinks').insertOne(newLink)
     return c.json({ success: true, message: 'Link created!', link: newLink })
@@ -182,11 +222,20 @@ shortenerRoutes.post('/admin/links', adminAuth, async (c) => {
 })
 
 // ============ ADMIN — UPDATE LINK ============
-shortenerRoutes.put('/admin/links/:code', adminAuth, async (c) => {
+shortenerRoutes.put('/admin/links/:code', adminAuth, requirePermission('shortener'), async (c) => {
   try {
     const code = c.req.param('code')
     const { url, label, userId } = await c.req.json()
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const admin = c.get('admin')
+    const existingLink = await db.collection('shortlinks').findOne({ code })
+    if (!existingLink) return c.json({ error: 'Link not found' }, 404)
+    // ✅ Updated: now async, passes db
+    if (!(await canManageShortLink(existingLink, admin, db))) {
+      return c.json({ error: 'You can only manage links you created.' }, 403)
+    }
+
     const updateData: any = { url, label, updatedAt: new Date() }
     if (userId) updateData.userId = new ObjectId(userId)
     await db.collection('shortlinks').updateOne({ code }, { $set: updateData })
@@ -197,10 +246,19 @@ shortenerRoutes.put('/admin/links/:code', adminAuth, async (c) => {
 })
 
 // ============ ADMIN — DELETE LINK ============
-shortenerRoutes.delete('/admin/links/:code', adminAuth, async (c) => {
+shortenerRoutes.delete('/admin/links/:code', adminAuth, requirePermission('shortener'), async (c) => {
   try {
     const code = c.req.param('code')
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const admin = c.get('admin')
+    const link = await db.collection('shortlinks').findOne({ code })
+    if (!link) return c.json({ error: 'Link not found' }, 404)
+    // ✅ Updated: now async, passes db
+    if (!(await canManageShortLink(link, admin, db))) {
+      return c.json({ error: 'You can only manage links you created.' }, 403)
+    }
+
     await db.collection('shortlinks').deleteOne({ code })
     return c.json({ success: true, message: 'Link deleted!' })
   } catch (err: any) {
@@ -239,10 +297,10 @@ shortenerRoutes.get('/debug-meta/:code', async (c) => {
     let apiError = null
     try {
       const res = await fetch(`${apiBase}/api/anime/${slug}`, {
-        headers: { Accept: 'application/json' }
+        headers: { Accept: 'application/json' },
       })
       apiResult = await res.json()
-    } catch(e: any) {
+    } catch (e: any) {
       apiError = e.message
     }
 
@@ -265,6 +323,44 @@ shortenerRoutes.get('/dashboard', (c) => {
   return c.redirect('https://animebing.in/dashboard', 302)
 })
 
+// ============ MONTHLY CLICKS PER LINK (for month-wise view) ============
+shortenerRoutes.get('/admin/links/monthly-clicks', adminAuth, requirePermission('shortener'), async (c) => {
+  try {
+    const month = parseInt(c.req.query('month') || '')  // 1-12
+    const year = parseInt(c.req.query('year') || '')
+    if (!month || !year || month < 1 || month > 12) {
+      return c.json({ error: 'Valid month (1-12) and year are required' }, 400)
+    }
+
+    const start = new Date(year, month - 1, 1)
+    const end = new Date(year, month, 1) // exclusive — start of next month
+
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const admin = c.get('admin')
+
+    // Scope to sub-admin's own links, same as /admin/links
+    const linkFilter: any = {}
+    if (admin.role === 'subadmin') linkFilter.createdByAdminId = admin.id
+
+    const allowedLinks = await db.collection('shortlinks')
+      .find(linkFilter, { projection: { code: 1 } })
+      .toArray()
+    const allowedCodes = allowedLinks.map((l: any) => l.code).filter(Boolean)
+
+    const results = await db.collection('shortclicks').aggregate([
+      { $match: { code: { $in: allowedCodes }, clickedAt: { $gte: start, $lt: end } } },
+      { $group: { _id: '$code', clicks: { $sum: 1 } } }
+    ]).toArray()
+
+    const data: Record<string, number> = {}
+    results.forEach((r: any) => { data[r._id] = r.clicks })
+
+    return c.json({ success: true, month, year, data })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
 // ============ REDIRECT — LAST ============
 shortenerRoutes.get('/:code', async (c) => {
   try {
@@ -273,13 +369,14 @@ shortenerRoutes.get('/:code', async (c) => {
     const link = await db.collection('shortlinks').findOne({ code })
 
     if (!link) {
-      return c.html(`
-        <!DOCTYPE html><html><head><title>404</title>
+      return c.html(
+        `<!DOCTYPE html><html><head><title>404</title>
         <style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#0f172a;color:white;}
         .box{text-align:center;padding:2rem;}h2{color:#f87171;}a{color:#818cf8;}</style></head>
         <body><div class="box"><h2>404 — Link not found</h2><p>This short link does not exist.</p>
-        <a href="https://animebing.in">← Go to Animebing.in</a></div></body></html>
-      `, 404)
+        <a href="https://animebing.in">← Go to Animebing.in</a></div></body></html>`,
+        404
+      )
     }
 
     const userAgent = c.req.header('User-Agent') || ''
@@ -288,13 +385,11 @@ shortenerRoutes.get('/:code', async (c) => {
     if (isBot(userAgent)) {
       const meta = await fetchAnimeMeta(link.url, c.env)
 
-      const canonicalUrl = meta
-        ? `https://animebing.in/detail/${meta.slug}`
-        : link.url
+      const canonicalUrl = meta ? `https://animebing.in/detail/${meta.slug}` : link.url
 
-      const title       = meta?.title       || link.label || code
+      const title = meta?.title || link.label || code
       const description = meta?.description || `Visit ${link.url}`
-      const image       = meta?.image       || 'https://animebing.in/AnimeBinglogo.jpg'
+      const image = meta?.image || 'https://animebing.in/AnimeBinglogo.jpg'
 
       return c.html(
         buildMetaHTML({
@@ -302,7 +397,7 @@ shortenerRoutes.get('/:code', async (c) => {
           description,
           image,
           canonicalUrl,
-          shortUrl:    `https://go.animebing.in/${code}`,
+          shortUrl: `https://go.animebing.in/${code}`,
           redirectUrl: link.url,
           code,
         }),
@@ -311,29 +406,34 @@ shortenerRoutes.get('/:code', async (c) => {
     }
 
     // ============ REAL USER: Click count + redirect ============
-    const ip = c.req.header('CF-Connecting-IP') ||
-               c.req.header('X-Forwarded-For') || 'unknown'
+    const ip =
+      c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || 'unknown'
 
     // 24h dedup — same IP se ek baar hi count hoga
     const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000)
     const dup = await db.collection('shortclicks').findOne({
-      code, ip, clickedAt: { $gte: last24h }
+      code,
+      ip,
+      clickedAt: { $gte: last24h },
     })
 
     if (!dup) {
-      const country    = c.req.header('CF-IPCountry') || 'Unknown'
-      const rawUA      = userAgent
-      const deviceType = /mobile|android|iphone|ipad/i.test(rawUA) ? 'mobile'
-                       : /tablet/i.test(rawUA) ? 'tablet' : 'desktop'
+      const country = c.req.header('CF-IPCountry') || 'Unknown'
+      const rawUA = userAgent
+      const deviceType = /mobile|android|iphone|ipad/i.test(rawUA)
+        ? 'mobile'
+        : /tablet/i.test(rawUA)
+          ? 'tablet'
+          : 'desktop'
 
       const clickData: any = {
         code,
         ip,
         country,
-        city:      (c as any).req.raw?.cf?.city || 'Unknown',
-        device:    deviceType,
-        browser:   rawUA.substring(0, 100),
-        clickedAt: new Date()
+        city: (c as any).req.raw?.cf?.city || 'Unknown',
+        device: deviceType,
+        browser: rawUA.substring(0, 100),
+        clickedAt: new Date(),
       }
       if (link.userId) clickData.userId = link.userId
 
@@ -343,13 +443,14 @@ shortenerRoutes.get('/:code', async (c) => {
         db.collection('shortlinks').updateOne(
           { code },
           { $inc: { clicks: 1 }, $set: { lastClicked: new Date() } }
-        )
+        ),
       ])
 
       // ============ EARNINGS + REFERRAL UNLOCK + COMMISSION ============
       if (link.userId) {
-        db.collection('shortusers').findOne({ _id: link.userId })
-          .then(async (user) => {
+        const earningsPromise = (async () => {
+          try {
+            const user = await db.collection('shortusers').findOne({ _id: link.userId })
             if (!user) return
 
             const earn = (user.ratePerThousand || 10) / 1000
@@ -369,14 +470,17 @@ shortenerRoutes.get('/:code', async (c) => {
             if (earn > 0) {
               await creditCommissionToReferrer(link.userId, earn, db)
             }
-          })
-          .catch(() => {})
+          } catch (e) {
+            console.error('earnings update error:', e)
+          }
+        })()
+
+        c.executionCtx.waitUntil(earningsPromise)
       }
     }
 
     // Instant 302 redirect
     return c.redirect(link.url, 302)
-
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }

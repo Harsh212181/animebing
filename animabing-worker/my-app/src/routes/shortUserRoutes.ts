@@ -1,13 +1,19 @@
-import { Hono } from 'hono'
+ import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { getDb } from '../services/mongoService'
-import { adminAuth } from '../middleware/auth'
+import { adminAuth, requirePermission } from '../middleware/auth'
 import { IShortUser } from '../models/types'
 import { ObjectId } from 'mongodb'
 import { getUserSelfAnalytics } from '../services/analyticsService'
 import { REFERRER_REWARD, REFERRED_REWARD, COMMISSION_PERCENT, UNLOCK_CLICK_THRESHOLD } from './referralRoutes'
 
 const shortUserRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
+
+// ============ HELPER: kya ye admin/subadmin is short-user ko manage kar sakta hai ============
+function canManageShortUser(user: any, admin: any): boolean {
+  if (!admin || admin.role !== 'subadmin') return true
+  return user?.createdByAdminId === admin.id
+}
 
 // ============ JWT CREATE ============
 async function createJWT(payload: object, secret: string): Promise<string> {
@@ -486,7 +492,7 @@ shortUserRoutes.put('/profile', userAuth, async (c) => {
   }
 })
 
-// ============ USER SELF-CREATE LINK ============
+// ============ USER SELF-CREATE LINK (UPDATED) ============
 shortUserRoutes.post('/create-link', userAuth, async (c) => {
   try {
     const { id, username } = c.get('shortUser')
@@ -559,6 +565,8 @@ shortUserRoutes.post('/create-link', userAuth, async (c) => {
       animeTitle,
       animeSlug,
       createdByUser: true,
+      createdByAdminId: (user as any).createdByAdminId || 'admin',          // 👈 add
+      createdByAdminUsername: (user as any).createdByAdminUsername || '',  // 👈 add
       clicks: 0,
       createdAt: new Date(),
       lastClicked: null
@@ -722,11 +730,18 @@ shortUserRoutes.post('/messages', userAuth, async (c) => {
 })
 
 // ============ ADMIN — ALL USERS ============
-shortUserRoutes.get('/admin/users', adminAuth, async (c) => {
+shortUserRoutes.get('/admin/users', adminAuth, requirePermission('shortener'), async (c) => {
   try {
+    const admin = c.get('admin')
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const filter: any = {}
+    if (admin.role === 'subadmin') {
+      filter.createdByAdminId = admin.id
+    }
+
     const users = await db.collection('shortusers')
-      .find({})
+      .find(filter)
       .sort({ createdAt: -1 })
       .toArray()
     return c.json(users)
@@ -736,7 +751,7 @@ shortUserRoutes.get('/admin/users', adminAuth, async (c) => {
 })
 
 // ============ ADMIN — CREATE USER ============
-shortUserRoutes.post('/admin/users', adminAuth, async (c) => {
+shortUserRoutes.post('/admin/users', adminAuth, requirePermission('shortener'), async (c) => {
   try {
     const { username, password, realName, ratePerThousand, canCreateLinks } = await c.req.json()
     if (!username || !password || !realName) {
@@ -745,6 +760,8 @@ shortUserRoutes.post('/admin/users', adminAuth, async (c) => {
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
     const existing = await db.collection('shortusers').findOne({ username })
     if (existing) return c.json({ error: 'This username already exists' }, 400)
+
+    const admin = c.get('admin')
 
     const newUser = {
       username, password, realName,
@@ -757,6 +774,8 @@ shortUserRoutes.post('/admin/users', adminAuth, async (c) => {
       paidEarnings: 0,
       gmailLinked: '',
       profile: {},
+      createdByAdminId: admin.role === 'subadmin' ? admin.id : 'admin',
+      createdByAdminUsername: admin.username,
       createdAt: new Date(),
       updatedAt: new Date()
     }
@@ -768,11 +787,18 @@ shortUserRoutes.post('/admin/users', adminAuth, async (c) => {
 })
 
 // ============ ADMIN — UPDATE USER ============
-shortUserRoutes.put('/admin/users/:id', adminAuth, async (c) => {
+shortUserRoutes.put('/admin/users/:id', adminAuth, requirePermission('shortener'), async (c) => {
   try {
     const id = c.req.param('id')
     const { password, realName, ratePerThousand, isActive, canCreateLinks } = await c.req.json()
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const admin = c.get('admin')
+    const existingUser = await db.collection('shortusers').findOne({ _id: new ObjectId(id) })
+    if (!existingUser) return c.json({ error: 'User not found' }, 404)
+    if (!canManageShortUser(existingUser, admin)) {
+      return c.json({ error: 'You can only manage users you created.' }, 403)
+    }
 
     const updateData: any = { updatedAt: new Date() }
     if (password) updateData.password = password
@@ -792,7 +818,7 @@ shortUserRoutes.put('/admin/users/:id', adminAuth, async (c) => {
 })
 
 // ============ ADMIN — DELETE USER ============
-shortUserRoutes.delete('/admin/users/:id', adminAuth, async (c) => {
+shortUserRoutes.delete('/admin/users/:id', adminAuth, requirePermission('shortener'), async (c) => {
   try {
     const id = c.req.param('id')
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -801,6 +827,11 @@ shortUserRoutes.delete('/admin/users/:id', adminAuth, async (c) => {
       { _id: new ObjectId(id) }
     ) as IShortUser | null
     if (!user) return c.json({ error: 'User not found' }, 404)
+
+    const admin = c.get('admin')
+    if (!canManageShortUser(user, admin)) {
+      return c.json({ error: 'You can only manage users you created.' }, 403)
+    }
 
     await db.collection('shortusers').deleteOne({ _id: new ObjectId(id) })
     await db.collection('shortlinks').updateMany(
@@ -817,7 +848,7 @@ shortUserRoutes.delete('/admin/users/:id', adminAuth, async (c) => {
 })
 
 // ============ ADMIN — MARK PAYMENT DONE ============
-shortUserRoutes.post('/admin/users/:id/pay', adminAuth, async (c) => {
+shortUserRoutes.post('/admin/users/:id/pay', adminAuth, requirePermission('shortener'), async (c) => {
   try {
     const id = c.req.param('id')
     const { amount, note } = await c.req.json()
@@ -827,6 +858,11 @@ shortUserRoutes.post('/admin/users/:id/pay', adminAuth, async (c) => {
       { _id: new ObjectId(id) }
     ) as IShortUser | null
     if (!user) return c.json({ error: 'User not found' }, 404)
+
+    const admin = c.get('admin')
+    if (!canManageShortUser(user, admin)) {
+      return c.json({ error: 'You can only manage users you created.' }, 403)
+    }
 
     await db.collection('shortusers').updateOne(
       { _id: new ObjectId(id) },
@@ -868,11 +904,21 @@ shortUserRoutes.post('/admin/users/:id/pay', adminAuth, async (c) => {
 })
 
 // ============ ADMIN — ALL REQUESTS ============
-shortUserRoutes.get('/admin/requests', adminAuth, async (c) => {
+shortUserRoutes.get('/admin/requests', adminAuth, requirePermission('shortener'), async (c) => {
   try {
+    const admin = c.get('admin')
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    let filter: any = {}
+    if (admin.role === 'subadmin') {
+      const ownUsers = await db.collection('shortusers')
+        .find({ createdByAdminId: admin.id }, { projection: { _id: 1 } })
+        .toArray()
+      filter.userId = { $in: ownUsers.map((u: any) => u._id) }
+    }
+
     const requests = await db.collection('shortrequests')
-      .find({})
+      .find(filter)
       .sort({ createdAt: -1 })
       .toArray()
     return c.json(requests)
@@ -882,11 +928,21 @@ shortUserRoutes.get('/admin/requests', adminAuth, async (c) => {
 })
 
 // ============ ADMIN — UPDATE REQUEST STATUS ============
-shortUserRoutes.put('/admin/requests/:id', adminAuth, async (c) => {
+shortUserRoutes.put('/admin/requests/:id', adminAuth, requirePermission('shortener'), async (c) => {
   try {
     const id = c.req.param('id')
     const { status } = await c.req.json()
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const admin = c.get('admin')
+    const request = await db.collection('shortrequests').findOne({ _id: new ObjectId(id) })
+    if (!request) return c.json({ error: 'Request not found' }, 404)
+    if (admin.role === 'subadmin') {
+      const owner = await db.collection('shortusers').findOne({ _id: request.userId })
+      if (!canManageShortUser(owner, admin)) {
+        return c.json({ error: 'You can only manage requests from users you created.' }, 403)
+      }
+    }
 
     await db.collection('shortrequests').updateOne(
       { _id: new ObjectId(id) },
@@ -898,11 +954,47 @@ shortUserRoutes.put('/admin/requests/:id', adminAuth, async (c) => {
   }
 })
 
+// ============ ADMIN — UNREAD COUNT PER USER (for row red-dots) ============
+shortUserRoutes.get('/admin/messages/unread-per-user', adminAuth, requirePermission('shortener'), async (c) => {
+  try {
+    const admin = c.get('admin')
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const matchFilter: any = { fromAdmin: false, readByAdmin: false }
+
+    if (admin.role === 'subadmin') {
+      const ownUsers = await db.collection('shortusers')
+        .find({ createdByAdminId: admin.id }, { projection: { _id: 1 } })
+        .toArray()
+      matchFilter.userId = { $in: ownUsers.map((u: any) => u._id) }
+    }
+
+    const counts = await db.collection('shortmessages').aggregate([
+      { $match: matchFilter },
+      { $group: { _id: '$userId', unreadCount: { $sum: 1 } } }
+    ]).toArray()
+
+    const result = counts
+      .filter((c: any) => c._id)
+      .map((c: any) => ({ userId: c._id.toString(), unreadCount: c.unreadCount }))
+    return c.json(result)
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
 // ============ ADMIN — MESSAGES FOR A USER ============
-shortUserRoutes.get('/admin/messages/:userId', adminAuth, async (c) => {
+shortUserRoutes.get('/admin/messages/:userId', adminAuth, requirePermission('shortener'), async (c) => {
   try {
     const userId = c.req.param('userId')
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const admin = c.get('admin')
+    const owner = await db.collection('shortusers').findOne({ _id: new ObjectId(userId) })
+    if (!owner) return c.json({ error: 'User not found' }, 404)
+    if (!canManageShortUser(owner, admin)) {
+      return c.json({ error: 'You can only view messages for users you created.' }, 403)
+    }
 
     const messages = await db.collection('shortmessages')
       .find({ userId: new ObjectId(userId) })
@@ -921,7 +1013,7 @@ shortUserRoutes.get('/admin/messages/:userId', adminAuth, async (c) => {
 })
 
 // ============ ADMIN — SEND MESSAGE TO USER ============
-shortUserRoutes.post('/admin/messages/:userId', adminAuth, async (c) => {
+shortUserRoutes.post('/admin/messages/:userId', adminAuth, requirePermission('shortener'), async (c) => {
   try {
     const userId = c.req.param('userId')
     const { text } = await c.req.json()
@@ -933,12 +1025,25 @@ shortUserRoutes.post('/admin/messages/:userId', adminAuth, async (c) => {
     ) as IShortUser | null
     if (!user) return c.json({ error: 'User not found' }, 404)
 
+    const admin = c.get('admin')
+    if (!canManageShortUser(user, admin)) {
+      return c.json({ error: 'You can only message users you created.' }, 403)
+    }
+
+    // ✅ Track WHO sent this — main admin ya kaunsa specific sub-admin
+    const senderRole = admin.role === 'subadmin' ? 'subadmin' : 'admin'
+    const senderName = admin.role === 'subadmin'
+      ? (admin.fullName || admin.username)  // sub-admin ka naam
+      : 'Main Admin'
+
     await db.collection('shortmessages').insertOne({
       userId: new ObjectId(userId),
       username: user.username,
       realName: user.realName,
       text: text.trim(),
       fromAdmin: true,
+      senderRole,        // 👈 NEW
+      senderName,        // 👈 NEW
       readByAdmin: true,
       readByUser: false,
       createdAt: new Date()
@@ -951,7 +1056,7 @@ shortUserRoutes.post('/admin/messages/:userId', adminAuth, async (c) => {
 })
 
 // ============ ADMIN — CREATE LINK FOR USER ============
-shortUserRoutes.post('/admin/users/:id/create-link', adminAuth, async (c) => {
+shortUserRoutes.post('/admin/users/:id/create-link', adminAuth, requirePermission('shortener'), async (c) => {
   try {
     const userId = c.req.param('id')
     const { code, url, label } = await c.req.json()
@@ -969,6 +1074,11 @@ shortUserRoutes.post('/admin/users/:id/create-link', adminAuth, async (c) => {
     ) as IShortUser | null
     if (!user) return c.json({ error: 'User not found' }, 404)
 
+    const admin = c.get('admin')
+    if (!canManageShortUser(user, admin)) {
+      return c.json({ error: 'You can only create links for users you created.' }, 403)
+    }
+
     const existing = await db.collection('shortlinks').findOne({ code })
     if (existing) return c.json({ error: `"${code}" already exists` }, 400)
 
@@ -978,6 +1088,8 @@ shortUserRoutes.post('/admin/users/:id/create-link', adminAuth, async (c) => {
       label: label || code,
       userId: new ObjectId(userId),
       clicks: 0,
+      createdByAdminId: admin.role === 'subadmin' ? admin.id : 'admin',
+      createdByAdminUsername: admin.username,
       createdAt: new Date(),
       lastClicked: null
     }
@@ -1007,13 +1119,20 @@ shortUserRoutes.post('/admin/users/:id/create-link', adminAuth, async (c) => {
 })
 
 // ============ ADMIN — UNREAD MESSAGE COUNT ============
-shortUserRoutes.get('/admin/messages-count', adminAuth, async (c) => {
+shortUserRoutes.get('/admin/messages-count', adminAuth, requirePermission('shortener'), async (c) => {
   try {
+    const admin = c.get('admin')
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const unread = await db.collection('shortmessages').countDocuments({
-      fromAdmin: false,
-      readByAdmin: false
-    })
+
+    let filter: any = { fromAdmin: false, readByAdmin: false }
+    if (admin.role === 'subadmin') {
+      const ownUsers = await db.collection('shortusers')
+        .find({ createdByAdminId: admin.id }, { projection: { _id: 1 } })
+        .toArray()
+      filter.userId = { $in: ownUsers.map((u: any) => u._id) }
+    }
+
+    const unread = await db.collection('shortmessages').countDocuments(filter)
     return c.json({ unread })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -1021,17 +1140,27 @@ shortUserRoutes.get('/admin/messages-count', adminAuth, async (c) => {
 })
 
 // ============ ADMIN — OVERALL STATS ============
-shortUserRoutes.get('/admin/stats', adminAuth, async (c) => {
+shortUserRoutes.get('/admin/stats', adminAuth, requirePermission('shortener'), async (c) => {
   try {
+    const admin = c.get('admin')
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    const totalUsers = await db.collection('shortusers').countDocuments({})
-    const activeUsers = await db.collection('shortusers').countDocuments({ isActive: true })
-    const totalClicks = await db.collection('shortclicks').countDocuments({})
+    const userFilter: any = admin.role === 'subadmin' ? { createdByAdminId: admin.id } : {}
+
+    const totalUsers = await db.collection('shortusers').countDocuments(userFilter)
+    const activeUsers = await db.collection('shortusers').countDocuments({ ...userFilter, isActive: true })
+
+    const ownUserIds = admin.role === 'subadmin'
+      ? (await db.collection('shortusers').find(userFilter, { projection: { _id: 1 } }).toArray()).map((u: any) => u._id)
+      : null
+    const clickFilter: any = ownUserIds ? { userId: { $in: ownUserIds } } : {}
+
+    const totalClicks = await db.collection('shortclicks').countDocuments(clickFilter)
 
     const todayStart = new Date()
     todayStart.setHours(0, 0, 0, 0)
     const todayClicks = await db.collection('shortclicks').countDocuments({
+      ...clickFilter,
       clickedAt: { $gte: todayStart }
     })
 
@@ -1043,6 +1172,7 @@ shortUserRoutes.get('/admin/stats', adminAuth, async (c) => {
       const dayEnd = new Date(dayStart)
       dayEnd.setHours(23, 59, 59, 999)
       const count = await db.collection('shortclicks').countDocuments({
+        ...clickFilter,
         clickedAt: { $gte: dayStart, $lte: dayEnd }
       })
       last7Days.push({
@@ -1052,23 +1182,26 @@ shortUserRoutes.get('/admin/stats', adminAuth, async (c) => {
     }
 
     const topCountries = await db.collection('shortclicks').aggregate([
+      ...(ownUserIds ? [{ $match: { userId: { $in: ownUserIds } } }] : []),
       { $group: { _id: '$country', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
       { $limit: 10 }
     ]).toArray()
 
     const unpaidResult = await db.collection('shortusers').aggregate([
+      ...(admin.role === 'subadmin' ? [{ $match: userFilter }] : []),
       { $group: { _id: null, total: { $sum: '$unpaidEarnings' } } }
     ]).toArray()
     const totalUnpaid = unpaidResult[0]?.total || 0
 
-    const pendingRequests = await db.collection('shortrequests').countDocuments({ status: 'pending' })
+    const requestFilter: any = ownUserIds ? { userId: { $in: ownUserIds } } : {}
+    const pendingRequests = await db.collection('shortrequests').countDocuments({ ...requestFilter, status: 'pending' })
     const unreadMessages = await db.collection('shortmessages').countDocuments({
-      fromAdmin: false, readByAdmin: false
+      ...requestFilter, fromAdmin: false, readByAdmin: false
     })
 
     const users = await db.collection('shortusers')
-      .find({})
+      .find(userFilter)
       .sort({ totalClicks: -1 })
       .toArray()
 
@@ -1090,10 +1223,17 @@ shortUserRoutes.get('/admin/stats', adminAuth, async (c) => {
 })
 
 // ============ ADMIN — DELETE LINK BY ID ============
-shortUserRoutes.delete('/admin/links/by-id/:id', adminAuth, async (c) => {
+shortUserRoutes.delete('/admin/links/by-id/:id', adminAuth, requirePermission('shortener'), async (c) => {
   try {
     const id = c.req.param('id')
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const admin = c.get('admin')
+    const link = await db.collection('shortlinks').findOne({ _id: new ObjectId(id) })
+    if (!link) return c.json({ error: 'Link not found' }, 404)
+    if (admin.role === 'subadmin' && (link as any).createdByAdminId !== admin.id) {
+      return c.json({ error: 'You can only manage links you created.' }, 403)
+    }
 
     const result = await db.collection('shortlinks').deleteOne({ _id: new ObjectId(id) })
     if (result.deletedCount === 0) {
@@ -1106,11 +1246,18 @@ shortUserRoutes.delete('/admin/links/by-id/:id', adminAuth, async (c) => {
 })
 
 // ============ ADMIN — USER LOGIN ACTIVITY ============
-shortUserRoutes.get('/admin/users/:id/activity', adminAuth, async (c) => {
+shortUserRoutes.get('/admin/users/:id/activity', adminAuth, requirePermission('shortener'), async (c) => {
   try {
     const userId = c.req.param('id')
     const days = parseInt(c.req.query('days') || '30')
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const admin = c.get('admin')
+    const owner = await db.collection('shortusers').findOne({ _id: new ObjectId(userId) })
+    if (!owner) return c.json({ error: 'User not found' }, 404)
+    if (!canManageShortUser(owner, admin)) {
+      return c.json({ error: 'You can only view activity for users you created.' }, 403)
+    }
 
     const startDate = new Date()
     startDate.setDate(startDate.getDate() - (days - 1))
@@ -1169,6 +1316,82 @@ shortUserRoutes.get('/admin/users/:id/activity', adminAuth, async (c) => {
       linkStats,
       lastLogin: loginLogs.length > 0 ? loginLogs[loginLogs.length - 1].loginAt : null
     })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============ USER — SCOPED ANIME LIST (for Create Link tab) ============
+shortUserRoutes.get('/anime-list', userAuth, async (c) => {
+  try {
+    const { id } = c.get('shortUser')
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const user = await db.collection('shortusers').findOne(
+      { _id: new ObjectId(id) }
+    ) as any
+    if (!user) return c.json({ error: 'User not found' }, 404)
+
+    const creatorAdminId = user.createdByAdminId
+    const isScopedToSubAdmin = !!creatorAdminId && creatorAdminId !== 'admin'
+
+    const filter: any = {}
+    if (isScopedToSubAdmin) {
+      filter.createdBy = creatorAdminId
+    }
+
+    const animes = await db.collection('animes')
+      .find(filter, { projection: { title: 1, slug: 1 } })
+      .sort({ title: 1 })
+      .toArray()
+
+    return c.json({
+      success: true,
+      data: animes.map((a: any) => ({ _id: a._id.toString(), title: a.title, slug: a.slug }))
+    })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============ MONTHLY CLICKS PER SHORT USER (for month-wise view) ============
+shortUserRoutes.get('/admin/users/monthly-clicks', adminAuth, requirePermission('shortener'), async (c) => {
+  try {
+    const month = parseInt(c.req.query('month') || '')
+    const year = parseInt(c.req.query('year') || '')
+    if (!month || !year || month < 1 || month > 12) {
+      return c.json({ error: 'Valid month (1-12) and year are required' }, 400)
+    }
+    const start = new Date(year, month - 1, 1)
+    const end = new Date(year, month, 1) // exclusive
+
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const admin = c.get('admin')
+
+    // Scope to sub-admin's own users, same pattern as /admin/users
+    const userFilter: any = {}
+    if (admin.role === 'subadmin') userFilter.createdByAdminId = admin.id
+
+    const allowedUsers = await db.collection('shortusers')
+      .find(userFilter, { projection: { _id: 1, ratePerThousand: 1 } })
+      .toArray()
+    const allowedIds = allowedUsers.map((u: any) => u._id)
+    const rateMap: Record<string, number> = {}
+    allowedUsers.forEach((u: any) => { rateMap[u._id.toString()] = u.ratePerThousand || 0 })
+
+    const results = await db.collection('shortclicks').aggregate([
+      { $match: { userId: { $in: allowedIds }, clickedAt: { $gte: start, $lt: end } } },
+      { $group: { _id: '$userId', clicks: { $sum: 1 } } }
+    ]).toArray()
+
+    const data: Record<string, { clicks: number; earnings: number }> = {}
+    results.forEach((r: any) => {
+      const id = r._id.toString()
+      const rate = rateMap[id] || 0
+      data[id] = { clicks: r.clicks, earnings: (r.clicks * rate) / 1000 }
+    })
+
+    return c.json({ success: true, month, year, data })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }

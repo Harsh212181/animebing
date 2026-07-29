@@ -3,10 +3,34 @@
   "main": "src/index.ts",
   "compatibility_date": "2025-01-01",
   "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": true,
   "vars": {
     "MONGODB_DB": "animabing",
     "ALLOWED_ORIGIN": "*",
     "API_URL": "https://animabing-backend.animabingwatch.workers.dev",
     "FRONTEND_URL": "https://animebing.in"
-  }
+  },
+  "triggers": {
+    "crons": ["0 8,20 * * *"]
+  },
+  "routes": [
+    {
+      "pattern": "animebing.in/api/*",
+      "zone_name": "animebing.in"
+    },
+    {
+      "pattern": "animebing.in/robots.txt",
+      "zone_name": "animebing.in"
+    },
+    {
+      "pattern": "animebing.in/sitemap*",
+      "zone_name": "animebing.in"
+    },
+    {
+      "pattern": "go.animebing.in",
+      "zone_name": "animebing.in",
+      "custom_domain": true
+    }
+  ]
 }

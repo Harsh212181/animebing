@@ -1,4 +1,4 @@
- // src/components/admin/EpisodeStatusManager.tsx – Redesigned with pill‑button filters + Sub/Dub badge
+ // src/components/admin/EpisodeStatusManager.tsx – Redesigned with pill‑button filters + Sub/Dub badge + Creator badge
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
@@ -16,6 +16,8 @@ interface Anime {
   contentType: string;
   status: string;
   subDubStatus?: string; // e.g. 'Hindi Dub', 'Hindi Sub', 'English Sub' …
+  createdBy?: string;            // 👈 NEW
+  createdByUsername?: string;    // 👈 NEW
 }
 
 interface DownloadLink {
@@ -37,7 +39,15 @@ interface DownloadPage {
   updatedAt: Date;
 }
 
-const EpisodeStatusManager: React.FC = () => {
+interface EpisodeStatusManagerProps {
+  token?: string;
+  isMainAdmin?: boolean;   // 👈 NEW
+}
+
+const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: tokenProp, isMainAdmin = false }) => {
+  // Token resolver: prop first, then fallback to localStorage (for main admin)
+  const getToken = () => tokenProp || localStorage.getItem('adminToken') || '';
+
   const [animeList, setAnimeList] = useState<Anime[]>([]);
   const [filteredList, setFilteredList] = useState<Anime[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -50,12 +60,11 @@ const EpisodeStatusManager: React.FC = () => {
   const [subDubFilter, setSubDubFilter] = useState<
     'all' | 'Hindi Sub' | 'Hindi Dub' | 'English Sub'
   >('all');
+  const [creatorFilter, setCreatorFilter] = useState<'all' | 'admin' | 'subadmin'>('all');   // 👈 NEW
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [error, setError] = useState('');
-
-  const token = localStorage.getItem('adminToken');
 
   useEffect(() => {
     fetchAnime();
@@ -88,13 +97,22 @@ const EpisodeStatusManager: React.FC = () => {
       );
     }
 
+    // 👇 NEW — creator filter (sirf main admin ke liye meaningful)
+    if (creatorFilter === 'admin') {
+      filtered = filtered.filter(a => !a.createdBy || a.createdBy === 'admin');
+    }
+    if (creatorFilter === 'subadmin') {
+      filtered = filtered.filter(a => a.createdBy && a.createdBy !== 'admin');
+    }
+
     setFilteredList(filtered);
-  }, [searchTerm, animeList, contentTypeFilter, statusFilter, subDubFilter]);
+  }, [searchTerm, animeList, contentTypeFilter, statusFilter, subDubFilter, creatorFilter]);
 
   const fetchAnime = async () => {
     setLoading(true);
     setError('');
     try {
+      const token = getToken();
       const { data } = await axios.get(
         `${API_BASE}/admin/protected/anime-list`,
         {
@@ -122,6 +140,7 @@ const EpisodeStatusManager: React.FC = () => {
     setError('');
     const toastId = toast.loading('Updating episode status...');
     try {
+      const token = getToken();
       await axios.patch(
         `${API_BASE}/admin/protected/anime/${id}/episode-status`,
         { totalEpisodes, currentEpisode },
@@ -150,8 +169,10 @@ const EpisodeStatusManager: React.FC = () => {
     setError('');
     const toastId = toast.loading('Syncing from download pages...');
     try {
+      const token = getToken();
       const { data: pages } = await axios.get<DownloadPage[]>(
-        `${API_BASE}/download-pages/anime/${id}`
+        `${API_BASE}/download-pages/anime/${id}`,
+        { headers: { Authorization: `Bearer ${token}` } }
       );
 
       if (!pages || pages.length === 0) {
@@ -327,6 +348,28 @@ const EpisodeStatusManager: React.FC = () => {
             </div>
           </div>
 
+          {/* 👇 NEW — Creator filter, sirf main admin ko dikhta hai */}
+          {isMainAdmin && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-white/60">Creator:</span>
+              <div className="flex gap-1">
+                {(['all', 'admin', 'subadmin'] as const).map(c => (
+                  <button
+                    key={c}
+                    onClick={() => setCreatorFilter(c)}
+                    className={`px-2 py-1 rounded-full text-xs font-medium transition-all ${
+                      creatorFilter === c
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-white/10 text-white/70 hover:bg-white/20'
+                    }`}
+                  >
+                    {c === 'all' ? 'All' : c === 'admin' ? 'Main Admin' : 'Sub-Admin'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Search */}
           <div className="relative ml-auto">
             <input
@@ -359,12 +402,14 @@ const EpisodeStatusManager: React.FC = () => {
           </span>
           {(contentTypeFilter !== 'all' ||
             statusFilter !== 'all' ||
-            subDubFilter !== 'all') && (
+            subDubFilter !== 'all' ||
+            creatorFilter !== 'all') && (
             <button
               onClick={() => {
                 setContentTypeFilter('all');
                 setStatusFilter('all');
                 setSubDubFilter('all');
+                setCreatorFilter('all');
               }}
               className="text-purple-400 hover:text-purple-300 underline"
             >
@@ -389,14 +434,21 @@ const EpisodeStatusManager: React.FC = () => {
                 <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
                   Type
                 </th>
-                {/* NEW: Sub/Dub column */}
+                {/* Sub/Dub column */}
                 <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
                   Sub/Dub
                 </th>
-                <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
+                {/* 👇 NEW — Creator column, sirf main admin ko dikhta hai */}
+                {isMainAdmin && (
+                  <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
+                    Creator
+                  </th>
+                )}
+                {/* Total and Current columns with reduced width */}
+                <th className="px-2 sm:px-3 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
                   Total
                 </th>
-                <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
+                <th className="px-2 sm:px-3 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
                   Current
                 </th>
                 <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
@@ -408,7 +460,7 @@ const EpisodeStatusManager: React.FC = () => {
               {filteredList.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={isMainAdmin ? 8 : 7}
                     className="px-6 py-12 text-center text-white/40"
                   >
                     <svg
@@ -435,6 +487,7 @@ const EpisodeStatusManager: React.FC = () => {
                     key={anime._id}
                     className="hover:bg-white/5 transition"
                   >
+                    {/* Image cell with larger image */}
                     <td className="px-2 sm:px-6 py-4 whitespace-nowrap">
                       <img
                         src={
@@ -442,7 +495,7 @@ const EpisodeStatusManager: React.FC = () => {
                           'https://via.placeholder.com/96x128/1e293b/64748b?text=No+Image'
                         }
                         alt={anime.title}
-                        className="w-12 h-16 sm:w-16 sm:h-20 object-cover rounded-lg shadow-lg"
+                        className="w-18 h-21 sm:w-20 sm:h-22 object-cover rounded-lg shadow-lg"
                         loading="lazy"
                         onError={e => {
                           e.currentTarget.src =
@@ -489,7 +542,25 @@ const EpisodeStatusManager: React.FC = () => {
                         </span>
                       )}
                     </td>
-                    <td className="px-2 sm:px-6 py-4 whitespace-nowrap">
+                    {/* 👇 NEW — Creator badge, sirf main admin ko dikhta hai */}
+                    {isMainAdmin && (
+                      <td className="px-2 sm:px-6 py-4 whitespace-nowrap">
+                        {(!anime.createdBy || anime.createdBy === 'admin') ? (
+                          <span className="text-xs px-2 py-1 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/25 whitespace-nowrap">
+                            Main Admin
+                          </span>
+                        ) : (
+                          <span
+                            className="text-xs px-2 py-1 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/25 whitespace-nowrap"
+                            title={`Created by sub-admin: ${anime.createdByUsername}`}
+                          >
+                          {anime.createdByUsername || 'Sub-Admin'}
+                          </span>
+                        )}
+                      </td>
+                    )}
+                    {/* Total and Current with reduced padding & input size */}
+                    <td className="px-2 sm:px-3 py-4 whitespace-nowrap">
                       <input
                         type="number"
                         min="0"
@@ -504,10 +575,10 @@ const EpisodeStatusManager: React.FC = () => {
                             )
                           );
                         }}
-                        className="w-16 sm:w-20 px-2 py-2 bg-gray-800/60 border border-gray-700/80 rounded-lg text-white text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+                        className="w-14 sm:w-16 px-1.5 py-2 bg-gray-800/60 border border-gray-700/80 rounded-lg text-white text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
                       />
                     </td>
-                    <td className="px-2 sm:px-6 py-4 whitespace-nowrap">
+                    <td className="px-2 sm:px-3 py-4 whitespace-nowrap">
                       <input
                         type="number"
                         min="0"
@@ -522,7 +593,7 @@ const EpisodeStatusManager: React.FC = () => {
                             )
                           );
                         }}
-                        className="w-16 sm:w-20 px-2 py-2 bg-gray-800/60 border border-gray-700/80 rounded-lg text-white text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+                        className="w-14 sm:w-16 px-1.5 py-2 bg-gray-800/60 border border-gray-700/80 rounded-lg text-white text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
                       />
                     </td>
                     <td className="px-2 sm:px-6 py-4 whitespace-nowrap">

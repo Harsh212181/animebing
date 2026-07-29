@@ -91,19 +91,32 @@ const setLocalVoteStatus = (pollId: string, optionId?: string) => {
   }
 };
 
+// ✅ FIX: previously this only linkified URLs but ignored newlines, so numbered
+// points typed like "1. abc\n2. def" collapsed onto one line. Now it splits by
+// line first (so each point renders on its own line, stacked vertically — same
+// on mobile and PC since the card is always single-column) and still linkifies
+// any URLs within each line.
 const makeTextClickable = (text: string): React.ReactNode[] => {
   if (!text) return [];
   const urlRegex = /(https?:\/\/[^\s<]+)/gi;
-  const parts = text.split(urlRegex);
-  return parts.map((part, i) => {
-    if (part.match(urlRegex)) {
-      return (
-        <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="text-blue-400 underline hover:text-blue-300 break-words">
-          {part}
-        </a>
-      );
-    }
-    return <React.Fragment key={i}>{part}</React.Fragment>;
+  const lines = text.split('\n');
+  return lines.map((line, lineIndex) => {
+    const parts = line.split(urlRegex);
+    return (
+      <React.Fragment key={lineIndex}>
+        {parts.map((part, i) => {
+          if (part.match(urlRegex)) {
+            return (
+              <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="text-blue-400 underline hover:text-blue-300 break-words">
+                {part}
+              </a>
+            );
+          }
+          return <React.Fragment key={i}>{part}</React.Fragment>;
+        })}
+        {lineIndex < lines.length - 1 && <br />}
+      </React.Fragment>
+    );
   });
 };
 
@@ -280,7 +293,9 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
       </div>
 
       <div className="px-3 pt-2 pb-3">
-        <h3 className="text-sm font-semibold text-gray-100 break-words whitespace-normal">
+        {/* ✅ whitespace-pre-line + line-aware rendering so numbered points (1. .. / 2. ..)
+            each show on their own line, same on mobile & desktop */}
+        <h3 className="text-sm font-semibold text-gray-100 break-words whitespace-pre-line">
           {makeTextClickable(poll.question)}
         </h3>
       </div>

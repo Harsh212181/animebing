@@ -24,9 +24,14 @@ const DEFAULT_LINK_NAMES = [
 const API_BASE = import.meta.env.VITE_API_BASE || 
   'https://animabing-backend.animabingwatch.workers.dev/api';
 
-const getToken = () => localStorage.getItem('adminToken') || '';
+interface EpisodesManagerProps {
+  token?: string;
+  isMainAdmin?: boolean;   // 👈 NEW — sirf main admin ko creator badge dikhega
+}
 
-const EpisodesManager: React.FC = () => {
+const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isMainAdmin = false }) => {
+  const getToken = () => tokenProp || localStorage.getItem('adminToken') || '';
+
   const [animes, setAnimes] = useState<Anime[]>([]);
   const [selectedAnime, setSelectedAnime] = useState<Anime | null>(null);
   const [episodes, setEpisodes] = useState<Episode[]>([]);
@@ -210,8 +215,6 @@ const EpisodesManager: React.FC = () => {
     const numbers = filteredItems.map(item => isManga ? (item as Chapter).chapterNumber : (item as Episode).episodeNumber);
     return Math.max(...numbers) + 1;
   };
-
-  // ... (all other handler functions remain identical to previous version)
 
   const handleAddDownloadLink = () => {
     if (newItem.downloadLinks.length >= 5) {
@@ -489,7 +492,7 @@ const EpisodesManager: React.FC = () => {
         />
       </div>
 
-      {/* ✅ UPDATED: Selected Content Info with Image */}
+      {/* ✅ UPDATED: Selected Content Info with Creator Badge */}
       {selectedAnime && (
         <div className="bg-slate-800/30 rounded-lg p-4 border border-slate-700">
           <div className="flex items-center gap-4">
@@ -504,9 +507,26 @@ const EpisodesManager: React.FC = () => {
               />
             )}
             <div>
-              <h3 className="text-lg font-semibold text-white mb-2">
-                Selected: {selectedAnime.title}
-              </h3>
+              <div className="flex items-center flex-wrap gap-2 mb-2">
+                <h3 className="text-lg font-semibold text-white">
+                  Selected: {selectedAnime.title}
+                </h3>
+                {/* 👇 NEW — creator badge, sirf main admin ko dikhta hai */}
+                {isMainAdmin && (
+                  (!selectedAnime.createdBy || selectedAnime.createdBy === 'admin') ? (
+                    <span className="text-xs px-2 py-1 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/25 flex items-center gap-1">
+                      👑 Main Admin
+                    </span>
+                  ) : (
+                    <span
+                      className="text-xs px-2 py-1 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/25 flex items-center gap-1"
+                      title={`Created by sub-admin: ${selectedAnime.createdByUsername}`}
+                    >
+                      👤 {selectedAnime.createdByUsername || 'Sub-Admin'}
+                    </span>
+                  )
+                )}
+              </div>
               <div className="flex flex-wrap gap-4 text-sm text-slate-300">
                 <span>Type: {selectedAnime.contentType}</span>
                 <span>Status: {selectedAnime.status}</span>
@@ -699,10 +719,9 @@ const EpisodesManager: React.FC = () => {
         </form>
       )}
 
-      {/* Items List (unchanged) */}
+      {/* Items List */}
       {selectedAnime && (
         <div className="bg-slate-800/50 rounded-lg p-6">
-          {/* ... rest of the table unchanged ... */}
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-semibold text-white">
               {isManga ? 'Chapters' : 'Episodes'} List {getAvailableSessions().length > 1 && `(Session ${selectedSession})`}
@@ -783,7 +802,6 @@ const EpisodesManager: React.FC = () => {
                         {isEditing && (
                           <tr className="bg-slate-800/70 border-b border-slate-700">
                             <td colSpan={6} className="p-4">
-                              {/* Edit form unchanged */}
                               <div className="border-l-4 border-yellow-500 pl-4 py-3">
                                 <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
                                   <svg className="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>

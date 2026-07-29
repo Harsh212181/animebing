@@ -45,19 +45,48 @@ reportRoutes.post('/', async (c) => {
   }
 })
 
-// ============ GET ALL REPORTS - anime thumbnail ke saath (admin) ============
-reportRoutes.get('/', async (c) => {
+// ============ PENDING REPORTS COUNT (red dot ke liye) - MUST be before /:id routes (admin) ============
+reportRoutes.get('/pending-count', adminAuth, async (c) => {
   try {
-    // Step 1: Ek hi db connection lo
+    const admin = c.get('admin')
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    // Step 2: Saare reports fetch karo
+    if (admin.role === 'subadmin') {
+      const ownAnimes = await db.collection('animes')
+        .find({ createdBy: admin.id }, { projection: { _id: 1 } })
+        .toArray()
+      const ownAnimeIds = ownAnimes.map((a: any) => a._id)
+
+      if (ownAnimeIds.length === 0) {
+        return c.json({ success: true, count: 0 })
+      }
+
+      const count = await db.collection('reports').countDocuments({
+        type: 'episode',
+        status: 'Pending',
+        animeId: { $in: ownAnimeIds }
+      })
+      return c.json({ success: true, count })
+    }
+
+    const count = await db.collection('reports').countDocuments({ status: 'Pending' })
+    return c.json({ success: true, count })
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 500)
+  }
+})
+
+// ============ GET ALL REPORTS - anime thumbnail + role-based filter (admin) ============
+reportRoutes.get('/', adminAuth, async (c) => {
+  try {
+    const admin = c.get('admin')
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
     const reports = await db.collection('reports')
       .find({})
       .sort({ createdAt: -1 })
       .toArray()
 
-    // Step 3: Episode reports ke animeIds collect karo
     const animeIds = reports
       .filter((r: any) => r.type === 'episode' && r.animeId)
       .map((r: any) => {
@@ -69,29 +98,29 @@ reportRoutes.get('/', async (c) => {
       })
       .filter(Boolean)
 
-    // Step 4: Ek query mein saare animes fetch karo (N+1 problem avoid)
-    const animeMap: Record<string, { _id: any; title: string; thumbnail: string }> = {}
+    const animeMap: Record<string, { _id: any; title: string; thumbnail: string; createdBy?: string; createdByUsername?: string }> = {}
 
     if (animeIds.length > 0) {
       const animes = await db.collection('animes')
         .find(
           { _id: { $in: animeIds as any } },
-          { projection: { title: 1, thumbnail: 1 } }
+          { projection: { title: 1, thumbnail: 1, createdBy: 1, createdByUsername: 1 } }
         )
         .toArray()
 
-      // Map banao: animeId string => anime object
       animes.forEach((anime: any) => {
         animeMap[anime._id.toString()] = {
           _id: anime._id,
           title: anime.title,
-          thumbnail: anime.thumbnail || null
+          thumbnail: anime.thumbnail || null,
+          createdBy: anime.createdBy || null,
+          createdByUsername: anime.createdByUsername || null
         }
       })
     }
 
-    // Step 5: Reports mein anime data inject karo
-    const enrichedReports = reports.map((report: any) => {
+    // Enrich reports with anime data + sub-admin username
+    let enrichedReports = reports.map((report: any) => {
       if (report.type === 'episode' && report.animeId) {
         const animeIdStr = report.animeId.toString()
         const anime = animeMap[animeIdStr]
@@ -99,10 +128,25 @@ reportRoutes.get('/', async (c) => {
           ...report,
           animeId: anime
             ? { _id: anime._id, title: anime.title, thumbnail: anime.thumbnail }
-            : { _id: report.animeId, title: 'Unknown Anime', thumbnail: null }
+            : { _id: report.animeId, title: 'Unknown Anime', thumbnail: null },
+          subAdminUsername: anime?.createdByUsername || null,
+          _createdBy: anime?.createdBy || null   // temp field for filtering
         }
       }
-      return report
+      return { ...report, _createdBy: null }
+    })
+
+    // 🔒 Sub-admin: sirf apna add kiya hua anime ke reports dikhao
+    if (admin.role === 'subadmin') {
+      enrichedReports = enrichedReports.filter(
+        (r: any) => r.type === 'episode' && r._createdBy === admin.id
+      )
+    }
+
+    // temp field hatao response se pehle
+    enrichedReports = enrichedReports.map((r: any) => {
+      const { _createdBy, ...rest } = r
+      return rest
     })
 
     return c.json(enrichedReports)

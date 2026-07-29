@@ -1,4 +1,4 @@
- // src/components/admin/ShortenerManager.tsx – UPDATED (darker chat + unread indicators + source column)
+ // src/components/admin/ShortenerManager.tsx – UPDATED (monthly click view + sender badge)
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
@@ -6,7 +6,6 @@ import Spinner from '../Spinner';
 
 const SHORTENER_BASE = 'https://go.animebing.in';
 const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
-const getToken = () => localStorage.getItem('adminToken') || '';
 
 // ── Avatar list (same as UserDashboard) ──────────────────────
 const AVATARS = [
@@ -61,7 +60,9 @@ interface ShortUser {
   paidEarnings: number;
   gmailLinked?: string;
   avatarId?: number | null;
-  createdBy?: 'admin' | 'self'; // ✅ NEW FIELD
+  createdBy?: 'admin' | 'self';
+  createdByAdminId?: string;
+  createdByAdminUsername?: string;
   profile?: {
     mobile?: string;
     gmail?: string;
@@ -86,6 +87,7 @@ interface ShortRequest {
   createdAt: string;
 }
 
+// ✅ Updated ShortMessage interface with senderRole and senderName
 interface ShortMessage {
   _id: string;
   userId: string;
@@ -96,6 +98,8 @@ interface ShortMessage {
   readByAdmin: boolean;
   readByUser: boolean;
   createdAt: string;
+  senderRole?: string;   // 'subadmin' | 'admin'
+  senderName?: string;   // e.g. "Harsh" or "Main Admin"
 }
 
 // ── Helper: render user avatar (with unread badge) ──────────────
@@ -143,6 +147,23 @@ const renderUserAvatar = (user: ShortUser, size = 28, unreadCount = 0) => {
     </div>
   );
   return avatarEl;
+};
+
+// ✅ New AdminSenderBadge component
+const AdminSenderBadge: React.FC<{ senderRole?: string; senderName?: string }> = ({ senderRole, senderName }) => {
+  const isSubAdmin = senderRole === 'subadmin';
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4,
+      fontSize: 9.5, fontWeight: 700, letterSpacing: '0.2px',
+      color: isSubAdmin ? 'var(--accent)' : 'var(--blue)',
+      background: isSubAdmin ? 'var(--accent-dim)' : 'var(--blue-dim)',
+      border: `1px solid ${isSubAdmin ? 'var(--accent-border)' : 'var(--blue-border)'}`,
+      borderRadius: 6, padding: '1.5px 6px', marginBottom: 3,
+    }}>
+      {isSubAdmin ? `🎙️ ${senderName || 'Sub-Admin'}` : `🛡️ ${senderName || 'Main Admin'}`}
+    </span>
+  );
 };
 
 /* ─────────────────────────────────────────── css (darker chat bg) ─── */
@@ -365,6 +386,7 @@ const css = `
 /* source badges */
 .sm-badge-admin { background: var(--blue-dim); color: var(--blue); border: 1px solid var(--blue-border); }
 .sm-badge-self { background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent-border); }
+.sm-badge-subadmin { background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent-border); }
 .sm-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; display: inline-block; flex-shrink: 0; }
 
 .sm-clicks-badge {
@@ -477,7 +499,7 @@ const css = `
 
 /* ── CHAT WINDOW – darker background (no light pattern) ── */
 .sm-msg-window {
-  background: #0b0b10;  /* solid dark base */
+  background: #0b0b10;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   display: flex;
@@ -578,7 +600,16 @@ const css = `
 }
 `;
 
-const ShortenerManager: React.FC = () => {
+// ─── Component Props ──────────────────────────────────────────
+interface ShortenerManagerProps {
+  token?: string;
+  subAdminMode?: boolean;
+}
+
+const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, subAdminMode = false }) => {
+  // token helper
+  const getToken = () => propToken || localStorage.getItem('adminToken') || '';
+
   const [activeTab, setActiveTab] = useState<'links' | 'users' | 'requests' | 'messages'>('links');
 
   // links
@@ -596,7 +627,7 @@ const ShortenerManager: React.FC = () => {
   // users
   const [users, setUsers] = useState<ShortUser[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
-  const [addUserForm, setAddUserForm] = useState({ username: '', password: '', realName: '', ratePerThousand: 100 }); // ✅ default 100
+  const [addUserForm, setAddUserForm] = useState({ username: '', password: '', realName: '', ratePerThousand: 100 });
   const [addingUser, setAddingUser] = useState(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editUserForm, setEditUserForm] = useState({ password: '', realName: '', ratePerThousand: 100, isActive: true });
@@ -612,7 +643,51 @@ const ShortenerManager: React.FC = () => {
   const [deleteUserConfirm, setDeleteUserConfirm] = useState<ShortUser | null>(null);
   const [deletingUser, setDeletingUser] = useState(false);
   const [userSearchQuery, setUserSearchQuery] = useState('');
-  const [sourceFilter, setSourceFilter] = useState<'all' | 'admin' | 'self'>('all'); // ✅ source filter
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'admin' | 'self'>('all');
+
+  // ✅ NEW: monthly click view
+  const [linkViewMode, setLinkViewMode] = useState<'alltime' | 'monthly'>('alltime');
+  const now = new Date();
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1); // 1-12
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
+  const [monthlyClicks, setMonthlyClicks] = useState<Record<string, number>>({});
+  const [monthlyLoading, setMonthlyLoading] = useState(false);
+
+  // ✅ NEW: monthly data for Users tab
+  const [monthlyUserData, setMonthlyUserData] = useState<Record<string, { clicks: number; earnings: number }>>({});
+  const [userMonthlyLoading, setUserMonthlyLoading] = useState(false);
+
+  const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  const fetchMonthlyClicks = async (month: number, year: number) => {
+    setMonthlyLoading(true);
+    try {
+      const { data } = await axios.get(`${SHORTENER_BASE}/admin/links/monthly-clicks`, {
+        params: { month, year },
+        headers: { Authorization: `Bearer ${getToken()}` }
+      });
+      setMonthlyClicks(data.data || {});
+    } catch (err: any) {
+      toast.error('Monthly clicks load failed');
+    } finally {
+      setMonthlyLoading(false);
+    }
+  };
+
+  const fetchMonthlyUserClicks = async (month: number, year: number) => {
+    setUserMonthlyLoading(true);
+    try {
+      const { data } = await axios.get(`${API_BASE}/short-users/admin/users/monthly-clicks`, {
+        params: { month, year },
+        headers: { Authorization: `Bearer ${getToken()}` }
+      });
+      setMonthlyUserData(data.data || {});
+    } catch (err: any) {
+      toast.error('Monthly user data load failed');
+    } finally {
+      setUserMonthlyLoading(false);
+    }
+  };
 
   // requests
   const [requests, setRequests] = useState<ShortRequest[]>([]);
@@ -627,8 +702,6 @@ const ShortenerManager: React.FC = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [msgUserSearch, setMsgUserSearch] = useState('');
-
-  // new: per‑user unread counts
   const [userUnreadCounts, setUserUnreadCounts] = useState<Record<string, number>>({});
 
   // broadcast
@@ -638,7 +711,6 @@ const ShortenerManager: React.FC = () => {
   // ─── helper: fetch per‑user unread counts ───────────────────
   const fetchUserUnreadCounts = async () => {
     try {
-      // Expected endpoint: returns [{ userId, unreadCount }]
       const { data } = await axios.get(`${API_BASE}/short-users/admin/messages/unread-per-user`, {
         headers: { Authorization: `Bearer ${getToken()}` }
       });
@@ -647,28 +719,22 @@ const ShortenerManager: React.FC = () => {
         map[item.userId] = item.unreadCount;
       });
       setUserUnreadCounts(map);
-      // total unread = sum of values
       const total = Object.values(map).reduce((a, b) => a + b, 0);
       setUnreadCount(total);
     } catch (err) {
-      // endpoint may not exist – ignore
       console.warn('Unread per‑user endpoint not available', err);
     }
   };
 
-  // mark conversation as read for a user
   const markConversationRead = async (userId: string) => {
     try {
       await axios.post(`${API_BASE}/short-users/admin/messages/${userId}/mark-read`, {}, {
         headers: { Authorization: `Bearer ${getToken()}` }
       });
-      // update local state
       setUserUnreadCounts(prev => ({ ...prev, [userId]: 0 }));
-      // recalc total
       const newTotal = Object.values({ ...userUnreadCounts, [userId]: 0 }).reduce((a,b)=>a+b,0);
       setUnreadCount(newTotal);
     } catch (err) {
-      // fallback – just clear locally if endpoint missing
       setUserUnreadCounts(prev => ({ ...prev, [userId]: 0 }));
     }
   };
@@ -677,7 +743,13 @@ const ShortenerManager: React.FC = () => {
   useEffect(() => { if (activeTab === 'requests') fetchRequests(); }, [activeTab]);
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  // periodic unread refresh (every 30s)
+  // ✅ UPDATED useEffect: fetch monthly data when view mode or month/year changes (both tabs)
+  useEffect(() => {
+    if (linkViewMode !== 'monthly') return;
+    if (activeTab === 'links') fetchMonthlyClicks(selectedMonth, selectedYear);
+    if (activeTab === 'users') fetchMonthlyUserClicks(selectedMonth, selectedYear);
+  }, [activeTab, linkViewMode, selectedMonth, selectedYear]);
+
   useEffect(() => {
     if (activeTab === 'messages') {
       const interval = setInterval(fetchUserUnreadCounts, 30000);
@@ -870,9 +942,7 @@ const ShortenerManager: React.FC = () => {
     try {
       const { data } = await axios.get(`${API_BASE}/short-users/admin/messages/${user._id}`, { headers: { Authorization: `Bearer ${getToken()}` } });
       setMessages(Array.isArray(data) ? data : []);
-      // mark conversation as read
       await markConversationRead(user._id);
-      // refresh unread counts after marking
       await fetchUserUnreadCounts();
     } catch { toast.error('Messages load failed'); }
     finally { setMessagesLoading(false); }
@@ -941,7 +1011,6 @@ const ShortenerManager: React.FC = () => {
     return false;
   });
 
-  // ✅ filtered users with source filter
   const filteredUsers = users.filter(u => {
     if (sourceFilter !== 'all' && (u.createdBy || 'admin') !== sourceFilter) return false;
     if (!userSearchQuery) return true;
@@ -952,7 +1021,6 @@ const ShortenerManager: React.FC = () => {
     );
   });
 
-  // ── message sidebar: filter + sort by unread first ──
   const filteredMsgUsers = users.filter(u => {
     if (!msgUserSearch) return true;
     const q = msgUserSearch.toLowerCase();
@@ -972,12 +1040,21 @@ const ShortenerManager: React.FC = () => {
   const totalUnpaid = users.reduce((s, u) => s + (u.unpaidEarnings || 0), 0);
   const totalEarned = users.reduce((s, u) => s + (u.totalEarnings || 0), 0);
 
+  // ✅ NEW: monthly-aware display values for the stats bar
+  const isMonthly = linkViewMode === 'monthly';
+  const displayedClicks = isMonthly
+    ? Object.values(monthlyClicks).reduce((s, v) => s + v, 0)
+    : totalClicks;
+  const displayedEarned = isMonthly
+    ? Object.values(monthlyUserData).reduce((s, v) => s + (v.earnings || 0), 0)
+    : totalEarned;
+
   return (
     <>
       <style>{css}</style>
       <div className="sm">
 
-        {/* Stats (unchanged) */}
+        {/* Stats */}
         <div className="sm-stats">
           <div className="sm-stat-card">
             <div className="sm-stat-label">Total Links</div>
@@ -985,9 +1062,9 @@ const ShortenerManager: React.FC = () => {
             <div className="sm-stat-sub">short URLs active</div>
           </div>
           <div className="sm-stat-card">
-            <div className="sm-stat-label">Total Clicks</div>
-            <div className="sm-stat-value sm-v-accent">{totalClicks.toLocaleString()}</div>
-            <div className="sm-stat-sub">across all links</div>
+            <div className="sm-stat-label">{isMonthly ? `${MONTH_NAMES[selectedMonth - 1]} Clicks` : 'Total Clicks'}</div>
+            <div className="sm-stat-value sm-v-accent">{displayedClicks.toLocaleString()}</div>
+            <div className="sm-stat-sub">{isMonthly ? `${selectedYear}` : 'across all links'}</div>
           </div>
           <div className="sm-stat-card">
             <div className="sm-stat-label">Total Users</div>
@@ -995,9 +1072,9 @@ const ShortenerManager: React.FC = () => {
             <div className="sm-stat-sub">{users.filter(u => u.isActive).length} active</div>
           </div>
           <div className="sm-stat-card">
-            <div className="sm-stat-label">Total Earned</div>
-            <div className="sm-stat-value sm-v-green">Rs.{totalEarned.toFixed(0)}</div>
-            <div className="sm-stat-sub">all time</div>
+            <div className="sm-stat-label">{isMonthly ? `${MONTH_NAMES[selectedMonth - 1]} Earned` : 'Total Earned'}</div>
+            <div className="sm-stat-value sm-v-green">Rs.{displayedEarned.toFixed(0)}</div>
+            <div className="sm-stat-sub">{isMonthly ? 'estimated (rate × clicks)' : 'all time'}</div>
           </div>
           <div className="sm-stat-card">
             <div className="sm-stat-label">Pending Payout</div>
@@ -1006,7 +1083,7 @@ const ShortenerManager: React.FC = () => {
           </div>
         </div>
 
-        {/* Tabs (unchanged) */}
+        {/* Tabs */}
         <div className="sm-tabs">
           {(['links','users','requests','messages'] as const).map(tab => (
             <button
@@ -1027,7 +1104,58 @@ const ShortenerManager: React.FC = () => {
           </button>
         </div>
 
-        {/* LINKS TAB – unchanged (same as previous) */}
+        {/* ✅ Month-wise view selector — shared between Links & Users tabs */}
+        {(activeTab === 'links' || activeTab === 'users') && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+            <button
+              className={`sm-btn ${linkViewMode === 'alltime' ? 'sm-btn-primary' : 'sm-btn-ghost'}`}
+              style={{ padding: '6px 12px', fontSize: 12 }}
+              onClick={() => setLinkViewMode('alltime')}
+            >
+              All Time
+            </button>
+            <button
+              className={`sm-btn ${linkViewMode === 'monthly' ? 'sm-btn-primary' : 'sm-btn-ghost'}`}
+              style={{ padding: '6px 12px', fontSize: 12 }}
+              onClick={() => setLinkViewMode('monthly')}
+            >
+              <i className="ti ti-calendar" style={{ fontSize: 12 }} /> Monthly
+            </button>
+
+            {linkViewMode === 'monthly' && (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button className="sm-act-btn" onClick={() => setSelectedYear(y => y - 1)} title="Previous year">
+                    <i className="ti ti-chevron-left" />
+                  </button>
+                  <span style={{ fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--t2)', minWidth: 42, textAlign: 'center' }}>
+                    {selectedYear}
+                  </span>
+                  <button className="sm-act-btn" onClick={() => setSelectedYear(y => y + 1)} title="Next year">
+                    <i className="ti ti-chevron-right" />
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  {MONTH_NAMES.map((m, idx) => (
+                    <button
+                      key={m}
+                      onClick={() => setSelectedMonth(idx + 1)}
+                      className={`sm-btn ${selectedMonth === idx + 1 ? 'sm-btn-primary' : 'sm-btn-ghost'}`}
+                      style={{ padding: '5px 10px', fontSize: 11 }}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+
+                {(monthlyLoading || userMonthlyLoading) && <span style={{ fontSize: 11, color: 'var(--t3)' }}>Loading…</span>}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* LINKS TAB */}
         {activeTab === 'links' && (
           <>
             <div className="sm-toolbar">
@@ -1101,7 +1229,10 @@ const ShortenerManager: React.FC = () => {
                         <th style={{ width: '13%' }}>Label</th>
                         <th style={{ width: '22%' }}>Target URL</th>
                         <th style={{ width: '16%' }}>Assigned User</th>
-                        <th style={{ width: '9%' }}>Clicks</th>
+                        {/* ✅ Dynamic clicks column header */}
+                        <th style={{ width: '9%' }}>
+                          {linkViewMode === 'monthly' ? `${MONTH_NAMES[selectedMonth - 1]} Clicks` : 'Clicks'}
+                        </th>
                         <th style={{ width: '12%' }}>Last Click</th>
                         <th style={{ width: '14%' }}>Actions</th>
                       </tr>
@@ -1154,10 +1285,18 @@ const ShortenerManager: React.FC = () => {
                                 ) : <span style={{ color: 'var(--t3)' }}>—</span>}
                               </td>
                               <td><span style={{ fontSize: 11, color: 'var(--accent)', fontFamily: 'var(--mono)' }}>{getUserName(link.userId?.toString())}</span></td>
+                              {/* ✅ Dynamic clicks cell */}
                               <td>
-                                <span className={`sm-clicks-badge ${(link.clicks || 0) > 100 ? 'sm-clicks-high' : (link.clicks || 0) > 10 ? 'sm-clicks-mid' : 'sm-clicks-low'}`}>
-                                  {(link.clicks || 0).toLocaleString()}
-                                </span>
+                                {(() => {
+                                  const clickValue = linkViewMode === 'monthly'
+                                    ? (monthlyClicks[link.code] || 0)
+                                    : (link.clicks || 0);
+                                  return (
+                                    <span className={`sm-clicks-badge ${clickValue > 100 ? 'sm-clicks-high' : clickValue > 10 ? 'sm-clicks-mid' : 'sm-clicks-low'}`}>
+                                      {clickValue.toLocaleString()}
+                                    </span>
+                                  );
+                                })()}
                               </td>
                               <td><span className="sm-mono" style={{ color: 'var(--t3)', fontSize: 11 }}>{link.lastClicked ? new Date(link.lastClicked).toLocaleDateString('en-IN') : 'Never'}</span></td>
                               <td>
@@ -1239,7 +1378,7 @@ const ShortenerManager: React.FC = () => {
           </>
         )}
 
-        {/* USERS TAB – with source column and filter */}
+        {/* USERS TAB – now with monthly-aware columns and headers */}
         {activeTab === 'users' && (
           <>
             <div className="sm-toolbar">
@@ -1249,10 +1388,13 @@ const ShortenerManager: React.FC = () => {
                   <input className="sm-search" type="text" placeholder="Search users by name or username..." value={userSearchQuery} onChange={e => setUserSearchQuery(e.target.value)} />
                 </div>
                 {userSearchQuery && <span style={{ fontSize: 11, color: 'var(--t3)', fontFamily: 'var(--mono)' }}>{filteredUsers.length} / {users.length}</span>}
-                {/* Source filter buttons */}
-                <button className={`sm-btn ${sourceFilter === 'all' ? 'sm-btn-primary' : 'sm-btn-ghost'}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setSourceFilter('all')}>All</button>
-                <button className={`sm-btn ${sourceFilter === 'admin' ? 'sm-btn-primary' : 'sm-btn-ghost'}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setSourceFilter('admin')}>Admin Created</button>
-                <button className={`sm-btn ${sourceFilter === 'self' ? 'sm-btn-primary' : 'sm-btn-ghost'}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setSourceFilter('self')}>Self Created</button>
+                {!subAdminMode && (
+                  <>
+                    <button className={`sm-btn ${sourceFilter === 'all' ? 'sm-btn-primary' : 'sm-btn-ghost'}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setSourceFilter('all')}>All</button>
+                    <button className={`sm-btn ${sourceFilter === 'admin' ? 'sm-btn-primary' : 'sm-btn-ghost'}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setSourceFilter('admin')}>Admin Created</button>
+                    <button className={`sm-btn ${sourceFilter === 'self' ? 'sm-btn-primary' : 'sm-btn-ghost'}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setSourceFilter('self')}>Self Created</button>
+                  </>
+                )}
               </div>
               <button className="sm-btn sm-btn-new" onClick={() => setShowAddUser(v => !v)}>
                 <i className="ti ti-plus" style={{ fontSize: 13 }} /> New User
@@ -1314,11 +1456,11 @@ const ShortenerManager: React.FC = () => {
                         <th style={{ width: '13%' }}>User</th>
                         <th style={{ width: '10%' }}>Password</th>
                         <th style={{ width: '7%' }}>Rate/1k</th>
-                        <th style={{ width: '8%' }}>Clicks</th>
-                        <th style={{ width: '9%' }}>Earned</th>
+                        <th style={{ width: '8%' }}>{linkViewMode === 'monthly' ? `${MONTH_NAMES[selectedMonth - 1]} Clicks` : 'Clicks'}</th>
+                        <th style={{ width: '9%' }}>{linkViewMode === 'monthly' ? `${MONTH_NAMES[selectedMonth - 1]} Earned` : 'Earned'}</th>
                         <th style={{ width: '9%' }}>Pending</th>
                         <th style={{ width: '8%' }}>Status</th>
-                        <th style={{ width: '10%' }}>Source</th>   {/* ✅ NEW COLUMN */}
+                        <th style={{ width: '10%' }}>Source</th>
                         <th style={{ width: '26%' }}>Actions</th>
                       </tr>
                     </thead>
@@ -1341,8 +1483,16 @@ const ShortenerManager: React.FC = () => {
                               </span>
                             </td>
                             <td><span className="sm-mono" style={{ color: 'var(--teal)' }}>Rs.{user.ratePerThousand}</span></td>
-                            <td><span className="sm-mono" style={{ color: 'var(--t2)' }}>{(user.totalClicks || 0).toLocaleString()}</span></td>
-                            <td><span className="sm-mono" style={{ color: 'var(--green)' }}>Rs.{(user.totalEarnings || 0).toFixed(2)}</span></td>
+                            <td>
+                              <span className="sm-mono" style={{ color: 'var(--t2)' }}>
+                                {(linkViewMode === 'monthly' ? (monthlyUserData[user._id]?.clicks || 0) : (user.totalClicks || 0)).toLocaleString()}
+                              </span>
+                            </td>
+                            <td>
+                              <span className="sm-mono" style={{ color: 'var(--green)' }}>
+                                Rs.{(linkViewMode === 'monthly' ? (monthlyUserData[user._id]?.earnings || 0) : (user.totalEarnings || 0)).toFixed(2)}
+                              </span>
+                            </td>
                             <td><span className="sm-mono" style={{ color: 'var(--red)' }}>Rs.{(user.unpaidEarnings || 0).toFixed(2)}</span></td>
                             <td>
                               <span className={user.isActive ? 'sm-badge sm-badge-active' : 'sm-badge sm-badge-inactive'}>
@@ -1350,10 +1500,19 @@ const ShortenerManager: React.FC = () => {
                               </span>
                             </td>
                             <td>
-                              <span className={`sm-badge ${(user.createdBy || 'admin') === 'admin' ? 'sm-badge-admin' : 'sm-badge-self'}`}>
-                                <span className="sm-dot" />
-                                {(user.createdBy || 'admin') === 'admin' ? 'Admin' : 'Self-Created'}
-                              </span>
+                              {user.createdBy === 'self' ? (
+                                <span className="sm-badge sm-badge-self">
+                                  <span className="sm-dot" /> Self-Created
+                                </span>
+                              ) : (!user.createdByAdminId || user.createdByAdminId === 'admin') ? (
+                                <span className="sm-badge sm-badge-admin">
+                                  <span className="sm-dot" /> Main Admin
+                                </span>
+                              ) : (
+                                <span className="sm-badge sm-badge-subadmin" title={`Created by sub-admin: ${user.createdByAdminUsername}`}>
+                                  <span className="sm-dot" /> {user.createdByAdminUsername || 'Sub-Admin'}
+                                </span>
+                              )}
                             </td>
                             <td>
                               <div className="sm-act-group">
@@ -1384,7 +1543,7 @@ const ShortenerManager: React.FC = () => {
                           </tr>
                           {editingUserId === user._id && (
                             <tr className="sm-edit-expand">
-                              <td colSpan={9}>  {/* ✅ COLSPAN 9 */}
+                              <td colSpan={9}>
                                 <div className="sm-edit-inner">
                                   <div className="sm-edit-header">
                                     <span className="sm-edit-bar" />
@@ -1508,7 +1667,7 @@ const ShortenerManager: React.FC = () => {
           </div>
         )}
 
-        {/* MESSAGES TAB – with unread indicators & dark chat */}
+        {/* MESSAGES TAB – updated with AdminSenderBadge */}
         {activeTab === 'messages' && (
           <div className="sm-msg-layout">
             <div className="sm-msg-sidebar">
@@ -1623,6 +1782,7 @@ const ShortenerManager: React.FC = () => {
                           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, maxWidth: '75%' }}>
                             <div className="sm-chat-avatar">A</div>
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                              <AdminSenderBadge senderRole={msg.senderRole} senderName={msg.senderName} />
                               <div className="sm-bubble sm-bubble-admin">{msg.text}</div>
                               <div className="sm-bubble-time">{new Date(msg.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })} · Admin</div>
                             </div>

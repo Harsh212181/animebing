@@ -1,4 +1,4 @@
- // components/AnimeDetailPage.tsx - FULL-WIDTH FIX + LIKE COUNT FORMATTING + DESCRIPTION SHOW MORE
+ // components/AnimeDetailPage.tsx - BANNER HERO + LIKE COUNT FORMATTING + DESCRIPTION SHOW MORE
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import type { Anime, Episode, Chapter, DownloadPage } from '../src/types';
@@ -29,7 +29,7 @@ const HandThumbDownIcon = ({ className = "w-5 h-5", filled = false }: { classNam
   </svg>
 );
 
-// ✅ YouTube-style count formatter (e.g., 1100 → 1.1K, 2000 → 2K)
+// ✅ YouTube-style count formatter
 const formatCount = (count: number): string => {
   if (count >= 1000000) {
     const millions = (count / 1000000).toFixed(1);
@@ -94,7 +94,7 @@ const optimizeImageUrl = (url: string, width: number, height: number): string =>
   }
 };
 
-// ✅ 1.5x srcSet — 2x hata diya (detail page pe bhi zaroorat nahi)
+// ✅ 1.5x srcSet
 const generateSrcSet = (url: string, baseWidth: number, baseHeight: number): string => {
   if (!url || !url.includes('cloudinary.com')) return '';
   try {
@@ -295,14 +295,16 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     }
   };
 
-  const fetchLinkSettings = async () => {
+  const fetchLinkSettings = async (animeId?: string) => {
     try {
       setLinkSettingsLoading(true);
-      const url = `${API_BASE}/link-settings`;
+      const url = animeId
+        ? `${API_BASE}/anime-link-control/effective/${animeId}`
+        : `${API_BASE}/link-settings/effective`;
       const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      setLinkSettings(data);
+      const json = await response.json();
+      setLinkSettings(json.data || json);
     } catch (err) {
       console.error('Error fetching link settings:', err);
       setLinkSettings({ link1: true, link2: true, link3: true, link4: true, link5: true });
@@ -347,7 +349,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
   useEffect(() => {
     if (anime) {
       fetchSimilarContent();
-      fetchLinkSettings();
+      fetchLinkSettings(anime._id || anime.id);
     }
   }, [anime?.id, anime?.contentType, fetchSimilarContent]);
 
@@ -397,12 +399,17 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     modifiedTime: displayAnime?.updatedAt,
   };
 
-  // ✅ Mobile thumbnail — 80x112 display, 1x aur 1.5x srcSet
-  const mobileThumbnail = displayAnime?.thumbnail ? optimizeImageUrl(displayAnime.thumbnail, 80, 112) : 'https://via.placeholder.com/80x112/1e293b/64748b?text=No+Image';
-  const mobileThumbnailSrcSet = displayAnime?.thumbnail ? generateSrcSet(displayAnime.thumbnail, 80, 112) : '';
-  // ✅ Desktop thumbnail — 320x448 display, 1x aur 1.5x srcSet
-  const desktopThumbnail = displayAnime?.thumbnail ? optimizeImageUrl(displayAnime.thumbnail, 320, 448) : 'https://via.placeholder.com/320x448/1e293b/64748b?text=No+Image';
-  const desktopThumbnailSrcSet = displayAnime?.thumbnail ? generateSrcSet(displayAnime.thumbnail, 320, 448) : '';
+  // Banner hero images
+  const posterThumbnail = displayAnime?.thumbnail ? optimizeImageUrl(displayAnime.thumbnail, 193, 289) : 'https://via.placeholder.com/193x289/1e293b/64748b?text=No+Image';
+  const posterThumbnailSrcSet = displayAnime?.thumbnail ? generateSrcSet(displayAnime.thumbnail, 193, 289) : '';
+  const bgWide = displayAnime?.thumbnail ? optimizeImageUrl(displayAnime.thumbnail, 1400, 400) : '';
+  const bgWideSrcSet = displayAnime?.thumbnail ? `
+    ${optimizeImageUrl(displayAnime.thumbnail, 700, 200)} 700w,
+    ${optimizeImageUrl(displayAnime.thumbnail, 1400, 400)} 1400w,
+    ${optimizeImageUrl(displayAnime.thumbnail, 2100, 600)} 2100w
+  ` : '';
+
+  const currentEpisode = (displayAnime as any)?.currentEpisode || 0;
 
   const itemsBySession = (isManga ? chapters : episodes)?.reduce((acc, item) => {
     const session = item.session || 1;
@@ -451,23 +458,22 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     setDownloadingItem(null);
   };
 
-  // ✅ VoteAndShareButtons – using formatCount for likes and dislikes
-  const VoteAndShareButtons = ({ isMobile = false }: { isMobile?: boolean }) => {
-    const size = isMobile ? 'h-4 w-4' : 'h-5 w-5';
-    const textSz = isMobile ? 'text-xs' : 'text-sm';
-    const padding = isMobile ? 'px-2 py-1' : 'px-3 py-1.5';
+  const VoteButtons = ({ isMobile = false }: { isMobile?: boolean }) => {
+    const buttonSize = isMobile ? 'h-4 w-4' : 'h-5 w-5';
+    const textSize = isMobile ? 'text-xs' : 'text-sm';
+    const padding = isMobile ? 'px-3 py-1.5' : 'px-4 py-2';
     return (
-      <div className="flex items-center gap-2 mt-4">
-        <button onClick={() => handleVote('like')} disabled={isVoting} className={`${padding} ${textSz} rounded-lg font-medium transition-all duration-200 flex items-center gap-1.5 ${userVote === 'like' ? 'bg-gradient-to-r from-pink-600 to-rose-600 text-white shadow-lg' : 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50'} ${isVoting ? 'opacity-50 cursor-not-allowed' : ''}`}>
-          <HeartIcon className={size} filled={userVote === 'like'} />
+      <div className="flex items-center gap-3 mt-4">
+        <button onClick={() => handleVote('like')} disabled={isVoting} className={`${padding} ${textSize} rounded-lg font-medium transition-all duration-200 flex items-center gap-1.5 shadow-lg ${userVote === 'like' ? 'bg-gradient-to-r from-pink-600 to-rose-600 text-white shadow-pink-600/30 hover:shadow-pink-600/50' : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-600 hover:border-pink-500/50'} ${isVoting ? 'opacity-50 cursor-not-allowed' : ''} transform hover:scale-105`}>
+          <HeartIcon className={buttonSize} filled={userVote === 'like'} />
           <span className="font-bold">{formatCount(likes)}</span>
         </button>
-        <button onClick={() => handleVote('dislike')} disabled={isVoting} className={`${padding} ${textSz} rounded-lg font-medium transition-all duration-200 flex items-center gap-1 ${userVote === 'dislike' ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg' : 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50'} ${isVoting ? 'opacity-50 cursor-not-allowed' : ''}`}>
-          <HandThumbDownIcon className={size} filled={userVote === 'dislike'} />
+        <button onClick={() => handleVote('dislike')} disabled={isVoting} className={`${padding} ${textSize} rounded-lg font-medium transition-all duration-200 flex items-center gap-1.5 shadow-lg ${userVote === 'dislike' ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-blue-600/30 hover:shadow-blue-600/50' : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-600 hover:border-blue-500/50'} ${isVoting ? 'opacity-50 cursor-not-allowed' : ''} transform hover:scale-105`}>
+          <HandThumbDownIcon className={buttonSize} filled={userVote === 'dislike'} />
           <span className="font-bold">{formatCount(dislikes)}</span>
         </button>
-        <button onClick={handleShare} disabled={isSharing} className={`${padding} ${textSz} rounded-lg font-medium transition-all duration-200 flex items-center gap-1 ${isSharing ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white' : 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50'} ${isSharing ? 'opacity-50 cursor-not-allowed' : ''}`}>
-          {isSharing ? <Spinner size="xs" className="mr-1" /> : <ShareIcon className={size} />}
+        <button onClick={handleShare} disabled={isSharing} className={`${padding} ${textSize} rounded-lg font-medium transition-all duration-200 flex items-center gap-1.5 shadow-lg ${isSharing ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white' : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-600 hover:border-emerald-500/50'} ${isSharing ? 'opacity-50 cursor-not-allowed' : ''} transform hover:scale-105`}>
+          {isSharing ? <Spinner size="xs" className="mr-1" /> : <ShareIcon className={buttonSize} />}
           <span className="font-bold">Share</span>
         </button>
       </div>
@@ -502,116 +508,193 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
 
   return (
     <>
-      <SEO
-        title={seoData.title}
-        description={seoData.description}
-        keywords={seoData.keywords}
-        image={seoData.ogImage}
-        url={seoData.ogUrl}
-        canonicalUrl={seoData.canonicalUrl}
-        type="video.tv_show"
-        publishedTime={seoData.publishedTime}
-        modifiedTime={seoData.modifiedTime}
-      />
+      <SEO {...seoData} />
       
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
         <div className="w-full px-3 py-4">
           <button
             onClick={onBack}
             className="group bg-slate-800/60 hover:bg-slate-700/80 text-white px-4 py-2 rounded-lg mb-4 flex items-center gap-2 transition-all duration-300 font-medium backdrop-blur-sm border border-slate-700 hover:border-purple-500/30 text-sm"
-            aria-label="Go back to home page"
           >
             <span className="group-hover:-translate-x-0.5 transition-transform">←</span>
             Back to Home
           </button>
 
-          {/* MOBILE VIEW */}
-          <div className="lg:hidden">
-            <div className="bg-slate-800/40 backdrop-blur-sm rounded-xl p-4 border border-slate-700 shadow-xl mb-0">
-              <div className="flex flex-col">
-                <div className="flex gap-2 mb-0">
-                  <div className="flex-shrink-0">
-                    <div className="relative group">
+          {/* ========== BANNER HERO (from DownloadLinkPage) ========== */}
+          {/* MOBILE BANNER */}
+          <div className="block lg:hidden mb-4">
+            <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 to-slate-950 shadow-2xl rounded-2xl h-[200px]">
+              <div className="absolute inset-0">
+                <img
+                  src={bgWide}
+                  srcSet={bgWideSrcSet}
+                  sizes="100vw"
+                  alt={displayAnime?.title}
+                  className="w-full h-full object-cover"
+                  loading="eager"
+                  onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/800x400/1e293b/64748b?text=No+Image'; }}
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/80 to-transparent"></div>
+                <div className="absolute inset-0 bg-gradient-to-r from-slate-950/90 to-slate-950/70"></div>
+              </div>
+
+              <div className="relative z-10 h-full flex items-center px-4">
+                <div className="flex items-center gap-3 w-full">
+                  <div className="relative w-28 flex-shrink-0">
+                    <div className="relative aspect-[2/3] rounded-lg overflow-hidden shadow-2xl shadow-purple-900/50 ring-2 ring-purple-500/30">
                       <img
-                        src={mobileThumbnail}
-                        srcSet={mobileThumbnailSrcSet}
+                        src={posterThumbnail}
+                        srcSet={posterThumbnailSrcSet}
+                        sizes="112px"
                         alt={displayAnime?.title}
-                        className="w-20 h-28 object-cover rounded-lg shadow-md group-hover:scale-105 transition-transform duration-300"
+                        className="w-full h-full object-cover"
                         loading="lazy"
-                        width="80"
-                        height="112"
-                        sizes="80px"
-                        onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/80x112/1e293b/64748b?text=No+Image'; }}
+                        onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/193x289/1e293b/64748b?text=No+Image'; }}
                       />
                     </div>
                   </div>
+
                   <div className="flex-1 min-w-0">
-                    <h1 className={`font-bold text-white mb-2 break-words ${displayAnime?.title && displayAnime.title.length > 40 ? 'text-sm leading-tight' : 'text-lg'}`}>
-                      {displayAnime?.title}
-                    </h1>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-2 py-1 rounded text-xs font-bold whitespace-nowrap">{displayAnime?.releaseYear}</span>
-                      <span className={`px-4 py-1 rounded text-xs font-bold whitespace-nowrap ${displayAnime?.status === 'Ongoing' ? 'bg-gradient-to-r from-yellow-500 to-orange-600 text-white' : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white'}`}>{displayAnime?.status}</span>
-                      <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-3 py-1 rounded text-xs font-bold whitespace-nowrap">{displayAnime?.contentType}</span>
-                      {/* ✅ UPDATED: all sub/dub/dual badges for mobile */}
-                      {displayAnime?.subDubStatus && (
-                        <div className="flex flex-wrap gap-0">
-                          {displayAnime.subDubStatus.split(',').map(s => s.trim().toLowerCase()).includes('hindi dub') && (
-                            <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-3 py-1 rounded text-xs font-bold">Hindi Dub</span>
-                          )}
-                          {displayAnime.subDubStatus.split(',').map(s => s.trim().toLowerCase()).includes('hindi sub') && (
-                            <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-3 py-1 rounded text-xs font-bold">Hindi Sub</span>
-                          )}
-                          {displayAnime.subDubStatus.split(',').map(s => s.trim().toLowerCase()).includes('english sub') && (
-                            <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-3 py-1 rounded text-xs font-bold">English Sub</span>
-                          )}
-                          {displayAnime.subDubStatus.toLowerCase().includes('both') && (
-                            <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-3 py-1 rounded text-xs font-bold">Hindi Dub</span>
-                          )}
-                          {displayAnime.subDubStatus.toLowerCase().includes('sub & dub') && (
-                            <>
-                              <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-3 py-1 rounded text-xs font-bold">Hindi Sub</span>
-                              <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-3 py-1 rounded text-xs font-bold">Hindi Dub</span>
-                            </>
-                          )}
-                          {displayAnime.subDubStatus.toLowerCase().includes('dual audio') && (
-                            <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-3 py-1 rounded text-xs font-bold">Dual Audio</span>
-                          )}
+                    <div className="space-y-2">
+                      <h1 className="text-base font-bold text-white line-clamp-2 leading-tight drop-shadow-lg">
+                        {displayAnime?.title}
+                      </h1>
+                      <div className="flex flex-wrap gap-1.5">
+                        <span className={`px-2 py-0.5 rounded text-xs font-semibold ${displayAnime?.status === 'Ongoing' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'}`}>
+                          {displayAnime?.status}
+                        </span>
+                        {displayAnime?.subDubStatus && (
+                          <span className="px-2 py-0.5 rounded text-xs font-semibold bg-purple-600/80 text-white border border-purple-500">
+                            {displayAnime.subDubStatus}
+                          </span>
+                        )}
+                        <span className="px-2 py-0.5 rounded text-xs font-semibold bg-slate-800/60 text-slate-300 border border-slate-700">
+                          {displayAnime?.releaseYear}
+                        </span>
+                        {!isMovie && currentEpisode > 0 && (
+                          <span className="px-2 py-0.5 rounded text-xs font-semibold bg-gradient-to-r from-red-600 to-orange-600 text-white border border-red-500/30">
+                            EP {currentEpisode}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* DESKTOP BANNER */}
+          <div className="hidden lg:block mb-6">
+            <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 to-slate-950 shadow-2xl rounded-2xl h-[330px]">
+              <div className="absolute inset-0">
+                <img
+                  src={bgWide}
+                  srcSet={bgWideSrcSet}
+                  sizes="100vw"
+                  alt={displayAnime?.title}
+                  className="w-full h-full object-cover"
+                  loading="eager"
+                  onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/1400x400/1e293b/64748b?text=No+Image'; }}
+                />
+                <div className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/85 to-transparent"></div>
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-transparent"></div>
+              </div>
+              <div className="relative z-10 h-full flex items-center px-10">
+                <div className="flex items-center gap-8 w-full h-full">
+                  <div className="relative flex-shrink-0">
+                    <div className="absolute -inset-1.5">
+                      <div className="w-full h-full bg-gradient-to-br from-purple-500/20 to-transparent blur-xl opacity-50"></div>
+                    </div>
+                    <div className="relative w-48">
+                      <div className="relative rounded-xl overflow-hidden shadow-2xl shadow-purple-900/30 ring-2 ring-purple-500/30 aspect-[2/3]">
+                        <img
+                          src={posterThumbnail}
+                          srcSet={posterThumbnailSrcSet}
+                          sizes="192px"
+                          alt={displayAnime?.title}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                          onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/193x289/1e293b/64748b?text=No+Image'; }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 min-w-0 py-4 h-full flex flex-col justify-center">
+                    <div className="space-y-3">
+                      <h1 className="text-3xl font-bold text-white leading-tight drop-shadow-lg">
+                        {displayAnime?.title}
+                      </h1>
+                      <div className="flex flex-wrap gap-1.5">
+                        <span className={`px-2.5 py-1 rounded text-xs font-bold ${displayAnime?.status === 'Ongoing' ? 'bg-gradient-to-r from-emerald-500/20 to-emerald-600/20 text-emerald-300 border border-emerald-500/30' : 'bg-gradient-to-r from-blue-500/20 to-blue-600/20 text-blue-300 border border-blue-500/30'}`}>
+                          {displayAnime?.status}
+                        </span>
+                        <span className="px-2.5 py-1 rounded text-xs font-bold bg-gradient-to-r from-slate-800/40 to-slate-900/40 text-slate-300 border border-slate-700">
+                          {displayAnime?.releaseYear}
+                        </span>
+                        {displayAnime?.subDubStatus && (
+                          <span className="px-2.5 py-1 rounded text-xs font-bold bg-gradient-to-r from-purple-600 to-purple-700 text-white border border-purple-500">
+                            {displayAnime.subDubStatus}
+                          </span>
+                        )}
+                        {!isMovie && currentEpisode > 0 && (
+                          <span className="px-2.5 py-1 rounded text-xs font-bold bg-gradient-to-r from-red-600 to-orange-600 text-white border border-red-500/30">
+                            EP {currentEpisode}
+                          </span>
+                        )}
+                      </div>
+                      {descriptionText && (
+                        <p className="text-slate-300 text-xs leading-relaxed max-w-2xl line-clamp-2">
+                          {descriptionText}
+                        </p>
+                      )}
+                      {displayAnime?.genreList && displayAnime.genreList.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {displayAnime.genreList.slice(0, 4).map((genre, i) => (
+                            <span key={i} className="px-2 py-0.5 rounded text-xs bg-slate-800/40 text-slate-300 border border-slate-700 hover:bg-slate-700/50 transition-colors">
+                              {genre}
+                            </span>
+                          ))}
                         </div>
                       )}
                     </div>
+                    <div className="mt-5">
+                      <VoteButtons />
+                    </div>
                   </div>
                 </div>
-                <div className="space-y-2 mt-2">
-                  <div className="flex flex-wrap gap-2">
-                    <div className="text-xs text-slate-300"><span className="font-semibold">Year:</span> {displayAnime?.releaseYear || 'N/A'}</div>
-                    <div className="text-xs text-slate-300"><span className="font-semibold">Status:</span> {displayAnime?.status || 'N/A'}</div>
-                    <div className="text-xs text-slate-300"><span className="font-semibold">Type:</span> {displayAnime?.contentType || 'N/A'}</div>
-                  </div>
-                  <div>
-                    <div className="flex flex-wrap gap-1">
-                      {displayAnime?.genreList?.map((genre, index) => (
-                        <span key={index} className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-2 py-1 rounded text-xs font-medium transition-all duration-300 whitespace-nowrap">{genre}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* ========== DESCRIPTION / GENRES / VOTE PANEL (below banner) ========== */}
+          <div className="mb-6 lg:mb-8">
+            <div className="bg-slate-800/40 backdrop-blur-md rounded-2xl lg:rounded-3xl p-5 lg:p-8 border border-slate-700/50 shadow-2xl">
+              <div className="space-y-4 lg:space-y-6">
+                {/* Genres (mobile first with line separator) */}
+                {displayAnime?.genreList && displayAnime.genreList.length > 0 && (
+                  <div className="order-1 lg:order-none">
+                    <span className="text-slate-400 text-xs lg:text-sm font-medium mr-3">Genres</span>
+                    <div className="flex flex-wrap gap-1.5 lg:gap-2 mt-2">
+                      {displayAnime.genreList.map((genre, index) => (
+                        <span key={index} className="bg-gradient-to-r from-purple-600/80 to-pink-600/80 text-white px-3 py-1 lg:px-5 lg:py-2 rounded-full lg:rounded-xl text-xs lg:text-sm font-medium whitespace-nowrap">{genre}</span>
                       ))}
                     </div>
                   </div>
-                  <VoteAndShareButtons isMobile={true} />
-                </div>
-                <div className="mt-3">
-                  <h3 className="text-sm font-semibold text-slate-300 mb-1">Description</h3>
-                  {/* ✅ Double-click toggle for mobile description */}
-                  <div
-                    className="text-slate-400 text-xs leading-relaxed cursor-pointer select-none"
-                    onDoubleClick={() => setIsDescriptionExpanded(prev => !prev)}
-                    title="Double-click to expand/collapse"
-                  >
+                )}
+
+                {displayAnime?.genreList && displayAnime.genreList.length > 0 && (
+                  <hr className="order-2 lg:hidden border-slate-700" />
+                )}
+
+                <div className="order-3 lg:order-none">
+                  <h3 className="text-sm lg:text-base font-semibold text-slate-300 mb-2">Description</h3>
+                  <div className="text-slate-400 text-xs lg:text-lg leading-relaxed">
                     {descriptionText.length > truncateThreshold && !isDescriptionExpanded ? (
                       <>
                         {descriptionText.slice(0, truncateThreshold)}...{' '}
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setIsDescriptionExpanded(true); }}
-                          className="text-purple-400 hover:text-purple-300 font-medium inline"
-                        >
+                        <button onClick={() => setIsDescriptionExpanded(true)} className="text-purple-400 hover:text-purple-300 font-medium inline">
                           Show More
                         </button>
                       </>
@@ -619,10 +702,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                       <>
                         {descriptionText || 'No description available for this content.'}
                         {descriptionText.length > truncateThreshold && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setIsDescriptionExpanded(false); }}
-                            className="text-purple-400 hover:text-purple-300 font-medium inline ml-1"
-                          >
+                          <button onClick={() => setIsDescriptionExpanded(false)} className="text-purple-400 hover:text-purple-300 font-medium inline ml-1">
                             Show Less
                           </button>
                         )}
@@ -630,51 +710,57 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                     )}
                   </div>
                 </div>
+
+                <div className="lg:hidden order-4">
+                  <VoteButtons isMobile={true} />
+                </div>
               </div>
             </div>
+          </div>
 
-            {/* ... rest of mobile view (sessions, episodes) unchanged ... */}
-            {availableSessions.length > 1 && (
-              <div className="bg-slate-800/40 backdrop-blur-sm rounded-xl p-3 mt-0 border border-slate-700 shadow-xl">
-                <div className="flex gap-2 overflow-x-auto pb-1">
-                  {availableSessions.map(session => (
-                    <button key={session} onClick={() => setSelectedSession(session)} className={`flex-shrink-0 px-3 py-1 rounded-lg font-medium transition-all duration-300 text-xs ${selectedSession === session ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md shadow-purple-500/25' : 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50 border border-slate-600'}`}>{`Session ${session}`}</button>
-                  ))}
+          {/* ========== SESSIONS / EPISODES / CHAPTERS ========== */}
+          {availableSessions.length > 1 && (
+            <div className="bg-slate-800/40 backdrop-blur-sm rounded-xl p-3 mb-3 border border-slate-700 shadow-xl">
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {availableSessions.map(session => (
+                  <button key={session} onClick={() => setSelectedSession(session)} className={`flex-shrink-0 px-3 py-1 rounded-lg font-medium transition-all duration-300 text-xs ${selectedSession === session ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md shadow-purple-500/25' : 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50 border border-slate-600'}`}>{`Session ${session}`}</button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="bg-slate-800/40 backdrop-blur-sm rounded-xl p-3 lg:p-6 border border-slate-700 shadow-xl">
+            <div className="flex justify-between items-center mb-3 lg:mb-6">
+              <h2 className="text-base lg:text-2xl font-bold text-white">{getContentLabel()}</h2>
+            </div>
+            {(isManga ? chaptersLoading : episodesLoading) ? (
+              <div className="flex justify-center py-6 lg:py-12"><Spinner size="sm" lg:text-lg text={`Loading ${getContentLabel().toLowerCase()}...`} /></div>
+            ) : error ? (
+              <div className="bg-red-600/20 border border-red-500/30 rounded-lg p-2 lg:p-4 mb-3">
+                <div className="flex items-center gap-2"><div className="text-red-400 text-xs">⚠️</div><p className="text-red-300 text-xs lg:text-sm">{error}</p></div>
+              </div>
+            ) : currentSessionItems.length === 0 ? (
+              <div className="text-center py-6 lg:py-16">
+                <div className="bg-slate-800/50 rounded-lg p-4 lg:rounded-2xl lg:p-12 border border-slate-700">
+                  <h3 className="text-sm lg:text-xl font-semibold text-slate-300 mb-1">No {getContentLabel()} Available</h3>
+                  <p className="text-slate-400 text-xs lg:text-base">{getNoContentMessage()}</p>
                 </div>
               </div>
-            )}
-
-            <div className="bg-slate-800/40 backdrop-blur-sm rounded-xl p-3 mt-0 border border-slate-700 shadow-xl">
-              <div className="flex justify-between items-center mb-3">
-                <h2 className="text-base font-bold text-white">{getContentLabel()}</h2>
-              </div>
-              {(isManga ? chaptersLoading : episodesLoading) ? (
-                <div className="flex justify-center py-6"><Spinner size="sm" text={`Loading ${getContentLabel().toLowerCase()}...`} /></div>
-              ) : error ? (
-                <div className="bg-red-600/20 border border-red-500/30 rounded-lg p-2 mb-3">
-                  <div className="flex items-center gap-2"><div className="text-red-400 text-xs">⚠️</div><p className="text-red-300 text-xs">{error}</p></div>
-                </div>
-              ) : currentSessionItems.length === 0 ? (
-                <div className="text-center py-6">
-                  <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
-                    <h3 className="text-sm font-semibold text-slate-300 mb-1">No {getContentLabel()} Available</h3>
-                    <p className="text-slate-400 text-xs">{getNoContentMessage()}</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-2">
+            ) : (
+              <>
+                <div className="space-y-2 lg:space-y-3">
                   {currentSessionItems
                     .sort((a: any, b: any) => isManga ? (a as any).chapterNumber - (b as any).chapterNumber : (a as any).episodeNumber - (b as any).episodeNumber)
                     .map((item: any, index: number) => {
                       const itemData = item as any;
                       return (
-                        <div key={itemData._id || index} className="group bg-slate-700/30 hover:bg-slate-600/40 rounded-lg p-2 transition-all duration-200 border border-slate-600 hover:border-purple-500/50 backdrop-blur-sm">
-                          <div className="flex items-center justify-between gap-2">
+                        <div key={itemData._id || index} className="group bg-slate-700/30 hover:bg-slate-600/40 rounded-lg lg:rounded-xl p-2 lg:p-4 transition-all duration-200 border border-slate-600 hover:border-purple-500/50 backdrop-blur-sm">
+                          <div className="flex items-center justify-between gap-2 lg:gap-4">
                             <div className="flex-1 min-w-0">
-                              <h3 className="text-white font-medium text-xs break-words">{itemData.title || getContentLabelSingular()}</h3>
+                              <h3 className="text-white font-medium text-xs lg:text-lg truncate">{itemData.title || getContentLabelSingular()}</h3>
                             </div>
-                            <div className="flex gap-1 flex-shrink-0">
-                              <DownloadButton item={item as Episode | Chapter} itemId={itemData._id} className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-3 py-2 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-1 group text-xs sm:text-sm whitespace-nowrap" showText={true} iconClassName="h-4 w-4 sm:h-5 w-5" />
+                            <div className="flex gap-1 lg:gap-2 flex-shrink-0">
+                              <DownloadButton item={item as Episode | Chapter} itemId={itemData._id} className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-3 py-2 lg:px-4 lg:py-2 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-1 group text-xs lg:text-sm whitespace-nowrap" showText={true} iconClassName="h-4 w-4 lg:h-5 w-5" />
                               {import.meta.env.DEV && episodeToPageMap.has(itemData.episodeNumber) && (
                                 <>
                                   {episodeToPageMap.get(itemData.episodeNumber)!.map((page, idx) => (
@@ -685,221 +771,41 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                                   ))}
                                 </>
                               )}
-                              <ReportButton animeId={anime.id || anime._id} episodeId={itemData._id} episodeNumber={isManga ? itemData.chapterNumber : itemData.episodeNumber} animeTitle={anime.title} />
+                              <div className="scale-90">
+                                <ReportButton animeId={anime.id || anime._id} episodeId={itemData._id} episodeNumber={isManga ? itemData.chapterNumber : itemData.episodeNumber} animeTitle={anime.title} />
+                              </div>
                             </div>
                           </div>
                         </div>
                       );
                     })}
                 </div>
-              )}
-              {!isManga && (
-                <div className="mt-4 p-3 bg-gradient-to-r from-blue-900/30 to-indigo-900/30 border border-blue-700/50 rounded-lg">
-                  <h4 className="text-xs font-bold text-blue-300 mb-2 flex items-center gap-1"><span className="text-blue-400">💡</span> Important Tips for Download and watching:</h4>
-                  <ul className="space-y-2 text-xs text-blue-300">
-                    <li className="flex items-start gap-2"><span className="text-blue-400 mt-0.5">•</span><span>1. Download at least 1 and at most 4 files or movies at a time. This helps keep your download speed fast. If you download more than 4 files at once, the speed will slow down. Once these files finish downloading, you can start downloading more.</span></li>
-                    <li className="flex items-start gap-2"><span className="text-blue-400 mt-0.5">•</span><span>2. If Wrong Audio you can Fix: Open MX Player → click Audio → Change track to Hindi / Tamil / Telugu / English / Japanese.</span></li>
-                    <li className="flex items-start gap-2"><span className="text-blue-400 mt-0.5">•</span><span>3. If you see an ad before download: Complete the short ad (if any) to unlock the download link. After the download finishes, you can watch the movie/episode offline in any media player (MX Player, VLC, etc.) without interruptions.</span></li>
-                  </ul>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* PC VIEW */}
-          <div className="hidden lg:block">
-            <div className="bg-slate-800/40 backdrop-blur-sm rounded-2xl p-6 mb-8 border border-slate-700 shadow-xl">
-              <div className="flex flex-col lg:flex-row gap-8">
-                <div className="flex-shrink-0 mx-auto lg:mx-0">
-                  <div className="relative group">
-                    <img src={desktopThumbnail} srcSet={desktopThumbnailSrcSet} alt={displayAnime?.title} className="w-full max-w-xs lg:w-50 h-auto lg:h-[23rem] object-cover rounded-xl shadow-2xl group-hover:scale-105 transition-transform duration-500" loading="lazy" width="320" height="448" sizes="(max-width: 1024px) 80px, 320px" onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/320x448/1e293b/64748b?text=No+Image'; }} />
-                  </div>
-                </div>
-                <div className="flex-1 space-y-6">
-                  <div>
-                    <h1 className={`font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mb-1 ${displayAnime?.title && displayAnime.title.length > 60 ? 'text-xl lg:text-2xl' : 'text-2xl lg:text-3xl'}`}>{displayAnime?.title}</h1>
-                    {/* ✅ Double-click toggle for PC description */}
-                    <div
-                      className="text-slate-300 leading-relaxed text-lg mt-1 cursor-pointer select-none"
-                      onDoubleClick={() => setIsDescriptionExpanded(prev => !prev)}
-                      title="Double-click to expand/collapse"
-                    >
-                      {descriptionText.length > truncateThreshold && !isDescriptionExpanded ? (
-                        <>
-                          {descriptionText.slice(0, truncateThreshold)}...{' '}
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setIsDescriptionExpanded(true); }}
-                            className="text-purple-400 hover:text-purple-300 font-medium inline"
-                          >
-                            Show More
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          {descriptionText || 'No description available for this content.'}
-                          {descriptionText.length > truncateThreshold && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setIsDescriptionExpanded(false); }}
-                              className="text-purple-400 hover:text-purple-300 font-medium inline ml-1"
-                            >
-                              Show Less
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="flex flex-wrap items-center gap-1">
-                      <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg font-bold">{displayAnime?.releaseYear}</div>
-                      <div className={`px-4 py-2 rounded-lg font-bold ${displayAnime?.status === 'Ongoing' ? 'bg-gradient-to-r from-yellow-500 to-orange-600 text-white' : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white'}`}>{displayAnime?.status}</div>
-                      <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg font-bold">{displayAnime?.contentType}</div>
-                      {/* ✅ UPDATED: all sub/dub/dual badges for PC */}
-                      {displayAnime?.subDubStatus && (
-                        <div className="flex flex-wrap gap-2">
-                          {displayAnime.subDubStatus.split(',').map(s => s.trim().toLowerCase()).includes('hindi dub') && (
-                            <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg font-bold">Hindi Dub</span>
-                          )}
-                          {displayAnime.subDubStatus.split(',').map(s => s.trim().toLowerCase()).includes('hindi sub') && (
-                            <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg font-bold">Hindi Sub</span>
-                          )}
-                          {displayAnime.subDubStatus.split(',').map(s => s.trim().toLowerCase()).includes('english sub') && (
-                            <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg font-bold">English Sub</span>
-                          )}
-                          {displayAnime.subDubStatus.toLowerCase().includes('both') && (
-                            <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg font-bold">Hindi Dub</span>
-                          )}
-                          {displayAnime.subDubStatus.toLowerCase().includes('sub & dub') && (
-                            <>
-                              <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg font-bold">Hindi Sub</span>
-                              <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg font-bold">Hindi Dub</span>
-                            </>
-                          )}
-                          {displayAnime.subDubStatus.toLowerCase().includes('dual audio') && (
-                            <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg font-bold">Dual Audio</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <span className="text-slate-400 text-sm font-medium mr-3">Genres</span>
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {displayAnime?.genreList?.map((genre, index) => (
-                          <span key={index} className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 hover:scale-105 cursor-pointer">{genre}</span>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <VoteAndShareButtons />
-                </div>
-              </div>
-            </div>
-
-            {/* ... rest of PC view unchanged ... */}
-            <div className="bg-slate-800/40 backdrop-blur-sm rounded-2xl p-1 border border-slate-700 shadow-xl">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                <h2 className="text-2xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent">{getContentLabel()}</h2>
-                {availableSessions.length > 1 && (
-                  <div className="flex gap-2 flex-wrap">
-                    {availableSessions.map(session => (
-                      <button key={session} onClick={() => setSelectedSession(session)} className={`px-4 py-2 rounded-lg font-medium transition-all duration-300 ${selectedSession === session ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-500/25' : 'bg-slate-700/50 text-slate-300 hover:bg-slate-600/50 border border-slate-600'}`}>{`Session ${session}`}</button>
-                    ))}
+                {!isManga && (
+                  <div className="mt-4 lg:mt-6 p-3 lg:p-4 bg-gradient-to-r from-blue-900/30 to-indigo-900/30 border border-blue-700/50 rounded-lg lg:rounded-xl">
+                    <h4 className="text-xs lg:text-sm font-bold text-blue-300 mb-2 flex items-center gap-1"><span className="text-blue-400">💡</span> Important Tips for Download and watching:</h4>
+                    <ul className="space-y-2 text-xs lg:text-sm text-blue-300">
+                      <li className="flex items-start gap-2"><span className="text-blue-400 mt-0.5">•</span><span>1. Download at least 1 and at most 4 files or movies at a time. This helps keep your download speed fast. If you download more than 4 files at once, the speed will slow down. Once these files finish downloading, you can start downloading more.</span></li>
+                      <li className="flex items-start gap-2"><span className="text-blue-400 mt-0.5">•</span><span>2. If Wrong Audio you can Fix: Open MX Player → click Audio → Change track to Hindi / Tamil / Telugu / English / Japanese.</span></li>
+                      <li className="flex items-start gap-2"><span className="text-blue-400 mt-0.5">•</span><span>3. If you see an ad before download: Complete the short ad (if any) to unlock the download link. After the download finishes, you can watch the movie/episode offline in any media player (MX Player, VLC, etc.) without interruptions.</span></li>
+                    </ul>
                   </div>
                 )}
-              </div>
-              {(isManga ? chaptersLoading : episodesLoading) ? (
-                <div className="flex justify-center py-12"><Spinner size="lg" text={`Loading ${getContentLabel().toLowerCase()}...`} /></div>
-              ) : error ? (
-                <div className="bg-red-600/20 border border-red-500/30 rounded-xl p-4 mb-6"><div className="flex items-center gap-3"><div className="text-red-400 text-lg">⚠️</div><p className="text-red-300 text-sm">{error}</p></div></div>
-              ) : currentSessionItems.length === 0 ? (
-                <div className="text-center py-16">
-                  <div className="bg-slate-800/50 rounded-2xl p-12 max-w-md mx-auto border border-slate-700">
-                    <h3 className="text-xl font-semibold text-slate-300 mb-3">No {getContentLabel()} Available</h3>
-                    <p className="text-slate-400">{getNoContentMessage()}</p>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="space-y-3">
-                    {currentSessionItems
-                      .sort((a: any, b: any) => isManga ? (a as any).chapterNumber - (b as any).chapterNumber : (a as any).episodeNumber - (b as any).episodeNumber)
-                      .map((item: any, index: number) => {
-                        const itemData = item as any;
-                        return (
-                          <div key={itemData._id || index} className="group bg-slate-700/30 hover:bg-slate-600/40 rounded-xl p-4 transition-all duration-300 border border-slate-600 hover:border-purple-500/50 hover:shadow-lg hover:shadow-purple-500/10 backdrop-blur-sm">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                              <div className="flex-1 min-w-0">
-                                <h3 className="text-white font-semibold text-lg truncate">{itemData.title || getContentLabelSingular()}</h3>
-                                {itemData.session > 1 && <p className="text-slate-400 text-sm mt-1">Session {itemData.session}</p>}
-                              </div>
-                              <div className="flex gap-2 flex-shrink-0">
-                                <DownloadButton item={item as Episode | Chapter} itemId={itemData._id} className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-4 py-2 rounded-lg shadow-md hover:shadow-lg transition-all duration-300 font-medium flex items-center gap-2 group" showText={true} iconClassName="h-4 w-4" />
-                                {import.meta.env.DEV && episodeToPageMap.has(itemData.episodeNumber) && (
-                                  <div className="flex gap-1 flex-wrap">
-                                    {episodeToPageMap.get(itemData.episodeNumber)!.map((page, idx) => (
-                                      <Link key={page._id || idx} to={`/download/${page.slug}`} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition-all duration-300 hover:scale-105 flex items-center gap-1" title={page.title}>
-                                        <span className="text-sm">☠️</span>
-                                        {page.buttonTitle || page.title}
-                                      </Link>
-                                    ))}
-                                  </div>
-                                )}
-                                <div className="scale-90">
-                                  <ReportButton animeId={anime.id || anime._id} episodeId={itemData._id} episodeNumber={isManga ? itemData.chapterNumber : itemData.episodeNumber} animeTitle={anime.title} />
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                  </div>
-                  {!isManga && (
-                    <div className="mt-6 p-4 bg-gradient-to-r from-blue-900/30 to-indigo-900/30 border border-blue-700/50 rounded-xl">
-                      <h4 className="text-sm font-bold text-blue-300 mb-3 flex items-center gap-2"><span className="text-blue-400">💡</span> Important Tips for Download and watching:</h4>
-                      <ul className="space-y-2 text-sm text-blue-300">
-                        <li className="flex items-start gap-2"><span className="text-blue-400 mt-0.5">•</span><span>1. Download at least 1 and at most 4 files or movies at a time. This helps keep your download speed fast. If you download more than 4 files at once, the speed will slow down. Once these files finish downloading, you can start downloading more.</span></li>
-                        <li className="flex items-start gap-2"><span className="text-blue-400 mt-0.5">•</span><span>2. If Wrong Audio you can Fix: Open MX Player → click Audio → Change track to Hindi / Tamil / Telugu / English / Japanese.</span></li>
-                        <li className="flex items-start gap-2"><span className="text-blue-400 mt-0.5">•</span><span>3. If you see an ad before download: Complete the short ad (if any) to unlock the download link. After the download finishes, you can watch the movie/episode offline in any media player (MX Player, VLC, etc.) without interruptions.</span></li>
-                      </ul>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-
-            {/* MORE LIKE THIS for PC */}
-            <div className="mt-12">
-              <h2 className="text-2xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mb-6">
-                More {displayAnime?.contentType === 'Movie' ? 'Movies' : displayAnime?.contentType === 'Manga' ? 'Manga' : 'Anime'}
-              </h2>
-              {similarLoading ? (
-                <div className="flex justify-center py-12"><Spinner size="lg" text="Loading similar content..." /></div>
-              ) : similarContent.length === 0 ? (
-                <div className="text-center py-8"><div className="bg-slate-800/50 rounded-2xl p-8 max-w-md mx-auto border border-slate-700"><h3 className="text-lg font-semibold text-slate-300 mb-2">No Similar Content Found</h3><p className="text-slate-400">We couldn't find similar {displayAnime?.contentType?.toLowerCase()} at the moment.</p></div></div>
-              ) : (
-                <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                  {similarContent.slice(0, 12).map((item, index) => (
-                    <div key={item.id || item._id || index} className="relative cursor-pointer" onClick={() => onAnimeSelect(item)}>
-                      <AnimeCard anime={item} onClick={() => {}} index={index} showStatus={true} />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+              </>
+            )}
           </div>
 
-          {/* MORE LIKE THIS for MOBILE */}
-          <div className="lg:hidden mt-8">
-            <h2 className="text-xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mb-4">
+          {/* ========== MORE LIKE THIS ========== */}
+          <div className="mt-8 lg:mt-12">
+            <h2 className="text-xl lg:text-2xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mb-4 lg:mb-6">
               More {displayAnime?.contentType === 'Movie' ? 'Movies' : displayAnime?.contentType === 'Manga' ? 'Manga' : 'Anime'}
             </h2>
             {similarLoading ? (
-              <div className="flex justify-center py-8"><Spinner size="sm" text="Loading similar content..." /></div>
+              <div className="flex justify-center py-8 lg:py-12"><Spinner size="sm" lg:text-lg text="Loading similar content..." /></div>
             ) : similarContent.length === 0 ? (
-              <div className="text-center py-6"><div className="bg-slate-800/50 rounded-xl p-6 border border-slate-700"><h3 className="text-base font-semibold text-slate-300 mb-2">No Similar Content Found</h3><p className="text-slate-400 text-sm">We couldn't find similar {displayAnime?.contentType?.toLowerCase()} at the moment.</p></div></div>
+              <div className="text-center py-6 lg:py-8"><div className="bg-slate-800/50 rounded-xl lg:rounded-2xl p-6 lg:p-8 border border-slate-700"><h3 className="text-base lg:text-lg font-semibold text-slate-300 mb-2">No Similar Content Found</h3><p className="text-slate-400 text-sm">We couldn't find similar {displayAnime?.contentType?.toLowerCase()} at the moment.</p></div></div>
             ) : (
-              <div className="grid grid-cols-2 gap-3">
-                {similarContent.slice(0, 6).map((item, index) => (
+              <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 lg:gap-4">
+                {similarContent.slice(0, 12).map((item, index) => (
                   <div key={item.id || item._id || index} className="relative cursor-pointer" onClick={() => onAnimeSelect(item)}>
                     <AnimeCard anime={item} onClick={() => {}} index={index} showStatus={true} />
                   </div>

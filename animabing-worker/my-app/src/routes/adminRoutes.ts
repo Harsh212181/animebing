@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { Env, Variables } from '../index'
-import { adminAuth } from '../middleware/auth'
+import { adminAuth, requirePermission } from '../middleware/auth'
 import {
   findMany, findOne, insertOne, updateOne,
   deleteOne, deleteMany, countDocuments,
@@ -10,6 +10,17 @@ import { IAnime, IEpisode, IChapter, IReport, ISocialMedia } from '../models/typ
 import { ObjectId } from 'mongodb'
 
 const adminRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
+
+// ============ HELPER: sub-admin (animeAccess:'own') ke owned anime IDs laao ============
+async function getOwnedAnimeIds(admin: any, mongoUri: string, dbName: string): Promise<string[] | null> {
+  // null = "koi restriction nahi" (super admin ya animeAccess:'all' wala sub-admin)
+  if (admin.role !== 'subadmin' || admin.animeAccess !== 'own') return null
+  const db = await getDb(mongoUri, dbName)
+  const animes = await db.collection('animes')
+    .find({ createdBy: admin.id }, { projection: { _id: 1 } })
+    .toArray()
+  return animes.map((a: any) => a._id.toString())
+}
 
 // ============ RANDOM LIKES HELPER ============
 function getRandomLikes(): number {
@@ -41,7 +52,7 @@ adminRoutes.post('/login', async (c) => {
     if (username !== c.env.ADMIN_USER || password !== c.env.ADMIN_PASS) {
       return c.json({ success: false, error: 'Invalid credentials' }, 401)
     }
-    const token = await createJWT({ id: 'admin', username }, c.env.JWT_SECRET)
+    const token = await createJWT({ id: 'admin', username, role: 'admin' }, c.env.JWT_SECRET)
     return c.json({ success: true, token })
   } catch (err: any) {
     return c.json({ success: false, error: 'Login failed' }, 500)
@@ -62,11 +73,16 @@ adminRoutes.get('/user-info', adminAuth, (c) => {
 // ============ ANIME LIST ============
 adminRoutes.get('/anime-list', adminAuth, async (c) => {
   try {
+    const admin = c.get('admin')
     const status = c.req.query('status')
     const contentType = c.req.query('contentType')
     const filter: any = {}
     if (status && status !== 'All') filter.status = status
     if (contentType && contentType !== 'All') filter.contentType = contentType
+    // Sub-admin with 'own' access → sirf apna anime dekhe
+    if (admin.role === 'subadmin' && admin.animeAccess === 'own') {
+      filter.createdBy = admin.id
+    }
     const animes = await findMany<IAnime>('animes', filter, { sort: { createdAt: -1 } }, c.env.MONGODB_URI, c.env.MONGODB_DB)
     return c.json(animes)
   } catch (err: any) {
@@ -75,8 +91,9 @@ adminRoutes.get('/anime-list', adminAuth, async (c) => {
 })
 
 // ============ ADD ANIME (FIXED) ============
-adminRoutes.post('/add-anime', adminAuth, async (c) => {
+adminRoutes.post('/add-anime', adminAuth, requirePermission('add-anime'), async (c) => {
   try {
+    const admin = c.get('admin')
     const {
       title, description, thumbnail, status, subDubStatus, genreList, releaseYear, contentType,
       seoTitle, seoDescription, seoKeywords, slug: providedSlug
@@ -116,7 +133,10 @@ adminRoutes.post('/add-anime', adminAuth, async (c) => {
       monthlyLikes: Math.floor(randomLikes * 0.3),
       weeklyLikes: Math.floor(randomLikes * 0.1),
       featured: false, featuredOrder: 0,
-      isHidden: false, lastContentAdded: new Date()
+      isHidden: false, lastContentAdded: new Date(),
+      isBlocked: false,
+      createdBy: admin.role === 'subadmin' ? admin.id : 'admin',
+      createdByUsername: admin.username
     }
 
     await insertOne('animes', anime, c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -127,7 +147,7 @@ adminRoutes.post('/add-anime', adminAuth, async (c) => {
 })
 
 // ============ EDIT ANIME ============
-adminRoutes.put('/edit-anime/:id', adminAuth, async (c) => {
+adminRoutes.put('/edit-anime/:id', adminAuth, requirePermission('edit-anime'), async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
@@ -141,7 +161,7 @@ adminRoutes.put('/edit-anime/:id', adminAuth, async (c) => {
 })
 
 // ============ DELETE ANIME ============
-adminRoutes.delete('/delete-anime', adminAuth, async (c) => {
+adminRoutes.delete('/delete-anime', adminAuth, requirePermission('delete-anime'), async (c) => {
   try {
     const { id } = await c.req.json()
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
@@ -296,17 +316,63 @@ adminRoutes.get('/chapter/:id', adminAuth, async (c) => {
   }
 })
 
-// ============ REPORTS ============
+// ============ REPORTS PENDING COUNT (red dot ke liye) - /reports se PEHLE, koi conflict nahi hai but safe rakhte hain ============
+adminRoutes.get('/reports/pending-count', adminAuth, async (c) => {
+  try {
+    const admin = c.get('admin')
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    // ✅ Sub-admin (animeAccess:'own') → sirf apne anime ke pending reports count
+    const ownedAnimeIds = await getOwnedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    if (ownedAnimeIds !== null) {
+      if (ownedAnimeIds.length === 0) {
+        return c.json({ success: true, count: 0 })
+      }
+      const objectIds = ownedAnimeIds.map((id: string) => toObjectId(id))
+      const count = await db.collection('reports').countDocuments({
+        type: 'episode',
+        status: 'Pending',
+        animeId: { $in: objectIds }
+      })
+      return c.json({ success: true, count })
+    }
+
+    // Super admin ya animeAccess:'all' wala sub-admin → sab pending reports
+    const count = await db.collection('reports').countDocuments({ status: 'Pending' })
+    return c.json({ success: true, count })
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 500)
+  }
+})
+
+// ============ REPORTS (role-based filter + sub-admin username) ============
 adminRoutes.get('/reports', adminAuth, async (c) => {
   try {
+    const admin = c.get('admin')
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    // ✅ Sub-admin (animeAccess:'own') → sirf apne anime ke reports
+    const ownedAnimeIds = await getOwnedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
 
     const reports = await db.collection('reports')
       .find({})
       .sort({ createdAt: -1 })
       .toArray()
 
-    const animeIds = reports
+    // Sub-admin (own access) ke liye filter: contact reports sabko dikhein,
+    // episode reports sirf jinka anime owned ho
+    let filteredReports = reports
+    if (ownedAnimeIds !== null) {
+      const ownedIdSet = new Set(ownedAnimeIds)
+      filteredReports = reports.filter((r: any) => {
+        if (r.type === 'contact') return true
+        if (r.animeId) return ownedIdSet.has(r.animeId.toString())
+        return false
+      })
+    }
+
+    const animeIds = filteredReports
       .filter((r: any) => r.type === 'episode' && r.animeId)
       .map((r: any) => {
         try { return new ObjectId(r.animeId.toString()) }
@@ -314,13 +380,13 @@ adminRoutes.get('/reports', adminAuth, async (c) => {
       })
       .filter(Boolean)
 
-    const animeMap: Record<string, { _id: any; title: string; thumbnail: string }> = {}
+    const animeMap: Record<string, { _id: any; title: string; thumbnail: string; createdByUsername?: string }> = {}
 
     if (animeIds.length > 0) {
       const animes = await db.collection('animes')
         .find(
           { _id: { $in: animeIds as any } },
-          { projection: { title: 1, thumbnail: 1 } }
+          { projection: { title: 1, thumbnail: 1, createdByUsername: 1 } }
         )
         .toArray()
 
@@ -328,12 +394,13 @@ adminRoutes.get('/reports', adminAuth, async (c) => {
         animeMap[anime._id.toString()] = {
           _id: anime._id,
           title: anime.title,
-          thumbnail: anime.thumbnail || null
+          thumbnail: anime.thumbnail || null,
+          createdByUsername: anime.createdByUsername || null
         }
       })
     }
 
-    const enrichedReports = reports.map((report: any) => {
+    const enrichedReports = filteredReports.map((report: any) => {
       if (report.type === 'episode' && report.animeId) {
         const animeIdStr = report.animeId.toString()
         const anime = animeMap[animeIdStr]
@@ -341,7 +408,8 @@ adminRoutes.get('/reports', adminAuth, async (c) => {
           ...report,
           animeId: anime
             ? { _id: anime._id, title: anime.title, thumbnail: anime.thumbnail }
-            : { _id: report.animeId, title: 'Unknown Anime', thumbnail: null }
+            : { _id: report.animeId, title: 'Unknown Anime', thumbnail: null },
+          subAdminUsername: anime?.createdByUsername || null   // 👈 main admin ke liye
         }
       }
       return report
@@ -444,11 +512,16 @@ adminRoutes.get('/analytics', adminAuth, async (c) => {
 // ============ PROTECTED ALIAS ROUTES ============
 adminRoutes.get('/protected/anime-list', adminAuth, async (c) => {
   try {
+    const admin = c.get('admin')
     const status = c.req.query('status')
     const contentType = c.req.query('contentType')
     const filter: any = {}
     if (status && status !== 'All') filter.status = status
     if (contentType && contentType !== 'All') filter.contentType = contentType
+    // Sub-admin with 'own' access → sirf apna anime dekhe
+    if (admin.role === 'subadmin' && admin.animeAccess === 'own') {
+      filter.createdBy = admin.id
+    }
     const animes = await findMany<IAnime>('animes', filter, { sort: { createdAt: -1 } }, c.env.MONGODB_URI, c.env.MONGODB_DB)
     return c.json(animes)
   } catch (err: any) {
@@ -456,7 +529,7 @@ adminRoutes.get('/protected/anime-list', adminAuth, async (c) => {
   }
 })
 
-adminRoutes.delete('/protected/delete-anime', adminAuth, async (c) => {
+adminRoutes.delete('/protected/delete-anime', adminAuth, requirePermission('delete-anime'), async (c) => {
   try {
     const { id } = await c.req.json()
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
@@ -469,7 +542,7 @@ adminRoutes.delete('/protected/delete-anime', adminAuth, async (c) => {
   }
 })
 
-adminRoutes.put('/protected/edit-anime/:id', adminAuth, async (c) => {
+adminRoutes.put('/protected/edit-anime/:id', adminAuth, requirePermission('edit-anime'), async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)

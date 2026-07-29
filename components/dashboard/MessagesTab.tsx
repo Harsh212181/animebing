@@ -30,27 +30,7 @@ const AVATARS = [
   { id: 25, emoji: '🎙️', bg: 'linear-gradient(135deg,#be185d,#9d174d)' },
 ];
 
-// ─── AB Logo ──────────────────────────────────────────────────────────────────
-const ABLogo = () => (
-  <div style={{
-    width: 42, height: 42, borderRadius: 12, flexShrink: 0,
-    background: 'linear-gradient(135deg,#6366f1,#4f46e5)',
-    boxShadow: '0 2px 10px rgba(99,102,241,0.45)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    position: 'relative', overflow: 'hidden',
-  }}>
-    {/* subtle shine */}
-    <div style={{
-      position: 'absolute', top: 0, left: 0, right: 0, height: '50%',
-      background: 'rgba(255,255,255,0.12)', borderRadius: '12px 12px 0 0',
-    }} />
-    <span style={{
-      fontFamily: '"Inter", "SF Pro Display", system-ui, sans-serif',
-      fontWeight: 800, fontSize: 15, color: '#fff',
-      letterSpacing: '-0.5px', position: 'relative', zIndex: 1,
-    }}>AB</span>
-  </div>
-);
+ 
 
 // ─── Admin bubble avatar ───────────────────────────────────────────────────────
 const AdminAvatar = () => (
@@ -67,6 +47,22 @@ const AdminAvatar = () => (
   </div>
 );
 
+// ─── Sender label badge (Main Admin vs Sub-Admin) ──────────────────────────
+const SenderBadge: React.FC<{ senderRole?: string; senderName?: string }> = ({ senderRole, senderName }) => {
+  const isSubAdmin = senderRole === 'subadmin';
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4,
+      fontSize: 9.5, fontWeight: 700, letterSpacing: '0.2px',
+      color: isSubAdmin ? '#7c3aed' : '#4f46e5',
+      background: isSubAdmin ? 'rgba(124,58,237,0.1)' : 'rgba(79,70,229,0.1)',
+      borderRadius: 6, padding: '1.5px 6px', marginBottom: 3,
+    }}>
+      {isSubAdmin ? `🎙️ ${senderName || 'Sub-Admin'}` : `🛡️ ${senderName || 'Main Admin'}`}
+    </span>
+  );
+};
+
 const MessagesTab: React.FC<{
   token: string;
   onRead: () => void;
@@ -78,6 +74,9 @@ const MessagesTab: React.FC<{
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  
+  // ✅ NEW refs
+  const chatContainerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -102,8 +101,11 @@ const MessagesTab: React.FC<{
     return () => clearInterval(interval);
   }, []);
 
+  // ✅ UPDATED scroll effect
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
   }, [messages]);
 
   const sendMessage = async () => {
@@ -170,20 +172,19 @@ const MessagesTab: React.FC<{
         padding: '11px 16px',
         display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0,
       }}>
-        <ABLogo />
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{ color: '#fff', fontWeight: 700, fontSize: 15, lineHeight: 1.2, letterSpacing: '-0.2px', margin: 0 }}>
-            AnimaBing
+            ⚖️ AnimaBing
           </p>
           <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, margin: '2px 0 0' }}>
-            Official Support
           </p>
         </div>
       </div>
 
-      {/* ── Messages ── */}
+      {/* ── Messages (container with ref) ── */}
       <div
         className="chat-scroll"
+        ref={chatContainerRef}   // ✅ NEW ref attached
         style={{
           flex: 1, overflowY: 'auto',
           backgroundColor: '#eef2f7',
@@ -229,6 +230,9 @@ const MessagesTab: React.FC<{
                       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 7, maxWidth: '75%' }}>
                         <AdminAvatar />
                         <div>
+                          <div style={{ marginLeft: 2 }}>
+                            <SenderBadge senderRole={msg.senderRole} senderName={msg.senderName} />
+                          </div>
                           <div style={{
                             background: '#fff',
                             borderRadius: '3px 14px 14px 14px',

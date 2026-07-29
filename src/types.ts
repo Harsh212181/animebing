@@ -108,6 +108,10 @@ export interface Anime {
 
   partnerId?: string | null;
   isHidden?: boolean;
+
+  // 👇 Creator tracking (for sub-admin visibility in EpisodesManager etc.)
+  createdBy?: string;
+  createdByUsername?: string;
 }
 
 export interface FeaturedAnime extends Anime {
@@ -253,7 +257,7 @@ export interface Poll {
   isActive: boolean;
   totalVotes: number;
 
-  // ✅ FIX: voters any[] allow karta hai flexible access ke liye
+  // ✅ FIX: voters any[] allowata hai flexible access ke liye
   votersCount?: number;
   voters?: VoterInfo[] | any[];
 
@@ -363,6 +367,8 @@ export interface Partner {
   _id: string;
   name: string;
   createdAt: string;
+  createdBy?: string;
+  createdByUsername?: string;
   animeCount?: number;
 }
 

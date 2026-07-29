@@ -2,9 +2,9 @@
 import axios from 'axios';
 import type { SubDubStatus } from '../../types';
 import Spinner from '../Spinner';
+import { getAdminToken } from '../../../utils/authToken'; // ✅ fresh token per submit
 
 const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
-const token = localStorage.getItem('adminToken') || '';
 
 // Complete unique genre list (46 genres)
 const GENRE_OPTIONS = [
@@ -218,7 +218,11 @@ const getGenreGradient = (genre: string): string => {
   return colors[genre] || 'from-purple-500 to-pink-500';
 };
 
-const AddAnimeForm: React.FC = () => {
+interface AddAnimeFormProps {
+  token?: string;   // ✅ ADD
+}
+
+const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -286,6 +290,7 @@ const AddAnimeForm: React.FC = () => {
     setError('');
 
     try {
+      const token = tokenProp || getAdminToken();   // ✅ updated
       const formData = { ...form };
       if (!formData.slug?.trim()) formData.slug = generateSlug(form.title);
       // If autoGenerateSEO is ON and fields are empty, auto-generate them once more before submit

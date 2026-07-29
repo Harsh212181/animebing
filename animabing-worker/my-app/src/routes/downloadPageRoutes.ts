@@ -13,6 +13,17 @@ function countLinksByType(links: any[]) {
   }
 }
 
+// ============ HELPER: sub-admin (animeAccess:'own') ke owned anime IDs laao (string[]) ============
+// null = "koi restriction nahi" (super admin ya animeAccess:'all' wala sub-admin)
+async function getOwnedAnimeIds(admin: any, mongoUri: string, dbName: string): Promise<string[] | null> {
+  if (admin.role !== 'subadmin' || admin.animeAccess !== 'own') return null
+  const db = await getDb(mongoUri, dbName)
+  const animes = await db.collection('animes')
+    .find({ createdBy: admin.id }, { projection: { _id: 1 } })
+    .toArray()
+  return animes.map((a: any) => a._id.toString())
+}
+
 // STATS
 downloadPageRoutes.get('/stats', adminAuth, async (c) => {
   try {
@@ -37,12 +48,27 @@ downloadPageRoutes.get('/anime/:animeId', async (c) => {
 })
 
 // GET ALL (admin) — anime details ke saath populate
+// ✅ Sub-admin (animeAccess:'own') ko sirf apne banaye hue anime ke download pages dikhenge
 downloadPageRoutes.get('/', adminAuth, async (c) => {
   try {
+    const admin = c.get('admin')
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
+    // ✅ Sub-admin ke owned anime IDs (null = no restriction)
+    const ownedAnimeIds = await getOwnedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    // Agar sub-admin (own access) hai aur uska koi anime hi nahi hai, to seedha empty return karo
+    if (ownedAnimeIds !== null && ownedAnimeIds.length === 0) {
+      return c.json([])
+    }
+
+    const filter: any = {}
+    if (ownedAnimeIds !== null) {
+      filter.animeId = { $in: ownedAnimeIds.map((id: string) => toObjectId(id)) }
+    }
+
     const pages = await findMany<IDownloadPage>(
-      'downloadpages', {},
+      'downloadpages', filter,
       { sort: { createdAt: -1 } },
       c.env.MONGODB_URI, c.env.MONGODB_DB
     )
@@ -59,12 +85,37 @@ downloadPageRoutes.get('/', adminAuth, async (c) => {
       .collection('animes')
       .find(
         { _id: { $in: animeIds.map((id: string) => toObjectId(id)) } },
-        { projection: { title: 1, contentType: 1, subDubStatus: 1, status: 1, thumbnail: 1, isHidden: 1 } }
+        { projection: { title: 1, contentType: 1, subDubStatus: 1, status: 1, thumbnail: 1, isHidden: 1, createdByUsername: 1, createdBy: 1 } }
       )
       .toArray()
 
+    // ✅ Reliable sub-admin detection: 'subadmins' collection se verify karo
+    // (NOTE: koi separate 'admins' collection nahi hai — super admin ka
+    // createdBy literal string 'admin' hota hai, jabki sub-admin ka
+    // createdBy unki subadmins._id ObjectId string hoti hai). Isse naam
+    // (createdByUsername) pe depend nahi karna padta.
+    const creatorIds = [...new Set(
+      animes.map((a: any) => a.createdBy?.toString()).filter(Boolean)
+    )]
+    let subAdminIdSet = new Set<string>()
+    if (creatorIds.length > 0) {
+      const validCreatorIds = creatorIds.filter((id: string) => isValidObjectId(id))
+      if (validCreatorIds.length > 0) {
+        const subAdmins = await db.collection('subadmins')
+          .find(
+            { _id: { $in: validCreatorIds.map((id: string) => toObjectId(id)) } },
+            { projection: { _id: 1 } }
+          )
+          .toArray()
+        subAdminIdSet = new Set(subAdmins.map((s: any) => s._id.toString()))
+      }
+    }
+
     const animeMap = new Map(
-      animes.map((a: any) => [a._id.toString(), a])
+      animes.map((a: any) => [
+        a._id.toString(),
+        { ...a, isSubAdminCreated: subAdminIdSet.has(a.createdBy?.toString()) }
+      ])
     )
 
     const populatedPages = pages.map((page: any) => ({

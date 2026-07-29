@@ -1,4 +1,4 @@
-// src/components/admin/ReportManager.tsx - UPDATED VERSION
+ // src/components/admin/ReportsManager.tsx - UPDATED VERSION
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Spinner from '../Spinner';
@@ -30,12 +30,19 @@ interface Report {
   };
   adminResponse?: string;
   responseDate?: string;
+  subAdminUsername?: string;   // 👈 add karo
 }
 
 const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
-const token = localStorage.getItem('adminToken') || '';
 
-const ReportsManager: React.FC = () => {
+interface ReportsManagerProps {
+  token?: string;
+}
+
+const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp }) => {
+  // Token resolver: prop first, then fallback to localStorage (for main admin)
+  const getToken = () => tokenProp || localStorage.getItem('adminToken') || '';
+
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -55,7 +62,7 @@ const ReportsManager: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      // ✅ FIXED: /admin/protected/reports → /admin/reports
+      const token = getToken();
       const { data } = await axios.get(`${API_BASE}/admin/reports`, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -69,9 +76,9 @@ const ReportsManager: React.FC = () => {
 
   const handleDeleteReport = async (reportId: string) => {
     try {
+      const token = getToken();
       console.log('🗑️ Deleting report:', reportId);
 
-      // ✅ FIXED: /admin/protected/reports/:id → /admin/reports/:id
       await axios.delete(`${API_BASE}/admin/reports/${reportId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -98,7 +105,7 @@ const ReportsManager: React.FC = () => {
     }
 
     try {
-      // ✅ FIXED: /admin/protected/reports/bulk-delete → /admin/reports/bulk-delete
+      const token = getToken();
       await axios.post(`${API_BASE}/admin/reports/bulk-delete`,
         { reportIds: selectedReports },
         { headers: { Authorization: `Bearer ${token}` } }
@@ -145,6 +152,7 @@ const ReportsManager: React.FC = () => {
 
   const updateReportStatus = async (reportId: string, status: Report['status']) => {
     try {
+      const token = getToken();
       const updateData: any = { status };
       const response = adminResponses[reportId];
 
@@ -157,7 +165,6 @@ const ReportsManager: React.FC = () => {
         updateData.resolvedAt = new Date();
       }
 
-      // ✅ FIXED: /admin/protected/reports/:id → /admin/reports/:id
       await axios.put(`${API_BASE}/admin/reports/${reportId}`,
         updateData,
         { headers: { Authorization: `Bearer ${token}` } }
@@ -178,7 +185,7 @@ const ReportsManager: React.FC = () => {
 
   const quickUpdateStatus = async (reportId: string, status: Report['status']) => {
     try {
-      // ✅ FIXED: /admin/protected/reports/:id → /admin/reports/:id
+      const token = getToken();
       await axios.put(`${API_BASE}/admin/reports/${reportId}`,
         { status },
         { headers: { Authorization: `Bearer ${token}` } }
@@ -464,6 +471,12 @@ const ReportsManager: React.FC = () => {
                                   Episode {report.episodeNumber}
                                 </div>
                               )}
+                              {/* 👇 Added sub-admin username display */}
+                              {report.subAdminUsername && (
+                                <div className="text-xs text-purple-400">
+                                   By: {report.subAdminUsername}
+                                </div>
+                              )}
                             </div>
                           </div>
                         ) : (
@@ -589,6 +602,12 @@ const ReportsManager: React.FC = () => {
                                               Episode ID: {report.episodeId}
                                             </p>
                                           )}
+                                          {/* 👇 Added sub-admin info in expanded details */}
+                                          {report.subAdminUsername && (
+                                            <p className="text-slate-300 text-sm mt-1">
+                                              Added by sub-admin: <span className="text-purple-400 font-medium">{report.subAdminUsername}</span>
+                                            </p>
+                                          )}
                                         </div>
                                       </div>
                                     </div>
@@ -642,7 +661,7 @@ const ReportsManager: React.FC = () => {
                               <div className="space-y-4">
                                 <div className="bg-slate-800/50 p-4 rounded-lg">
                                   <h4 className="text-white font-semibold mb-3 flex items-center gap-2">
-                                    <span className="text-green-400">👤</span> User Information
+                                    <span className="text-green-400"></span> User Information
                                   </h4>
                                   <div className="space-y-2">
                                     <div>

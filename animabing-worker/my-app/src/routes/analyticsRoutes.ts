@@ -1,6 +1,8 @@
- import { Hono } from 'hono'
+ // src/routes/analyticsRoutes.ts
+import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
+import { getDb } from '../services/mongoService'
 import {
   trackPageView,
   getPageViewStats,
@@ -23,10 +25,85 @@ import {
   getPaymentAnalytics,
   getCohortAnalysis,
   getLinkJourney,
-  getLinkJourneyByLink,   // ✅ New import
+  getLinkJourneyByLink,
+  getSubAdminsList,
+  getMonthlyOverview,
+  getMonthlyDetail,
 } from '../services/analyticsService'
 
 const analyticsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
+
+// ─── Sub-admin scoping helpers ─────────────────────────────────────────────
+
+// Returns the slugs of the anime **and** their download pages that belong
+// to a sub-admin (or a specific admin when using the main admin's filter).
+// This ensures pageviews for download pages are included in scoped queries.
+async function getOwnedAnimeSlugs(admin: any, mongoUri: string, dbName: string): Promise<string[] | null> {
+  if (!admin || admin.role !== 'subadmin') return null
+  const db = await getDb(mongoUri, dbName)
+  const animes = await db.collection('animes')
+    .find({ createdBy: admin.id }, { projection: { _id: 1, slug: 1 } })
+    .toArray()
+
+  const animeSlugs = animes.map((a: any) => a.slug).filter(Boolean)
+  const animeIds = animes.map((a: any) => a._id)
+
+  // Download pages have their own distinct slugs, we need them so pageviews
+  // from those download pages are not silently dropped by slugFilter.
+  const downloadPages = animeIds.length
+    ? await db.collection('downloadpages')
+        .find({ animeId: { $in: animeIds } }, { projection: { slug: 1 } })
+        .toArray()
+    : []
+  const downloadSlugs = downloadPages.map((d: any) => d.slug).filter(Boolean)
+
+  return [...animeSlugs, ...downloadSlugs]
+}
+
+// Returns null for the main admin (no restriction), or the sub-admin's own
+// admin id — used to scope shortusers/shortlinks-based analytics.
+function getSubAdminCreatorId(admin: any): string | null {
+  if (!admin || admin.role !== 'subadmin') return null
+  return admin.id
+}
+
+// ─── NEW HELPERS for main admin subAdminId filter ──────────────────────────
+// For main admin: if ?subAdminId=... is given, scope to that sub-admin's
+// anime. Sub-admin always scoped to themselves (query param ignored).
+
+async function getAnimeSlugsForAdminId(adminId: string, mongoUri: string, dbName: string): Promise<string[]> {
+  const db = await getDb(mongoUri, dbName)
+  const animes = await db.collection('animes')
+    .find({ createdBy: adminId }, { projection: { _id: 1, slug: 1 } })
+    .toArray()
+
+  const animeSlugs = animes.map((a: any) => a.slug).filter(Boolean)
+  const animeIds = animes.map((a: any) => a._id)
+
+  // Also include the download-page slugs of those anime, same reasoning
+  // as getOwnedAnimeSlugs.
+  const downloadPages = animeIds.length
+    ? await db.collection('downloadpages')
+        .find({ animeId: { $in: animeIds } }, { projection: { slug: 1 } })
+        .toArray()
+    : []
+  const downloadSlugs = downloadPages.map((d: any) => d.slug).filter(Boolean)
+
+  return [...animeSlugs, ...downloadSlugs]
+}
+
+async function resolveOwnedSlugs(admin: any, c: any, mongoUri: string, dbName: string): Promise<string[] | null> {
+  if (admin?.role === 'subadmin') return getOwnedAnimeSlugs(admin, mongoUri, dbName)
+  const subAdminId = c.req.query('subAdminId')
+  if (subAdminId) return getAnimeSlugsForAdminId(subAdminId, mongoUri, dbName)
+  return null
+}
+
+function resolveCreatorId(admin: any, c: any): string | null {
+  if (admin?.role === 'subadmin') return getSubAdminCreatorId(admin)
+  const subAdminId = c.req.query('subAdminId')
+  return subAdminId || null
+}
 
 // ─── Helper: detect device from User-Agent ────────────────────────────────
 function detectDevice(ua: string): 'mobile' | 'tablet' | 'desktop' {
@@ -117,11 +194,14 @@ analyticsRoutes.post('/pageview', async (c) => {
 })
 
 // ─── GET /api/analytics/stats?days=7&device=mobile ───────────────────────
+// Sub-admin: scoped to only the anime + download pages they created.
 analyticsRoutes.get('/stats', adminAuth, async (c) => {
   try {
+    const admin = c.get('admin')
     const days = parseInt(c.req.query('days') || '7', 10)
     const device = c.req.query('device') || undefined
-    const stats = await getPageViewStats(c.env.MONGODB_URI, c.env.MONGODB_DB, days, device)
+    const ownedSlugs = await resolveOwnedSlugs(admin, c, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const stats = await getPageViewStats(c.env.MONGODB_URI, c.env.MONGODB_DB, days, device, ownedSlugs)
     return c.json(stats)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -142,12 +222,15 @@ analyticsRoutes.get('/page-detail', adminAuth, async (c) => {
 })
 
 // ─── GET /api/analytics/geo-detail?country=IN&days=30 ───────────────────
+// Sub-admin: scoped to only the anime + download pages they created.
 analyticsRoutes.get('/geo-detail', adminAuth, async (c) => {
   try {
+    const admin = c.get('admin')
     const country = c.req.query('country')
     const days = parseInt(c.req.query('days') || '30', 10)
     if (!country) return c.json({ error: 'country required' }, 400)
-    const detail = await getGeoDetail(country, c.env.MONGODB_URI, c.env.MONGODB_DB, days)
+    const ownedSlugs = await resolveOwnedSlugs(admin, c, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const detail = await getGeoDetail(country, c.env.MONGODB_URI, c.env.MONGODB_DB, days, ownedSlugs)
     return c.json(detail)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -155,12 +238,13 @@ analyticsRoutes.get('/geo-detail', adminAuth, async (c) => {
 })
 
 // ─── GET /api/analytics/by-country?days=1 ─────────────────────────────────
-// Independent country breakdown for the World Map / Top Countries section,
-// filterable by period (daily=1, weekly=7, monthly=30, yearly=365)
+// Sub-admin: scoped to only the anime + download pages they created.
 analyticsRoutes.get('/by-country', adminAuth, async (c) => {
   try {
+    const admin = c.get('admin')
     const days = parseInt(c.req.query('days') || '1', 10)
-    const data = await getByCountryStats(c.env.MONGODB_URI, c.env.MONGODB_DB, days)
+    const ownedSlugs = await resolveOwnedSlugs(admin, c, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const data = await getByCountryStats(c.env.MONGODB_URI, c.env.MONGODB_DB, days, ownedSlugs)
     return c.json(data)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -168,7 +252,6 @@ analyticsRoutes.get('/by-country', adminAuth, async (c) => {
 })
 
 // ─── GET /api/analytics/funnel?days=7 ─────────────────────────────────────
-// User journey funnel: Home → Detail → Download (per session)
 analyticsRoutes.get('/funnel', adminAuth, async (c) => {
   try {
     const days = parseInt(c.req.query('days') || '7', 10)
@@ -179,8 +262,35 @@ analyticsRoutes.get('/funnel', adminAuth, async (c) => {
   }
 })
 
+// ─── GET /api/analytics/monthly-overview ──────────────────────────────────
+// Har month ka summary — start se ab tak.
+analyticsRoutes.get('/monthly-overview', adminAuth, async (c) => {
+  try {
+    const admin = c.get('admin')
+    const ownedSlugs = await resolveOwnedSlugs(admin, c, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const data = await getMonthlyOverview(c.env.MONGODB_URI, c.env.MONGODB_DB, ownedSlugs)
+    return c.json(data)
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ─── GET /api/analytics/monthly-detail?month=2026-07 ──────────────────────
+// Ek month ke andar har din ka anime vs download breakdown.
+analyticsRoutes.get('/monthly-detail', adminAuth, async (c) => {
+  try {
+    const admin = c.get('admin')
+    const month = c.req.query('month')
+    if (!month) return c.json({ error: 'month required (YYYY-MM)' }, 400)
+    const ownedSlugs = await resolveOwnedSlugs(admin, c, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const data = await getMonthlyDetail(c.env.MONGODB_URI, c.env.MONGODB_DB, month, ownedSlugs)
+    return c.json(data)
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
 // ─── GET /api/analytics/referrers?days=7 ──────────────────────────────────
-// 1. Traffic source breakdown (Google, Direct, social, etc.)
 analyticsRoutes.get('/referrers', adminAuth, async (c) => {
   try {
     const days = parseInt(c.req.query('days') || '7', 10)
@@ -192,7 +302,6 @@ analyticsRoutes.get('/referrers', adminAuth, async (c) => {
 })
 
 // ─── GET /api/analytics/browsers?days=7 ───────────────────────────────────
-// 2. Browser breakdown
 analyticsRoutes.get('/browsers', adminAuth, async (c) => {
   try {
     const days = parseInt(c.req.query('days') || '7', 10)
@@ -204,7 +313,6 @@ analyticsRoutes.get('/browsers', adminAuth, async (c) => {
 })
 
 // ─── GET /api/analytics/time-on-page?days=7 ───────────────────────────────
-// 3. Average time on page per page type
 analyticsRoutes.get('/time-on-page', adminAuth, async (c) => {
   try {
     const days = parseInt(c.req.query('days') || '7', 10)
@@ -216,7 +324,6 @@ analyticsRoutes.get('/time-on-page', adminAuth, async (c) => {
 })
 
 // ─── GET /api/analytics/live ───────────────────────────────────────────────
-// 4. Real-time / live visitors (active in last 5 minutes)
 analyticsRoutes.get('/live', adminAuth, async (c) => {
   try {
     const data = await getLiveVisitors(c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -227,7 +334,6 @@ analyticsRoutes.get('/live', adminAuth, async (c) => {
 })
 
 // ─── GET /api/analytics/top-anime?days=7 ──────────────────────────────────
-// 5. Top anime overall (combined across detail/episode/download)
 analyticsRoutes.get('/top-anime', adminAuth, async (c) => {
   try {
     const days = parseInt(c.req.query('days') || '7', 10)
@@ -239,7 +345,6 @@ analyticsRoutes.get('/top-anime', adminAuth, async (c) => {
 })
 
 // ─── GET /api/analytics/hourly?days=7 ─────────────────────────────────────
-// 7. Hourly heatmap (views by hour of day, IST)
 analyticsRoutes.get('/hourly', adminAuth, async (c) => {
   try {
     const days = parseInt(c.req.query('days') || '7', 10)
@@ -251,7 +356,6 @@ analyticsRoutes.get('/hourly', adminAuth, async (c) => {
 })
 
 // ─── GET /api/analytics/not-found?days=7 ──────────────────────────────────
-// 8. 404 / not-found page tracking
 analyticsRoutes.get('/not-found', adminAuth, async (c) => {
   try {
     const days = parseInt(c.req.query('days') || '7', 10)
@@ -263,7 +367,6 @@ analyticsRoutes.get('/not-found', adminAuth, async (c) => {
 })
 
 // ─── GET /api/analytics/visitor-type?days=7 ───────────────────────────────
-// 10. New vs returning visitors
 analyticsRoutes.get('/visitor-type', adminAuth, async (c) => {
   try {
     const days = parseInt(c.req.query('days') || '7', 10)
@@ -275,11 +378,13 @@ analyticsRoutes.get('/visitor-type', adminAuth, async (c) => {
 })
 
 // ─── GET /api/analytics/user-links?days=7 ─────────────────────────────────
-// User link analytics (clicks, countries, devices, etc.)
+// Sub-admin: scoped to shortusers/links they created (createdByAdminId).
 analyticsRoutes.get('/user-links', adminAuth, async (c) => {
   try {
+    const admin = c.get('admin')
     const days = parseInt(c.req.query('days') || '7', 10)
-    const data = await getUserLinkAnalytics(c.env.MONGODB_URI, c.env.MONGODB_DB, days)
+    const creatorId = resolveCreatorId(admin, c)
+    const data = await getUserLinkAnalytics(c.env.MONGODB_URI, c.env.MONGODB_DB, days, creatorId)
     return c.json(data)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -287,10 +392,12 @@ analyticsRoutes.get('/user-links', adminAuth, async (c) => {
 })
 
 // ─── GET /api/analytics/earnings-health ───────────────────────────────────
-// Earnings timeline + link health status
+// Sub-admin: scoped to shortusers/links they created (createdByAdminId).
 analyticsRoutes.get('/earnings-health', adminAuth, async (c) => {
   try {
-    const data = await getEarningsAndLinkHealth(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const admin = c.get('admin')
+    const creatorId = resolveCreatorId(admin, c)
+    const data = await getEarningsAndLinkHealth(c.env.MONGODB_URI, c.env.MONGODB_DB, creatorId)
     return c.json(data)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -298,11 +405,13 @@ analyticsRoutes.get('/earnings-health', adminAuth, async (c) => {
 })
 
 // ─── GET /api/analytics/fraud?days=7 ──────────────────────────────────────
-// Fraud/bot detection (suspicious IPs, spike hours, unknown country)
+// Sub-admin: scoped to shortusers/links they created (createdByAdminId).
 analyticsRoutes.get('/fraud', adminAuth, async (c) => {
   try {
+    const admin = c.get('admin')
     const days = parseInt(c.req.query('days') || '7', 10)
-    const data = await getFraudDetection(c.env.MONGODB_URI, c.env.MONGODB_DB, days)
+    const creatorId = resolveCreatorId(admin, c)
+    const data = await getFraudDetection(c.env.MONGODB_URI, c.env.MONGODB_DB, days, creatorId)
     return c.json(data)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -310,10 +419,12 @@ analyticsRoutes.get('/fraud', adminAuth, async (c) => {
 })
 
 // ─── GET /api/analytics/leaderboard ───────────────────────────────────────
-// Leaderboard by today, week, all-time, and streaks
+// Sub-admin: scoped to shortusers they created (createdByAdminId).
 analyticsRoutes.get('/leaderboard', adminAuth, async (c) => {
   try {
-    const data = await getLeaderboard(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const admin = c.get('admin')
+    const creatorId = resolveCreatorId(admin, c)
+    const data = await getLeaderboard(c.env.MONGODB_URI, c.env.MONGODB_DB, creatorId)
     return c.json(data)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -321,7 +432,6 @@ analyticsRoutes.get('/leaderboard', adminAuth, async (c) => {
 })
 
 // ─── GET /api/analytics/payment-analytics ─────────────────────────────────
-// Payment analytics: totals, thresholds, recent payments, monthly trend
 analyticsRoutes.get('/payment-analytics', adminAuth, async (c) => {
   try {
     const data = await getPaymentAnalytics(c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -332,10 +442,12 @@ analyticsRoutes.get('/payment-analytics', adminAuth, async (c) => {
 })
 
 // ─── GET /api/analytics/cohort ────────────────────────────────────────────
-// Cohort analysis: retention and average clicks per join month
+// Sub-admin: scoped to shortusers they created (createdByAdminId).
 analyticsRoutes.get('/cohort', adminAuth, async (c) => {
   try {
-    const data = await getCohortAnalysis(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const admin = c.get('admin')
+    const creatorId = resolveCreatorId(admin, c)
+    const data = await getCohortAnalysis(c.env.MONGODB_URI, c.env.MONGODB_DB, creatorId)
     return c.json(data)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -343,7 +455,6 @@ analyticsRoutes.get('/cohort', adminAuth, async (c) => {
 })
 
 // ─── GET /api/analytics/link-journey?days=7 ───────────────────────────────
-// Link journey: shortclick → pageview conversion tracking (per user)
 analyticsRoutes.get('/link-journey', adminAuth, async (c) => {
   try {
     const days = parseInt(c.req.query('days') || '7', 10)
@@ -355,12 +466,95 @@ analyticsRoutes.get('/link-journey', adminAuth, async (c) => {
 })
 
 // ─── GET /api/analytics/link-journey-by-link?days=7 ───────────────────────
-// Per‑link journey: click → detail → download (aggregated by short link)
 analyticsRoutes.get('/link-journey-by-link', adminAuth, async (c) => {
   try {
     const days = parseInt(c.req.query('days') || '7', 10)
     const data = await getLinkJourneyByLink(c.env.MONGODB_URI, c.env.MONGODB_DB, days)
     return c.json(data)
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ─── GET /api/analytics/sub-admins-list ───────────────────────────────────
+analyticsRoutes.get('/sub-admins-list', adminAuth, async (c) => {
+  try {
+    const admin = c.get('admin')
+    if (admin?.role === 'subadmin') return c.json({ subAdmins: [] })
+    const subAdmins = await getSubAdminsList(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    return c.json({ subAdmins })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ─── GET /api/analytics/sub-admin-stats ───────────────────────────────────
+// Per-sub-admin summary: anime count, download pages, total views,
+// shortener users, links, and clicks. Main admin only — powers the
+// SubAdminManager overview cards.
+analyticsRoutes.get('/sub-admin-stats', adminAuth, async (c) => {
+  try {
+    const admin = c.get('admin')
+    if (admin?.role === 'subadmin') return c.json({ stats: [] })
+
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const subAdmins = await db.collection('subadmins')
+      .find({}, { projection: { username: 1, realName: 1 } })
+      .toArray()
+
+    const stats = await Promise.all(subAdmins.map(async (sa: any) => {
+      const subAdminId = sa._id.toString()
+
+      // ── Anime + download pages ──────────────────────────────────────
+      const animes = await db.collection('animes')
+        .find({ createdBy: subAdminId }, { projection: { _id: 1, slug: 1 } })
+        .toArray()
+      const animeIds = animes.map((a: any) => a._id)
+      const animeSlugs = animes.map((a: any) => a.slug).filter(Boolean)
+
+      const downloadPages = animeIds.length
+        ? await db.collection('downloadpages')
+            .find({ animeId: { $in: animeIds } }, { projection: { slug: 1 } })
+            .toArray()
+        : []
+      const downloadSlugs = downloadPages.map((d: any) => d.slug).filter(Boolean)
+
+      const allSlugs = [...animeSlugs, ...downloadSlugs]
+
+      // ── Total page views across their anime + download pages ────────
+      const totalViews = allSlugs.length
+        ? await db.collection('pageviews').countDocuments({ slug: { $in: allSlugs } })
+        : 0
+
+      // ── Shortener users + links + clicks ─────────────────────────────
+      const shortUsers = await db.collection('shortusers')
+        .find({ createdByAdminId: subAdminId }, { projection: { _id: 1, totalClicks: 1 } })
+        .toArray()
+      const shortUserIds = shortUsers.map((u: any) => u._id)
+
+      const linksByUser = shortUserIds.length
+        ? await db.collection('shortlinks').countDocuments({ userId: { $in: shortUserIds } })
+        : 0
+      // Links the sub-admin assigned directly (not tied to a self-registered user)
+      const linksAssignedDirectly = await db.collection('shortlinks')
+        .countDocuments({ createdByAdminId: subAdminId })
+
+      const totalClicks = shortUsers.reduce((sum: number, u: any) => sum + (u.totalClicks || 0), 0)
+
+      return {
+        subAdminId,
+        username: sa.username,
+        realName: sa.realName || sa.username,
+        animeCount: animes.length,
+        downloadPagesCount: downloadPages.length,
+        totalViews,
+        shortUsersCount: shortUsers.length,
+        linksCount: linksByUser + linksAssignedDirectly,
+        totalClicks,
+      }
+    }))
+
+    return c.json({ stats })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }

@@ -15,9 +15,17 @@ import sitemapRoutes from './routes/sitemapRoutes'
 import socialRoutes from './routes/socialRoutes'
 import shortenerRoutes from './routes/shortenerRoutes'
 import shortUserRoutes from './routes/shortUserRoutes'
-import referralRoutes from './routes/referralRoutes'   // ← NEW
+import referralRoutes from './routes/referralRoutes'
 import analyticsRoutes from './routes/analyticsRoutes'
 import authRoutes from './routes/authRoutes'
+import subAdminRoutes from './routes/subAdminRoutes'
+import animeLinkControlRoutes from './routes/animeLinkControlRoutes'
+import specialModeRoutes from './routes/specialModeRoutes'
+import notesRoutes from './routes/notesRoutes'
+import trackRoutes from './routes/trackRoutes'                     // ← NEW
+import { findMany, insertOne, updateOne } from './services/mongoService' // ← NEW
+import { ITrackedChannel, ITrackNotification } from './models/types'      // ← NEW
+import { checkChannelForUpdates } from './services/youtubeCheckService'   // ← NEW
 
 export type Env = {
   MONGODB_URI: string
@@ -27,9 +35,10 @@ export type Env = {
   ADMIN_USER: string
   ADMIN_PASS: string
   API_URL: string
-  GOOGLE_CLIENT_ID: string         // ← new
-  GOOGLE_CLIENT_SECRET: string     // ← new
-  FRONTEND_URL: string             // ← new
+  GOOGLE_CLIENT_ID: string
+  GOOGLE_CLIENT_SECRET: string
+  FRONTEND_URL: string
+  YOUTUBE_API_KEY: string
 }
 
 export type Variables = {
@@ -78,9 +87,14 @@ app.route('/api/polls', pollRoutes)
 app.route('/api/reports', reportRoutes)
 app.route('/api/social', socialRoutes)
 app.route('/api/short-users', shortUserRoutes)
-app.route('/api/short-users/referral', referralRoutes)   
+app.route('/api/short-users/referral', referralRoutes)
 app.route('/api/analytics', analyticsRoutes)
-app.route('/api/auth', authRoutes)                       
+app.route('/api/auth', authRoutes)
+app.route('/api/sub-admin', subAdminRoutes)
+app.route('/api/anime-link-control', animeLinkControlRoutes)
+app.route('/api/special-modes', specialModeRoutes)
+app.route('/api/notes', notesRoutes)
+app.route('/api/track', trackRoutes)                              // ← NEW
 
 // ============ SITEMAP ============
 app.route('/', sitemapRoutes)
@@ -93,4 +107,42 @@ app.get('/health', (c) => {
   return c.json({ message: 'Animabing Backend Working! 🚀', status: 'ok' })
 })
 
-export default app
+// ============ EXPORT (with scheduled) ============
+export default {
+  fetch: app.fetch,
+
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    const channels = await findMany<ITrackedChannel>(
+      'trackedChannels', {}, {}, env.MONGODB_URI, env.MONGODB_DB
+    )
+
+    for (const channel of channels) {
+      try {
+        const updates = await checkChannelForUpdates(channel, env.YOUTUBE_API_KEY)
+
+        for (const update of updates) {
+          await insertOne('trackNotifications', {
+            message: `${channel.channelName} — "${update.title.keyword}" Part ${update.newPart} upload ho gaya hai!`,
+            channelId: channel.channelId,
+            channelName: channel.channelName,
+            titleKeyword: update.title.keyword,
+            videoId: update.videoId,
+            videoUrl: `https://youtube.com/watch?v=${update.videoId}`,
+            isRead: false,
+          }, env.MONGODB_URI, env.MONGODB_DB)
+
+          const newTitles = channel.titles.map(t =>
+            t.id === update.title.id ? { ...t, lastKnownPart: update.newPart } : t
+          )
+          await updateOne(
+            'trackedChannels', { _id: channel._id! }, { titles: newTitles },
+            env.MONGODB_URI, env.MONGODB_DB
+          )
+        }
+      } catch (err) {
+        console.error(`Channel check failed: ${channel.channelName}`, err)
+        // Ek channel fail ho to baaki continue rahenge, loop nahi rukega
+      }
+    }
+  },
+}

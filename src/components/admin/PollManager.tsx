@@ -1,4 +1,4 @@
- // src/components/admin/PollManager.tsx
+// src/components/admin/PollManager.tsx
 
 import React, { useState, useEffect } from 'react';
 import { Poll, CreatePollData, Anime } from '../../types';
@@ -7,13 +7,20 @@ import {
   Search, X, Plus, Trash2, Eye, EyeOff, Calendar, Clock, Link,
   Edit2, Save, ChevronDown, ChevronUp, RefreshCw, AlertCircle,
   CheckCircle, Pencil, Copy, Download, BarChart3, Users, FileText,
-  Smartphone, Tablet, Monitor, TrendingUp, Zap, Award
+  Smartphone, Tablet, Monitor, TrendingUp, Zap, Award, Image as ImageIcon, Eye as EyeIcon
 } from 'lucide-react';
 
 interface PollManagerProps {
   token: string;
   apiBase: string;
 }
+
+interface SavedCustomOption {
+  title: string;
+  image: string;
+}
+
+const CUSTOM_OPTIONS_STORAGE_KEY = 'pollManager_savedCustomOptions';
 
 const formatDeviceType = (type?: string): string => {
   if (!type) return 'Unknown';
@@ -30,6 +37,30 @@ const getDeviceIcon = (type?: string) => {
 
 const truncate = (str: string, n: number) =>
   str.length > n ? str.slice(0, n) + '…' : str;
+
+// Renders text with newlines preserved + clickable URLs (matches homepage PollCard rendering)
+const renderMultilineText = (text: string): React.ReactNode[] => {
+  if (!text) return [];
+  const urlRegex = /(https?:\/\/[^\s<]+)/gi;
+  const lines = text.split('\n');
+  return lines.map((line, li) => {
+    const parts = line.split(urlRegex);
+    return (
+      <React.Fragment key={li}>
+        {parts.map((part, i) =>
+          part.match(urlRegex) ? (
+            <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="text-blue-400 underline break-words">
+              {part}
+            </a>
+          ) : (
+            <React.Fragment key={i}>{part}</React.Fragment>
+          )
+        )}
+        {li < lines.length - 1 && <br />}
+      </React.Fragment>
+    );
+  });
+};
 
 const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
   const [polls, setPolls] = useState<Poll[]>([]);
@@ -51,6 +82,29 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
   const [editingPollId, setEditingPollId] = useState<string | null>(null);
   const [showExpired, setShowExpired] = useState(false);
   const [expandedPollId, setExpandedPollId] = useState<string | null>(null);
+
+  // ✅ NEW: tab switch between "Browse Anime" and "Custom Images", + infinite-scroll page size for custom images
+  const [browseTab, setBrowseTab] = useState<'anime' | 'custom'>('anime');
+  const [customVisibleCount, setCustomVisibleCount] = useState(30);
+  const [loadingMoreAnime, setLoadingMoreAnime] = useState(false);
+  const [loadingDetailsId, setLoadingDetailsId] = useState<string | null>(null);
+  const questionRef = React.useRef<HTMLTextAreaElement>(null);
+
+  // ✅ NEW: previously used/saved custom options (persisted in localStorage)
+  const [savedCustomOptions, setSavedCustomOptions] = useState<SavedCustomOption[]>([]);
+
+  const loadSavedCustomOptions = () => {
+    try {
+      const raw = localStorage.getItem(CUSTOM_OPTIONS_STORAGE_KEY);
+      setSavedCustomOptions(raw ? JSON.parse(raw) : []);
+    } catch {
+      setSavedCustomOptions([]);
+    }
+  };
+
+  const persistSavedCustomOptions = (list: SavedCustomOption[]) => {
+    try { localStorage.setItem(CUSTOM_OPTIONS_STORAGE_KEY, JSON.stringify(list)); } catch { /* ignore */ }
+  };
 
   const fetchPolls = async () => {
     try {
@@ -91,8 +145,29 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
     return null;
   };
 
+  // ✅ FIX: expand instantly on click (no waiting for the network first), then quietly
+  // refresh the poll's full data (voters/results) in the background. Uses the functional
+  // form of setPolls so a slow earlier fetch can't overwrite a newer one (this was the
+  // "have to click 2-3 times" bug — the button gave no feedback while awaiting the fetch,
+  // and a stale `polls` closure could clobber fresher data when two fetches resolved out of order).
+  const handleToggleDetails = async (poll: Poll) => {
+    const pollId = poll._id;
+    if (expandedPollId === pollId) {
+      setExpandedPollId(null);
+      return;
+    }
+    setExpandedPollId(pollId); // instant visual feedback
+    setLoadingDetailsId(pollId);
+    const detailed = await fetchPollDetails(pollId);
+    if (detailed) {
+      setPolls(prev => prev.map(p => (p._id === pollId ? detailed : p)));
+    }
+    setLoadingDetailsId(prev => (prev === pollId ? null : prev));
+  };
+
   const fetchAnime = async (query = '', page = 1, limit = 50) => {
     try {
+      if (page > 1) setLoadingMoreAnime(true);
       const url = query
         ? `${apiBase}/anime?search=${encodeURIComponent(query)}&page=${page}&limit=${limit}`
         : `${apiBase}/anime?page=${page}&limit=${limit}`;
@@ -109,14 +184,25 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
       setHasMoreAnime(animeList.length === limit);
       setCurrentPage(page);
     } catch { toast.error('Failed to load anime'); setAvailableAnime([]); }
+    finally { setLoadingMoreAnime(false); }
   };
 
   useEffect(() => {
+    if (browseTab !== 'anime') return; // custom images tab doesn't need the anime API
     const t = setTimeout(() => fetchAnime(searchQuery, 1, 50), 500);
     return () => clearTimeout(t);
-  }, [searchQuery]);
+  }, [searchQuery, browseTab]);
 
-  useEffect(() => { fetchPolls(); fetchAnime('', 1, 50); }, []);
+  // ✅ Reset how many custom images are visible whenever the search text or tab changes
+  useEffect(() => {
+    setCustomVisibleCount(30);
+  }, [searchQuery, browseTab]);
+
+  useEffect(() => {
+    fetchPolls();
+    fetchAnime('', 1, 50);
+    loadSavedCustomOptions(); // ✅ load saved custom options on mount
+  }, []);
 
   const addAnimeToOptions = (anime: Anime) => {
     if (selectedAnimeIds.includes(anime._id)) { toast.error('Already added'); return; }
@@ -128,18 +214,51 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
     setSelectedAnimeIds(prev => [...prev, anime._id]);
   };
 
+  // ✅ UPDATED: also saves the custom option to localStorage for future reuse
   const addCustomOption = () => {
     if (!customOption.title.trim()) { toast.error('Title required'); return; }
     if (!customOption.imageUrl.trim()) { toast.error('Image URL required'); return; }
     try { new URL(customOption.imageUrl); } catch { toast.error('Invalid URL'); return; }
     if (newPoll.options.length >= 10) { toast.error('Max 10 options'); return; }
+
+    const title = customOption.title.trim();
+    const image = customOption.imageUrl.trim();
     const id = `custom_${Date.now()}`;
+
     setNewPoll(prev => ({
       ...prev,
-      options: [...prev.options, { animeId: id, title: customOption.title.trim(), image: customOption.imageUrl }]
+      options: [...prev.options, { animeId: id, title, image }]
     }));
+
+    // Save for reuse next time (dedupe by title+image, newest first). Kept permanently —
+    // even if the poll using it is later deleted, it stays here for reuse.
+    setSavedCustomOptions(prev => {
+      const withoutDup = prev.filter(o => !(o.title === title && o.image === image));
+      const updated = [{ title, image }, ...withoutDup].slice(0, 1000);
+      persistSavedCustomOptions(updated);
+      return updated;
+    });
+
     setCustomOption({ title: '', imageUrl: '' });
-    toast.success('Added');
+    toast.success('Added & saved for next time');
+  };
+
+  // ✅ NEW: quickly re-use a previously saved custom option
+  const addSavedCustomOption = (opt: SavedCustomOption) => {
+    if (newPoll.options.length >= 10) { toast.error('Max 10 options'); return; }
+    const alreadyInPoll = newPoll.options.some(o => o.title === opt.title && o.image === opt.image);
+    if (alreadyInPoll) { toast.error('Already added in this poll'); return; }
+    const id = `custom_${Date.now()}`;
+    setNewPoll(prev => ({ ...prev, options: [...prev.options, { animeId: id, title: opt.title, image: opt.image }] }));
+  };
+
+  // ✅ NEW: remove a saved custom option from the reusable list
+  const removeSavedCustomOption = (opt: SavedCustomOption) => {
+    setSavedCustomOptions(prev => {
+      const updated = prev.filter(o => !(o.title === opt.title && o.image === opt.image));
+      persistSavedCustomOptions(updated);
+      return updated;
+    });
   };
 
   const removeAnimeOption = (index: number) => {
@@ -273,6 +392,94 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
   const expiredPolls = polls.filter(p => p.isExpired || (p.expiresAt && new Date(p.expiresAt) < new Date()));
   const filteredPolls = showExpired ? expiredPolls : polls.filter(p => !p.isExpired && (!p.expiresAt || new Date(p.expiresAt) >= new Date()));
 
+  // ✅ NEW: Custom Images tab helpers
+  const switchBrowseTab = (tab: 'anime' | 'custom') => {
+    setBrowseTab(tab);
+    setCustomVisibleCount(30);
+  };
+
+  const filteredCustomOptions = savedCustomOptions.filter(o =>
+    o.title.toLowerCase().includes(searchQuery.trim().toLowerCase())
+  );
+  const visibleCustomOptions = filteredCustomOptions.slice(0, customVisibleCount);
+
+  const isCustomOptionInPoll = (opt: SavedCustomOption) =>
+    newPoll.options.some(o => o.title === opt.title && o.image === opt.image);
+
+  // Infinite scroll: jab grid ke bottom ke paas pahunche, aur 30 images load kar do
+  const handleCustomGridScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 60) {
+      setCustomVisibleCount(prev => (prev < filteredCustomOptions.length ? Math.min(prev + 30, filteredCustomOptions.length) : prev));
+    }
+  };
+
+  // ✅ Anime grid infinite scroll — no "Load more" button, auto-fetches next page on scroll
+  const handleAnimeGridScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (!loadingMoreAnime && hasMoreAnime && el.scrollTop + el.clientHeight >= el.scrollHeight - 60) {
+      fetchAnime(searchQuery, currentPage + 1, 50);
+    }
+  };
+
+  // ✅ NEW: Question list-style toolbar helpers (numbers, roman numerals, alphabets, bullets, arrows, stars)
+  const toRoman = (num: number): string => {
+    const map: [number, string][] = [
+      [1000, 'm'], [900, 'cm'], [500, 'd'], [400, 'cd'],
+      [100, 'c'], [90, 'xc'], [50, 'l'], [40, 'xl'],
+      [10, 'x'], [9, 'ix'], [5, 'v'], [4, 'iv'], [1, 'i']
+    ];
+    let result = '';
+    for (const [value, sym] of map) { while (num >= value) { result += sym; num -= value; } }
+    return result;
+  };
+
+  const toAlpha = (num: number): string => {
+    let s = '';
+    while (num > 0) {
+      const rem = (num - 1) % 26;
+      s = String.fromCharCode(97 + rem) + s;
+      num = Math.floor((num - 1) / 26);
+    }
+    return s;
+  };
+
+  const insertListPrefix = (style: 'number' | 'roman' | 'alpha' | 'bullet' | 'arrow' | 'star') => {
+    const el = questionRef.current;
+    const question = newPoll.question;
+    const start = el ? el.selectionStart : question.length;
+    const end = el ? el.selectionEnd : question.length;
+    const before = question.slice(0, start);
+    const after = question.slice(end);
+
+    // next number/letter counted from how many non-empty lines already exist before the cursor
+    const n = before.split('\n').filter(l => l.trim() !== '').length + 1;
+
+    let prefix = '';
+    switch (style) {
+      case 'number': prefix = `${n}. `; break;
+      case 'roman': prefix = `${toRoman(n)}. `; break;
+      case 'alpha': prefix = `${toAlpha(n)}. `; break;
+      case 'bullet': prefix = '• '; break;
+      case 'arrow': prefix = '→ '; break;
+      case 'star': prefix = '★ '; break;
+    }
+
+    const needsNewline = before.length > 0 && !before.endsWith('\n');
+    const insertText = (needsNewline ? '\n' : '') + prefix;
+    const updated = before + insertText + after;
+
+    setNewPoll(prev => ({ ...prev, question: updated }));
+
+    requestAnimationFrame(() => {
+      if (el) {
+        el.focus();
+        const pos = before.length + insertText.length;
+        el.setSelectionRange(pos, pos);
+      }
+    });
+  };
+
   // ─── STYLES (LIGHTER DARK THEME) ───────────────────────────────────────────
   const S = {
     page:    'min-h-screen bg-[#f8fafc] dark:bg-[#0f1219] text-gray-800 dark:text-gray-100',
@@ -303,9 +510,13 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
   // ─── CREATE / EDIT VIEW ────────────────────────────────────────────────────
   if (viewMode === 'create') {
     return (
+      // ✅ FIX: normal page flow (no h-screen / no nested overflow-y-auto box), so the page
+      // scrolls the regular way — no more "mini window scrolling inside a window" feeling.
+      // Footer uses `sticky bottom-0` instead of `fixed`, so it never floats outside this
+      // component's own boundaries.
       <div className={`${S.page} relative`}>
         {/* Header */}
-        <div className="sticky top-0 z-20 bg-white/90 dark:bg-[#0f1219]/95 backdrop-blur border-b border-gray-200 dark:border-[#2a2f3f] px-6 py-4">
+        <div className="bg-white/90 dark:bg-[#0f1219]/95 backdrop-blur border-b border-gray-200 dark:border-[#2a2f3f] px-6 py-4">
           <div className="flex items-center justify-between max-w-5xl mx-auto">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-lg bg-violet-600/10 border border-violet-500/30 flex items-center justify-center">
@@ -322,138 +533,276 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
           </div>
         </div>
 
-        <div className="max-w-5xl mx-auto px-6 py-6 pb-32 space-y-5">
-          {/* Question */}
-          <div className={S.card + ' p-5'}>
-            <label className="block text-xs font-semibold text-gray-500 dark:text-[#5a6080] uppercase tracking-wider mb-3">Poll Question *</label>
-            <textarea
-              rows={2}
-              className={S.input + ' resize-none'}
-              placeholder="Which anime is the best of this season?"
-              value={newPoll.question}
-              onChange={e => setNewPoll({ ...newPoll, question: e.target.value })}
-            />
-            {!newPoll.question.trim() && <p className="text-red-500 dark:text-red-400 text-xs mt-2">Required</p>}
-          </div>
+        {/* Content — scrolls with the normal page, extra bottom padding so the sticky footer never covers it */}
+        <div>
+          <div className="max-w-5xl mx-auto px-6 py-6 space-y-5">
+            {/* Question */}
+            <div className={S.card + ' p-5'}>
+              <label className="block text-xs font-semibold text-gray-500 dark:text-[#5a6080] uppercase tracking-wider mb-3">Poll Question *</label>
 
-          {/* Expiry */}
-          <div className={S.card + ' p-5'}>
-            <label className="block text-xs font-semibold text-gray-500 dark:text-[#5a6080] uppercase tracking-wider mb-3 flex items-center gap-2">
-              <Calendar size={13} /> Expiration Date *
-            </label>
-            <input type="datetime-local" className={S.input}
-              value={newPoll.expiresAt} min={new Date().toISOString().slice(0, 16)}
-              onChange={e => setNewPoll({ ...newPoll, expiresAt: e.target.value })} />
-          </div>
+              {/* ✅ Quick list toolbar — click to insert at cursor position */}
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                <span className="text-xs text-gray-400 dark:text-[#3a4055] mr-1">Point add karein:</span>
+                <button type="button" onClick={() => insertListPrefix('number')} className={`${S.btn} ${S.btnGray} py-1.5 px-2.5 text-xs`}>1. 2. 3.</button>
+                <button type="button" onClick={() => insertListPrefix('roman')} className={`${S.btn} ${S.btnGray} py-1.5 px-2.5 text-xs`}>i. ii. iii.</button>
+                <button type="button" onClick={() => insertListPrefix('alpha')} className={`${S.btn} ${S.btnGray} py-1.5 px-2.5 text-xs`}>a. b. c.</button>
+                <button type="button" onClick={() => insertListPrefix('bullet')} className={`${S.btn} ${S.btnGray} py-1.5 px-2.5 text-xs`}>• Bullet</button>
+                <button type="button" onClick={() => insertListPrefix('arrow')} className={`${S.btn} ${S.btnGray} py-1.5 px-2.5 text-xs`}>→ Arrow</button>
+                <button type="button" onClick={() => insertListPrefix('star')} className={`${S.btn} ${S.btnGray} py-1.5 px-2.5 text-xs`}>★ Star</button>
+              </div>
 
-          {/* Anime Search */}
-          <div className={S.card + ' p-5'}>
-            <div className="flex items-center justify-between mb-4">
-              <label className="text-xs font-semibold text-gray-500 dark:text-[#5a6080] uppercase tracking-wider">Browse Anime</label>
-              <span className="text-xs text-gray-500 dark:text-[#5a6080] bg-gray-100 dark:bg-[#12151f] px-2 py-1 rounded-lg border border-gray-200 dark:border-[#2a2f3f]">{totalAnime} total</span>
+              <textarea
+                ref={questionRef}
+                rows={4}
+                className={S.input + ' resize-y'}
+                placeholder={'Which anime is the best of this season?\n\nTip: Upar wale buttons se point add karein, ya khud Enter dabakar naya point likhein.'}
+                value={newPoll.question}
+                onChange={e => setNewPoll({ ...newPoll, question: e.target.value })}
+              />
+              <p className="text-xs text-gray-400 dark:text-[#3a4055] mt-2">
+                Har point apni nayi line par home page par show hoga — mobile aur PC dono par same.
+              </p>
+              {!newPoll.question.trim() && <p className="text-red-500 dark:text-red-400 text-xs mt-2">Required</p>}
             </div>
-            <div className="relative mb-4">
-              <Search size={15} className="absolute left-3 top-3.5 text-gray-400 dark:text-[#3a4055]" />
-              <input className={S.input + ' pl-9 pr-9'} placeholder="Search anime…" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
-              {searchQuery && <button onClick={() => setSearchQuery('')} className="absolute right-3 top-3.5 text-gray-400 dark:text-[#3a4055] hover:text-gray-700 dark:hover:text-white"><X size={15} /></button>}
-            </div>
-            <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-2 max-h-64 overflow-y-auto pr-1">
-              {availableAnime.map(anime => (
-                <button key={anime._id} onClick={() => addAnimeToOptions(anime)} title={anime.title}
-                  className={`relative rounded-xl overflow-hidden border transition-all duration-150 ${selectedAnimeIds.includes(anime._id) ? 'border-violet-500 ring-1 ring-violet-500/40 scale-95' : 'border-gray-300 dark:border-[#2a2f3f] hover:border-violet-400/50 hover:scale-105'}`}>
-                  <div className="aspect-[2/3]">
-                    <img src={anime.thumbnail || ''} alt={anime.title} className="w-full h-full object-cover"
-                      onError={e => { (e.target as HTMLImageElement).src = 'https://via.placeholder.com/60x90?text=?'; }} />
-                    {selectedAnimeIds.includes(anime._id) && (
-                      <div className="absolute inset-0 bg-violet-600/30 flex items-center justify-center">
-                        <CheckCircle size={18} className="text-violet-300" />
-                      </div>
-                    )}
-                  </div>
-                </button>
-              ))}
-            </div>
-            {availableAnime.length === 0 && <p className="text-center text-gray-500 dark:text-[#5a6080] py-8 text-sm">No anime found</p>}
-            {hasMoreAnime && (
-              <button onClick={() => fetchAnime(searchQuery, currentPage + 1, 50)} className={`${S.btn} ${S.btnGray} mt-4 w-full justify-center`}>
-                Load more
-              </button>
-            )}
-          </div>
 
-          {/* Custom Option */}
-          <div className={S.card + ' p-5'}>
-            <label className="block text-xs font-semibold text-gray-500 dark:text-[#5a6080] uppercase tracking-wider mb-4 flex items-center gap-2">
-              <Link size={13} /> Custom Option
-            </label>
-            <div className="flex gap-3">
-              <input className={S.input} placeholder="Title" value={customOption.title} onChange={e => setCustomOption({ ...customOption, title: e.target.value })} />
-              <input className={S.input} placeholder="Image URL" value={customOption.imageUrl} onChange={e => setCustomOption({ ...customOption, imageUrl: e.target.value })} />
-              <button onClick={addCustomOption} disabled={!customOption.title || !customOption.imageUrl}
-                className={`${S.btn} ${S.btnVi} flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed`}>
-                <Plus size={15} />
-              </button>
+            {/* Expiry */}
+            <div className={S.card + ' p-5'}>
+              <label className="block text-xs font-semibold text-gray-500 dark:text-[#5a6080] uppercase tracking-wider mb-3 flex items-center gap-2">
+                <Calendar size={13} /> Expiration Date *
+              </label>
+              <input type="datetime-local" className={S.input}
+                value={newPoll.expiresAt} min={new Date().toISOString().slice(0, 16)}
+                onChange={e => setNewPoll({ ...newPoll, expiresAt: e.target.value })} />
             </div>
-          </div>
 
-          {/* Selected Options */}
-          <div className={S.card + ' p-5'}>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <span className="text-xs font-semibold text-gray-500 dark:text-[#5a6080] uppercase tracking-wider">Selected Options</span>
-                <span className={`ml-2 text-xs px-2 py-0.5 rounded-md font-mono ${newPoll.options.length >= 4 ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400' : 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400'}`}>
-                  {newPoll.options.length}/10
+            {/* ✅ Browse Anime / Custom Images (tabbed) */}
+            <div className={S.card + ' p-5'}>
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                <div className="flex items-center gap-1 bg-gray-100 dark:bg-[#12151f] border border-gray-200 dark:border-[#2a2f3f] rounded-xl p-1">
+                  <button onClick={() => switchBrowseTab('anime')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${browseTab === 'anime' ? 'bg-violet-600 text-white shadow' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}`}>
+                    <Search size={12} /> Browse Anime
+                  </button>
+                  <button onClick={() => switchBrowseTab('custom')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${browseTab === 'custom' ? 'bg-violet-600 text-white shadow' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}`}>
+                    <ImageIcon size={12} /> Custom Images ({savedCustomOptions.length})
+                  </button>
+                </div>
+                <span className="text-xs text-gray-500 dark:text-[#5a6080] bg-gray-100 dark:bg-[#12151f] px-2 py-1 rounded-lg border border-gray-200 dark:border-[#2a2f3f]">
+                  {browseTab === 'anime' ? `${totalAnime} total` : `${filteredCustomOptions.length} total`}
                 </span>
               </div>
-              {newPoll.options.length < 4 && (
-                <span className="text-xs text-amber-600 dark:text-amber-400">Need {4 - newPoll.options.length} more</span>
+
+              <div className="relative mb-4">
+                <Search size={15} className="absolute left-3 top-3.5 text-gray-400 dark:text-[#3a4055]" />
+                <input className={S.input + ' pl-9 pr-9'}
+                  placeholder={browseTab === 'anime' ? 'Search anime…' : 'Search custom images by title…'}
+                  value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+                {searchQuery && <button onClick={() => setSearchQuery('')} className="absolute right-3 top-3.5 text-gray-400 dark:text-[#3a4055] hover:text-gray-700 dark:hover:text-white"><X size={15} /></button>}
+              </div>
+
+              {browseTab === 'anime' ? (
+                <>
+                  <div onScroll={handleAnimeGridScroll} className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-2 max-h-64 overflow-y-auto pr-1">
+                    {availableAnime.map(anime => (
+                      <button key={anime._id} onClick={() => addAnimeToOptions(anime)} title={anime.title}
+                        className={`relative rounded-xl overflow-hidden border transition-all duration-150 ${selectedAnimeIds.includes(anime._id) ? 'border-violet-500 ring-1 ring-violet-500/40 scale-95' : 'border-gray-300 dark:border-[#2a2f3f] hover:border-violet-400/50 hover:scale-105'}`}>
+                        <div className="aspect-[2/3]">
+                          <img src={anime.thumbnail || ''} alt={anime.title} className="w-full h-full object-cover"
+                            onError={e => { (e.target as HTMLImageElement).src = 'https://via.placeholder.com/60x90?text=?'; }} />
+                          {selectedAnimeIds.includes(anime._id) && (
+                            <div className="absolute inset-0 bg-violet-600/30 flex items-center justify-center">
+                              <CheckCircle size={18} className="text-violet-300" />
+                            </div>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                  {availableAnime.length === 0 && <p className="text-center text-gray-500 dark:text-[#5a6080] py-8 text-sm">No anime found</p>}
+                  {loadingMoreAnime && (
+                    <p className="text-center text-gray-400 dark:text-[#3a4055] text-xs mt-3">Loading more anime…</p>
+                  )}
+                  {!loadingMoreAnime && hasMoreAnime && availableAnime.length > 0 && (
+                    <p className="text-center text-gray-400 dark:text-[#3a4055] text-xs mt-3">Scroll karte rahein — aur anime load ho rahe hain…</p>
+                  )}
+                </>
+              ) : (
+                <>
+                  {/* ✅ Custom Images grid — permanently saved, survives poll deletion.
+                      Auto-loads more as you scroll (infinite scroll), no button needed. */}
+                  <div onScroll={handleCustomGridScroll} className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-2 max-h-64 overflow-y-auto pr-1">
+                    {visibleCustomOptions.map((opt, idx) => {
+                      const selected = isCustomOptionInPoll(opt);
+                      return (
+                        <div key={`${opt.title}-${opt.image}-${idx}`} className="relative group">
+                          <button onClick={() => addSavedCustomOption(opt)} title={opt.title}
+                            className={`relative w-full rounded-xl overflow-hidden border transition-all duration-150 ${selected ? 'border-violet-500 ring-1 ring-violet-500/40 scale-95' : 'border-gray-300 dark:border-[#2a2f3f] hover:border-violet-400/50 hover:scale-105'}`}>
+                            <div className="aspect-[2/3]">
+                              <img src={opt.image} alt={opt.title} className="w-full h-full object-cover"
+                                onError={e => { (e.target as HTMLImageElement).src = 'https://via.placeholder.com/60x90?text=?'; }} />
+                              {selected && (
+                                <div className="absolute inset-0 bg-violet-600/30 flex items-center justify-center">
+                                  <CheckCircle size={18} className="text-violet-300" />
+                                </div>
+                              )}
+                            </div>
+                          </button>
+                          <button onClick={() => removeSavedCustomOption(opt)} title="Remove from saved list"
+                            className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md">
+                            <X size={11} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {filteredCustomOptions.length === 0 && (
+                    <p className="text-center text-gray-500 dark:text-[#5a6080] py-8 text-sm px-4">
+                      Abhi koi custom image save nahi hai. Neeche "Custom Option" mein title + image URL daal kar add karein — ye yahan hamesha ke liye save rahega, poll delete hone par bhi.
+                    </p>
+                  )}
+                  {filteredCustomOptions.length > 0 && customVisibleCount < filteredCustomOptions.length && (
+                    <p className="text-center text-gray-400 dark:text-[#3a4055] text-xs mt-3">Scroll karte rahein — aur images load ho rahi hain…</p>
+                  )}
+                </>
               )}
             </div>
 
-            {newPoll.options.length === 0 ? (
-              <div className="text-center py-10 text-gray-400 dark:text-[#3a4055] border border-dashed border-gray-300 dark:border-[#2a2f3f] rounded-xl">
-                <Plus size={24} className="mx-auto mb-2 opacity-30" />
-                <p className="text-sm">No options added yet</p>
+            {/* Custom Option */}
+            <div className={S.card + ' p-5'}>
+              <label className="block text-xs font-semibold text-gray-500 dark:text-[#5a6080] uppercase tracking-wider mb-4 flex items-center gap-2">
+                <Link size={13} /> Custom Option
+              </label>
+              <div className="flex gap-3">
+                <input className={S.input} placeholder="Title" value={customOption.title} onChange={e => setCustomOption({ ...customOption, title: e.target.value })} />
+                <input className={S.input} placeholder="Image URL" value={customOption.imageUrl} onChange={e => setCustomOption({ ...customOption, imageUrl: e.target.value })} />
+                <button onClick={addCustomOption} disabled={!customOption.title || !customOption.imageUrl}
+                  className={`${S.btn} ${S.btnVi} flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed`}>
+                  <Plus size={15} />
+                </button>
               </div>
-            ) : (
-              <div className="space-y-2">
-                {newPoll.options.map((option, idx) => (
-                  <div key={option.animeId} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-[#12151f] rounded-xl border border-gray-200 dark:border-[#2a2f3f] group">
-                    <span className="text-xs text-gray-400 dark:text-[#3a4055] font-mono w-5 text-center">{idx + 1}</span>
-                    <img src={option.image} alt={option.title} className="w-10 h-10 object-cover rounded-lg flex-shrink-0"
-                      onError={e => { (e.target as HTMLImageElement).src = 'https://via.placeholder.com/40?text=?'; }} />
-                    <div className="flex-1 min-w-0">
-                      {editingIndex === idx ? (
-                        <div className="flex items-center gap-2">
-                          <input className={S.input + ' py-1.5 text-xs'} value={editedTitle} onChange={e => setEditedTitle(e.target.value)}
-                            autoFocus onKeyDown={e => e.key === 'Enter' && saveEditedTitle(idx)} />
-                          <button onClick={() => saveEditedTitle(idx)} className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300"><Save size={14} /></button>
-                          <button onClick={() => setEditingIndex(null)} className="text-gray-400 dark:text-[#3a4055] hover:text-gray-700 dark:hover:text-white"><X size={14} /></button>
-                        </div>
-                      ) : (
-                        <p className="text-sm text-gray-800 dark:text-white truncate">{option.title}</p>
-                      )}
-                      <p className="text-xs text-gray-500 dark:text-[#5a6080]">{option.animeId.startsWith('custom_') ? 'Custom' : 'Anime'}</p>
+              <p className="text-xs text-gray-400 dark:text-[#3a4055] mt-3">
+                Add karte hi ye "Custom Images" tab mein (upar) hamesha ke liye save ho jayega — future polls mein wahan se seedha select kar sakte hain.
+              </p>
+            </div>
+
+            {/* Selected Options */}
+            <div className={S.card + ' p-5'}>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <span className="text-xs font-semibold text-gray-500 dark:text-[#5a6080] uppercase tracking-wider">Selected Options</span>
+                  <span className={`ml-2 text-xs px-2 py-0.5 rounded-md font-mono ${newPoll.options.length >= 4 ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400' : 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400'}`}>
+                    {newPoll.options.length}/10
+                  </span>
+                </div>
+                {newPoll.options.length < 4 && (
+                  <span className="text-xs text-amber-600 dark:text-amber-400">Need {4 - newPoll.options.length} more</span>
+                )}
+              </div>
+
+              {newPoll.options.length === 0 ? (
+                <div className="text-center py-10 text-gray-400 dark:text-[#3a4055] border border-dashed border-gray-300 dark:border-[#2a2f3f] rounded-xl">
+                  <Plus size={24} className="mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">No options added yet</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {newPoll.options.map((option, idx) => (
+                    <div key={option.animeId} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-[#12151f] rounded-xl border border-gray-200 dark:border-[#2a2f3f] group">
+                      <span className="text-xs text-gray-400 dark:text-[#3a4055] font-mono w-5 text-center">{idx + 1}</span>
+                      <img src={option.image} alt={option.title} className="w-10 h-10 object-cover rounded-lg flex-shrink-0"
+                        onError={e => { (e.target as HTMLImageElement).src = 'https://via.placeholder.com/40?text=?'; }} />
+                      <div className="flex-1 min-w-0">
+                        {editingIndex === idx ? (
+                          <div className="flex items-center gap-2">
+                            <input className={S.input + ' py-1.5 text-xs'} value={editedTitle} onChange={e => setEditedTitle(e.target.value)}
+                              autoFocus onKeyDown={e => e.key === 'Enter' && saveEditedTitle(idx)} />
+                            <button onClick={() => saveEditedTitle(idx)} className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300"><Save size={14} /></button>
+                            <button onClick={() => setEditingIndex(null)} className="text-gray-400 dark:text-[#3a4055] hover:text-gray-700 dark:hover:text-white"><X size={14} /></button>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-800 dark:text-white truncate">{option.title}</p>
+                        )}
+                        <p className="text-xs text-gray-500 dark:text-[#5a6080]">{option.animeId.startsWith('custom_') ? 'Custom' : 'Anime'}</p>
+                      </div>
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => { setEditingIndex(idx); setEditedTitle(option.title); }}
+                          className="p-1.5 text-gray-400 dark:text-[#3a4055] hover:text-violet-600 dark:hover:text-violet-400 hover:bg-violet-100 dark:hover:bg-violet-900/20 rounded-lg transition-all">
+                          <Pencil size={13} />
+                        </button>
+                        <button onClick={() => removeAnimeOption(idx)}
+                          className="p-1.5 text-gray-400 dark:text-[#3a4055] hover:text-red-600 dark:hover:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-lg transition-all">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => { setEditingIndex(idx); setEditedTitle(option.title); }}
-                        className="p-1.5 text-gray-400 dark:text-[#3a4055] hover:text-violet-600 dark:hover:text-violet-400 hover:bg-violet-100 dark:hover:bg-violet-900/20 rounded-lg transition-all">
-                        <Pencil size={13} />
-                      </button>
-                      <button onClick={() => removeAnimeOption(idx)}
-                        className="p-1.5 text-gray-400 dark:text-[#3a4055] hover:text-red-600 dark:hover:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/20 rounded-lg transition-all">
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ✅ NEW: Live Preview — exactly kaisa home page par dikhega */}
+            <div className={S.card + ' p-5'}>
+              <label className="flex items-center gap-2 text-xs font-semibold text-gray-500 dark:text-[#5a6080] uppercase tracking-wider mb-4">
+                <EyeIcon size={13} /> Home Page Preview
+              </label>
+              <div className="max-w-sm mx-auto w-full bg-[#1a1a1a] rounded-lg border border-gray-700 overflow-hidden">
+                <div className="flex items-center px-3 pt-2 pb-2 bg-gray-800/30 border-b border-gray-800">
+                  <div className="w-8 h-8 rounded-full bg-gray-700 border border-gray-600 flex items-center justify-center text-xs font-bold text-gray-300">A</div>
+                  <div className="ml-2 flex items-center gap-2">
+                    <span className="text-sm font-medium text-gray-200">Admin</span>
+                    <span className="text-[10px] px-2 py-0.5 bg-blue-600 text-white rounded-full font-semibold leading-none">Creater</span>
                   </div>
-                ))}
+                </div>
+
+                <div className="px-3 pt-2 pb-3">
+                  <h3 className="text-sm font-semibold text-gray-100 break-words">
+                    {newPoll.question.trim() ? renderMultilineText(newPoll.question) : <span className="text-gray-500 italic">Aapka question yahan dikhega…</span>}
+                  </h3>
+                </div>
+
+                <div className="px-2 pb-3 space-y-2 pt-2">
+                  {newPoll.options.length === 0 ? (
+                    <p className="text-center text-gray-500 text-xs py-6">Options add karein preview dekhne ke liye</p>
+                  ) : (
+                    newPoll.options.map((opt, idx) => (
+                      <div key={`${opt.animeId}-${idx}`} className="relative rounded-md border border-gray-700 bg-[#222222] p-1">
+                        <div className="relative flex items-center justify-between">
+                          <div className="flex items-center flex-1 min-w-0">
+                            <div className="flex-shrink-0 w-14 h-14 overflow-hidden rounded-md border border-gray-700">
+                              <img
+                                src={opt.image || 'https://via.placeholder.com/56x56?text=No+Image'}
+                                alt={opt.title}
+                                className="w-full h-full object-cover"
+                                onError={e => (e.currentTarget.src = 'https://via.placeholder.com/56x56?text=No+Image')}
+                              />
+                            </div>
+                            <div className="ml-3 flex-1 min-w-0">
+                              <span className="text-xs font-medium text-gray-300 break-words whitespace-normal block">{opt.title}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="px-3 py-2 border-t border-gray-800">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-gray-500">0 votes</span>
+                    <span className="text-xs text-gray-400">Click to vote</span>
+                  </div>
+                </div>
               </div>
-            )}
+              <p className="text-center text-xs text-gray-400 dark:text-[#5a6080] mt-3">
+                Ye card mobile aur PC — dono par bilkul isi tarah dikhega (single column, same layout).
+              </p>
+            </div>
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-[#0f1219]/95 backdrop-blur border-t border-gray-200 dark:border-[#2a2f3f] px-6 py-4 z-50">
+        {/* Footer — normal bar at the end of the content, no sticky/fixed positioning */}
+        <div className="bg-white/95 dark:bg-[#0f1219]/95 border-t border-gray-200 dark:border-[#2a2f3f] px-6 py-4">
           <div className="flex items-center justify-between max-w-5xl mx-auto">
             <div className="flex items-center gap-2">
               <div className={`w-2 h-2 rounded-full ${isFormValid ? 'bg-emerald-500 dark:bg-emerald-400' : 'bg-amber-500 dark:bg-amber-400'}`} />
@@ -567,7 +916,7 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
                     <React.Fragment key={poll._id}>
                       <tr className={`border-t border-gray-200 dark:border-[#2a2f3f] hover:bg-gray-50 dark:hover:bg-[#12151f] transition-colors ${i % 2 === 0 ? '' : 'bg-gray-50/50 dark:bg-[#0d1017]/40'}`}>
                         <td className={S.td + ' max-w-[260px]'}>
-                          <p className="text-gray-800 dark:text-white text-sm font-medium" title={poll.question}>
+                          <p className="text-gray-800 dark:text-white text-sm font-medium whitespace-pre-line" title={poll.question}>
                             {truncate(poll.question, 55)}
                           </p>
                           <p className="text-gray-500 dark:text-[#5a6080] text-xs mt-0.5">
@@ -608,22 +957,11 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
                               </button>
                             )}
                             <button
-                              onClick={async () => {
-                                if (isExpanded) {
-                                  setExpandedPollId(null);
-                                } else {
-                                  const detailed = await fetchPollDetails(poll._id);
-                                  if (detailed) {
-                                    const updatedPoll = polls.map(p => p._id === poll._id ? detailed : p);
-                                    setPolls(updatedPoll as Poll[]);
-                                  }
-                                  setExpandedPollId(poll._id);
-                                }
-                              }}
+                              onClick={() => handleToggleDetails(poll)}
                               className={`${S.btn} py-1.5 px-3 text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-900/40 hover:bg-blue-100 dark:hover:bg-blue-900/50`}
                               title="Details / Results">
                               {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                              {isExpanded ? 'Hide' : 'Details'}
+                              {isExpanded ? 'Hide' : loadingDetailsId === poll._id ? 'Loading…' : 'Details'}
                             </button>
                             <button onClick={() => handleEditPoll(poll)} disabled={!!expired}
                               className={`${S.btn} py-1.5 px-3 text-xs border ${expired ? 'bg-gray-100 dark:bg-[#1f2330] text-gray-400 dark:text-[#3a4055] border-gray-300 dark:border-[#2a2f3f] cursor-not-allowed' : 'bg-violet-50 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 border-violet-200 dark:border-violet-900/40 hover:bg-violet-100 dark:hover:bg-violet-900/50'}`} title="Edit">

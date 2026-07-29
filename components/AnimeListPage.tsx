@@ -1,4 +1,4 @@
-// components/AnimeListPage.tsx - FIXED (dangerouslySetInnerHTML for script tag)
+ // components/AnimeListPage.tsx – Mobile filters stacked consistently, PC all in one line
 import React, { useState, useEffect, useMemo } from 'react';
 import type { Anime, FilterType } from '../src/types';
 import { getAllAnime } from '../services/animeService';
@@ -15,7 +15,8 @@ const AnimeListPage: React.FC<AnimeListPageProps> = ({ onAnimeSelect }) => {
   const [isFiltering, setIsFiltering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [localFilter, setLocalFilter] = useState<FilterType>('All');
+  const [subDubFilter, setSubDubFilter] = useState<FilterType>('All');
+  const [contentTypeFilter, setContentTypeFilter] = useState<string>('All');
 
   useEffect(() => {
     const fetchAnime = async () => {
@@ -44,12 +45,22 @@ const AnimeListPage: React.FC<AnimeListPageProps> = ({ onAnimeSelect }) => {
       );
     }
 
-    if (localFilter !== 'All') {
-      result = result.filter(anime => anime.subDubStatus === localFilter);
+    if (subDubFilter !== 'All') {
+      result = result.filter(anime => anime.subDubStatus === subDubFilter);
+    }
+
+    if (contentTypeFilter !== 'All') {
+      if (contentTypeFilter === 'Manhwa') {
+        result = result.filter(anime =>
+          anime.contentType === 'Manga'   // matches your existing logic
+        );
+      } else {
+        result = result.filter(anime => anime.contentType === contentTypeFilter);
+      }
     }
 
     return result.sort((a, b) => a.title.localeCompare(b.title));
-  }, [allAnime, localFilter, searchQuery]);
+  }, [allAnime, subDubFilter, searchQuery, contentTypeFilter]);
 
   useEffect(() => {
     if (isFiltering) {
@@ -58,10 +69,17 @@ const AnimeListPage: React.FC<AnimeListPageProps> = ({ onAnimeSelect }) => {
     }
   }, [sortedAndFilteredAnime, isFiltering]);
 
-  const handleFilterChange = (newFilter: FilterType) => {
-    if (newFilter !== localFilter) {
+  const handleSubDubChange = (newFilter: FilterType) => {
+    if (newFilter !== subDubFilter) {
       setIsFiltering(true);
-      setLocalFilter(newFilter);
+      setSubDubFilter(newFilter);
+    }
+  };
+
+  const handleContentTypeChange = (newType: string) => {
+    if (newType !== contentTypeFilter) {
+      setIsFiltering(true);
+      setContentTypeFilter(newType);
     }
   };
 
@@ -75,17 +93,25 @@ const AnimeListPage: React.FC<AnimeListPageProps> = ({ onAnimeSelect }) => {
     setIsFiltering(true);
   };
 
-  const filterOptions: FilterType[] = ['All', 'Hindi Dub', 'Hindi Sub', 'English Sub'];
+  const subDubOptions: FilterType[] = ['All', 'Hindi Dub', 'Hindi Sub', 'English Sub'];
+  const contentTypeOptions = ['All', 'Anime', 'Movie', 'Manhwa'];
 
   const getSEOData = () => {
     let title = 'Anime List | AnimeBing';
     let description = 'Browse complete list of anime available in Hindi Dub, Hindi Sub, and English Sub. Watch anime online for free.';
     let keywords = 'anime list, all anime, hindi anime list, english anime, anime in hindi, anime in english, anime collection';
 
-    if (localFilter !== 'All') {
-      title = `${localFilter} Anime List | AnimeBing`;
-      description = `Browse complete list of ${localFilter} anime. Watch ${localFilter.toLowerCase()} anime online for free in HD quality.`;
-      keywords = `${localFilter.toLowerCase()} anime list, ${localFilter.toLowerCase()} anime, anime in ${localFilter.toLowerCase()}, watch ${localFilter.toLowerCase()} anime online`;
+    if (subDubFilter !== 'All') {
+      title = `${subDubFilter} ${title}`;
+      description = `Browse complete list of ${subDubFilter} anime. Watch ${subDubFilter.toLowerCase()} anime online for free in HD quality.`;
+      keywords = `${subDubFilter.toLowerCase()} anime list, ${subDubFilter.toLowerCase()} anime, anime in ${subDubFilter.toLowerCase()}`;
+    }
+
+    if (contentTypeFilter !== 'All') {
+      const typeLabel = contentTypeFilter === 'Manhwa' ? 'Manhwa & Manga' : contentTypeFilter;
+      title = `${typeLabel} List | AnimeBing`;
+      description = `Browse complete list of ${typeLabel}. Watch and read ${typeLabel} online for free.`;
+      keywords = `${typeLabel.toLowerCase()} list, ${typeLabel.toLowerCase()}, watch ${typeLabel.toLowerCase()} online`;
     }
 
     if (searchQuery.trim()) {
@@ -97,16 +123,11 @@ const AnimeListPage: React.FC<AnimeListPageProps> = ({ onAnimeSelect }) => {
     let canonicalUrl = 'https://animebing.in/anime';
     const params = new URLSearchParams();
 
-    if (localFilter !== 'All') {
-      params.set('filter', localFilter);
-    }
-    if (searchQuery.trim()) {
-      params.set('search', searchQuery.trim());
-    }
+    if (subDubFilter !== 'All') params.set('filter', subDubFilter);
+    if (contentTypeFilter !== 'All') params.set('type', contentTypeFilter);
+    if (searchQuery.trim()) params.set('search', searchQuery.trim());
 
-    if (params.toString()) {
-      canonicalUrl += `?${params.toString()}`;
-    }
+    if (params.toString()) canonicalUrl += `?${params.toString()}`;
 
     const structuredData = {
       "@context": "https://schema.org",
@@ -168,15 +189,21 @@ const AnimeListPage: React.FC<AnimeListPageProps> = ({ onAnimeSelect }) => {
 
       <div className="container mx-auto px-4 py-8 animate-fade-in">
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4">
+          {/* Title */}
           <h1 className="text-3xl font-bold text-purple-100 border-l-4 border-purple-500 pl-4">
-            Anime List
-            {localFilter !== 'All' && <span className="text-purple-400 ml-2">({localFilter})</span>}
+            {contentTypeFilter !== 'All' ? (
+              contentTypeFilter === 'Manhwa' ? 'Manhwa & Manga List' : `${contentTypeFilter} List`
+            ) : (
+              'Anime List'
+            )}
+            {subDubFilter !== 'All' && <span className="text-purple-400 ml-2">({subDubFilter})</span>}
             {searchQuery && <span className="text-purple-400 ml-2">- Search: "{searchQuery}"</span>}
           </h1>
 
-          <div className="flex flex-col sm:flex-row gap-4 w-full lg:w-auto">
+          {/* Search + Filters row (PC: one line, Mobile/Tablet: stacked) */}
+          <div className="flex flex-col md:flex-row md:items-center gap-4 w-full lg:w-auto">
             {/* Search Bar */}
-            <div className="relative w-full sm:w-64">
+            <div className="relative w-full md:w-64">
               <input
                 type="text"
                 placeholder="Search anime..."
@@ -194,23 +221,45 @@ const AnimeListPage: React.FC<AnimeListPageProps> = ({ onAnimeSelect }) => {
               )}
             </div>
 
-            {/* Filter Buttons */}
-            <div className="flex overflow-x-auto gap-1 bg-purple-800/50 p-1 rounded-lg w-full sm:w-auto
-                            [-ms-overflow-style:none] [scrollbar-width:none]
-                            [&::-webkit-scrollbar]:hidden">
-              {filterOptions.map(option => (
-                <button
-                  key={option}
-                  onClick={() => handleFilterChange(option)}
-                  className={`px-2 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap flex-shrink-0 ${
-                    localFilter === option
-                      ? 'bg-purple-600 text-white'
-                      : 'text-purple-300 hover:bg-purple-700'
-                  }`}
-                >
-                  {option}
-                </button>
-              ))}
+            {/* Filter groups: stacked on mobile/tablet (flex-col), side-by-side on desktop (md:flex-row) */}
+            <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto">
+              {/* Sub/Dub Filter */}
+              <div className="flex overflow-x-auto gap-1 bg-purple-800/50 p-1 rounded-lg w-full md:w-auto
+                [-ms-overflow-style:none] [scrollbar-width:none]
+                [&::-webkit-scrollbar]:hidden">
+                {subDubOptions.map(option => (
+                  <button
+                    key={option}
+                    onClick={() => handleSubDubChange(option)}
+                    className={`px-3 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap flex-shrink-0 ${
+                      subDubFilter === option
+                        ? 'bg-purple-600 text-white'
+                        : 'text-purple-300 hover:bg-purple-700'
+                    }`}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+
+              {/* Content Type Filter */}
+              <div className="flex overflow-x-auto gap-1 bg-purple-800/50 p-1 rounded-lg w-full md:w-auto
+                [-ms-overflow-style:none] [scrollbar-width:none]
+                [&::-webkit-scrollbar]:hidden">
+                {contentTypeOptions.map(option => (
+                  <button
+                    key={option}
+                    onClick={() => handleContentTypeChange(option)}
+                    className={`px-3 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap flex-shrink-0 ${
+                      contentTypeFilter === option
+                        ? 'bg-purple-600 text-white'
+                        : 'text-purple-300 hover:bg-purple-700'
+                    }`}
+                  >
+                    {option === 'Manhwa' ? 'Manga' : option}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -258,8 +307,8 @@ const AnimeListPage: React.FC<AnimeListPageProps> = ({ onAnimeSelect }) => {
               ) : (
                 <li className="p-8 text-center text-purple-400">
                   {searchQuery
-                    ? `No anime found matching "${searchQuery}"`
-                    : 'No anime found for the selected filter.'
+                    ? `No results found for "${searchQuery}"`
+                    : 'No content matches the current filters.'
                   }
                 </li>
               )}
@@ -267,7 +316,6 @@ const AnimeListPage: React.FC<AnimeListPageProps> = ({ onAnimeSelect }) => {
           </div>
         )}
 
-        {/* ✅ FIXED: dangerouslySetInnerHTML use kiya - React mein script tag ka sahi tarika */}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: breadcrumbData }}

@@ -41,6 +41,9 @@ export interface IAnime {
   monthlyLikes?: number
   weeklyLikes?: number
   totalVotes?: number
+  isBlocked?: boolean
+  createdBy?: string           
+  createdByUsername?: string
   createdAt?: Date
   updatedAt?: Date
 }
@@ -152,6 +155,8 @@ export interface ISocialMedia {
 export interface IPartner {
   _id?: ObjectId
   name: string
+  createdBy?: string           
+  createdByUsername?: string    
   createdAt?: Date
 }
 
@@ -221,6 +226,17 @@ export interface ILinkSettings {
   }
   _isSundayApplied?: boolean
   lastUpdated?: Date
+  autoModeEnabled?: boolean
+  _modeApplied?: boolean
+  _activeModeName?: string | null
+
+  // ✅ New fields for special mode tracking
+  specialModeAppliedId?: string    // ObjectId of the active special mode
+  preModeLink1?: boolean           // link states before mode applied
+  preModeLink2?: boolean
+  preModeLink3?: boolean
+  preModeLink4?: boolean
+  preModeLink5?: boolean
 }
 
 // ============ ANALYTICS ============
@@ -259,19 +275,22 @@ export interface IShortUser {
   realName: string
   ratePerThousand: number
   isActive: boolean
+  canCreateLinks?: boolean
   totalClicks: number
   totalEarnings: number
   unpaidEarnings: number
   paidEarnings: number
-  // Gmail OAuth login support
-  gmailLinked?: string        // linked gmail address
+  gmailLinked?: string         
   profile?: IShortUserProfile
+  avatarId?: number | null
   createdAt?: Date
   updatedAt?: Date
-  // Referral system fields
-  referralCode?: string        // unique referral code for the user
-  referredBy?: string          // referral code of the person who referred them
-  registrationIp?: string      // IP at the time of registration
+  referralCode?: string         
+  referredBy?: string           
+  registrationIp?: string       
+  createdBy?: 'admin' | 'self'
+  createdByAdminId?: string
+  createdByAdminUsername?: string
 }
 
 // ============ SHORT LINK ============
@@ -286,6 +305,8 @@ export interface IShortLink {
   lastClicked: Date | null
   createdAt?: Date
   updatedAt?: Date
+  createdByAdminId?: string
+  createdByAdminUsername?: string
 }
 
 // ============ SHORT CLICK ============
@@ -321,10 +342,8 @@ export interface IShortRequest {
   realName: string
   type: 'payment' | 'link'
   status: 'pending' | 'done' | 'rejected'
-  // Payment request fields
   amount?: number
   profile?: IShortUserProfile
-  // Link request fields
   message?: string
   createdAt?: Date
   updatedAt?: Date
@@ -338,6 +357,8 @@ export interface IShortMessage {
   realName: string
   text: string
   fromAdmin: boolean
+  senderRole?: 'admin' | 'subadmin'    
+  senderName?: string                  
   readByAdmin: boolean
   readByUser: boolean
   createdAt?: Date
@@ -349,23 +370,133 @@ export interface IShortUserLogin {
   userId: ObjectId
   username: string
   loginAt: Date
-  date: string   // "YYYY-MM-DD" format — dedup ke liye
+  date: string    
 }
 
 // ============ REFERRAL TYPES ============
 export interface IShortReferral {
   _id?: ObjectId
-  referrerId: ObjectId      // jisne refer kiya
+  referrerId: ObjectId       
   referrerUsername: string
-  referredId: ObjectId       // naya user
+  referredId: ObjectId       
   referredUsername: string
-  referrerReward: number     // ₹40
-  referredReward: number     // ₹25
-  commissionPercent: number  // 5
+  referrerReward: number      
+  referredReward: number      
+  commissionPercent: number   
   status: 'pending' | 'unlocked' | 'flagged'
   referrerRewardCredited: boolean
   referredRewardCredited: boolean
   ip?: string
   createdAt: Date
   unlockedAt?: Date | null
+}
+
+// ============ SUB ADMIN ============
+export interface ISubAdmin {
+  _id?: ObjectId
+  username: string
+  password: string         
+  salt: string              
+  fullName?: string
+  permissions: string[]    
+  animeAccess: 'own' | 'all'    
+  isBlocked?: boolean
+  createdBy?: string         
+  lastLogin?: Date
+  createdAt?: Date
+  updatedAt?: Date
+}
+
+// ============ ACTIVITY LOG ============
+export interface IActivityLog {
+  _id?: ObjectId
+  actorId: string            
+  actorUsername: string
+  actorRole: 'admin' | 'subadmin'
+  action: string              
+  targetType?: string         
+  targetId?: string
+  targetTitle?: string        
+  createdAt?: Date
+}
+
+// ============ ANIME LINK CONTROL ============
+export interface IAnimeLinkControl {
+  _id?: ObjectId
+  name: string
+  animeIds: string[]
+  link1: boolean
+  link2: boolean
+  link3: boolean
+  link4: boolean
+  createdBy?: string
+  createdByUsername?: string
+  createdAt?: Date
+  updatedAt?: Date
+}
+
+// ============ SPECIAL MODE ============
+export interface ISpecialMode {
+  _id?: ObjectId
+  name: string
+  type: 'weekday' | 'dateRange'
+  weekday?: number
+  startDate?: Date
+  endDate?: Date
+  bannerText?: string
+  isEnabled: boolean
+  forceLink5Only?: boolean
+  createdAt?: Date
+  updatedAt?: Date
+}
+
+// ============ NOTE ============
+export interface INote {
+  id: string;
+  title: string;
+  content: string;
+  color: string;
+  pinned: boolean;
+  archived: boolean;
+  trashed: boolean;
+  labels: string[];
+  checklist?: { text: string; checked: boolean }[];
+  reminder?: string;
+  createdBy: string;      // admin/subadmin id
+  visibility: "private" | "shared";
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ============ TRACKED CHANNEL (YouTube tracker) ============
+export interface ITrackedTitle {
+  id: string          // unique id (crypto.randomUUID())
+  keyword: string      // series naam jisse title match hoga, e.g. "Naruto"
+  lastKnownPart: number
+}
+
+export interface ITrackedChannel {
+  _id?: ObjectId
+  channelId: string          // YouTube channel ID (UC...)
+  channelName: string
+  channelHandle: string       // jo admin ne likha tha, e.g. @AnimeHubHindi
+  uploadsPlaylistId: string   // ek baar fetch karke save, sasta check ke liye
+  titles: ITrackedTitle[]
+  createdBy?: string
+  createdByUsername?: string
+  createdAt?: Date
+  updatedAt?: Date
+}
+
+// ============ TRACK NOTIFICATION ============
+export interface ITrackNotification {
+  _id?: ObjectId
+  message: string
+  channelId: string
+  channelName: string
+  titleKeyword: string
+  videoId?: string
+  videoUrl?: string
+  isRead: boolean
+  createdAt?: Date
 }

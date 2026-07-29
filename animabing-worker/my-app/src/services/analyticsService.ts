@@ -1,4 +1,4 @@
- // src/services/analyticsService.ts
+// src/services/analyticsService.ts
 import { getDb } from './mongoService'
 import { ObjectId } from 'mongodb'
 
@@ -27,6 +27,83 @@ function getISTDateStr(d: Date = new Date()): string {
   return istDate.toISOString().slice(0, 10)
 }
 
+// ─── Sub-admin scoping helper ──────────────────────────────────────────────
+function slugFilter(ownedSlugs?: string[] | null): Record<string, any> {
+  if (!ownedSlugs) return {}
+  return { slug: { $in: ownedSlugs } }
+}
+
+function creatorFilter(creatorId?: string | null): Record<string, any> {
+  if (!creatorId) return {}
+  return { createdByAdminId: creatorId }
+}
+
+// ─── Sub-admin name attribution (for main admin's view) ───────────────────
+// List of all sub-admins — powers the "Filter by Sub-Admin" dropdown.
+export async function getSubAdminsList(mongoUri: string, dbName: string) {
+  const db = await getDb(mongoUri, dbName)
+  const subs = await db.collection('subadmins')
+    .find({}, { projection: { username: 1, realName: 1 } })
+    .toArray()
+  return subs.map((s: any) => ({
+    id: s._id.toString(),
+    username: s.username,
+    realName: s.realName || s.username,
+  }))
+}
+
+// admin _id (string) -> display name
+async function getSubAdminNameMap(mongoUri: string, dbName: string): Promise<Map<string, string>> {
+  const db = await getDb(mongoUri, dbName)
+  const subs = await db.collection('subadmins')
+    .find({}, { projection: { username: 1, realName: 1 } })
+    .toArray()
+  return new Map(subs.map((s: any) => [s._id.toString(), s.realName || s.username]))
+}
+
+// slug -> { animeId, animeTitle, creatorUsername } — covers BOTH anime
+// slugs (detail/episode) AND download-page slugs (via their animeId link).
+// creatorUsername sirf tab compute hota hai jab includeCreator=true (main
+// admin ka unrestricted view) — sub-admin ko iski zarurat nahi.
+async function getSlugMetaMap(
+  mongoUri: string,
+  dbName: string,
+  includeCreator: boolean
+): Promise<Map<string, { animeId?: string; animeTitle?: string; creatorUsername?: string | null }>> {
+  const db = await getDb(mongoUri, dbName)
+  const nameMap = includeCreator ? await getSubAdminNameMap(mongoUri, dbName) : null
+
+  const animes = await db.collection('animes')
+    .find({}, { projection: { slug: 1, title: 1, createdBy: 1 } })
+    .toArray()
+
+  const map = new Map<string, { animeId?: string; animeTitle?: string; creatorUsername?: string | null }>()
+  const animeInfoById = new Map<string, { animeTitle: string; creatorUsername: string | null }>()
+
+  for (const a of animes) {
+    const animeId = a._id.toString()
+    const creatorId = a.createdBy?.toString()
+    const creatorUsername = nameMap ? (creatorId ? (nameMap.get(creatorId) || null) : null) : null
+    const info = { animeTitle: a.title || 'Unknown', creatorUsername }
+    animeInfoById.set(animeId, info)
+    if (a.slug) map.set(a.slug, { animeId, ...info })
+  }
+
+  // ─── Download pages inherit animeId/title/creator from their parent anime ──
+  const downloadPages = await db.collection('downloadpages')
+    .find({}, { projection: { slug: 1, animeId: 1 } })
+    .toArray()
+
+  for (const dp of downloadPages) {
+    if (!dp.slug) continue
+    const animeIdStr = dp.animeId?.toString()
+    const info = animeIdStr ? animeInfoById.get(animeIdStr) : undefined
+    map.set(dp.slug, { animeId: animeIdStr, ...(info || {}) })
+  }
+
+  return map
+}
+
 // ─── GeoIP response type ─────────────────────────────────────────────────
 interface GeoIPResponse {
   countryCode?: string
@@ -37,7 +114,6 @@ interface GeoIPResponse {
 // ─── Free GeoIP enrichment (ip-api.com) ──────────────────────────────────
 async function enrichGeo(ip: string): Promise<{ country?: string; region?: string; city?: string }> {
   try {
-    // Skip private/local IPs
     if (ip === '0.0.0.0' || ip.startsWith('127.') || ip.startsWith('10.') || ip.startsWith('192.168.')) {
       return {}
     }
@@ -64,7 +140,6 @@ export async function trackPageView(
   const now = new Date()
   const date = getISTDateStr(now)
 
-  // Enrich geo only if country or region is missing
   let country = data.country
   let region = data.region
   let city = data.city
@@ -107,49 +182,45 @@ export async function getPageViewStats(
   mongoUri: string,
   dbName: string,
   days = 7,
-  device?: string
+  device?: string,
+  ownedSlugs?: string[] | null
 ) {
   const db = await getDb(mongoUri, dbName)
   const since = new Date()
   since.setDate(since.getDate() - (days - 1))
   const sinceStr = getISTDateStr(since)
 
-  const baseMatch: Record<string, any> = { date: { $gte: sinceStr } }
+  const scope = slugFilter(ownedSlugs)
+
+  const baseMatch: Record<string, any> = { date: { $gte: sinceStr }, ...scope }
   if (device) baseMatch.device = device
 
-  // ─── Today's date string (IST) ────────────────────────────────────────
   const todayStr = getISTDateStr()
 
-  // ─── Today's views ────────────────────────────────────────────────────
-  const todayMatch: Record<string, any> = { date: todayStr }
+  const todayMatch: Record<string, any> = { date: todayStr, ...scope }
   if (device) todayMatch.device = device
   const todayViews = await db.collection('pageviews').countDocuments(todayMatch)
 
-  // ─── Today's unique visitors ──────────────────────────────────────────
   const todayUniqueVisitors = await db
     .collection('pageviews')
     .distinct('ip', todayMatch)
     .then((arr: string[]) => arr.length)
 
-  // Total views (filtered by days/device)
   const totalViews = await db.collection('pageviews').countDocuments(baseMatch)
 
-  // ─── All-time total views ─────────────────────────────────────────────
-  const allTimeMatch: Record<string, any> = {}
+  const allTimeMatch: Record<string, any> = { ...scope }
   if (device) allTimeMatch.device = device
   const allTimeTotalViews = await db.collection('pageviews').countDocuments(allTimeMatch)
 
-  // ─── All-time unique visitors ─────────────────────────────────────────
   const allTimeUniqueVisitors = await db
     .collection('pageviews')
     .distinct('ip', allTimeMatch)
     .then((arr: string[]) => arr.length)
 
-  // ─── Last 7 days unique visitors ─────────────────────────────────────
   const sevenDaysAgo = new Date()
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
   const sevenDaysStr = getISTDateStr(sevenDaysAgo)
-  const sevenDayMatch: Record<string, any> = { date: { $gte: sevenDaysStr } }
+  const sevenDayMatch: Record<string, any> = { date: { $gte: sevenDaysStr }, ...scope }
   if (device) sevenDayMatch.device = device
 
   const last7DaysUniqueVisitors = await db
@@ -157,7 +228,6 @@ export async function getPageViewStats(
     .distinct('ip', sevenDayMatch)
     .then((arr: string[]) => arr.length)
 
-  // Daily chart
   const dailyRaw = await db
     .collection('pageviews')
     .aggregate([
@@ -202,7 +272,7 @@ export async function getPageViewStats(
     topPages = await db
       .collection('pageview_daily')
       .aggregate([
-        { $match: { date: { $gte: sinceStr } } },
+        { $match: { date: { $gte: sinceStr }, ...scope } },
         { $addFields: { normPath: { $toLower: { $trim: { input: '$path', chars: '/' } } } } },
         {
           $group: {
@@ -234,7 +304,7 @@ export async function getPageViewStats(
   const byDevice = await db
     .collection('pageviews')
     .aggregate([
-      { $match: { date: { $gte: sinceStr } } },
+      { $match: { date: { $gte: sinceStr }, ...scope } },
       { $group: { _id: '$device', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
     ])
@@ -246,7 +316,7 @@ export async function getPageViewStats(
     .distinct('ip', baseMatch)
     .then((arr: string[]) => arr.length)
 
-  // ─── Geo stats — views by country ─────────────────────────────────────
+  // Geo stats — views by country
   const byCountryRaw = await db
     .collection('pageviews')
     .aggregate([
@@ -261,6 +331,65 @@ export async function getPageViewStats(
     .filter((c: any) => c._id && c._id !== 'XX')
     .map((c: any) => ({ country: c._id as string, views: c.views as number }))
 
+  // ─── Slug metadata: animeId + animeTitle (always) + creator name (main
+  // admin view only) — powers both the missing-animeTitle fix and the
+  // anime-detail/download combining below.
+  const slugMeta = await getSlugMetaMap(
+    mongoUri, dbName,
+    ownedSlugs === null || ownedSlugs === undefined
+  )
+
+  const rawTopPages = topPages.map((p: any) => {
+    const slug = p.slug as string | undefined
+    const meta = slug ? slugMeta.get(slug) : undefined
+    return {
+      path: p.path ?? '/' + p._id,
+      views: p.views,
+      pageType: p.pageType,
+      animeTitle: p.animeTitle || meta?.animeTitle,
+      slug,
+      animeId: meta?.animeId,
+      createdByUsername: meta?.creatorUsername ?? null,
+    }
+  })
+
+  // ─── Combine anime-detail + episode + download rows for the SAME anime
+  // into a single row. This lets admins see, at a glance, how many of an
+  // anime's detail-page visitors continued on to its download page —
+  // instead of two separate, hard-to-compare rows.
+  const COMBINABLE_TYPES = new Set(['anime-detail', 'episode', 'download'])
+  const combinedByAnimeId = new Map<string, any>()
+  const finalTopPages: any[] = []
+
+  for (const row of rawTopPages) {
+    if (row.animeId && COMBINABLE_TYPES.has(row.pageType)) {
+      let entry = combinedByAnimeId.get(row.animeId)
+      if (!entry) {
+        entry = {
+          path: row.path,
+          views: 0,
+          pageType: 'anime-combined',
+          animeTitle: row.animeTitle,
+          slug: row.slug,
+          animeId: row.animeId,
+          createdByUsername: row.createdByUsername,
+          detailViews: 0,   // anime-detail + episode combined
+          downloadViews: 0, // download page only
+        }
+        combinedByAnimeId.set(row.animeId, entry)
+        finalTopPages.push(entry)
+      }
+      entry.views += row.views
+      if (row.pageType === 'download') entry.downloadViews += row.views
+      else entry.detailViews += row.views
+      if (!entry.animeTitle && row.animeTitle) entry.animeTitle = row.animeTitle
+    } else {
+      finalTopPages.push(row)
+    }
+  }
+
+  finalTopPages.sort((a, b) => b.views - a.views)
+
   return {
     todayViews,
     todayUniqueVisitors,
@@ -271,13 +400,7 @@ export async function getPageViewStats(
     last7DaysUniqueVisitors,
     dailyChart,
     byCountry,
-    topPages: topPages.map((p: any) => ({
-      path: p.path ?? '/' + p._id,
-      views: p.views,
-      pageType: p.pageType,
-      animeTitle: p.animeTitle,
-      slug: p.slug,
-    })),
+    topPages: finalTopPages,
     byType: byType.map((t: any) => ({ type: t._id, views: t.views })),
     byDevice: byDevice.map((d: any) => ({ device: d._id || 'unknown', count: d.count })),
   }
@@ -288,17 +411,21 @@ export async function getGeoDetail(
   country: string,
   mongoUri: string,
   dbName: string,
-  days = 30
+  days = 30,
+  ownedSlugs?: string[] | null
 ) {
   const db = await getDb(mongoUri, dbName)
   const since = new Date()
   since.setDate(since.getDate() - (days - 1))
   const sinceStr = getISTDateStr(since)
+  const scope = slugFilter(ownedSlugs)
+
+  const match = { country, date: { $gte: sinceStr }, ...scope }
 
   const result = await db
     .collection('pageviews')
     .aggregate([
-      { $match: { country, date: { $gte: sinceStr } } },
+      { $match: match },
       {
         $group: {
           _id: {
@@ -314,13 +441,11 @@ export async function getGeoDetail(
     ])
     .toArray()
 
-  const totalViews = await db
-    .collection('pageviews')
-    .countDocuments({ country, date: { $gte: sinceStr } })
+  const totalViews = await db.collection('pageviews').countDocuments(match)
 
   const uniqueVisitors = await db
     .collection('pageviews')
-    .distinct('ip', { country, date: { $gte: sinceStr } })
+    .distinct('ip', match)
     .then((arr: string[]) => arr.length)
 
   return {
@@ -336,18 +461,20 @@ export async function getGeoDetail(
   }
 }
 
-// ─── Country breakdown by period — independent of main stats `days` ──────
+// ─── Country breakdown by period ──────────────────────────────────────────
 export async function getByCountryStats(
   mongoUri: string,
   dbName: string,
-  days = 1
+  days = 1,
+  ownedSlugs?: string[] | null
 ) {
   const db = await getDb(mongoUri, dbName)
   const since = new Date()
   since.setDate(since.getDate() - (days - 1))
   const sinceStr = getISTDateStr(since)
+  const scope = slugFilter(ownedSlugs)
 
-  const match: Record<string, any> = { date: { $gte: sinceStr } }
+  const match: Record<string, any> = { date: { $gte: sinceStr }, ...scope }
 
   const byCountryRaw = await db
     .collection('pageviews')
@@ -382,7 +509,6 @@ export async function getFunnelStats(
     sessionId: { $exists: true, $ne: null },
   }
 
-  // Get all pageviews grouped by session, sorted by timestamp
   const sessions = await db
     .collection('pageviews')
     .aggregate([
@@ -437,7 +563,7 @@ export async function getFunnelStats(
   }
 }
 
-// ─── 1. Referrer / traffic source breakdown ────────────────────────────────
+// ─── Referrer / traffic source breakdown ───────────────────────────────────
 function classifyReferrer(referrer?: string): string {
   if (!referrer) return 'Direct'
   try {
@@ -492,7 +618,7 @@ export async function getReferrerStats(
   return { byReferrer }
 }
 
-// ─── 2. Browser breakdown ───────────────────────────────────────────────────
+// ─── Browser breakdown ─────────────────────────────────────────────────────
 export async function getBrowserStats(
   mongoUri: string,
   dbName: string,
@@ -517,7 +643,7 @@ export async function getBrowserStats(
   }
 }
 
-// ─── 3. Average time on page (per page type) ──────────────────────────────
+// ─── Average time on page ──────────────────────────────────────────────────
 export async function getTimeOnPageStats(
   mongoUri: string,
   dbName: string,
@@ -557,7 +683,7 @@ export async function getTimeOnPageStats(
   }
 }
 
-// ─── 4. Real-time / live visitors (active in last 5 minutes) ──────────────
+// ─── Real-time / live visitors (active in last 5 minutes) ──────────────────
 export async function getLiveVisitors(
   mongoUri: string,
   dbName: string
@@ -576,7 +702,6 @@ export async function getLiveVisitors(
     .collection('pageviews')
     .distinct('ip', { timestamp: { $gte: fiveMinAgo } })
 
-  // Pages currently being viewed (top 5)
   const currentPages = await db
     .collection('pageviews')
     .aggregate([
@@ -605,7 +730,7 @@ export async function getLiveVisitors(
   }
 }
 
-// ─── 5. Top anime overall (combined across page types) ────────────────────
+// ─── Top anime overall ─────────────────────────────────────────────────────
 export async function getTopAnimeOverall(
   mongoUri: string,
   dbName: string,
@@ -653,7 +778,7 @@ export async function getTopAnimeOverall(
   }
 }
 
-// ─── 7. Hourly heatmap (views by hour of day, IST) ─────────────────────────
+// ─── Hourly heatmap (IST) ──────────────────────────────────────────────────
 export async function getHourlyHeatmap(
   mongoUri: string,
   dbName: string,
@@ -691,7 +816,7 @@ export async function getHourlyHeatmap(
   return { hourly }
 }
 
-// ─── 8. 404 / not-found page tracking ──────────────────────────────────────
+// ─── 404 / not-found page tracking ─────────────────────────────────────────
 export async function get404Stats(
   mongoUri: string,
   dbName: string,
@@ -732,7 +857,7 @@ export async function get404Stats(
   }
 }
 
-// ─── 10. New vs returning visitors ─────────────────────────────────────────
+// ─── New vs returning visitors ─────────────────────────────────────────────
 export async function getNewVsReturning(
   mongoUri: string,
   dbName: string,
@@ -743,7 +868,6 @@ export async function getNewVsReturning(
   since.setDate(since.getDate() - (days - 1))
   const sinceStr = getISTDateStr(since)
 
-  // All IPs seen in the period
   const periodIps: string[] = await db
     .collection('pageviews')
     .distinct('ip', { date: { $gte: sinceStr } })
@@ -752,8 +876,6 @@ export async function getNewVsReturning(
     return { newVisitors: 0, returningVisitors: 0, total: 0 }
   }
 
-  // ✅ FIX: use date string (IST calendar day) to find prior visits
-  // IPs with a pageview on a date BEFORE the period start date are returning
   const priorIps: string[] = await db
     .collection('pageviews')
     .distinct('ip', {
@@ -811,20 +933,20 @@ export async function getPageDetail(
 export async function getUserLinkAnalytics(
   mongoUri: string,
   dbName: string,
-  days = 7
+  days = 7,
+  creatorId?: string | null
 ) {
   const db = await getDb(mongoUri, dbName)
   const since = new Date()
   since.setDate(since.getDate() - (days - 1))
   since.setHours(0, 0, 0, 0)
 
-  // All users with their links
-  const users = await db.collection('shortusers').find({}).toArray()
+  const users = await db.collection('shortusers').find(creatorFilter(creatorId)).toArray()
+  const nameMap = !creatorId ? await getSubAdminNameMap(mongoUri, dbName) : null
 
   const result = await Promise.all(users.map(async (user: any) => {
     const userId = user._id
 
-    // User ke links
     const links = await db.collection('shortlinks')
       .find({ userId })
       .sort({ clicks: -1 })
@@ -834,13 +956,11 @@ export async function getUserLinkAnalytics(
 
     const linkCodes = links.map((l: any) => l.code)
 
-    // Total clicks in period
     const clicksInPeriod = await db.collection('shortclicks').countDocuments({
       code: { $in: linkCodes },
       clickedAt: { $gte: since }
     })
 
-    // Country breakdown
     const byCountry = await db.collection('shortclicks').aggregate([
       { $match: { code: { $in: linkCodes }, clickedAt: { $gte: since } } },
       { $group: { _id: '$country', count: { $sum: 1 } } },
@@ -848,14 +968,12 @@ export async function getUserLinkAnalytics(
       { $limit: 5 }
     ]).toArray()
 
-    // Device breakdown
     const byDevice = await db.collection('shortclicks').aggregate([
       { $match: { code: { $in: linkCodes }, clickedAt: { $gte: since } } },
       { $group: { _id: '$device', count: { $sum: 1 } } },
       { $sort: { count: -1 } }
     ]).toArray()
 
-    // Daily clicks (last 7 days)
     const dailyClicks = []
     for (let i = 6; i >= 0; i--) {
       const dayStart = new Date()
@@ -873,11 +991,9 @@ export async function getUserLinkAnalytics(
       })
     }
 
-    // Unique IPs in period
     const uniqueIps: string[] = await db.collection('shortclicks')
       .distinct('ip', { code: { $in: linkCodes }, clickedAt: { $gte: since } })
 
-    // Returning visitors: IPs jo pehle bhi click kar chuke hain
     const priorIps: string[] = await db.collection('shortclicks')
       .distinct('ip', {
         code: { $in: linkCodes },
@@ -888,7 +1004,6 @@ export async function getUserLinkAnalytics(
     const returningVisitors = priorIps.length
     const newVisitors = uniqueIps.length - returningVisitors
 
-    // Per-link stats
     const linkStats = await Promise.all(links.map(async (link: any) => {
       const clicksInRange = await db.collection('shortclicks').countDocuments({
         code: link.code,
@@ -908,6 +1023,7 @@ export async function getUserLinkAnalytics(
       userId: userId.toString(),
       username: user.username,
       realName: user.realName,
+      creatorUsername: nameMap ? (nameMap.get(user.createdByAdminId) || 'Main Admin') : undefined,
       ratePerThousand: user.ratePerThousand || 10,
       totalClicks: user.totalClicks || 0,
       clicksInPeriod,
@@ -926,14 +1042,16 @@ export async function getUserLinkAnalytics(
   }
 }
 
-// ─── FEATURE 1+2: Earnings Timeline + Link Health ─────────────────────────
+// ─── Earnings Timeline + Link Health ───────────────────────────────────────
 export async function getEarningsAndLinkHealth(
   mongoUri: string,
-  dbName: string
+  dbName: string,
+  creatorId?: string | null
 ) {
   const db = await getDb(mongoUri, dbName)
 
-  const users = await db.collection('shortusers').find({}).toArray()
+  const users = await db.collection('shortusers').find(creatorFilter(creatorId)).toArray()
+  const nameMap = !creatorId ? await getSubAdminNameMap(mongoUri, dbName) : null
 
   const result = await Promise.all(users.map(async (user: any) => {
     const userId = user._id
@@ -947,7 +1065,6 @@ export async function getEarningsAndLinkHealth(
     const linkCodes = links.map((l: any) => l.code)
     const rate = user.ratePerThousand || 10
 
-    // Daily earnings last 30 days
     const earningsTimeline = []
     for (let i = 29; i >= 0; i--) {
       const dayStart = new Date()
@@ -966,12 +1083,10 @@ export async function getEarningsAndLinkHealth(
       })
     }
 
-    // Projected monthly earnings (based on last 7 days average)
     const last7 = earningsTimeline.slice(-7)
     const avgDailyEarnings = last7.reduce((s, d) => s + d.earnings, 0) / 7
     const projectedMonthly = parseFloat((avgDailyEarnings * 30).toFixed(2))
 
-    // Link health
     const sevenDaysAgo = new Date()
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
 
@@ -1006,6 +1121,7 @@ export async function getEarningsAndLinkHealth(
       userId: userId.toString(),
       username: user.username,
       realName: user.realName,
+      creatorUsername: nameMap ? (nameMap.get(user.createdByAdminId) || 'Main Admin') : undefined,
       totalEarnings: user.totalEarnings || 0,
       unpaidEarnings: user.unpaidEarnings || 0,
       paidEarnings: user.paidEarnings || 0,
@@ -1021,17 +1137,19 @@ export async function getEarningsAndLinkHealth(
   return { users: result.filter(Boolean) }
 }
 
-// ─── FEATURE 3: Fraud/Bot Detection ──────────────────────────────────────
+// ─── Fraud/Bot Detection ───────────────────────────────────────────────────
 export async function getFraudDetection(
   mongoUri: string,
   dbName: string,
-  days = 7
+  days = 7,
+  creatorId?: string | null
 ) {
   const db = await getDb(mongoUri, dbName)
   const since = new Date()
   since.setDate(since.getDate() - days)
 
-  const users = await db.collection('shortusers').find({}).toArray()
+  const users = await db.collection('shortusers').find(creatorFilter(creatorId)).toArray()
+  const nameMap = !creatorId ? await getSubAdminNameMap(mongoUri, dbName) : null
 
   const alerts = await Promise.all(users.map(async (user: any) => {
     const userId = user._id
@@ -1039,7 +1157,6 @@ export async function getFraudDetection(
     if (links.length === 0) return null
     const linkCodes = links.map((l: any) => l.code)
 
-    // Same IP multiple clicks
     const ipCounts = await db.collection('shortclicks').aggregate([
       { $match: { code: { $in: linkCodes }, clickedAt: { $gte: since } } },
       { $group: { _id: '$ip', count: { $sum: 1 }, codes: { $addToSet: '$code' } } },
@@ -1048,7 +1165,6 @@ export async function getFraudDetection(
       { $limit: 10 }
     ]).toArray()
 
-    // Clicks per hour spike detection (any hour > 3x average)
     const hourlyClicks = await db.collection('shortclicks').aggregate([
       { $match: { code: { $in: linkCodes }, clickedAt: { $gte: since } } },
       {
@@ -1068,7 +1184,6 @@ export async function getFraudDetection(
       : 0
     const spikeHours = hourlyClicks.filter((h: any) => h.count > avgHourly * 3 && avgHourly > 0)
 
-    // Unknown country clicks
     const unknownCountry = await db.collection('shortclicks').countDocuments({
       code: { $in: linkCodes },
       clickedAt: { $gte: since },
@@ -1095,6 +1210,7 @@ export async function getFraudDetection(
       userId: userId.toString(),
       username: user.username,
       realName: user.realName,
+      creatorUsername: nameMap ? (nameMap.get(user.createdByAdminId) || 'Main Admin') : undefined,
       totalClicks,
       riskScore,
       riskLevel: riskScore >= 70 ? 'high' : riskScore >= 40 ? 'medium' : 'low',
@@ -1118,10 +1234,11 @@ export async function getFraudDetection(
   }
 }
 
-// ─── FEATURE 4: Leaderboard + Streaks ─────────────────────────────────────
+// ─── Leaderboard + Streaks ─────────────────────────────────────────────────
 export async function getLeaderboard(
   mongoUri: string,
-  dbName: string
+  dbName: string,
+  creatorId?: string | null
 ) {
   const db = await getDb(mongoUri, dbName)
   const today = getISTDateStr()
@@ -1131,7 +1248,9 @@ export async function getLeaderboard(
   weekStart.setDate(weekStart.getDate() - 6)
   weekStart.setHours(0, 0, 0, 0)
 
-  const users = await db.collection('shortusers').find({ isActive: true }).toArray()
+  const userFilter: any = { isActive: true, ...creatorFilter(creatorId) }
+  const users = await db.collection('shortusers').find(userFilter).toArray()
+  const nameMap = !creatorId ? await getSubAdminNameMap(mongoUri, dbName) : null
 
   const board = await Promise.all(users.map(async (user: any) => {
     const userId = user._id
@@ -1146,7 +1265,6 @@ export async function getLeaderboard(
       code: { $in: codes }, clickedAt: { $gte: weekStart }
     })
 
-    // Streak: consecutive days with at least 1 click
     let streak = 0
     for (let i = 0; i < 30; i++) {
       const d = new Date()
@@ -1161,7 +1279,6 @@ export async function getLeaderboard(
       else break
     }
 
-    // Login streak
     let loginStreak = 0
     for (let i = 0; i < 30; i++) {
       const d = new Date()
@@ -1178,6 +1295,7 @@ export async function getLeaderboard(
       userId: userId.toString(),
       username: user.username,
       realName: user.realName,
+      creatorUsername: nameMap ? (nameMap.get(user.createdByAdminId) || 'Main Admin') : undefined,
       totalClicks: user.totalClicks || 0,
       todayClicks,
       weekClicks,
@@ -1199,7 +1317,7 @@ export async function getLeaderboard(
   }
 }
 
-// ─── FEATURE 5: Payment Analytics ─────────────────────────────────────────
+// ─── Payment Analytics ─────────────────────────────────────────────────────
 export async function getPaymentAnalytics(
   mongoUri: string,
   dbName: string
@@ -1212,20 +1330,17 @@ export async function getPaymentAnalytics(
 
   const totals = totalPaidResult[0] || { totalPaid: 0, totalUnpaid: 0 }
 
-  // Users near threshold (1000 clicks)
   const nearThreshold = await db.collection('shortusers').find({
     totalClicks: { $gte: 700, $lt: 1000 },
     isActive: true
   }).toArray()
 
-  // Payment history (last 10)
   const recentPayments = await db.collection('payments')
     .find({})
     .sort({ paidAt: -1 })
     .limit(10)
     .toArray()
 
-  // Monthly payment trend (last 6 months)
   const monthlyTrend = []
   for (let i = 5; i >= 0; i--) {
     const d = new Date()
@@ -1243,12 +1358,10 @@ export async function getPaymentAnalytics(
     })
   }
 
-  // Pending requests
   const pendingPayments = await db.collection('shortrequests').find({
     type: 'payment', status: 'pending'
   }).toArray()
 
-  // Per-user payment summary
   const users = await db.collection('shortusers')
     .find({ totalClicks: { $gt: 0 } })
     .sort({ unpaidEarnings: -1 })
@@ -1287,14 +1400,15 @@ export async function getPaymentAnalytics(
   }
 }
 
-// ─── FEATURE 6: User Cohort Analysis ──────────────────────────────────────
+// ─── User Cohort Analysis ──────────────────────────────────────────────────
 export async function getCohortAnalysis(
   mongoUri: string,
-  dbName: string
+  dbName: string,
+  creatorId?: string | null
 ) {
   const db = await getDb(mongoUri, dbName)
 
-  const users = await db.collection('shortusers').find({}).toArray()
+  const users = await db.collection('shortusers').find(creatorFilter(creatorId)).toArray()
 
   const cohorts: Record<string, any> = {}
 
@@ -1335,7 +1449,7 @@ export async function getCohortAnalysis(
   return { cohorts: cohortList }
 }
 
-// ─── FEATURE 7 (Updated): Link Journey – Per User + Per Link ─────────────
+// ─── Link Journey – Per User + Per Link ────────────────────────────────────
 export async function getLinkJourney(
   mongoUri: string,
   dbName: string,
@@ -1383,7 +1497,6 @@ export async function getLinkJourney(
     }))
 
     const total = clicks.length
-    // Convert per-link map to array
     const linkJourney = links.map((l: any) => ({
       code: l.code,
       label: l.label,
@@ -1407,7 +1520,7 @@ export async function getLinkJourney(
       bounceRate: total > 0 ? Math.round((bounces / total) * 100) : 0,
       detailRate: total > 0 ? Math.round((detailVisits / total) * 100) : 0,
       downloadRate: total > 0 ? Math.round((downloadVisits / total) * 100) : 0,
-      linkJourney,   // <-- per-link breakdown
+      linkJourney,
     }
   }))
 
@@ -1419,7 +1532,6 @@ export async function getLinkJourney(
   }
 }
 
-// Per‑link aggregate (saare users ke links combine)
 export async function getLinkJourneyByLink(
   mongoUri: string,
   dbName: string,
@@ -1470,7 +1582,7 @@ export async function getLinkJourneyByLink(
   return { links: result.sort((a, b) => b.totalClicks - a.totalClicks) }
 }
 
-// ─── FEATURE 11: User Self Analytics ─────────────────────────────────────
+// ─── User Self Analytics ───────────────────────────────────────────────────
 export async function getUserSelfAnalytics(
   userId: string,
   mongoUri: string,
@@ -1486,7 +1598,6 @@ export async function getUserSelfAnalytics(
 
   const linkCodes = links.map((l: any) => l.code)
 
-  // ── Daily clicks last 30 days ──────────────────────────────────────────
   const dailyClicks30: { date: string; clicks: number; earnings: number }[] = []
   const user = await db.collection('shortusers').findOne({ _id: uid })
   const rate = user?.ratePerThousand || 10
@@ -1510,11 +1621,9 @@ export async function getUserSelfAnalytics(
     })
   }
 
-  // ── Projected monthly (last 7 days avg) ───────────────────────────────
   const last7Avg = dailyClicks30.slice(-7).reduce((s, d) => s + d.earnings, 0) / 7
   const projectedMonthly = parseFloat((last7Avg * 30).toFixed(2))
 
-  // ── Country breakdown (all time) ──────────────────────────────────────
   const byCountry = linkCodes.length
     ? await db.collection('shortclicks').aggregate([
         { $match: { code: { $in: linkCodes } } },
@@ -1524,7 +1633,6 @@ export async function getUserSelfAnalytics(
       ]).toArray()
     : []
 
-  // ── Device breakdown (all time) ───────────────────────────────────────
   const byDevice = linkCodes.length
     ? await db.collection('shortclicks').aggregate([
         { $match: { code: { $in: linkCodes } } },
@@ -1533,7 +1641,6 @@ export async function getUserSelfAnalytics(
       ]).toArray()
     : []
 
-  // ── Per-link performance ───────────────────────────────────────────────
   const since7 = new Date()
   since7.setDate(since7.getDate() - 7)
   since7.setHours(0, 0, 0, 0)
@@ -1564,7 +1671,6 @@ export async function getUserSelfAnalytics(
     }
   }))
 
-  // ── New vs returning (all time) ───────────────────────────────────────
   const allIps: string[] = linkCodes.length
     ? await db.collection('shortclicks').distinct('ip', { code: { $in: linkCodes } })
     : []
@@ -1587,7 +1693,6 @@ export async function getUserSelfAnalytics(
       })
     : []
 
-  // ── Click streak ──────────────────────────────────────────────────────
   let clickStreak = 0
   for (let i = 0; i < 30; i++) {
     const d = new Date()
@@ -1605,7 +1710,6 @@ export async function getUserSelfAnalytics(
     else break
   }
 
-  // ── Best day ever ─────────────────────────────────────────────────────
   const bestDayRaw = linkCodes.length
     ? await db.collection('shortclicks').aggregate([
         { $match: { code: { $in: linkCodes } } },
@@ -1643,4 +1747,119 @@ export async function getUserSelfAnalytics(
     returningVisitors: priorIps.length,
     totalUniqueVisitors: allIps.length,
   }
+}
+
+// ─── Monthly Overview: har month ka total (start se ab tak) ───────────────
+export async function getMonthlyOverview(
+  mongoUri: string,
+  dbName: string,
+  ownedSlugs?: string[] | null
+) {
+  const db = await getDb(mongoUri, dbName)
+  const scope = slugFilter(ownedSlugs)
+
+  const raw = await db
+    .collection('pageviews')
+    .aggregate([
+      { $match: scope },
+      {
+        $group: {
+          _id: { $substrCP: ['$date', 0, 7] }, // "YYYY-MM"
+          views: { $sum: 1 },
+          animeViews: {
+            $sum: { $cond: [{ $in: ['$pageType', ['anime-detail', 'episode']] }, 1, 0] }
+          },
+          downloadViews: {
+            $sum: { $cond: [{ $eq: ['$pageType', 'download'] }, 1, 0] }
+          },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ])
+    .toArray()
+
+  return {
+    months: raw.map((m: any) => ({
+      month: m._id,
+      views: m.views,
+      animeViews: m.animeViews,
+      downloadViews: m.downloadViews,
+    })),
+  }
+}
+
+// ─── Monthly Detail: ek month ke andar har din ka breakdown ───────────────
+export async function getMonthlyDetail(
+  mongoUri: string,
+  dbName: string,
+  month: string, // "YYYY-MM"
+  ownedSlugs?: string[] | null
+) {
+  const db = await getDb(mongoUri, dbName)
+  const scope = slugFilter(ownedSlugs)
+
+  const [yearStr, monStr] = month.split('-')
+  const year = parseInt(yearStr, 10)
+  const mon = parseInt(monStr, 10)
+  if (!year || !mon || mon < 1 || mon > 12) {
+    throw new Error('Invalid month format, expected YYYY-MM')
+  }
+
+  const daysInMonth = new Date(year, mon, 0).getDate()
+  const todayStr = getISTDateStr()
+  const isCurrentMonth = todayStr.slice(0, 7) === month
+  const lastDay = isCurrentMonth ? parseInt(todayStr.slice(8, 10), 10) : daysInMonth
+
+  const match: Record<string, any> = {
+    date: { $gte: `${month}-01`, $lte: `${month}-31` },
+    ...scope,
+  }
+
+  const raw = await db
+    .collection('pageviews')
+    .aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: '$date',
+          totalViews: { $sum: 1 },
+          animeViews: {
+            $sum: { $cond: [{ $in: ['$pageType', ['anime-detail', 'episode']] }, 1, 0] }
+          },
+          downloadViews: {
+            $sum: { $cond: [{ $eq: ['$pageType', 'download'] }, 1, 0] }
+          },
+        },
+      },
+    ])
+    .toArray()
+
+  const dayMap = new Map<string, { totalViews: number; animeViews: number; downloadViews: number }>(
+    raw.map((d: any) => [d._id, { totalViews: d.totalViews, animeViews: d.animeViews, downloadViews: d.downloadViews }])
+  )
+
+  const days: { date: string; totalViews: number; animeViews: number; downloadViews: number; otherViews: number }[] = []
+  for (let day = 1; day <= lastDay; day++) {
+    const dateStr = `${month}-${String(day).padStart(2, '0')}`
+    const d = dayMap.get(dateStr) || { totalViews: 0, animeViews: 0, downloadViews: 0 }
+    days.push({
+      date: dateStr,
+      totalViews: d.totalViews,
+      animeViews: d.animeViews,
+      downloadViews: d.downloadViews,
+      otherViews: Math.max(d.totalViews - d.animeViews - d.downloadViews, 0),
+    })
+  }
+
+  const totals = days.reduce(
+    (acc, d) => ({
+      totalViews: acc.totalViews + d.totalViews,
+      animeViews: acc.animeViews + d.animeViews,
+      downloadViews: acc.downloadViews + d.downloadViews,
+      otherViews: acc.otherViews + d.otherViews,
+    }),
+    { totalViews: 0, animeViews: 0, downloadViews: 0, otherViews: 0 }
+  )
+
+  return { month, days, totals }
 }

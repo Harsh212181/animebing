@@ -11,11 +11,17 @@ const getFrontendBase = () => {
   return window.location.origin;
 };
 
-const getToken = () => localStorage.getItem('adminToken') || '';
+// 🔽 removed old getToken() function — ab resolveToken() component ke andar hai
+
+interface DownloadPageManagerProps {
+  token?: string;
+  subAdminMode?: boolean; // ✅ true jab sub-admin dashboard se render ho
+}
 
 interface AnimeOption {
   _id: string;
   title: string;
+  thumbnail?: string;   // 👈 NEW: so dropdown can show image
 }
 
 interface FormPage {
@@ -137,7 +143,12 @@ const ConfirmModal: React.FC<ConfirmModalProps> = ({ open, title, message, onCon
 };
 
 // ----- Main Component -----
-const DownloadPageManager: React.FC = () => {
+const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
+  token: tokenProp,
+  subAdminMode = false,
+}) => {
+  const resolveToken = () => tokenProp || localStorage.getItem('adminToken') || '';
+
   const [pages, setPages] = useState<DownloadPage[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingPage, setEditingPage] = useState<FormPage | null>(null);
@@ -169,12 +180,15 @@ const DownloadPageManager: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<'all' | 'ongoing' | 'complete'>('all');
   const [subDubFilter, setSubDubFilter] = useState<'all' | string>('all');
   const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'visible' | 'hidden'>('all');
+  // ✅ Creator filter — ab teen options: "All" / "Admin" (sirf main admin ke
+  // banaye anime) / "Sub Admin" (kisi bhi sub-admin ke banaye anime).
+  const [subAdminFilter, setSubAdminFilter] = useState<'all' | 'admin' | 'subadmin'>('all');
 
   const fetchPages = async () => {
     setLoading(true);
     setError(null);
     try {
-      const token = getToken();
+      const token = resolveToken();
       const res = await fetch(`${API_BASE}/download-pages`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
@@ -182,10 +196,11 @@ const DownloadPageManager: React.FC = () => {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
       const data = await res.json();
+      // 🔧 FIX (A): normalize data so links is always an array
       if (Array.isArray(data)) {
-        setPages(data);
+        setPages(data.map((p: any) => ({ ...p, links: Array.isArray(p.links) ? p.links : [] })));
       } else if (data.data && Array.isArray(data.data)) {
-        setPages(data.data);
+        setPages(data.data.map((p: any) => ({ ...p, links: Array.isArray(p.links) ? p.links : [] })));
       } else {
         console.error('Unexpected response format:', data);
         setPages([]);
@@ -199,25 +214,39 @@ const DownloadPageManager: React.FC = () => {
     }
   };
 
+  // ✅ FIX: Always use admin protected route so hidden anime appear in dropdown,
+  // and now also includes thumbnail in AnimeOption for image display.
   const fetchAnime = async () => {
     try {
-      const token = getToken();
-      const res = await fetch(`${API_BASE}/anime?limit=500`, {
+      const token = resolveToken();
+      const url = `${API_BASE}/admin/protected/anime-list`;
+      const res = await fetch(url, {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       const animeArray = json.data || json;
       if (Array.isArray(animeArray)) {
-        setAnimeOptions(animeArray.map((a: any) => ({ _id: a._id, title: a.title })));
-        
-        // Build thumbnail map
-        const map = new Map<string, string>();
-        animeArray.forEach((a: any) => {
+        // Helper to normalize/absolute-ize thumbnail url
+        const normalizeThumb = (a: any) => {
           let thumb = a.thumbnail || a.image || a.poster || a.cover;
           if (thumb && !thumb.startsWith('http')) {
             thumb = `${API_BASE}${thumb.startsWith('/') ? '' : '/'}${thumb}`;
           }
+          return thumb;
+        };
+
+        // ✅ FIX: ab thumbnail bhi options mein include hoga
+        setAnimeOptions(animeArray.map((a: any) => ({
+          _id: a._id,
+          title: a.title,
+          thumbnail: normalizeThumb(a)
+        })));
+
+        // Build thumbnail map (unchanged, still used elsewhere)
+        const map = new Map<string, string>();
+        animeArray.forEach((a: any) => {
+          const thumb = normalizeThumb(a);
           if (thumb) map.set(a._id, thumb);
         });
         setAnimeThumbnails(map);
@@ -235,7 +264,7 @@ const DownloadPageManager: React.FC = () => {
   const getNextStartingEpisode = async (animeId: string): Promise<number> => {
     if (!animeId) return 1;
     try {
-      const token = getToken();
+      const token = resolveToken();
       const res = await fetch(`${API_BASE}/download-pages/anime/${animeId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
@@ -244,8 +273,9 @@ const DownloadPageManager: React.FC = () => {
       if (!Array.isArray(animePages)) return 1;
 
       let maxEpisode = 0;
+      // 🔧 FIX (B): safe access with (page.links || [])
       animePages.forEach((page: DownloadPage) => {
-        page.links.forEach(link => {
+        (page.links || []).forEach(link => {
           if (link.episode > maxEpisode) maxEpisode = link.episode;
         });
       });
@@ -267,7 +297,8 @@ const DownloadPageManager: React.FC = () => {
     slug: page.slug,
     title: page.title,
     episodeNumber: page.episodeNumber || 1,
-    links: page.links.map(link => ({
+    // 🔧 FIX (C): safe access with (page.links || []) and type fallback
+    links: (page.links || []).map(link => ({
       ...link,
       type: (link as any).type || 'download'
     }))
@@ -282,6 +313,8 @@ const DownloadPageManager: React.FC = () => {
     thumbnail?: string;
     animeId: string;
     isHidden?: boolean;
+    createdByUsername?: string; // ✅ sub-admin who created this anime (display only)
+    isSubAdminCreated?: boolean; // ✅ reliable role-based flag from backend (used for filtering)
   } => {
     if (page.animeId && typeof page.animeId === 'object') {
       const animeObj = page.animeId as any;
@@ -304,7 +337,9 @@ const DownloadPageManager: React.FC = () => {
         status: animeObj.status,
         thumbnail: thumbnail,
         animeId: animeObj._id,
-        isHidden: !!animeObj.isHidden
+        isHidden: !!animeObj.isHidden,
+        createdByUsername: animeObj.createdByUsername || undefined,
+        isSubAdminCreated: !!animeObj.isSubAdminCreated
       };
     }
     return { title: 'Unknown Anime', animeId: typeof page.animeId === 'string' ? page.animeId : '' };
@@ -350,15 +385,13 @@ const DownloadPageManager: React.FC = () => {
       return;
     }
 
-    // ✅ No cap on link count anymore — watch/download links are unlimited
-
     const method = pageToSave._id ? 'PUT' : 'POST';
     const url = pageToSave._id
       ? `${API_BASE}/download-pages/${pageToSave._id}`
       : `${API_BASE}/download-pages`;
 
     try {
-      const token = getToken();
+      const token = resolveToken();
       const res = await fetch(url, {
         method,
         headers: {
@@ -389,7 +422,7 @@ const DownloadPageManager: React.FC = () => {
   const confirmDelete = async () => {
     if (!deleteConfirm.id) return;
     try {
-      const token = getToken();
+      const token = resolveToken();
       const res = await fetch(`${API_BASE}/download-pages/${deleteConfirm.id}`, {
         method: 'DELETE',
         headers: token ? { Authorization: `Bearer ${token}` } : {}
@@ -408,15 +441,7 @@ const DownloadPageManager: React.FC = () => {
     }
   };
 
-  // NOTE: hide/unhide control removed from here. Visibility is now shown
-  // read-only, mirrored from the anime's own `isHidden` status which is
-  // controlled from Anime List Manager.
-
   // addDownloadLink – uses global next episode
-  // 🔧 FIX: offset now only counts links added DURING this editing session
-  // (prev.links count minus how many already existed when editing started),
-  // instead of counting every existing download link — which double-counted
-  // episodes the server's "next episode" number already included.
   const addDownloadLink = async () => {
     if (!editingPage || !editingPage.animeId) return;
     setCalculatingNext(true);
@@ -438,7 +463,6 @@ const DownloadPageManager: React.FC = () => {
   };
 
   // addWatchLink – uses global next episode
-  // 🔧 FIX: same session-offset logic as addDownloadLink above.
   const addWatchLink = async () => {
     if (!editingPage || !editingPage.animeId) return;
     setCalculatingNext(true);
@@ -460,7 +484,6 @@ const DownloadPageManager: React.FC = () => {
   };
 
   // addBothLinks – adds one download and one watch link together
-  // 🔧 FIX: same session-offset logic applied to both link types.
   const addBothLinks = async () => {
     if (!editingPage || !editingPage.animeId) return;
     setCalculatingNext(true);
@@ -524,36 +547,52 @@ const DownloadPageManager: React.FC = () => {
     return map;
   }, [pages]);
 
-  // Filter pages based on search, contentType, status, sub/dub status, and visibility
+  // ✅ Sub-admin: sirf apne anime ke pages dikhe
+  const ownedAnimeIdSet = useMemo(() => {
+    if (!subAdminMode) return null;
+    return new Set(animeOptions.map(a => a._id));
+  }, [subAdminMode, animeOptions]);
+
+  // ✅ Sub-Admin filter ke liye — kya current pages mein koi bhi sub-admin
+  // dwara banaya gaya anime maujood hai?
+  const hasSubAdminPages = useMemo(() => {
+    if (subAdminMode) return false;
+    return pages.some(page => getAnimeDetails(page).isSubAdminCreated);
+  }, [pages, subAdminMode]);
+
+  // Filter pages based on search, contentType, status, sub/dub status, visibility, sub-admin, and sub-admin ownership
   const filteredPages = useMemo(() => {
     return pages.filter(page => {
+      const details = getAnimeDetails(page);
+
+      // ✅ Sub-admin: sirf apne anime ke pages
+      if (subAdminMode && ownedAnimeIdSet && !ownedAnimeIdSet.has(details.animeId)) {
+        return false;
+      }
+
       const animeTitle = getAnimeTitle(page).toLowerCase();
       const term = searchTerm.toLowerCase();
       if (!animeTitle.includes(term)) return false;
 
-      const details = getAnimeDetails(page);
       if (contentTypeFilter !== 'all' && details.contentType !== contentTypeFilter) return false;
       if (statusFilter !== 'all') {
         const animeStatus = details.status?.toLowerCase();
         if (statusFilter === 'ongoing' && animeStatus !== 'ongoing') return false;
         if (statusFilter === 'complete' && animeStatus !== 'complete') return false;
       }
-      // Sub/Dub filter
       if (subDubFilter !== 'all') {
         const subDub = details.subDubStatus;
         if (subDub !== subDubFilter) return false;
       }
-      // Visibility filter (mirrors the ANIME's hidden status)
       if (visibilityFilter === 'visible' && details.isHidden) return false;
       if (visibilityFilter === 'hidden' && !details.isHidden) return false;
+      if (subAdminFilter === 'subadmin' && !details.isSubAdminCreated) return false;
+      if (subAdminFilter === 'admin' && details.isSubAdminCreated) return false;
       return true;
     });
-  }, [pages, searchTerm, contentTypeFilter, statusFilter, subDubFilter, visibilityFilter]);
+  }, [pages, searchTerm, contentTypeFilter, statusFilter, subDubFilter, visibilityFilter, subAdminFilter, subAdminMode, ownedAnimeIdSet]);
 
   // Final display order:
-  // - Anime groups sorted by their latest page's _id (newest anime group with recent activity on top)
-  // - Within each anime, pages keep their natural order (oldest page first) so
-  //   "Page 1 / Page 2 / Page 3" labels stay correct.
   const sortedPages = useMemo(() => {
     const groups = new Map<string, DownloadPage[]>();
     filteredPages.forEach(page => {
@@ -561,17 +600,11 @@ const DownloadPageManager: React.FC = () => {
       if (!groups.has(animeId)) groups.set(animeId, []);
       groups.get(animeId)!.push(page);
     });
-    // Pages within each anime sorted oldest -> newest, so "Page 1, Page 2..." numbering stays correct
     groups.forEach(list => list.sort((a, b) => a._id.localeCompare(b._id)));
 
     const groupEntries = Array.from(groups.entries());
-    // 🔧 FIX: anime GROUPS ab unke sabse latest (naye) page ke hisaab se
-    // order hote hain, anime ki apni creation date se nahi. Isse jis anime
-    // mein abhi-abhi naya page add hua ho, wo list ke top pe aa jaati hai —
-    // lekin har group ke andar page numbering (Page 1/2/3) hamesha
-    // chronological hi rehti hai.
     groupEntries.sort((a, b) => {
-      const aLatestPageId = a[1][a[1].length - 1]._id; // list ascending hai, to last = newest page
+      const aLatestPageId = a[1][a[1].length - 1]._id;
       const bLatestPageId = b[1][b[1].length - 1]._id;
       return bLatestPageId.localeCompare(aLatestPageId);
     });
@@ -632,7 +665,6 @@ const DownloadPageManager: React.FC = () => {
                 setShowNewForm(false);
                 setEditingPage(null);
               } else {
-                // 🔧 FIX: new page starts with 0 existing links of each type
                 initialLinkCountsRef.current = { download: 0, watch: 0 };
                 setEditingPage({ animeId: '', slug: '', title: '', episodeNumber: 1, links: [] });
                 setShowNewForm(true);
@@ -640,10 +672,21 @@ const DownloadPageManager: React.FC = () => {
             }}
             className="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-medium rounded-xl shadow-lg shadow-purple-600/20 transition-all flex items-center gap-2"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
-            {showNewForm && editingPage && !editingPage._id ? 'Cancel New Page' : '+ New Page'}
+            {showNewForm && editingPage && !editingPage._id ? (
+              <>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Cancel New Page
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                New Page
+              </>
+            )}
           </button>
         </div>
 
@@ -670,149 +713,78 @@ const DownloadPageManager: React.FC = () => {
         )}
       </div>
 
-      {/* Filters Section — all filter groups side by side, wrapping together */}
-      <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-6 space-y-4">
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
+      {/* Filters Section */}
+      <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-4 space-y-3">
+        <div className="flex flex-nowrap items-center gap-x-5 gap-y-0 overflow-x-auto pb-1">
           {/* Content Type Filter */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-white/70">Type:</span>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setContentTypeFilter('all')}
-                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
-                  contentTypeFilter === 'all'
-                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
-                    : 'bg-white/10 text-white/70 hover:bg-white/20'
-                }`}
-              >
-                All
-              </button>
-              <button
-                onClick={() => setContentTypeFilter('Anime')}
-                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
-                  contentTypeFilter === 'Anime'
-                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
-                    : 'bg-white/10 text-white/70 hover:bg-white/20'
-                }`}
-              >
-                Anime
-              </button>
-              <button
-                onClick={() => setContentTypeFilter('Movie')}
-                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
-                  contentTypeFilter === 'Movie'
-                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
-                    : 'bg-white/10 text-white/70 hover:bg-white/20'
-                }`}
-              >
-                Movies
-              </button>
-              <button
-                onClick={() => setContentTypeFilter('Manga')}
-                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
-                  contentTypeFilter === 'Manga'
-                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
-                    : 'bg-white/10 text-white/70 hover:bg-white/20'
-                }`}
-              >
-                Manga
-              </button>
+          <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
+            <span className="text-xs font-medium text-white/60">Type:</span>
+            <div className="flex gap-1">
+              {(['all', 'Anime', 'Movie', 'Manga'] as const).map(val => (
+                <button
+                  key={val}
+                  onClick={() => setContentTypeFilter(val)}
+                  className={`px-2 py-0.5 rounded-full text-xs font-medium transition-all ${
+                    contentTypeFilter === val
+                      ? 'bg-purple-600 text-white shadow shadow-purple-600/20'
+                      : 'bg-white/10 text-white/70 hover:bg-white/20'
+                  }`}
+                >
+                  {val === 'all' ? 'All' : val === 'Movie' ? 'Movies' : val}
+                </button>
+              ))}
             </div>
           </div>
 
           {/* Status Filter */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-white/70">Status:</span>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setStatusFilter('all')}
-                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
-                  statusFilter === 'all'
-                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
-                    : 'bg-white/10 text-white/70 hover:bg-white/20'
-                }`}
-              >
-                All
-              </button>
-              <button
-                onClick={() => setStatusFilter('ongoing')}
-                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
-                  statusFilter === 'ongoing'
-                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
-                    : 'bg-white/10 text-white/70 hover:bg-white/20'
-                }`}
-              >
-                Ongoing
-              </button>
-              <button
-                onClick={() => setStatusFilter('complete')}
-                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
-                  statusFilter === 'complete'
-                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
-                    : 'bg-white/10 text-white/70 hover:bg-white/20'
-                }`}
-              >
-                Complete
-              </button>
+          <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
+            <span className="text-xs font-medium text-white/60">Status:</span>
+            <div className="flex gap-1">
+              {(['all', 'ongoing', 'complete'] as const).map(val => (
+                <button
+                  key={val}
+                  onClick={() => setStatusFilter(val)}
+                  className={`px-2 py-0.5 rounded-full text-xs font-medium transition-all capitalize ${
+                    statusFilter === val
+                      ? 'bg-purple-600 text-white shadow shadow-purple-600/20'
+                      : 'bg-white/10 text-white/70 hover:bg-white/20'
+                  }`}
+                >
+                  {val === 'all' ? 'All' : val}
+                </button>
+              ))}
             </div>
           </div>
 
           {/* Sub/Dub Filter */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-white/70">Sub/Dub:</span>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setSubDubFilter('all')}
-                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
-                  subDubFilter === 'all'
-                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
-                    : 'bg-white/10 text-white/70 hover:bg-white/20'
-                }`}
-              >
-                All
-              </button>
-              <button
-                onClick={() => setSubDubFilter('Hindi Sub')}
-                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
-                  subDubFilter === 'Hindi Sub'
-                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
-                    : 'bg-white/10 text-white/70 hover:bg-white/20'
-                }`}
-              >
-                Hindi Sub
-              </button>
-              <button
-                onClick={() => setSubDubFilter('Hindi Dub')}
-                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
-                  subDubFilter === 'Hindi Dub'
-                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
-                    : 'bg-white/10 text-white/70 hover:bg-white/20'
-                }`}
-              >
-                Hindi Dub
-              </button>
-              <button
-                onClick={() => setSubDubFilter('English Sub')}
-                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
-                  subDubFilter === 'English Sub'
-                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
-                    : 'bg-white/10 text-white/70 hover:bg-white/20'
-                }`}
-              >
-                English Sub
-              </button>
+          <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
+            <span className="text-xs font-medium text-white/60">Sub/Dub:</span>
+            <div className="flex gap-1">
+              {(['all', 'Hindi Sub', 'Hindi Dub', 'English Sub'] as const).map(val => (
+                <button
+                  key={val}
+                  onClick={() => setSubDubFilter(val)}
+                  className={`px-2 py-0.5 rounded-full text-xs font-medium transition-all ${
+                    subDubFilter === val
+                      ? 'bg-purple-600 text-white shadow shadow-purple-600/20'
+                      : 'bg-white/10 text-white/70 hover:bg-white/20'
+                  }`}
+                >
+                  {val === 'all' ? 'All' : val}
+                </button>
+              ))}
             </div>
           </div>
 
           {/* Visibility Filter */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-white/70">Visibility:</span>
-            <div className="flex gap-2">
+          <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
+            <span className="text-xs font-medium text-white/60">Visibility:</span>
+            <div className="flex gap-1">
               <button
                 onClick={() => setVisibilityFilter('all')}
-                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                className={`px-2 py-0.5 rounded-full text-xs font-medium transition-all ${
                   visibilityFilter === 'all'
-                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                    ? 'bg-purple-600 text-white shadow shadow-purple-600/20'
                     : 'bg-white/10 text-white/70 hover:bg-white/20'
                 }`}
               >
@@ -820,9 +792,9 @@ const DownloadPageManager: React.FC = () => {
               </button>
               <button
                 onClick={() => setVisibilityFilter('visible')}
-                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                className={`px-2 py-0.5 rounded-full text-xs font-medium transition-all ${
                   visibilityFilter === 'visible'
-                    ? 'bg-green-600 text-white shadow-lg shadow-green-600/20'
+                    ? 'bg-green-600 text-white shadow shadow-green-600/20'
                     : 'bg-white/10 text-white/70 hover:bg-white/20'
                 }`}
               >
@@ -830,9 +802,9 @@ const DownloadPageManager: React.FC = () => {
               </button>
               <button
                 onClick={() => setVisibilityFilter('hidden')}
-                className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                className={`px-2 py-0.5 rounded-full text-xs font-medium transition-all ${
                   visibilityFilter === 'hidden'
-                    ? 'bg-red-600 text-white shadow-lg shadow-red-600/20'
+                    ? 'bg-red-600 text-white shadow shadow-red-600/20'
                     : 'bg-white/10 text-white/70 hover:bg-white/20'
                 }`}
               >
@@ -840,18 +812,65 @@ const DownloadPageManager: React.FC = () => {
               </button>
             </div>
           </div>
+        </div>
+
+        {/* Second row: Sub-Admin filter + Search */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {!subAdminMode && hasSubAdminPages ? (
+            <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
+              <span className="text-xs font-medium text-white/60">Creator:</span>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => setSubAdminFilter('all')}
+                  className={`px-2 py-0.5 rounded-full text-xs font-medium transition-all ${
+                    subAdminFilter === 'all'
+                      ? 'bg-purple-600 text-white shadow shadow-purple-600/20'
+                      : 'bg-white/10 text-white/70 hover:bg-white/20'
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setSubAdminFilter('admin')}
+                  className={`px-2 py-0.5 rounded-full text-xs font-medium transition-all ${
+                    subAdminFilter === 'admin'
+                      ? 'bg-blue-600 text-white shadow shadow-blue-600/20'
+                      : 'bg-white/10 text-white/70 hover:bg-white/20'
+                  }`}
+                >
+                  Admin
+                </button>
+                <button
+                  onClick={() => setSubAdminFilter('subadmin')}
+                  className={`px-2 py-0.5 rounded-full text-xs font-medium transition-all ${
+                    subAdminFilter === 'subadmin'
+                      ? 'bg-amber-600 text-white shadow shadow-amber-600/20'
+                      : 'bg-white/10 text-white/70 hover:bg-white/20'
+                  }`}
+                >
+                  Sub Admin
+                </button>
+              </div>
+            </div>
+          ) : subAdminMode ? (
+            <div className="text-xs text-white/40 shrink-0 whitespace-nowrap">
+              {filteredPages.length} / {pages.length} pages shown
+            </div>
+          ) : (
+            <div />
+          )}
 
           {/* Search Input */}
-          <div className="relative ml-auto">
+          <div className="relative w-full sm:w-72 ml-auto">
             <input
               type="text"
               placeholder="Search by anime title..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full sm:w-64 px-4 py-2 bg-gray-800/60 border border-gray-700/80 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition pl-10"
+              className="w-full px-3 py-1.5 bg-gray-800/60 border border-gray-700/80 rounded-xl text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition pl-9"
             />
             <svg
-              className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500"
+              className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -868,14 +887,15 @@ const DownloadPageManager: React.FC = () => {
 
         {/* Active filters info */}
         <div className="text-xs text-white/40">
-          {filteredPages.length} / {pages.length} pages shown
-          {(contentTypeFilter !== 'all' || statusFilter !== 'all' || subDubFilter !== 'all' || visibilityFilter !== 'all') && (
+          {!subAdminMode && `${filteredPages.length} / ${pages.length} pages shown`}
+          {(contentTypeFilter !== 'all' || statusFilter !== 'all' || subDubFilter !== 'all' || visibilityFilter !== 'all' || subAdminFilter !== 'all') && (
             <button
               onClick={() => {
                 setContentTypeFilter('all');
                 setStatusFilter('all');
                 setSubDubFilter('all');
                 setVisibilityFilter('all');
+                setSubAdminFilter('all');
               }}
               className="ml-2 text-purple-400 hover:text-purple-300 underline"
             >
@@ -902,13 +922,11 @@ const DownloadPageManager: React.FC = () => {
         ) : (
           sortedPages.map(page => {
             const animeDetails = getAnimeDetails(page);
-            // Find page index for this anime based on creation order (_id)
             const animePageList = pagesByAnime.get(animeDetails.animeId) || [];
             const pageIndex = animePageList.findIndex(p => p._id === page._id) + 1;
             const hidden = !!animeDetails.isHidden;
 
-            // Compute episode range
-            const episodeNumbers = page.links.map(l => l.episode);
+            const episodeNumbers = (page.links || []).map(l => l.episode);
             const minEp = episodeNumbers.length ? Math.min(...episodeNumbers) : null;
             const maxEp = episodeNumbers.length ? Math.max(...episodeNumbers) : null;
             const episodeRange = minEp !== null 
@@ -919,16 +937,12 @@ const DownloadPageManager: React.FC = () => {
 
             return (
               <React.Fragment key={page._id}>
-                {/* Page Card – now contains the edit form inside */}
                 <div className={`group bg-white/5 backdrop-blur-sm border rounded-2xl overflow-hidden shadow-xl transition-all hover:shadow-2xl ${hidden ? 'border-red-500/30' : 'border-white/10 hover:border-white/20'} ${isEditingThis ? 'border-purple-500/30' : ''}`}>
-                  {/* Card header (existing content) */}
                   <div className="relative p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    {/* Colored left accent */}
                     <div className={`absolute left-0 top-0 bottom-0 w-1.5 rounded-l-2xl ${hidden ? 'bg-gradient-to-b from-red-500 to-rose-500' : 'bg-gradient-to-b from-purple-400 to-pink-400'}`}></div>
 
                     <div className="flex-1 pl-3">
                       <div className="flex items-start gap-4">
-                        {/* Thumbnail - fixed dimensions */}
                         <div className="flex-shrink-0 w-16 h-20 sm:w-20 sm:h-24 rounded-lg overflow-hidden bg-gray-800/80 shadow-lg border border-white/10">
                           {animeDetails.thumbnail ? (
                             <img
@@ -950,19 +964,16 @@ const DownloadPageManager: React.FC = () => {
                           )}
                         </div>
 
-                        {/* Content */}
                         <div className="flex-1">
                           <div className="flex items-center flex-wrap gap-2">
                             <h3 className="text-xl font-bold text-white">
                               {animeDetails.title}
                             </h3>
-                            {/* Page number badge */}
                             {pageIndex > 0 && (
                               <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-purple-600/30 text-purple-300 border border-purple-500/50">
                                 Page {pageIndex}
                               </span>
                             )}
-                            {/* Visibility badge (Visible / Hidden) */}
                             {hidden ? (
                               <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-red-600/30 text-red-300 border border-red-500/50">
                                 Hidden
@@ -972,7 +983,6 @@ const DownloadPageManager: React.FC = () => {
                                 Visible
                               </span>
                             )}
-                            {/* Content Type Badge */}
                             {animeDetails.contentType && (
                               <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                                 animeDetails.contentType === 'Movie'
@@ -984,13 +994,11 @@ const DownloadPageManager: React.FC = () => {
                                 {animeDetails.contentType}
                               </span>
                             )}
-                            {/* Sub/Dub Status Badge */}
                             {animeDetails.subDubStatus && (
                               <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-pink-600/30 text-pink-300 border border-pink-500/50">
                                 {animeDetails.subDubStatus}
                               </span>
                             )}
-                            {/* Status Badge (Ongoing/Complete) */}
                             {animeDetails.status && (
                               <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                                 animeDetails.status.toLowerCase() === 'ongoing'
@@ -1002,6 +1010,11 @@ const DownloadPageManager: React.FC = () => {
                                 {animeDetails.status}
                               </span>
                             )}
+                            {!subAdminMode && animeDetails.createdByUsername && (
+                              <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-amber-600/30 text-amber-300 border border-amber-500/50">
+                                By: {animeDetails.createdByUsername}
+                              </span>
+                            )}
                           </div>
 
                           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
@@ -1009,7 +1022,7 @@ const DownloadPageManager: React.FC = () => {
                               <span className="text-purple-300 font-medium">Slug:</span> {page.slug}
                             </span>
                             <span className="text-white/70">
-                              <span className="text-purple-300 font-medium">Links:</span> {page.links.length}
+                              <span className="text-purple-300 font-medium">Links:</span> {(page.links || []).length}
                             </span>
                             <span className="text-white/70">
                               <span className="text-purple-300 font-medium">Starting Ep:</span> {page.episodeNumber}
@@ -1019,7 +1032,6 @@ const DownloadPageManager: React.FC = () => {
                                 <span className="text-purple-300 font-medium">Button:</span> {page.title}
                               </span>
                             )}
-                            {/* Episode range */}
                             <span className="text-white/70">
                               <span className="text-purple-300 font-medium">{episodeRange}</span>
                             </span>
@@ -1030,8 +1042,8 @@ const DownloadPageManager: React.FC = () => {
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l5 5a2 2 0 01.586 1.414V19a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z" />
                             </svg>
                             {(() => {
-                              const downloadCount = page.links.filter(l => l.type === 'download').length;
-                              const watchCount = page.links.filter(l => l.type === 'watch').length;
+                              const downloadCount = (page.links || []).filter(l => l.type === 'download').length;
+                              const watchCount = (page.links || []).filter(l => l.type === 'watch').length;
                               return (
                                 <>
                                   <span>Download: <span className="text-emerald-300 font-medium">{downloadCount}</span></span>
@@ -1044,9 +1056,7 @@ const DownloadPageManager: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Action buttons */}
                     <div className="flex gap-2 items-center">
-                      {/* View button */}
                       <button
                         onClick={() => window.open(`${getFrontendBase()}/download/${page.slug}`, '_blank')}
                         title="View public page"
@@ -1057,7 +1067,6 @@ const DownloadPageManager: React.FC = () => {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                         </svg>
                       </button>
-                      {/* Edit button */}
                       <button
                         onClick={() => {
                           if (isEditingThis) {
@@ -1065,8 +1074,6 @@ const DownloadPageManager: React.FC = () => {
                           } else {
                             setShowNewForm(false);
                             const formPage = convertToFormPage(page);
-                            // 🔧 FIX: remember how many download/watch links
-                            // already existed BEFORE this editing session began
                             initialLinkCountsRef.current = {
                               download: formPage.links.filter(l => l.type === 'download').length,
                               watch: formPage.links.filter(l => l.type === 'watch').length,
@@ -1081,7 +1088,6 @@ const DownloadPageManager: React.FC = () => {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                         </svg>
                       </button>
-                      {/* Delete button */}
                       <button
                         onClick={() => requestDelete(page._id)}
                         title="Delete page"
@@ -1094,7 +1100,6 @@ const DownloadPageManager: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Inline Edit Form – now inside the card, full width, same padding */}
                   {isEditingThis && (
                     <div className="px-5 pb-5">
                       <div className="border-t border-white/10 pt-4">
@@ -1131,7 +1136,7 @@ const DownloadPageManager: React.FC = () => {
   );
 };
 
-// Extracted Page Form component
+// Extracted Page Form component (unchanged)
 const PageForm: React.FC<{
   editingPage: FormPage;
   setEditingPage: React.Dispatch<React.SetStateAction<FormPage | null>>;
@@ -1165,7 +1170,6 @@ const PageForm: React.FC<{
 }) => {
   return (
     <div className="space-y-6">
-      {/* Anime Selector */}
       <div>
         <label className="block text-sm font-medium text-white/80 mb-2 flexl items-center gap-2">
           <span className="w-1.5 h-5 bg-emerald-400 rounded-full"></span>
@@ -1180,7 +1184,6 @@ const PageForm: React.FC<{
         {calculatingNext && <Spinner size="sm" className="mt-2" />}
       </div>
 
-      {/* Slug */}
       <div>
         <label className="block text-sm font-medium text-white/80 mb-2 flexl items-center gap-2">
           <span className="w-1.5 h-5 bg-indigo-400 rounded-full"></span>
@@ -1195,7 +1198,6 @@ const PageForm: React.FC<{
         />
       </div>
 
-      {/* Starting Episode Number – independent */}
       <div>
         <label className="block text-sm font-medium text-white/80 mb-2 flexl items-center gap-2">
           <span className="w-1.5 h-5 bg-amber-400 rounded-full"></span>
@@ -1215,7 +1217,6 @@ const PageForm: React.FC<{
         </p>
       </div>
 
-      {/* Button Title */}
       <div>
         <label className="block text-sm font-medium text-white/80 mb-2 flexl items-center gap-2">
           <span className="w-1.5 h-5 bg-pink-400 rounded-full"></span>
@@ -1230,7 +1231,6 @@ const PageForm: React.FC<{
         />
       </div>
 
-      {/* Links */}
       <div>
         <label className="block text-sm font-medium text-white/80 mb-3 flexl items-center gap-2">
           <span className="w-1.5 h-5 bg-amber-400 rounded-full"></span>
@@ -1343,7 +1343,6 @@ const PageForm: React.FC<{
         </div>
       </div>
 
-      {/* Form Actions */}
       <div className="flex justify-end gap-3 pt-4 border-t border-white/10">
         <button
           onClick={onCancel}

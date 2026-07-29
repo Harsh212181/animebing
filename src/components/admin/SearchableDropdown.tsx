@@ -91,13 +91,11 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // ✅ UPDATED: always fetch, even on empty query, to show default/recent results
   const fetchAsyncResults = useCallback(
     debounce(async (query: string) => {
-      if (!query.trim()) {
-        setAsyncResults([]);
-        setAsyncLoading(false);
-        return;
-      }
+      // 👇 Empty query pe bhi fetch karo — backend ko empty search='' bhejo,
+      // taaki default/recent results dikhein jab tak user kuch type na kare.
       setAsyncLoading(true);
       setAsyncError(null);
       try {
@@ -108,7 +106,7 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
           base || window.location.origin
         ).toString();
         const response = await axios.get(url, {
-          params: { search: query },
+          params: { search: query.trim() },
           headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
         });
         setAsyncResults(response.data);
@@ -123,11 +121,21 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
     [asyncMode ? props.fetchUrl : null, asyncMode ? props.apiBase : null, asyncMode ? props.token : null]
   );
 
+  // ✅ UPDATED: trigger fetch when searchTerm changes
   useEffect(() => {
     if (asyncMode) {
       fetchAsyncResults(searchTerm);
     }
-  }, [searchTerm, asyncMode, fetchAsyncResults]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm, asyncMode]);
+
+  // 👇 NEW — dropdown open hote hi (focus) agar abhi tak koi results/search nahi hua, default list laao
+  useEffect(() => {
+    if (asyncMode && isOpen && asyncResults.length === 0 && !searchTerm && !asyncLoading) {
+      fetchAsyncResults('');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(e.target.value);
@@ -211,7 +219,7 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
             <div className="p-4 text-center text-red-400">{asyncError}</div>
           ) : optionsToShow.length === 0 ? (
             <div className="p-4 text-center text-slate-400">
-              {searchTerm ? 'No results found' : 'Type to search'}
+              {searchTerm ? 'No results found' : 'No anime available'}
             </div>
           ) : (
             optionsToShow.map(option => (
@@ -240,6 +248,10 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
                   )}
                   {option.contentType && (
                     <div className="text-xs text-slate-400">{option.contentType}</div>
+                  )}
+                  {/* 👇 NEW: creator name (only for sub‑admin, not main admin) */}
+                  {option.createdByUsername && option.createdBy && option.createdBy !== 'admin' && (
+                    <div className="text-xs text-purple-400"> {option.createdByUsername}</div>
                   )}
                 </div>
               </button>

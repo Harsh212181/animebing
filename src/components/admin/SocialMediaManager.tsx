@@ -1,4 +1,4 @@
- // src/components/admin/SocialMediaManager.tsx - IMPROVED UI (Instructions removed)
+ // src/components/admin/SocialMediaManager.tsx - IMPROVED UI (token prop support)
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Spinner from '../Spinner';
@@ -14,7 +14,14 @@ interface SocialMedia {
 
 const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
 
-const SocialMediaManager: React.FC = () => {
+interface SocialMediaManagerProps {
+  token?: string;
+}
+
+const SocialMediaManager: React.FC<SocialMediaManagerProps> = ({ token: tokenProp }) => {
+  // Token resolver: prop first, then fallback to localStorage (for main admin)
+  const getToken = () => tokenProp || localStorage.getItem('adminToken') || '';
+
   // Default list includes all five platforms, Twitter & YouTube inactive
   const defaultSocialLinks: SocialMedia[] = [
     {
@@ -63,10 +70,6 @@ const SocialMediaManager: React.FC = () => {
     isActive: true
   });
   const [successMessage, setSuccessMessage] = useState('');
-
-  const getToken = () => {
-    return localStorage.getItem('adminToken') || '';
-  };
 
   useEffect(() => {
     fetchSocialLinks();

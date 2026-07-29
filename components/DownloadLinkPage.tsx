@@ -264,11 +264,11 @@ const DownloadLinkPage: React.FC = () => {
   const subDubStatus = animeDetails?.subDubStatus || '';
   const genreList = animeDetails?.genreList || [];
   const description = animeDetails?.description || 'No description available.';
+  const currentEpisode = (animeDetails as any)?.currentEpisode || 0;
 
-  const mobileThumbnail = thumbnail ? optimizeImageUrl(thumbnail, 80, 112) : 'https://via.placeholder.com/80x112/1e293b/64748b?text=No+Image';
-  const mobileThumbnailSrcSet = thumbnail ? generateSrcSet(thumbnail, 80, 112) : '';
-  const desktopThumbnail = thumbnail ? optimizeImageUrl(thumbnail, 320, 448) : 'https://via.placeholder.com/320x448/1e293b/64748b?text=No+Image';
-  const desktopThumbnailSrcSet = thumbnail ? generateSrcSet(thumbnail, 320, 448) : '';
+  // Poster-style (carousel-card) thumbnail sizes
+  const posterThumbnail = thumbnail ? optimizeImageUrl(thumbnail, 193, 289) : 'https://via.placeholder.com/193x289/1e293b/64748b?text=No+Image';
+  const posterThumbnailSrcSet = thumbnail ? generateSrcSet(thumbnail, 193, 289) : '';
 
   const VoteButtons = ({ isMobile = false }: { isMobile?: boolean }) => {
     const buttonSize = isMobile ? 'h-4 w-4' : 'h-5 w-5';
@@ -288,45 +288,202 @@ const DownloadLinkPage: React.FC = () => {
     );
   };
 
+  // ✅ Banner-slide style hero (same look as FeaturedAnimeCarousel banner), used for both mobile & desktop
+  const AnimeBannerHero = () => {
+    const bgWide = thumbnail ? optimizeImageUrl(thumbnail, 1400, 400) : '';
+    const bgWideSrcSet = thumbnail ? `
+      ${optimizeImageUrl(thumbnail, 700, 200)} 700w,
+      ${optimizeImageUrl(thumbnail, 1400, 400)} 1400w,
+      ${optimizeImageUrl(thumbnail, 2100, 600)} 2100w
+    ` : '';
+
+    return (
+      <>
+        {/* MOBILE BANNER */}
+        <div className="block lg:hidden">
+          <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 to-slate-950 shadow-2xl rounded-2xl h-[200px]">
+            <div className="absolute inset-0">
+              <img
+                src={bgWide}
+                srcSet={bgWideSrcSet}
+                sizes="100vw"
+                alt={title}
+                className="w-full h-full object-cover"
+                loading="eager"
+                onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/800x400/1e293b/64748b?text=No+Image'; }}
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/80 to-transparent"></div>
+              <div className="absolute inset-0 bg-gradient-to-r from-slate-950/90 to-slate-950/70"></div>
+            </div>
+
+            <div className="relative z-10 h-full flex items-center px-4">
+              <div className="flex items-center gap-3 w-full">
+                <div className="relative w-28 flex-shrink-0">
+                  <div className="relative aspect-[2/3] rounded-lg overflow-hidden shadow-2xl shadow-purple-900/50 ring-2 ring-purple-500/30">
+                    <img
+                      src={posterThumbnail}
+                      srcSet={posterThumbnailSrcSet}
+                      sizes="112px"
+                      alt={title}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                      onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/193x289/1e293b/64748b?text=No+Image'; }}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <div className="space-y-2">
+                    <h1 className="text-base font-bold text-white line-clamp-2 leading-tight drop-shadow-lg">
+                      {title}
+                    </h1>
+                    <div className="flex flex-wrap gap-1.5">
+                      <span className={`px-2 py-0.5 rounded text-xs font-semibold ${status === 'Ongoing' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'}`}>
+                        {status}
+                      </span>
+                      {subDubStatus && (
+                        <span className="px-2 py-0.5 rounded text-xs font-semibold bg-purple-600/80 text-white border border-purple-500">
+                          {subDubStatus}
+                        </span>
+                      )}
+                      <span className="px-2 py-0.5 rounded text-xs font-semibold bg-slate-800/60 text-slate-300 border border-slate-700">
+                        {releaseYear}
+                      </span>
+                      {!isMovie && currentEpisode > 0 && (
+                        <span className="px-2 py-0.5 rounded text-xs font-semibold bg-gradient-to-r from-red-600 to-orange-600 text-white border border-red-500/30">
+                          EP {currentEpisode}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* DESKTOP BANNER */}
+        <div className="hidden lg:block">
+          <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 to-slate-950 shadow-2xl rounded-2xl h-[330px]">
+            <div className="absolute inset-0">
+              <img
+                src={bgWide}
+                srcSet={bgWideSrcSet}
+                sizes="100vw"
+                alt={title}
+                className="w-full h-full object-cover"
+                loading="eager"
+                onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/1400x400/1e293b/64748b?text=No+Image'; }}
+              />
+              <div className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/85 to-transparent"></div>
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-transparent"></div>
+            </div>
+            <div className="relative z-10 h-full flex items-center px-10">
+              <div className="flex items-center gap-8 w-full h-full">
+                <div className="relative flex-shrink-0">
+                  <div className="absolute -inset-1.5">
+                    <div className="w-full h-full bg-gradient-to-br from-purple-500/20 to-transparent blur-xl opacity-50"></div>
+                  </div>
+                  <div className="relative w-48">
+                    <div className="relative rounded-xl overflow-hidden shadow-2xl shadow-purple-900/30 ring-2 ring-purple-500/30 aspect-[2/3]">
+                      <img
+                        src={posterThumbnail}
+                        srcSet={posterThumbnailSrcSet}
+                        sizes="192px"
+                        alt={title}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                        onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/193x289/1e293b/64748b?text=No+Image'; }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex-1 min-w-0 py-4 h-full flex flex-col justify-center">
+                  <div className="space-y-3">
+                    <h1 className="text-3xl font-bold text-white leading-tight drop-shadow-lg">
+                      {title}
+                    </h1>
+                    <div className="flex flex-wrap gap-1.5">
+                      <span className={`px-2.5 py-1 rounded text-xs font-bold ${status === 'Ongoing' ? 'bg-gradient-to-r from-emerald-500/20 to-emerald-600/20 text-emerald-300 border border-emerald-500/30' : 'bg-gradient-to-r from-blue-500/20 to-blue-600/20 text-blue-300 border border-blue-500/30'}`}>
+                        {status}
+                      </span>
+                      <span className="px-2.5 py-1 rounded text-xs font-bold bg-gradient-to-r from-slate-800/40 to-slate-900/40 text-slate-300 border border-slate-700">
+                        {releaseYear}
+                      </span>
+                      {subDubStatus && (
+                        <span className="px-2.5 py-1 rounded text-xs font-bold bg-gradient-to-r from-purple-600 to-purple-700 text-white border border-purple-500">
+                          {subDubStatus}
+                        </span>
+                      )}
+                      {!isMovie && currentEpisode > 0 && (
+                        <span className="px-2.5 py-1 rounded text-xs font-bold bg-gradient-to-r from-red-600 to-orange-600 text-white border border-red-500/30">
+                          EP {currentEpisode}
+                        </span>
+                      )}
+                    </div>
+                    {description && (
+                      <p className="text-slate-300 text-xs leading-relaxed max-w-2xl line-clamp-2">
+                        {description}
+                      </p>
+                    )}
+                    {genreList.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {genreList.slice(0, 4).map((genre, i) => (
+                          <span key={i} className="px-2 py-0.5 rounded text-xs bg-slate-800/40 text-slate-300 border border-slate-700 hover:bg-slate-700/50 transition-colors">
+                            {genre}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="mt-5">
+                    <VoteButtons />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900/20 to-black py-8 px-4">
       <div className="w-full max-w-7xl mx-auto">
 
-        {/* Mobile detail card */}
-        <div className="lg:hidden mb-6">
-          <div className="bg-slate-800/40 backdrop-blur-md rounded-2xl p-5 border border-slate-700/50 shadow-2xl">
-            <div className="flex flex-col">
-              <div className="flex gap-4">
-                <div className="flex-shrink-0">
-                  <img src={mobileThumbnail} srcSet={mobileThumbnailSrcSet} alt={title} className="w-20 h-28 object-cover rounded-xl shadow-lg" loading="lazy" width="80" height="112" sizes="80px" onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/80x112/1e293b/64748b?text=No+Image'; }} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h1 className={`font-bold text-white mb-2 break-words ${title.length > 40 ? 'text-sm leading-tight' : 'text-lg'}`}>{title}</h1>
-                  <div className="flex flex-wrap gap-1.5 mt-1">
-                    <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap shadow-lg">{releaseYear}</span>
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap shadow-lg ${status === 'Ongoing' ? 'bg-gradient-to-r from-yellow-500 to-orange-600 text-white' : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white'}`}>{status}</span>
-                    <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap shadow-lg">{contentType}</span>
-                    {!isMovie && subDubStatus && (
-                      <div className="flex flex-wrap gap-1">
-                        {subDubStatus.split(',').map(s => s.trim().toLowerCase()).includes('hindi dub') && <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-2.5 py-1 rounded-full text-xs font-bold shadow-lg">Hindi Dub</span>}
-                        {subDubStatus.split(',').map(s => s.trim().toLowerCase()).includes('hindi sub') && <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-2.5 py-1 rounded-full text-xs font-bold shadow-lg">Hindi Sub</span>}
-                      </div>
-                    )}
+        {/* Banner-style hero — same look as FeaturedAnimeCarousel banner slide */}
+        <div className="mb-4 lg:mb-6">
+          <AnimeBannerHero />
+        </div>
+
+        {/* Description / Genres / Votes panel below the hero */}
+        <div className="mb-6 lg:mb-8">
+          <div className="bg-slate-800/40 backdrop-blur-md rounded-2xl lg:rounded-3xl p-5 lg:p-8 border border-slate-700/50 shadow-2xl">
+            <div className="space-y-4 lg:space-y-6">
+
+              {/* Genres — first on mobile (order-1), default on desktop (lg:order-none) */}
+              {genreList.length > 0 && (
+                <div className="order-1 lg:order-none">
+                  <span className="text-slate-400 text-xs lg:text-sm font-medium mr-3">Genres</span>
+                  <div className="flex flex-wrap gap-1.5 lg:gap-2 mt-2">
+                    {genreList.map((genre, index) => (
+                      <span key={index} className="bg-gradient-to-r from-purple-600/80 to-pink-600/80 text-white px-3 py-1 lg:px-5 lg:py-2 rounded-full lg:rounded-xl text-xs lg:text-sm font-medium whitespace-nowrap">{genre}</span>
+                    ))}
                   </div>
                 </div>
-              </div>
-              <div className="space-y-3 mt-3">
-                <div className="flex flex-wrap gap-1.5">
-                  {genreList.map((genre, index) => (
-                    <span key={index} className="bg-gradient-to-r from-purple-600/80 to-pink-600/80 text-white px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap">{genre}</span>
-                  ))}
-                </div>
-                <VoteButtons isMobile={true} />
-              </div>
-              {/* ✅ Mobile Description – Show More / Less */}
-              <div className="mt-4">
-                <h3 className="text-sm font-semibold text-slate-300 mb-2">Description</h3>
-                <div className="text-slate-400 text-xs leading-relaxed">
+              )}
+
+              {/* Divider line for mobile only */}
+              {genreList.length > 0 && (
+                <hr className="order-2 lg:hidden border-slate-700" />
+              )}
+
+              {/* Description — third on mobile (order-3), default on desktop */}
+              <div className="order-3 lg:order-none">
+                <h3 className="text-sm lg:text-base font-semibold text-slate-300 mb-2">Description</h3>
+                <div className="text-slate-400 text-xs lg:text-lg leading-relaxed">
                   {description.length > DESCRIPTION_TRUNCATE_LIMIT && !isDescriptionExpanded ? (
                     <>
                       {description.slice(0, DESCRIPTION_TRUNCATE_LIMIT)}...{' '}
@@ -352,69 +509,10 @@ const DownloadLinkPage: React.FC = () => {
                   )}
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
 
-        {/* Desktop detail card */}
-        <div className="hidden lg:block mb-8">
-          <div className="bg-slate-800/40 backdrop-blur-md rounded-3xl p-8 border border-slate-700/50 shadow-2xl">
-            <div className="flex flex-col lg:flex-row gap-8">
-              <div className="flex-shrink-0 mx-auto lg:mx-0">
-                <img src={desktopThumbnail} srcSet={desktopThumbnailSrcSet} alt={title} className="w-full max-w-xs lg:w-72 h-auto lg:h-[26rem] object-cover rounded-2xl shadow-2xl" loading="lazy" width="320" height="448" sizes="(max-width: 1024px) 80px, 320px" onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/320x448/1e293b/64748b?text=No+Image'; }} />
-              </div>
-              <div className="flex-1 space-y-6">
-                <div>
-                  <h1 className={`font-bold bg-gradient-to-r from-white via-purple-100 to-pink-100 bg-clip-text text-transparent mb-3 ${title.length > 60 ? 'text-2xl lg:text-3xl' : 'text-3xl lg:text-4xl'}`}>{title}</h1>
-                  {/* ✅ Desktop Description – Show More / Less */}
-                  <div className="text-slate-300 leading-relaxed text-lg">
-                    {description.length > DESCRIPTION_TRUNCATE_LIMIT && !isDescriptionExpanded ? (
-                      <>
-                        {description.slice(0, DESCRIPTION_TRUNCATE_LIMIT)}...{' '}
-                        <button
-                          onClick={() => setIsDescriptionExpanded(true)}
-                          className="text-purple-400 hover:text-purple-300 font-medium inline"
-                        >
-                          Show More
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        {description}
-                        {description.length > DESCRIPTION_TRUNCATE_LIMIT && (
-                          <button
-                            onClick={() => setIsDescriptionExpanded(false)}
-                            className="text-purple-400 hover:text-purple-300 font-medium inline ml-1"
-                          >
-                            Show Less
-                          </button>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </div>
-                <div className="space-y-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg">{releaseYear}</span>
-                    <span className={`px-5 py-2.5 rounded-xl font-bold shadow-lg ${status === 'Ongoing' ? 'bg-gradient-to-r from-yellow-500 to-orange-600 text-white' : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white'}`}>{status}</span>
-                    <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg">{contentType}</span>
-                    {!isMovie && subDubStatus && (
-                      <div className="flex flex-wrap gap-2">
-                        {subDubStatus.split(',').map(s => s.trim().toLowerCase()).includes('hindi dub') && <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg">Hindi Dub</span>}
-                        {subDubStatus.split(',').map(s => s.trim().toLowerCase()).includes('hindi sub') && <span className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg">Hindi Sub</span>}
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <span className="text-slate-400 text-sm font-medium mr-3">Genres</span>
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      {genreList.map((genre, index) => (
-                        <span key={index} className="bg-gradient-to-r from-purple-600/80 to-pink-600/80 text-white px-5 py-2 rounded-xl text-sm font-medium cursor-pointer">{genre}</span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                <VoteButtons />
+              {/* Vote buttons shown here only on mobile — desktop already has them inside the banner */}
+              <div className="lg:hidden order-4">
+                <VoteButtons isMobile={true} />
               </div>
             </div>
           </div>

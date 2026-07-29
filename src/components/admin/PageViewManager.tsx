@@ -61,6 +61,10 @@ interface DailyPoint { date: string; views: number }
 interface TopPage {
   path: string; views: number; pageType: string;
   animeTitle?: string; slug?: string; device?: string;
+  createdByUsername?: string | null;
+  animeId?: string;
+  detailViews?: number;
+  downloadViews?: number;
 }
 interface ByType { type: string; views: number }
 interface ByDevice { device: string; count: number }
@@ -107,6 +111,7 @@ interface UserLinkStat {
   userId: string
   username: string
   realName: string
+  creatorUsername?: string
   ratePerThousand: number
   totalClicks: number
   clicksInPeriod: number
@@ -129,6 +134,7 @@ interface UserLinkStat {
 // NEW interfaces for the 6 additional features
 interface EarningsUser {
   userId: string; username: string; realName: string
+  creatorUsername?: string
   totalEarnings: number; unpaidEarnings: number; paidEarnings: number
   ratePerThousand: number; projectedMonthly: number
   earningsTimeline: { date: string; clicks: number; earnings: number }[]
@@ -137,6 +143,7 @@ interface EarningsUser {
 }
 interface FraudAlert {
   userId: string; username: string; realName: string
+  creatorUsername?: string
   totalClicks: number; riskScore: number; riskLevel: string
   suspiciousIps: { ip: string; count: number; codes: string[] }[]
   spikeHours: { date: string; hour: number; count: number; avgHourly: number }[]
@@ -144,6 +151,7 @@ interface FraudAlert {
 }
 interface LeaderUser {
   userId: string; username: string; realName: string
+  creatorUsername?: string
   totalClicks: number; todayClicks: number; weekClicks: number
   totalEarnings: number; unpaidEarnings: number
   clickStreak: number; loginStreak: number; ratePerThousand: number
@@ -179,12 +187,18 @@ interface LinkJourneyItem {
   username?: string
 }
 
+// ─── Monthly Analytics types ─────────────────────────────────────────────
+interface MonthlyOverviewItem { month: string; views: number; animeViews: number; downloadViews: number }
+interface MonthlyDayItem { date: string; totalViews: number; animeViews: number; downloadViews: number; otherViews: number }
+interface MonthlyDetail { month: string; days: MonthlyDayItem[]; totals: { totalViews: number; animeViews: number; downloadViews: number; otherViews: number } }
+
 // ─── Color maps ───────────────────────────────────────────────────────────
 const TYPE_COLOR: Record<string, string> = {
   'anime-detail': '#a78bfa', 'download': '#34d399', 'anime-list': '#60a5fa',
   'home': '#f472b6', 'episode': '#fb923c', 'top-100': '#facc15',
   'contact': '#94a3b8', 'privacy': '#94a3b8', 'terms': '#94a3b8',
   'dmca': '#94a3b8', 'earn-money': '#6ee7b7', 'other': '#475569',
+  'anime-combined': '#c084fc',
 };
 const DEVICE_COLOR: Record<string, string> = {
   mobile: '#a78bfa', desktop: '#34d399', tablet: '#60a5fa', unknown: '#475569',
@@ -194,9 +208,16 @@ const PAGE_TYPE_LABEL: Record<string, string> = {
   'home': 'Home Page', 'episode': 'Episode', 'top-100': 'Top 100',
   'contact': 'Contact', 'privacy': 'Privacy', 'terms': 'Terms',
   'dmca': 'DMCA', 'earn-money': 'Earn Money', 'other': 'Other',
+  'anime-combined': 'Anime ',
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
+function formatMonthLabel(month: string) {
+  const [y, m] = month.split('-')
+  const d = new Date(parseInt(y), parseInt(m) - 1, 1)
+  return d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
+}
+
 function viewsToColor(views: number, maxViews: number): string {
   if (!views || !maxViews) return '#1a1930';
   const intensity = Math.pow(views / maxViews, 0.4);
@@ -707,6 +728,13 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
   const [funnelPeriod, setFunnelPeriod] = useState<string>('daily');
   const [funnel, setFunnel] = useState<FunnelStats | null>(null);
 
+  // ─── Monthly Analytics state ──────────────────────────────────────────
+  const [monthlyOverview, setMonthlyOverview] = useState<MonthlyOverviewItem[]>([]);
+  const [monthlyOverviewLoading, setMonthlyOverviewLoading] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState<string>('');
+  const [monthlyDetail, setMonthlyDetail] = useState<MonthlyDetail | null>(null);
+  const [monthlyDetailLoading, setMonthlyDetailLoading] = useState(false);
+
   // ─── New analytics state — now all default to 'daily' ─────────────────
   const [referrerPeriod, setReferrerPeriod] = useState<string>('daily');
   const [referrers, setReferrers] = useState<ReferrerItem[]>([]);
@@ -772,12 +800,25 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
   const [journeyTab, setJourneyTab] = useState<'byUser' | 'byLink'>('byUser')
   const [linkJourneyData, setLinkJourneyData] = useState<LinkJourneyItem[]>([])
 
+  // ─── Sub-admin filter state ──────────────────────────────────────────
+  const [subAdmins, setSubAdmins] = useState<{ id: string; username: string; realName: string }[]>([]);
+  const [selectedSubAdmin, setSelectedSubAdmin] = useState<string>('all');
+
+  // Fetch sub-admins list
+  useEffect(() => {
+    axios.get(`${API_BASE}/analytics/sub-admins-list`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }).then(({ data }) => setSubAdmins(data.subAdmins || []))
+      .catch(() => {});
+  }, [token]);
+
   // ─── Existing fetch functions ────────────────────────────────────────
   const fetchStats = useCallback(async () => {
     setLoading(true);
     try {
       const params: Record<string, any> = { days };
       if (deviceFilter !== 'all') params.device = deviceFilter;
+      if (selectedSubAdmin !== 'all') params.subAdminId = selectedSubAdmin;
       const { data } = await axios.get(`${API_BASE}/analytics/stats`, {
         params, headers: { Authorization: `Bearer ${token}` },
       });
@@ -787,7 +828,7 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
     } finally {
       setLoading(false);
     }
-  }, [days, token, deviceFilter]);
+  }, [days, token, deviceFilter, selectedSubAdmin]);
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
@@ -797,6 +838,7 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
       const topDays = topPeriodLabels[topPeriod]?.days ?? 7;
       const params: Record<string, any> = { days: topDays };
       if (deviceFilter !== 'all') params.device = deviceFilter;
+      if (selectedSubAdmin !== 'all') params.subAdminId = selectedSubAdmin;
       const { data } = await axios.get(`${API_BASE}/analytics/stats`, {
         params, headers: { Authorization: `Bearer ${token}` },
       });
@@ -806,7 +848,7 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
     } finally {
       setTopLoading(false);
     }
-  }, [topPeriod, token, deviceFilter]);
+  }, [topPeriod, token, deviceFilter, selectedSubAdmin]);
 
   useEffect(() => { fetchTopPages(); }, [fetchTopPages]);
 
@@ -814,9 +856,10 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
     setCountryLoading(true);
     try {
       const countryDays = topPeriodLabels[countryPeriod]?.days ?? 1;
+      const params: Record<string, any> = { days: countryDays };
+      if (selectedSubAdmin !== 'all') params.subAdminId = selectedSubAdmin;
       const { data } = await axios.get(`${API_BASE}/analytics/by-country`, {
-        params: { days: countryDays },
-        headers: { Authorization: `Bearer ${token}` },
+        params, headers: { Authorization: `Bearer ${token}` },
       });
       setByCountry(data.byCountry || []);
     } catch {
@@ -824,7 +867,7 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
     } finally {
       setCountryLoading(false);
     }
-  }, [countryPeriod, token]);
+  }, [countryPeriod, token, selectedSubAdmin]);
 
   useEffect(() => { fetchByCountry(); }, [fetchByCountry]);
 
@@ -842,6 +885,44 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
   }, [funnelPeriod, token]);
 
   useEffect(() => { fetchFunnel(); }, [fetchFunnel]);
+
+  // ─── Monthly Analytics fetch functions ────────────────────────────────
+  const fetchMonthlyOverview = useCallback(async () => {
+    setMonthlyOverviewLoading(true);
+    try {
+      const params: Record<string, any> = {};
+      if (selectedSubAdmin !== 'all') params.subAdminId = selectedSubAdmin;
+      const { data } = await axios.get(`${API_BASE}/analytics/monthly-overview`, {
+        params, headers: { Authorization: `Bearer ${token}` },
+      });
+      const months: MonthlyOverviewItem[] = data.months || [];
+      setMonthlyOverview(months);
+      setSelectedMonth(prev => prev || (months.length ? months[months.length - 1].month : ''));
+    } catch {
+      toast.error('Failed to load monthly overview');
+    } finally {
+      setMonthlyOverviewLoading(false);
+    }
+  }, [token, selectedSubAdmin]);
+  useEffect(() => { fetchMonthlyOverview(); }, [fetchMonthlyOverview]);
+
+  const fetchMonthlyDetail = useCallback(async () => {
+    if (!selectedMonth) return;
+    setMonthlyDetailLoading(true);
+    try {
+      const params: Record<string, any> = { month: selectedMonth };
+      if (selectedSubAdmin !== 'all') params.subAdminId = selectedSubAdmin;
+      const { data } = await axios.get(`${API_BASE}/analytics/monthly-detail`, {
+        params, headers: { Authorization: `Bearer ${token}` },
+      });
+      setMonthlyDetail(data);
+    } catch {
+      toast.error('Failed to load monthly detail');
+    } finally {
+      setMonthlyDetailLoading(false);
+    }
+  }, [selectedMonth, token, selectedSubAdmin]);
+  useEffect(() => { fetchMonthlyDetail(); }, [fetchMonthlyDetail]);
 
   // ─── New fetch functions ─────────────────────────────────────────────
   const fetchReferrers = useCallback(async () => {
@@ -991,9 +1072,10 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
     setUserLinksLoading(true)
     try {
       const d = topPeriodLabels[userLinksPeriod]?.days ?? 7
+      const params: Record<string, any> = { days: d };
+      if (selectedSubAdmin !== 'all') params.subAdminId = selectedSubAdmin;
       const { data } = await axios.get(`${API_BASE}/analytics/user-links`, {
-        params: { days: d },
-        headers: { Authorization: `Bearer ${token}` },
+        params, headers: { Authorization: `Bearer ${token}` },
       })
       setUserLinksData(data.users || [])
     } catch {
@@ -1001,7 +1083,7 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
     } finally {
       setUserLinksLoading(false)
     }
-  }, [userLinksPeriod, token])
+  }, [userLinksPeriod, token, selectedSubAdmin])
 
   useEffect(() => { fetchUserLinks() }, [fetchUserLinks])
 
@@ -1009,38 +1091,44 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
   const fetchEarnings = useCallback(async () => {
     setEarningsLoading(true)
     try {
+      const params: Record<string, any> = {};
+      if (selectedSubAdmin !== 'all') params.subAdminId = selectedSubAdmin;
       const { data } = await axios.get(`${API_BASE}/analytics/earnings-health`, {
-        headers: { Authorization: `Bearer ${token}` }
+        params, headers: { Authorization: `Bearer ${token}` }
       })
       setEarningsData(data.users || [])
     } catch { toast.error('Failed to load earnings data') }
     finally { setEarningsLoading(false) }
-  }, [token])
+  }, [token, selectedSubAdmin])
   useEffect(() => { fetchEarnings() }, [fetchEarnings])
 
   const fetchFraud = useCallback(async () => {
     setFraudLoading(true)
     try {
       const d = topPeriodLabels[fraudDays]?.days ?? 7
+      const params: Record<string, any> = { days: d };
+      if (selectedSubAdmin !== 'all') params.subAdminId = selectedSubAdmin;
       const { data } = await axios.get(`${API_BASE}/analytics/fraud`, {
-        params: { days: d }, headers: { Authorization: `Bearer ${token}` }
+        params, headers: { Authorization: `Bearer ${token}` }
       })
       setFraudData(data.alerts || [])
     } catch { toast.error('Failed to load fraud data') }
     finally { setFraudLoading(false) }
-  }, [fraudDays, token])
+  }, [fraudDays, token, selectedSubAdmin])
   useEffect(() => { fetchFraud() }, [fetchFraud])
 
   const fetchLeader = useCallback(async () => {
     setLeaderLoading(true)
     try {
+      const params: Record<string, any> = {};
+      if (selectedSubAdmin !== 'all') params.subAdminId = selectedSubAdmin;
       const { data } = await axios.get(`${API_BASE}/analytics/leaderboard`, {
-        headers: { Authorization: `Bearer ${token}` }
+        params, headers: { Authorization: `Bearer ${token}` }
       })
       setLeaderData(data)
     } catch { toast.error('Failed to load leaderboard') }
     finally { setLeaderLoading(false) }
-  }, [token])
+  }, [token, selectedSubAdmin])
   useEffect(() => { fetchLeader() }, [fetchLeader])
 
   const fetchPayment = useCallback(async () => {
@@ -1058,13 +1146,15 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
   const fetchCohort = useCallback(async () => {
     setCohortLoading(true)
     try {
+      const params: Record<string, any> = {};
+      if (selectedSubAdmin !== 'all') params.subAdminId = selectedSubAdmin;
       const { data } = await axios.get(`${API_BASE}/analytics/cohort`, {
-        headers: { Authorization: `Bearer ${token}` }
+        params, headers: { Authorization: `Bearer ${token}` }
       })
       setCohortData(data.cohorts || [])
     } catch { toast.error('Failed to load cohort data') }
     finally { setCohortLoading(false) }
-  }, [token])
+  }, [token, selectedSubAdmin])
   useEffect(() => { fetchCohort() }, [fetchCohort])
 
   const fetchJourney = useCallback(async () => {
@@ -1130,6 +1220,16 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
           <p className="text-xs text-gray-500 mt-0.5">Track how users engage with every page</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <select
+            value={selectedSubAdmin}
+            onChange={e => setSelectedSubAdmin(e.target.value)}
+            className="px-3 py-1.5 text-xs bg-[#1c1b29] border border-white/10 rounded-lg text-gray-300 focus:outline-none focus:border-purple-500/50 [color-scheme:dark]"
+          >
+            <option value="all" className="bg-[#1c1b29]">All Admins</option>
+            {subAdmins.map(s => (
+              <option key={s.id} value={s.id} className="bg-[#1c1b29]">{s.realName}</option>
+            ))}
+          </select>
           {[7, 14, 30].map(d => (
             <button key={d} onClick={() => setDays(d)}
               className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors
@@ -1238,6 +1338,97 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
           </div>
         </div>
       )}
+
+      {/* ── Monthly Analytics ─────────────────────────────────────────────── */}
+      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Monthly Analytics</p>
+            <p className="text-[10px] text-gray-600 mt-0.5">Month select karke daily anime vs download views dekhein</p>
+          </div>
+          <select
+            value={selectedMonth}
+            onChange={e => setSelectedMonth(e.target.value)}
+            disabled={monthlyOverviewLoading || monthlyOverview.length === 0}
+            className="px-3 py-1.5 text-xs bg-[#1c1b29] border border-white/10 rounded-lg text-gray-300 focus:outline-none focus:border-purple-500/50 [color-scheme:dark]"
+          >
+            {monthlyOverview.length === 0 && <option value="">No data</option>}
+            {monthlyOverview.map(m => (
+              <option key={m.month} value={m.month} className="bg-[#1c1b29]">
+                {formatMonthLabel(m.month)} · {m.views.toLocaleString()} views
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {monthlyDetailLoading ? (
+          <div className="flex justify-center py-8"><span className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
+        ) : !monthlyDetail ? (
+          <p className="text-gray-600 text-xs text-center py-8">Month select karein</p>
+        ) : (
+          <div className="p-4 space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <StatCard label={`Total Views — ${formatMonthLabel(monthlyDetail.month)}`} value={monthlyDetail.totals.totalViews} color="text-purple-400" />
+              <StatCard label="Anime Views (Detail+Episode)" value={monthlyDetail.totals.animeViews} color="text-fuchsia-400" />
+              <StatCard label="Download Views" value={monthlyDetail.totals.downloadViews} color="text-emerald-400" />
+            </div>
+
+            <div>
+              <div className="flex items-center gap-4 mb-2 flex-wrap">
+                <p className="text-[10px] text-gray-500 uppercase tracking-wide">Daily Breakdown</p>
+                <span className="flex items-center gap-1 text-[10px] text-gray-500"><span className="w-2 h-2 rounded-sm bg-fuchsia-500/70 inline-block" /> Anime</span>
+                <span className="flex items-center gap-1 text-[10px] text-gray-500"><span className="w-2 h-2 rounded-sm bg-emerald-500/70 inline-block" /> Download</span>
+                <span className="flex items-center gap-1 text-[10px] text-gray-500"><span className="w-2 h-2 rounded-sm bg-slate-500/70 inline-block" /> Other</span>
+              </div>
+              <div className="flex items-end gap-0.5 h-32 overflow-x-auto">
+                {monthlyDetail.days.map((d) => {
+                  const maxV = Math.max(...monthlyDetail.days.map(x => x.totalViews), 1);
+                  const animeH = (d.animeViews / maxV) * 100;
+                  const downloadH = (d.downloadViews / maxV) * 100;
+                  const otherH = (d.otherViews / maxV) * 100;
+                  const dayNum = d.date.slice(-2);
+                  return (
+                    <div key={d.date} className="flex-1 min-w-[10px] flex flex-col items-center justify-end h-full"
+                      title={`${d.date}\nTotal: ${d.totalViews}\nAnime: ${d.animeViews}\nDownload: ${d.downloadViews}\nOther: ${d.otherViews}`}>
+                      <div className="w-full flex flex-col justify-end" style={{ height: '100%' }}>
+                        <div className="w-full bg-slate-500/50" style={{ height: `${otherH}%` }} />
+                        <div className="w-full bg-emerald-500/70" style={{ height: `${downloadH}%` }} />
+                        <div className="w-full bg-fuchsia-500/70 rounded-t" style={{ height: `${animeH}%` }} />
+                      </div>
+                      <span className="text-[8px] text-gray-600 mt-1">{dayNum}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto rounded-lg border border-white/[0.06] max-h-64 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-[#0f0e1a]">
+                  <tr className="border-b border-white/[0.06]">
+                    <th className="px-3 py-2 text-left text-gray-500">Date</th>
+                    <th className="px-3 py-2 text-right text-gray-500">Total</th>
+                    <th className="px-3 py-2 text-right text-gray-500">Anime</th>
+                    <th className="px-3 py-2 text-right text-gray-500">Download</th>
+                    <th className="px-3 py-2 text-right text-gray-500 hidden sm:table-cell">Other</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {monthlyDetail.days.map(d => (
+                    <tr key={d.date} className="border-b border-white/[0.03]">
+                      <td className="px-3 py-2 text-gray-300">{d.date}</td>
+                      <td className="px-3 py-2 text-right text-white font-semibold">{d.totalViews.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right text-fuchsia-400">{d.animeViews.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right text-emerald-400">{d.downloadViews.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right text-gray-500 hidden sm:table-cell">{d.otherViews.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* ── 1. Traffic Sources (Referrers) ────────────────────────────── */}
       <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4">
@@ -1556,7 +1747,14 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
                     {/* Name + username */}
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-white truncate">{u.realName}</p>
-                      <p className="text-[10px] text-gray-500">@{u.username} · {u.links.length} link{u.links.length !== 1 ? 's' : ''}</p>
+                      <p className="text-[10px] text-gray-500 flex items-center gap-1.5">
+                        @{u.username} · {u.links.length} link{u.links.length !== 1 ? 's' : ''}
+                        {u.creatorUsername && (
+                          <span className="px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-[9px]">
+                            {u.creatorUsername}
+                          </span>
+                        )}
+                      </p>
                     </div>
 
                     {/* Period clicks */}
@@ -1757,7 +1955,14 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-white">{u.realName}</p>
-                      <p className="text-[10px] text-gray-500">@{u.username} · ₹{u.ratePerThousand}/1000</p>
+                      <p className="text-[10px] text-gray-500 flex items-center gap-1.5">
+                        @{u.username} · ₹{u.ratePerThousand}/1000
+                        {u.creatorUsername && (
+                          <span className="px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-[9px]">
+                            {u.creatorUsername}
+                          </span>
+                        )}
+                      </p>
                     </div>
                     <div className="text-right flex-shrink-0">
                       <p className="text-sm font-semibold text-amber-400">₹{u.projectedMonthly}</p>
@@ -1861,6 +2066,11 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
                   <div className={`w-2 h-2 rounded-full flex-shrink-0 ${alert.riskLevel === 'high' ? 'bg-red-400' : alert.riskLevel === 'medium' ? 'bg-amber-400' : 'bg-yellow-400'}`} />
                   <span className="text-xs font-medium text-white">{alert.realName}</span>
                   <span className="text-[10px] text-gray-500">@{alert.username}</span>
+                  {alert.creatorUsername && (
+                    <span className="px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-[9px]">
+                      {alert.creatorUsername}
+                    </span>
+                  )}
                   <span className={`ml-auto px-2 py-0.5 rounded text-[9px] font-medium
                     ${alert.riskLevel === 'high' ? 'bg-red-500/20 text-red-400' : alert.riskLevel === 'medium' ? 'bg-amber-500/20 text-amber-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
                     {alert.riskLevel.toUpperCase()} RISK · {alert.riskScore}/100
@@ -1933,7 +2143,14 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs text-white font-medium">{u.realName}</p>
-                    <p className="text-[10px] text-gray-600">Login streak: {u.loginStreak}d · Click streak: {u.clickStreak}d</p>
+                    <p className="text-[10px] text-gray-600 flex items-center gap-1.5">
+                      Login streak: {u.loginStreak}d · Click streak: {u.clickStreak}d
+                      {u.creatorUsername && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-[9px]">
+                          {u.creatorUsername}
+                        </span>
+                      )}
+                    </p>
                   </div>
                   <div className="text-right flex-shrink-0">
                     <p className="text-sm font-semibold text-purple-400">{value.toLocaleString()}</p>
@@ -2275,12 +2492,18 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
                       <td className="px-4 py-3 text-gray-600 w-8">{rank}</td>
                       <td className="px-4 py-3 min-w-0">
                         <div className="flex flex-col gap-0.5">
-                          <span className="text-white font-medium truncate max-w-xs">
+                          <span className="text-white font-medium truncate max-w-xs flex items-center gap-1.5">
                             {page.animeTitle || page.path}
+                            {page.createdByUsername && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 ml-1.5 flex-shrink-0">
+                                {page.createdByUsername}
+                              </span>
+                            )}
                           </span>
                           {page.animeTitle && (
                             <span className="text-gray-600 truncate max-w-xs text-[10px]">{page.path}</span>
                           )}
+                          {/* (Old breakdown line removed — now shown in Views column) */}
                           <div className="mt-1 h-1 bg-white/5 rounded-full w-32 overflow-hidden">
                             <div className="h-full rounded-full"
                               style={{ width: `${barWidth}%`, background: TYPE_COLOR[page.pageType] || '#a78bfa' }} />
@@ -2296,7 +2519,20 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
                           {PAGE_TYPE_LABEL[page.pageType] || page.pageType}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right font-semibold text-white">{page.views.toLocaleString()}</td>
+                      <td className="px-4 py-3 text-right">
+                        {page.pageType === 'anime-combined' ? (
+                          <div className="flex flex-col items-end gap-0.5">
+                            <span className="text-purple-400 text-xs font-semibold">
+                              {(page.detailViews ?? 0).toLocaleString()} <span className="text-gray-300 font-normal">detail</span>
+                            </span>
+                            <span className="text-emerald-400 text-xs font-semibold">
+                              {(page.downloadViews ?? 0).toLocaleString()} <span className="text-gray-300 font-normal">download</span>
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="font-semibold text-white">{page.views.toLocaleString()}</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-right text-gray-500 hidden md:table-cell">{share}%</td>
                       <td className="px-4 py-3 text-right">
                         <button onClick={() => setSelectedPage(page)}

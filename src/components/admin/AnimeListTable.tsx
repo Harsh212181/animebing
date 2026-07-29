@@ -1,39 +1,43 @@
- // src/components/admin/AnimeListTable.tsx – FIXED KEY WARNING
+ // src/components/admin/AnimeListTable.tsx – FULL CODE WITH MAIN ADMIN SUB-ADMIN FILTER
 import React, { useState, useEffect, useMemo } from 'react';
 import type { Anime } from '../../types';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { clearAnimeCache } from '../../../services/animeService';
+import { getAdminToken } from '../../../utils/authToken';
 
 const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
-const token = localStorage.getItem('adminToken') || '';
 
 interface AnimeListTableProps {
   animeList?: Anime[];
   onRemoveFromPartner?: (animeId: string) => void;
   showRemoveButton?: boolean;
   isLoading?: boolean;
+  token?: string;
+  isMainAdmin?: boolean; // ✅ NEW – true only for main admin
 }
 
-type AnimeWithId = Anime & { id: string };
+type AnimeWithId = Anime & { id: string; createdBy?: string; createdByUsername?: string };
 
 const AnimeListTable: React.FC<AnimeListTableProps> = ({
   animeList: propAnimeList,
   onRemoveFromPartner,
   showRemoveButton = false,
   isLoading: propIsLoading = false,
+  token: tokenProp,
+  isMainAdmin = false, // default false → sub‑admin won't see filter
 }) => {
   const [animes, setAnimes] = useState<AnimeWithId[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // download page counts per animeId
   const [downloadPageCounts, setDownloadPageCounts] = useState<Record<string, number>>({});
 
   const [contentTypeFilter, setContentTypeFilter] = useState<'all' | 'Anime' | 'Movie' | 'Manga'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'Ongoing' | 'Complete'>('all');
   const [subDubFilter, setSubDubFilter] = useState<'all' | 'Hindi Sub' | 'Hindi Dub' | 'English Sub'>('all');
   const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'visible' | 'hidden'>('all');
+  const [subAdminFilter, setSubAdminFilter] = useState(false); // ✅ SUB‑ADMIN FILTER
 
   const [searchQuery, setSearchQuery] = useState('');
   const [editingAnimeId, setEditingAnimeId] = useState<string | null>(null);
@@ -56,9 +60,10 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
   const [hidingId, setHidingId] = useState<string | null>(null);
   const isPartnerMode = propAnimeList !== undefined;
 
+  const resolveToken = () => tokenProp || getAdminToken();
+
   useEffect(() => {
     if (isPartnerMode && propAnimeList) {
-      // ensure _id is used as id for partner mode items
       const list = propAnimeList.map((a: any) => ({ ...a, id: a._id || a.id }));
       setAnimes(list as AnimeWithId[]);
       setLoading(false);
@@ -72,6 +77,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
       setLoading(true);
       setError('');
       try {
+        const token = resolveToken();
         const url = `${API_BASE}/admin/protected/anime-list`;
         const { data } = await axios.get(url, {
           headers: { Authorization: `Bearer ${token}` },
@@ -85,6 +91,8 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
           slug: a.slug || '',
           episodes: a.episodes || [],
           isHidden: a.isHidden || false,
+          createdBy: a.createdBy || '',
+          createdByUsername: a.createdByUsername || '',
         }));
         setAnimes(animeData as AnimeWithId[]);
       } catch (err: any) {
@@ -97,12 +105,11 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
     fetchAnimes();
   }, [isPartnerMode]);
 
-  // Fetch download page counts
   useEffect(() => {
     if (isPartnerMode) return;
     const fetchDownloadPageCounts = async () => {
       try {
-        const authToken = localStorage.getItem('adminToken') || '';
+        const authToken = resolveToken();
         const { data } = await axios.get(`${API_BASE}/download-pages`, {
           headers: { Authorization: `Bearer ${authToken}` },
         });
@@ -126,6 +133,10 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
     if (subDubFilter !== 'all') result = result.filter(a => a.subDubStatus === subDubFilter);
     if (visibilityFilter === 'visible') result = result.filter(a => !a.isHidden);
     if (visibilityFilter === 'hidden') result = result.filter(a => a.isHidden);
+    // ✅ SUB‑ADMIN FILTER (only for main admin, but filtering still works if set)
+    if (subAdminFilter) {
+      result = result.filter(a => a.createdBy && a.createdBy !== 'admin');
+    }
     if (searchQuery.trim() !== '') {
       const query = searchQuery.toLowerCase();
       result = result.filter(a =>
@@ -139,7 +150,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
       );
     }
     return result;
-  }, [animes, contentTypeFilter, statusFilter, subDubFilter, visibilityFilter, searchQuery]);
+  }, [animes, contentTypeFilter, statusFilter, subDubFilter, visibilityFilter, subAdminFilter, searchQuery]);
 
   const handleDelete = (id: string) => {
     if (isPartnerMode) return;
@@ -152,6 +163,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
     const { animeId } = deleteConfirm;
     const toastId = toast.loading('Deleting anime...');
     try {
+      const token = resolveToken();
       await axios.delete(`${API_BASE}/admin/protected/delete-anime`, {
         headers: { Authorization: `Bearer ${token}` },
         data: { id: animeId },
@@ -164,6 +176,8 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
         ...a, id: a._id, seoTitle: a.seoTitle || '',
         seoDescription: a.seoDescription || '', seoKeywords: a.seoKeywords || '',
         slug: a.slug || '', episodes: a.episodes || [], isHidden: a.isHidden || false,
+        createdBy: a.createdBy || '',
+        createdByUsername: a.createdByUsername || '',
       }));
       setAnimes(animeData as AnimeWithId[]);
       clearAnimeCache();
@@ -205,6 +219,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
     if (!editingAnimeId || isPartnerMode) return;
     const toastId = toast.loading('Saving changes...');
     try {
+      const token = resolveToken();
       await axios.put(`${API_BASE}/admin/protected/edit-anime/${editingAnimeId}`, editForm, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -217,6 +232,8 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
         ...a, id: a._id, seoTitle: a.seoTitle || '',
         seoDescription: a.seoDescription || '', seoKeywords: a.seoKeywords || '',
         slug: a.slug || '', episodes: a.episodes || [], isHidden: a.isHidden || false,
+        createdBy: a.createdBy || '',
+        createdByUsername: a.createdByUsername || '',
       }));
       setAnimes(animeData as AnimeWithId[]);
       clearAnimeCache();
@@ -231,7 +248,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
     const toastId = toast.loading(anime.isHidden ? 'Showing anime...' : 'Hiding anime...');
     setHidingId(anime.id);
     try {
-      const authToken = localStorage.getItem('adminToken') || '';
+      const authToken = resolveToken();
       const hideUrl = `${API_BASE}/admin/protected/toggle-hide/${anime.id}`;
       await axios.patch(hideUrl, {}, { headers: { Authorization: `Bearer ${authToken}` } });
       setAnimes(prev => prev.map(a => a.id === anime.id ? { ...a, isHidden: !a.isHidden } : a));
@@ -329,10 +346,10 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
   if (error) return <p className="text-red-400 text-center p-4">{error}</p>;
 
   return (
-    <div className="p-4 space-y-6 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 min-h-screen">
+    <div className="py-4 px-0 space-y-6 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 min-h-screen">
 
       {/* Header */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 px-3">
         <div className="p-2 bg-purple-500/20 rounded-xl">
           <svg className="w-7 h-7 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
@@ -358,8 +375,8 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
       )}
 
       {/* Filters */}
-      <div className="bg-white/5 border border-white/10 rounded-2xl p-4 shadow-xl">
-        <div className="flex flex-wrap items-center gap-3">
+      <div className="bg-white/5 border border-white/10 rounded-2xl py-4 px-0 shadow-xl mx-0">
+        <div className="flex flex-wrap items-center gap-3 px-3">
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium text-white/60">Type:</span>
             <div className="flex gap-1">
@@ -413,6 +430,20 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
               </div>
             </div>
           )}
+          {/* ✅ SUB‑ADMIN FILTER — only visible to main admin */}
+          {isMainAdmin && !isPartnerMode && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-white/60">Sub‑Admin:</span>
+              <button
+                onClick={() => setSubAdminFilter(!subAdminFilter)}
+                className={`px-2 py-1 rounded-full text-xs font-medium transition-all ${
+                  subAdminFilter ? 'bg-purple-600 text-white' : 'bg-white/10 text-white/70 hover:bg-white/20'
+                }`}
+              >
+                {subAdminFilter ? ' On' : 'Off'}
+              </button>
+            </div>
+          )}
           <div className="relative ml-auto">
             <input type="text" placeholder="Search..." value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
@@ -422,17 +453,17 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
             </svg>
           </div>
         </div>
-        <div className="text-xs text-white/40 mt-3">
+        <div className="text-xs text-white/40 mt-3 px-3">
           {filteredAnimes.length} / {animes.length} anime
-          {(contentTypeFilter !== 'all' || statusFilter !== 'all' || subDubFilter !== 'all' || visibilityFilter !== 'all') && (
-            <button onClick={() => { setContentTypeFilter('all'); setStatusFilter('all'); setSubDubFilter('all'); setVisibilityFilter('all'); }}
+          {(contentTypeFilter !== 'all' || statusFilter !== 'all' || subDubFilter !== 'all' || visibilityFilter !== 'all' || subAdminFilter) && (
+            <button onClick={() => { setContentTypeFilter('all'); setStatusFilter('all'); setSubDubFilter('all'); setVisibilityFilter('all'); setSubAdminFilter(false); }}
               className="ml-2 text-purple-400 hover:text-purple-300 underline">Clear filters</button>
           )}
         </div>
       </div>
 
       {/* Table */}
-      <div className="bg-white/5 border border-white/10 rounded-2xl shadow-xl overflow-hidden">
+      <div className="bg-white/5 border border-white/10 rounded-2xl shadow-xl overflow-hidden mx-0">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-white/10 text-sm">
             <thead className="bg-white/5">
@@ -443,7 +474,6 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
                 <th className="px-3 py-3 text-left text-xs font-medium text-white/50 uppercase">Year</th>
                 <th className="px-3 py-3 text-left text-xs font-medium text-white/50 uppercase">Status</th>
                 <th className="px-3 py-3 text-left text-xs font-medium text-white/50 uppercase">Sub/Dub</th>
-                {/* Download Pages column — only in admin mode */}
                 {!isPartnerMode && (
                   <th className="px-3 py-3 text-left text-xs font-medium text-white/50 uppercase">DL Pages</th>
                 )}
@@ -461,16 +491,14 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
                 </tr>
               ) : (
                 filteredAnimes.map(anime => {
-                  // ✅ Fix: use _id || id for stable, unique keys
                   const uniqueKey = anime._id || anime.id;
                   const seoStatus = !isPartnerMode ? getSEOStatus(anime) : null;
                   const dlCount = downloadPageCounts[anime.id] || 0;
                   return (
                     <React.Fragment key={uniqueKey}>
                       <tr key={`row-${uniqueKey}`} className={`hover:bg-white/5 transition ${editingAnimeId === anime.id ? 'bg-white/10' : ''}`}>
-
                         {/* Image */}
-                        <td className="px-3 py-3">
+                        <td className="px-3 py-3 align-middle">
                           <div className="w-14 h-18 rounded-lg overflow-hidden bg-gray-800 border border-white/10" style={{ minWidth: 56, height: 72 }}>
                             <img src={anime.thumbnail || 'https://via.placeholder.com/56x72/1e293b/64748b?text=NA'}
                               alt={anime.title} className="w-full h-full object-cover" loading="lazy"
@@ -478,8 +506,8 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
                           </div>
                         </td>
 
-                        {/* Title */}
-                        <td className="px-3 py-3 max-w-[160px]">
+                        {/* Title – vertically centered */}
+                        <td className="px-3 py-3 max-w-[160px] align-middle">
                           <div className="flex flex-col gap-1">
                             <span className="text-xs font-medium text-white leading-tight line-clamp-2">{anime.title}</span>
                             {anime.isHidden && (
@@ -487,11 +515,17 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
                                 🔒 Hidden
                               </span>
                             )}
+                            {/* ✅ SUB‑ADMIN CREATOR BADGE — only when filter is ON & user is main admin */}
+                            {isMainAdmin && subAdminFilter && anime.createdBy && anime.createdBy !== 'admin' && anime.createdByUsername && (
+                              <span className="self-start px-1.5 py-0.5 text-xs rounded-full bg-gradient-to-r from-purple-600/30 to-pink-600/30 text-purple-200 border border-purple-500/40">
+                                {anime.createdByUsername}
+                              </span>
+                            )}
                           </div>
                         </td>
 
-                        {/* Type */}
-                        <td className="px-3 py-3 whitespace-nowrap">
+                        {/* Type – vertically centered */}
+                        <td className="px-3 py-3 whitespace-nowrap align-middle">
                           <span className="text-xs text-purple-300">{anime.contentType}</span>
                         </td>
 
@@ -748,7 +782,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
       </div>
 
       {filteredAnimes.length > 0 && (
-        <div className="text-xs text-white/40 text-right">
+        <div className="text-xs text-white/40 text-right px-3">
           Showing {filteredAnimes.length} of {animes.length} anime
         </div>
       )}

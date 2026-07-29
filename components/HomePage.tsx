@@ -80,6 +80,13 @@ const HomePage: React.FC<Props> = ({
   const [isPollActive, setIsPollActive] = useState(false);
   const [pollChecked, setPollChecked] = useState(false);
 
+  // ✅ STEP 7 (a) – Special mode state
+  const [specialMode, setSpecialMode] = useState<{
+    active: boolean;
+    name?: string;
+    bannerText?: string;
+  }>({ active: false });
+
   // ✅ URL search params se filter aur contentType sync karo
   const [searchParams] = useSearchParams();
 
@@ -129,6 +136,20 @@ const HomePage: React.FC<Props> = ({
       setCurrentBorderColorIndex(prev => (prev + 1) % BORDER_COLORS.length);
     }, 60000); // was 20000
     return () => clearInterval(interval);
+  }, []);
+
+  // ✅ STEP 7 (b) – Fetch special mode on mount
+  useEffect(() => {
+    const fetchSpecialMode = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/special-modes/active`);
+        const data = await res.json();
+        setSpecialMode(data);
+      } catch {
+        setSpecialMode({ active: false });
+      }
+    };
+    fetchSpecialMode();
   }, []);
 
   // Poll check
@@ -222,7 +243,7 @@ const HomePage: React.FC<Props> = ({
       case 'Hindi Dub': return 'All Hindi Dub';
       case 'Hindi Sub': return 'All Hindi Sub';
       case 'English Sub': return 'All English Sub';
-      default: return 'All Anime';
+      default: return 'All Anime,Movie,Manhwa';
     }
   };
 
@@ -340,8 +361,8 @@ const HomePage: React.FC<Props> = ({
 
         <div className="homepage-content-container mx-auto px-2 sm:px-3 py-2 lg:py-4">
 
-          {/* Sunday Special Banner */}
-          {!searchQuery && !isSearching && (
+          {/* ✅ STEP 7 (c) – Special Mode Banner (replaces hardcoded Sunday Special) */}
+          {!searchQuery && !isSearching && specialMode.active && (
             <div className="mb-6 transform hover:scale-[1.02] transition-transform duration-300">
               <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-purple-600 via-pink-500 to-orange-500 p-1 shadow-2xl">
                 <div className="absolute inset-0 bg-gradient-to-r from-yellow-300/20 via-transparent to-purple-300/20 animate-shimmer" />
@@ -350,12 +371,10 @@ const HomePage: React.FC<Props> = ({
                     <span className="text-3xl sm:text-4xl animate-bounce">🎉</span>
                     <div>
                       <h3 className="text-lg sm:text-xl lg:text-2xl font-extrabold bg-gradient-to-r from-yellow-300 to-pink-300 bg-clip-text text-transparent">
-                        Sunday Special!
+                        {specialMode.name}!
                       </h3>
                       <p className="text-xs sm:text-sm lg:text-base text-white">
-                        Download all anime & movies{' '}
-                        <span className="font-bold text-yellow-300">without any ads</span>
-                        {' '}– only on Sundays! Enjoy unlimited bing watch.
+                        {specialMode.bannerText}
                       </p>
                     </div>
                   </div>
