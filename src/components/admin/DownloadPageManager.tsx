@@ -11,17 +11,15 @@ const getFrontendBase = () => {
   return window.location.origin;
 };
 
-// 🔽 removed old getToken() function — ab resolveToken() component ke andar hai
-
 interface DownloadPageManagerProps {
   token?: string;
-  subAdminMode?: boolean; // ✅ true jab sub-admin dashboard se render ho
+  subAdminMode?: boolean;
 }
 
 interface AnimeOption {
   _id: string;
   title: string;
-  thumbnail?: string;   // 👈 NEW: so dropdown can show image
+  thumbnail?: string;
 }
 
 interface FormPage {
@@ -33,7 +31,6 @@ interface FormPage {
   links: DownloadPageLink[];
 }
 
-// Helper to safely get anime title from a DownloadPage (for search)
 const getAnimeTitle = (page: DownloadPage): string => {
   if (page.animeId && typeof page.animeId === 'object' && 'title' in page.animeId) {
     return page.animeId.title;
@@ -41,8 +38,6 @@ const getAnimeTitle = (page: DownloadPage): string => {
   return 'Unknown Anime';
 };
 
-// Hidden status now mirrors the ANIME's hidden state (set from Anime List Manager),
-// not a separate per-page control. This is display-only in this component.
 const isAnimeHidden = (page: DownloadPage): boolean => {
   if (page.animeId && typeof page.animeId === 'object') {
     return !!(page.animeId as any).isHidden;
@@ -159,29 +154,34 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [calculatingNext, setCalculatingNext] = useState(false);
 
-  // 🔧 FIX: tracks how many download/watch links already EXISTED (were saved)
-  // when the current editing session started. Used so that when adding new
-  // links we only offset by NEW additions in this session, not by links
-  // that the server-calculated "next episode" has already accounted for.
+  const [pageLinksMap, setPageLinksMap] = useState<Record<string, { episodeLimit: number; keyword: string; channelName: string }>>({});
+
+  const fetchPageLinks = async () => {
+    try {
+      const token = resolveToken();
+      const res = await fetch(`${API_BASE}/track/page-links`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (res.ok) setPageLinksMap(await res.json());
+    } catch {
+      // silent — optional feature
+    }
+  };
+
   const initialLinkCountsRef = useRef<{ download: number; watch: number }>({ download: 0, watch: 0 });
 
-  // Toast state
   const [toast, setToast] = useState<ToastState>({ message: '', type: 'info', visible: false });
   const showToast = (message: string, type: 'success' | 'error' | 'info') => {
     setToast({ message, type, visible: true });
   };
   const closeToast = () => setToast(prev => ({ ...prev, visible: false }));
 
-  // Delete confirmation state
   const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; id: string | null }>({ show: false, id: null });
 
-  // Filter states
   const [contentTypeFilter, setContentTypeFilter] = useState<'all' | ContentType>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'ongoing' | 'complete'>('all');
   const [subDubFilter, setSubDubFilter] = useState<'all' | string>('all');
   const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'visible' | 'hidden'>('all');
-  // ✅ Creator filter — ab teen options: "All" / "Admin" (sirf main admin ke
-  // banaye anime) / "Sub Admin" (kisi bhi sub-admin ke banaye anime).
   const [subAdminFilter, setSubAdminFilter] = useState<'all' | 'admin' | 'subadmin'>('all');
 
   const fetchPages = async () => {
@@ -196,7 +196,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
       const data = await res.json();
-      // 🔧 FIX (A): normalize data so links is always an array
       if (Array.isArray(data)) {
         setPages(data.map((p: any) => ({ ...p, links: Array.isArray(p.links) ? p.links : [] })));
       } else if (data.data && Array.isArray(data.data)) {
@@ -214,8 +213,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
     }
   };
 
-  // ✅ FIX: Always use admin protected route so hidden anime appear in dropdown,
-  // and now also includes thumbnail in AnimeOption for image display.
   const fetchAnime = async () => {
     try {
       const token = resolveToken();
@@ -227,7 +224,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
       const json = await res.json();
       const animeArray = json.data || json;
       if (Array.isArray(animeArray)) {
-        // Helper to normalize/absolute-ize thumbnail url
         const normalizeThumb = (a: any) => {
           let thumb = a.thumbnail || a.image || a.poster || a.cover;
           if (thumb && !thumb.startsWith('http')) {
@@ -235,15 +231,11 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
           }
           return thumb;
         };
-
-        // ✅ FIX: ab thumbnail bhi options mein include hoga
         setAnimeOptions(animeArray.map((a: any) => ({
           _id: a._id,
           title: a.title,
           thumbnail: normalizeThumb(a)
         })));
-
-        // Build thumbnail map (unchanged, still used elsewhere)
         const map = new Map<string, string>();
         animeArray.forEach((a: any) => {
           const thumb = normalizeThumb(a);
@@ -260,7 +252,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
     }
   };
 
-  // Fetch all pages for a given anime and return the highest episode number found
   const getNextStartingEpisode = async (animeId: string): Promise<number> => {
     if (!animeId) return 1;
     try {
@@ -271,9 +262,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
       if (!res.ok) return 1;
       const animePages = await res.json();
       if (!Array.isArray(animePages)) return 1;
-
       let maxEpisode = 0;
-      // 🔧 FIX (B): safe access with (page.links || [])
       animePages.forEach((page: DownloadPage) => {
         (page.links || []).forEach(link => {
           if (link.episode > maxEpisode) maxEpisode = link.episode;
@@ -289,6 +278,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
   useEffect(() => {
     fetchPages();
     fetchAnime();
+    fetchPageLinks();
   }, []);
 
   const convertToFormPage = (page: DownloadPage): FormPage => ({
@@ -297,14 +287,12 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
     slug: page.slug,
     title: page.title,
     episodeNumber: page.episodeNumber || 1,
-    // 🔧 FIX (C): safe access with (page.links || []) and type fallback
     links: (page.links || []).map(link => ({
       ...link,
       type: (link as any).type || 'download'
     }))
   });
 
-  // Helper to get full anime details with fallback thumbnail from map
   const getAnimeDetails = (page: DownloadPage): { 
     title: string; 
     contentType?: ContentType; 
@@ -313,23 +301,18 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
     thumbnail?: string;
     animeId: string;
     isHidden?: boolean;
-    createdByUsername?: string; // ✅ sub-admin who created this anime (display only)
-    isSubAdminCreated?: boolean; // ✅ reliable role-based flag from backend (used for filtering)
+    createdByUsername?: string;
+    isSubAdminCreated?: boolean;
   } => {
     if (page.animeId && typeof page.animeId === 'object') {
       const animeObj = page.animeId as any;
       let thumbnail = animeObj.thumbnail || animeObj.image || animeObj.poster || animeObj.cover;
-      
-      // If thumbnail not found in nested object, try the map
       if (!thumbnail && animeObj._id) {
         thumbnail = animeThumbnails.get(animeObj._id);
       }
-      
-      // Make URL absolute if relative
       if (thumbnail && !thumbnail.startsWith('http')) {
         thumbnail = `${API_BASE}${thumbnail.startsWith('/') ? '' : '/'}${thumbnail}`;
       }
-      
       return {
         title: animeObj.title || 'Unknown Anime',
         contentType: animeObj.contentType,
@@ -345,7 +328,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
     return { title: 'Unknown Anime', animeId: typeof page.animeId === 'string' ? page.animeId : '' };
   };
 
-  // Handle anime selection for new page creation (auto-calculates next episode)
   const handleNewAnimeChange = async (option: AnimeOption | null) => {
     const animeId = option?._id || '';
     if (!animeId) {
@@ -361,7 +343,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
     setCalculatingNext(false);
   };
 
-  // Handle anime selection for editing (does not change episode number)
   const handleEditAnimeChange = (option: AnimeOption | null) => {
     const animeId = option?._id || '';
     setEditingPage(prev => prev ? { ...prev, animeId } : null);
@@ -380,10 +361,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
       showToast('Please enter a valid episode number (minimum 1)', 'error');
       return;
     }
-    if (!pageToSave.links || pageToSave.links.length === 0) {
-      showToast('Please add at least one link', 'error');
-      return;
-    }
+    // ✅ Links are optional — allow saving page without any links
 
     const method = pageToSave._id ? 'PUT' : 'POST';
     const url = pageToSave._id
@@ -441,7 +419,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
     }
   };
 
-  // addDownloadLink – uses global next episode
   const addDownloadLink = async () => {
     if (!editingPage || !editingPage.animeId) return;
     setCalculatingNext(true);
@@ -462,7 +439,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
     setCalculatingNext(false);
   };
 
-  // addWatchLink – uses global next episode
   const addWatchLink = async () => {
     if (!editingPage || !editingPage.animeId) return;
     setCalculatingNext(true);
@@ -483,7 +459,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
     setCalculatingNext(false);
   };
 
-  // addBothLinks – adds one download and one watch link together
   const addBothLinks = async () => {
     if (!editingPage || !editingPage.animeId) return;
     setCalculatingNext(true);
@@ -531,7 +506,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
     });
   };
 
-  // Compute page order for each anime based on creation time (_id)
   const pagesByAnime = useMemo(() => {
     const map = new Map<string, DownloadPage[]>();
     pages.forEach(page => {
@@ -540,40 +514,31 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
       if (!map.has(animeId)) map.set(animeId, []);
       map.get(animeId)!.push(page);
     });
-    // Sort each anime's pages by _id ascending (oldest first) -> Page 1, Page 2, Page 3...
     map.forEach((list) => {
       list.sort((a, b) => a._id.localeCompare(b._id));
     });
     return map;
   }, [pages]);
 
-  // ✅ Sub-admin: sirf apne anime ke pages dikhe
   const ownedAnimeIdSet = useMemo(() => {
     if (!subAdminMode) return null;
     return new Set(animeOptions.map(a => a._id));
   }, [subAdminMode, animeOptions]);
 
-  // ✅ Sub-Admin filter ke liye — kya current pages mein koi bhi sub-admin
-  // dwara banaya gaya anime maujood hai?
   const hasSubAdminPages = useMemo(() => {
     if (subAdminMode) return false;
     return pages.some(page => getAnimeDetails(page).isSubAdminCreated);
   }, [pages, subAdminMode]);
 
-  // Filter pages based on search, contentType, status, sub/dub status, visibility, sub-admin, and sub-admin ownership
   const filteredPages = useMemo(() => {
     return pages.filter(page => {
       const details = getAnimeDetails(page);
-
-      // ✅ Sub-admin: sirf apne anime ke pages
       if (subAdminMode && ownedAnimeIdSet && !ownedAnimeIdSet.has(details.animeId)) {
         return false;
       }
-
       const animeTitle = getAnimeTitle(page).toLowerCase();
       const term = searchTerm.toLowerCase();
       if (!animeTitle.includes(term)) return false;
-
       if (contentTypeFilter !== 'all' && details.contentType !== contentTypeFilter) return false;
       if (statusFilter !== 'all') {
         const animeStatus = details.status?.toLowerCase();
@@ -592,7 +557,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
     });
   }, [pages, searchTerm, contentTypeFilter, statusFilter, subDubFilter, visibilityFilter, subAdminFilter, subAdminMode, ownedAnimeIdSet]);
 
-  // Final display order:
   const sortedPages = useMemo(() => {
     const groups = new Map<string, DownloadPage[]>();
     filteredPages.forEach(page => {
@@ -601,14 +565,12 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
       groups.get(animeId)!.push(page);
     });
     groups.forEach(list => list.sort((a, b) => a._id.localeCompare(b._id)));
-
     const groupEntries = Array.from(groups.entries());
     groupEntries.sort((a, b) => {
       const aLatestPageId = a[1][a[1].length - 1]._id;
       const bLatestPageId = b[1][b[1].length - 1]._id;
       return bLatestPageId.localeCompare(aLatestPageId);
     });
-
     return groupEntries.flatMap(([, list]) => list);
   }, [filteredPages]);
 
@@ -620,7 +582,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
 
   return (
     <div className="p-6 space-y-8 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 min-h-screen">
-      {/* Toast and Modal */}
       <Toast toast={toast} onClose={closeToast} />
       <ConfirmModal
         open={deleteConfirm.show}
@@ -642,7 +603,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
         </h1>
       </div>
 
-      {/* Alerts */}
       {error && (
         <div className="relative p-4 bg-rose-500/10 border border-rose-500/30 rounded-2xl backdrop-blur-sm text-rose-200 flex items-center gap-3 shadow-lg shadow-rose-500/5">
           <svg className="w-5 h-5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -690,7 +650,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
           </button>
         </div>
 
-        {/* New Page Form */}
         {showNewForm && editingPage && !editingPage._id && (
           <div className="mt-6">
             <PageForm
@@ -716,7 +675,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
       {/* Filters Section */}
       <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-4 space-y-3">
         <div className="flex flex-nowrap items-center gap-x-5 gap-y-0 overflow-x-auto pb-1">
-          {/* Content Type Filter */}
           <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
             <span className="text-xs font-medium text-white/60">Type:</span>
             <div className="flex gap-1">
@@ -736,7 +694,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
             </div>
           </div>
 
-          {/* Status Filter */}
           <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
             <span className="text-xs font-medium text-white/60">Status:</span>
             <div className="flex gap-1">
@@ -756,7 +713,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
             </div>
           </div>
 
-          {/* Sub/Dub Filter */}
           <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
             <span className="text-xs font-medium text-white/60">Sub/Dub:</span>
             <div className="flex gap-1">
@@ -776,7 +732,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
             </div>
           </div>
 
-          {/* Visibility Filter */}
           <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
             <span className="text-xs font-medium text-white/60">Visibility:</span>
             <div className="flex gap-1">
@@ -814,7 +769,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
           </div>
         </div>
 
-        {/* Second row: Sub-Admin filter + Search */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           {!subAdminMode && hasSubAdminPages ? (
             <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
@@ -860,7 +814,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
             <div />
           )}
 
-          {/* Search Input */}
           <div className="relative w-full sm:w-72 ml-auto">
             <input
               type="text"
@@ -885,7 +838,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
           </div>
         </div>
 
-        {/* Active filters info */}
         <div className="text-xs text-white/40">
           {!subAdminMode && `${filteredPages.length} / ${pages.length} pages shown`}
           {(contentTypeFilter !== 'all' || statusFilter !== 'all' || subDubFilter !== 'all' || visibilityFilter !== 'all' || subAdminFilter !== 'all') && (
@@ -981,6 +933,14 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
                             ) : (
                               <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-green-600/30 text-green-300 border border-green-500/50">
                                 Visible
+                              </span>
+                            )}
+                            {pageLinksMap[page._id] && (
+                              <span
+                                className="text-xs px-2 py-0.5 rounded-full font-medium bg-cyan-600/30 text-cyan-300 border border-cyan-500/50"
+                                title={`Tracker: ${pageLinksMap[page._id].channelName} — ${pageLinksMap[page._id].keyword}`}
+                              >
+                                🎯 Tracker Limit: {pageLinksMap[page._id].episodeLimit || 'Unlimited'}
                               </span>
                             )}
                             {animeDetails.contentType && (
@@ -1136,7 +1096,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
   );
 };
 
-// Extracted Page Form component (unchanged)
+// ---------- PAGE FORM (UPDATED) ----------
 const PageForm: React.FC<{
   editingPage: FormPage;
   setEditingPage: React.Dispatch<React.SetStateAction<FormPage | null>>;
@@ -1238,7 +1198,19 @@ const PageForm: React.FC<{
         </label>
         {editingPage.links?.map((link, idx) => (
           <div key={idx} className="bg-gray-800/40 border border-white/5 rounded-xl p-4 mb-3">
+            {/* ✅ UPDATED GRID: Added "Start" episode input for range support */}
             <div className="grid grid-cols-12 gap-2 mb-2">
+              <div className="col-span-1">
+                <input
+                  type="number"
+                  placeholder="Start"
+                  value={link.episodeStart ?? ''}
+                  onChange={e => updateLink(idx, 'episodeStart', e.target.value ? parseInt(e.target.value) : undefined)}
+                  className="w-full bg-gray-700/60 border border-gray-600/80 rounded-lg px-2 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  min="1"
+                  title="Range ka starting episode (optional, jaise 1-5 me 1)"
+                />
+              </div>
               <div className="col-span-1">
                 <input
                   type="number"
@@ -1249,7 +1221,7 @@ const PageForm: React.FC<{
                   min="1"
                 />
               </div>
-              <div className="col-span-2">
+              <div className="col-span-1">
                 <select
                   value={link.type}
                   onChange={e => updateLink(idx, 'type', e.target.value as 'download' | 'watch')}
@@ -1259,7 +1231,7 @@ const PageForm: React.FC<{
                   <option value="watch">Watch</option>
                 </select>
               </div>
-              <div className="col-span-7">
+              <div className="col-span-6">
                 <input
                   type="url"
                   placeholder="URL"

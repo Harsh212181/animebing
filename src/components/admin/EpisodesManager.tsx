@@ -1,4 +1,4 @@
- // src/components/admin/EpisodesManager.tsx - Updated Selected Content Info with Image
+ // src/components/admin/EpisodesManager.tsx - No emojis, custom SVG icons
 import React, { useState, useEffect } from 'react';
 import type { Anime, Episode, Chapter } from '../../types';
 import axios from 'axios';
@@ -26,8 +26,64 @@ const API_BASE = import.meta.env.VITE_API_BASE ||
 
 interface EpisodesManagerProps {
   token?: string;
-  isMainAdmin?: boolean;   // 👈 NEW — sirf main admin ko creator badge dikhega
+  isMainAdmin?: boolean;
 }
+
+// Inline SVG icon components to replace emojis
+const RefreshIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+  </svg>
+);
+
+const LinkIcon = () => (
+  <svg className="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+  </svg>
+);
+
+const CrownIcon = () => (
+  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 16l2-8 5 4 5-4 2 8H5z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 20h18" />
+  </svg>
+);
+
+const UserIcon = () => (
+  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+  </svg>
+);
+
+const DownloadIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+  </svg>
+);
+
+const CancelIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+  </svg>
+);
+
+const EditIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+  </svg>
+);
+
+const TrashIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+  </svg>
+);
+
+const BoltIcon = () => (
+  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+  </svg>
+);
 
 const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isMainAdmin = false }) => {
   const getToken = () => tokenProp || localStorage.getItem('adminToken') || '';
@@ -57,6 +113,9 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
   });
 
   const [deleteConfirm, setDeleteConfirm] = useState<{ itemId: string; itemNumber: number; session: number } | null>(null);
+  const [generatingLinks, setGeneratingLinks] = useState(false);
+  const [downloadPages, setDownloadPages] = useState<any[]>([]);
+  const [loadingDownloadPages, setLoadingDownloadPages] = useState(false);
 
   const isManga = selectedAnime?.contentType === 'Manga';
 
@@ -83,10 +142,10 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
       setAnimes(data.map((a: any) => ({
         ...a,
         id: a._id || a.id,
-        _id: a._id || a.id  // ensure _id is always present
+        _id: a._id || a.id
       })));
     } catch (err: any) {
-      console.error('❌ Animes load error:', err.response?.data || err.message);
+      console.error('Animes load error:', err.response?.data || err.message);
       toast.error('Failed to load animes');
     } finally {
       setAnimesLoading(false);
@@ -112,16 +171,18 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
         if (updatedSelectedAnime) {
           setSelectedAnime(updatedSelectedAnime);
           await fetchContent(updatedSelectedAnime._id);
+          await fetchDownloadPagesForAnime(updatedSelectedAnime._id);
         } else {
           setSelectedAnime(null);
           setEpisodes([]);
           setChapters([]);
+          setDownloadPages([]);
           toast.error('Previously selected content was removed from the list.');
         }
       }
       toast.success('Content refreshed successfully!');
     } catch (err: any) {
-      console.error('❌ Refresh error:', err.response?.data || err.message);
+      console.error('Refresh error:', err.response?.data || err.message);
       toast.error('Failed to refresh content');
     } finally {
       setAnimesLoading(false);
@@ -131,9 +192,11 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
   useEffect(() => {
     if (selectedAnime) {
       fetchContent(selectedAnime._id);
+      fetchDownloadPagesForAnime(selectedAnime._id);
     } else {
       setEpisodes([]);
       setChapters([]);
+      setDownloadPages([]);
       setEditingItemId(null);
     }
   }, [selectedAnime]);
@@ -183,10 +246,23 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
         }));
       }
     } catch (err: any) {
-      console.error('❌ Content load error:', err.response?.data || err.message);
+      console.error('Content load error:', err.response?.data || err.message);
       toast.error('Failed to load content');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchDownloadPagesForAnime = async (animeId: string) => {
+    setLoadingDownloadPages(true);
+    try {
+      const { data } = await axios.get(`${API_BASE}/download-pages/anime/${animeId}`);
+      setDownloadPages(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      console.error('Download pages load error:', err.response?.data || err.message);
+      setDownloadPages([]);
+    } finally {
+      setLoadingDownloadPages(false);
     }
   };
 
@@ -280,6 +356,43 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
     }));
   };
 
+  const handleAutoGenerateLinks = async (isEdit: boolean = false, externalLink?: string) => {
+    const link = externalLink || (isEdit ? editForm.mainLink : newItem.mainLink);
+    if (!link || !link.startsWith('http')) {
+      toast.error('Pehle valid Main Link daalo');
+      return;
+    }
+    setGeneratingLinks(true);
+    try {
+      const token = getToken();
+      const { data } = await axios.post(
+        `${API_BASE}/link-generator/generate`,
+        { url: link },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      const newLinks: DownloadLink[] = DEFAULT_LINK_NAMES.map((name) => ({
+        name,
+        url: data[name] || '',
+        quality: '',
+        type: name === 'Link 5' ? 'direct' : 'server'
+      }));
+
+      setNewItem(prev => ({
+        ...prev,
+        mainLink: link,
+        downloadLinks: newLinks
+      }));
+
+      toast.success('4 short links + 1 direct link neeche form me add ho gaye!');
+    } catch (err: any) {
+      console.error('Auto-generate error:', err.response?.data || err.message);
+      toast.error('Link generate karne me error aaya');
+    } finally {
+      setGeneratingLinks(false);
+    }
+  };
+
   const validateDownloadLinks = (links: DownloadLink[]): boolean => {
     if (links.length === 0) {
       toast.error('At least one download link is required');
@@ -361,7 +474,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
         downloadLinks: [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }]
       });
     } catch (err: any) {
-      console.error('❌ Add error:', err.response?.data || err.message);
+      console.error('Add error:', err.response?.data || err.message);
       toast.error(`Failed to add ${isManga ? 'chapter' : 'episode'}: ${err.response?.data?.error || err.message}`);
     } finally {
       setAddingItem(false);
@@ -404,7 +517,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
       setEditingItemId(null);
       await fetchContent(selectedAnime._id);
     } catch (err: any) {
-      console.error('❌ Update error:', err.response?.data || err.message);
+      console.error('Update error:', err.response?.data || err.message);
       toast.error(`Failed to update ${isManga ? 'chapter' : 'episode'}: ${err.response?.data?.error || err.message}`);
     }
   };
@@ -426,7 +539,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
       toast.success(`${isManga ? 'Chapter' : 'Episode'} deleted successfully!`);
       await fetchContent(selectedAnime._id);
     } catch (err: any) {
-      console.error('❌ Delete error:', err.response?.data || err.message);
+      console.error('Delete error:', err.response?.data || err.message);
       toast.error(err.response?.data?.error || `Failed to delete ${isManga ? 'chapter' : 'episode'}`);
     } finally {
       setDeleteConfirm(null);
@@ -475,7 +588,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
           disabled={animesLoading}
           className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm transition flex items-center gap-2"
         >
-          {animesLoading ? <><Spinner size="sm" /> Refreshing...</> : '🔄 Refresh Content'}
+          {animesLoading ? <><Spinner size="sm" /> Refreshing...</> : <><RefreshIcon /> Refresh Content</>}
         </button>
       </div>
 
@@ -492,11 +605,10 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
         />
       </div>
 
-      {/* ✅ UPDATED: Selected Content Info with Creator Badge */}
+      {/* Selected Content Info with Creator Badge */}
       {selectedAnime && (
         <div className="bg-slate-800/30 rounded-lg p-4 border border-slate-700">
           <div className="flex items-center gap-4">
-            {/* Anime Image */}
             {(selectedAnime.thumbnail || selectedAnime.posterImage || selectedAnime.coverImage) && (
               <img
                 src={selectedAnime.thumbnail || selectedAnime.posterImage || selectedAnime.coverImage}
@@ -511,18 +623,17 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                 <h3 className="text-lg font-semibold text-white">
                   Selected: {selectedAnime.title}
                 </h3>
-                {/* 👇 NEW — creator badge, sirf main admin ko dikhta hai */}
                 {isMainAdmin && (
                   (!selectedAnime.createdBy || selectedAnime.createdBy === 'admin') ? (
                     <span className="text-xs px-2 py-1 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/25 flex items-center gap-1">
-                      👑 Main Admin
+                      <CrownIcon /> Main Admin
                     </span>
                   ) : (
                     <span
                       className="text-xs px-2 py-1 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/25 flex items-center gap-1"
                       title={`Created by sub-admin: ${selectedAnime.createdByUsername}`}
                     >
-                      👤 {selectedAnime.createdByUsername || 'Sub-Admin'}
+                      <UserIcon /> {selectedAnime.createdByUsername || 'Sub-Admin'}
                     </span>
                   )
                 )}
@@ -534,6 +645,136 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Download Page(s) card */}
+      {selectedAnime && (
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold text-white/90 flex items-center gap-2">
+            <span className="w-1.5 h-6 bg-purple-400 rounded-full"></span>
+            <DownloadIcon /> Download Page(s) for this Anime
+            {loadingDownloadPages && <Spinner size="sm" />}
+          </h3>
+
+          {!loadingDownloadPages && downloadPages.length === 0 && (
+            <div className="text-center py-8 bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl">
+              <DownloadIcon />
+              <p className="mt-3 text-white/60">Is anime ka koi download page nahi bana hai abhi tak.</p>
+            </div>
+          )}
+
+          {downloadPages.map((page: any) => {
+            const publicUrl = `https://animebing.in/download/${page.slug}`;
+            const downloadCount = (page.links || []).filter((l: any) => l.type === 'download').length;
+            const watchCount = (page.links || []).filter((l: any) => l.type === 'watch').length;
+            const episodeNumbers = (page.links || []).map((l: any) => l.episode);
+            const minEp = episodeNumbers.length ? Math.min(...episodeNumbers) : null;
+            const maxEp = episodeNumbers.length ? Math.max(...episodeNumbers) : null;
+            const episodeRange = minEp !== null
+              ? (minEp === maxEp ? `Episode ${minEp}` : `Episode ${minEp}-${maxEp}`)
+              : 'No episodes';
+
+            return (
+              <div
+                key={page._id}
+                className="group bg-white/5 backdrop-blur-sm border border-white/10 hover:border-white/20 rounded-2xl overflow-hidden shadow-xl transition-all hover:shadow-2xl transform-gpu"
+                style={{ willChange: 'transform' }}
+              >
+                <div className="relative p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="absolute left-0 top-0 bottom-0 w-1.5 rounded-l-2xl bg-gradient-to-b from-purple-400 to-pink-400"></div>
+
+                  <div className="flex-1 pl-3">
+                    <div className="flex items-start gap-4">
+                      <div className="flex-shrink-0 w-16 h-20 sm:w-20 sm:h-24 rounded-lg overflow-hidden bg-gray-800/80 shadow-lg border border-white/10">
+                        {(selectedAnime.thumbnail || selectedAnime.posterImage || selectedAnime.coverImage) ? (
+                          <img
+                            src={selectedAnime.thumbnail || selectedAnime.posterImage || selectedAnime.coverImage}
+                            alt={selectedAnime.title}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-gray-700/50">
+                            <svg className="w-8 h-8 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex-1">
+                        <div className="flex items-center flex-wrap gap-2">
+                          <h3 className="text-xl font-bold text-white">{selectedAnime.title}</h3>
+                        </div>
+
+                        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                          <span className="text-white/70">
+                            <span className="text-purple-300 font-medium">Starting Ep:</span> {page.episodeNumber}
+                          </span>
+                          <span className="text-white/70">
+                            <span className="text-purple-300 font-medium">Button:</span> {page.title || 'Download'}
+                          </span>
+                          <span className="text-white/70">
+                            <span className="text-purple-300 font-medium">{episodeRange}</span>
+                          </span>
+                          <span className="text-white/70">
+                            <span className="text-purple-300 font-medium">Total Links:</span> {(page.links || []).length}
+                          </span>
+                        </div>
+
+                        <div className="mt-2 text-sm text-white/50 flex items-center gap-3">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l5 5a2 2 0 01.586 1.414V19a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z" />
+                          </svg>
+                          <span>Download: <span className="text-emerald-300 font-medium">{downloadCount}</span></span>
+                          <span>Watch: <span className="text-blue-300 font-medium">{watchCount}</span></span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 items-center">
+                    {/* View / Test button */}
+                    <button
+                      onClick={() => window.open(publicUrl, '_blank', 'noopener,noreferrer')}
+                      title="View / test public download page"
+                      className="p-2.5 bg-white/5 hover:bg-emerald-500/20 border border-white/10 hover:border-emerald-500/50 rounded-xl text-white/80 hover:text-emerald-300 transition-all"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    </button>
+
+                    {/* Copy button */}
+                    <button
+                      onClick={() => copyToClipboard(publicUrl, 'Download page link copied!')}
+                      title="Copy download page link"
+                      className="p-2.5 bg-white/5 hover:bg-yellow-500/20 border border-white/10 hover:border-yellow-500/50 rounded-xl text-white/80 hover:text-yellow-300 transition-all"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    </button>
+
+                    {/* Shorten button — main admin only */}
+                    {isMainAdmin && (
+                      <button
+                        onClick={() => handleAutoGenerateLinks(false, publicUrl)}
+                        disabled={generatingLinks}
+                        title="Generate 4 short links + direct for this page"
+                        className="p-2.5 bg-white/5 hover:bg-green-500/20 border border-white/10 hover:border-green-500/50 rounded-xl text-white/80 hover:text-green-300 transition-all"
+                      >
+                        {generatingLinks ? <Spinner size="sm" /> : <BoltIcon />}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -615,7 +856,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
           {/* Main Link (Admin only) */}
           <div className="bg-slate-800/70 p-4 rounded-lg border-l-4 border-yellow-500">
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-yellow-300">🔗 Main Link (Admin Only - Optional)</label>
+              <label className="block text-sm font-medium text-yellow-300"><LinkIcon /> Main Link (Admin Only - Optional)</label>
               <span className="text-xs text-yellow-400 bg-yellow-900/30 px-2 py-1 rounded">Internal Use</span>
             </div>
             <p className="text-slate-400 text-xs mb-3">This is for admin reference only. It won't be shown to users.</p>
@@ -645,6 +886,16 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
                 Copy
               </button>
+              {isMainAdmin && (
+                <button
+                  type="button"
+                  onClick={() => handleAutoGenerateLinks(false)}
+                  disabled={!newItem.mainLink || generatingLinks}
+                  className="bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-3 py-2 rounded text-sm flex items-center gap-1"
+                >
+                  {generatingLinks ? <Spinner size="sm" /> : <BoltIcon />} Auto-Generate 5 Links
+                </button>
+              )}
             </div>
           </div>
 
@@ -781,8 +1032,8 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                           </td>
                           <td className="p-3">
                             <div className="flex gap-2">
-                              <button onClick={() => handleEditItem(item)} className={`px-3 py-1 rounded text-sm transition-colors ${isEditing ? 'bg-yellow-600 hover:bg-yellow-500' : 'bg-blue-600 hover:bg-blue-500'} text-white`}>
-                                {isEditing ? '❌ Cancel' : '🪶 Edit'}
+                              <button onClick={() => handleEditItem(item)} className={`px-3 py-1 rounded text-sm transition-colors ${isEditing ? 'bg-yellow-600 hover:bg-yellow-500' : 'bg-blue-600 hover:bg-blue-500'} text-white flex items-center gap-1`}>
+                                {isEditing ? <><CancelIcon /> Cancel</> : <><EditIcon /> Edit</>}
                               </button>
                               {!isEditing && (
                                 <button
@@ -791,9 +1042,9 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                                     itemNumber: isManga ? item.chapterNumber : item.episodeNumber,
                                     session: item.session || 1
                                   })}
-                                  className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-sm"
+                                  className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-sm flex items-center gap-1"
                                 >
-                                  🗑️ Delete
+                                  <TrashIcon /> Delete
                                 </button>
                               )}
                             </div>
@@ -804,7 +1055,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                             <td colSpan={6} className="p-4">
                               <div className="border-l-4 border-yellow-500 pl-4 py-3">
                                 <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                                  <svg className="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                                  <EditIcon />
                                   Edit {isManga ? 'Chapter' : 'Episode'} #{editForm.number}
                                 </h4>
                                 <div className="space-y-4">
@@ -821,6 +1072,16 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                                   <div className="bg-slate-800/70 p-4 rounded-lg border-l-4 border-yellow-500">
                                     <label className="block text-sm font-medium text-yellow-300">Main Link (Admin)</label>
                                     <input type="text" value={editForm.mainLink} onChange={(e) => setEditForm({...editForm, mainLink: e.target.value})} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-3 py-2 text-sm mt-2" />
+                                    {isMainAdmin && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleAutoGenerateLinks(true)}
+                                        disabled={!editForm.mainLink || generatingLinks}
+                                        className="mt-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-3 py-2 rounded text-sm flex items-center gap-1"
+                                      >
+                                        {generatingLinks ? <Spinner size="sm" /> : <BoltIcon />} Auto-Generate 5 Links
+                                      </button>
+                                    )}
                                   </div>
                                   <div>
                                     <div className="flex justify-between items-center">
@@ -864,7 +1125,9 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                                   </div>
                                   <div className="flex gap-3">
                                     <button type="button" onClick={handleUpdateItem} className="bg-green-600 hover:bg-green-500 text-white font-medium py-2 px-4 rounded text-sm">Save Changes</button>
-                                    <button type="button" onClick={handleCancelEdit} className="bg-slate-600 hover:bg-slate-500 text-white font-medium py-2 px-4 rounded text-sm">Cancel</button>
+                                    <button type="button" onClick={handleCancelEdit} className="bg-slate-600 hover:bg-slate-500 text-white font-medium py-2 px-4 rounded text-sm flex items-center gap-1">
+                                      <CancelIcon /> Cancel
+                                    </button>
                                   </div>
                                 </div>
                               </div>

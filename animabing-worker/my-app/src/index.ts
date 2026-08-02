@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import adminRoutes from './routes/adminRoutes'
 import animeRoutes from './routes/animeRoutes'
@@ -22,10 +22,11 @@ import subAdminRoutes from './routes/subAdminRoutes'
 import animeLinkControlRoutes from './routes/animeLinkControlRoutes'
 import specialModeRoutes from './routes/specialModeRoutes'
 import notesRoutes from './routes/notesRoutes'
-import trackRoutes from './routes/trackRoutes'                     // ← NEW
-import { findMany, insertOne, updateOne } from './services/mongoService' // ← NEW
-import { ITrackedChannel, ITrackNotification } from './models/types'      // ← NEW
-import { checkChannelForUpdates } from './services/youtubeCheckService'   // ← NEW
+import trackRoutes from './routes/trackRoutes'
+import { findMany, insertOne, updateOne } from './services/mongoService'
+import { ITrackedChannel } from './models/types'
+import { processChannelUpdates } from './services/youtubeCheckService'
+import linkGeneratorRoutes from './routes/linkGeneratorRoutes'
 
 export type Env = {
   MONGODB_URI: string
@@ -39,6 +40,10 @@ export type Env = {
   GOOGLE_CLIENT_SECRET: string
   FRONTEND_URL: string
   YOUTUBE_API_KEY: string
+  CUTY_API_KEY: string
+  SHRINKME_API_KEY: string
+  GPLINKS_API_KEY: string
+  LINKJUST_API_KEY: string
 }
 
 export type Variables = {
@@ -46,6 +51,9 @@ export type Variables = {
   user: any
   shortUser: any
 }
+
+// ✅ Consecutive-failure threshold before a channel is auto-paused (kept in sync with trackRoutes.ts)
+const AUTO_PAUSE_ERROR_THRESHOLD = 5
 
 const app = new Hono<{ Bindings: Env, Variables: Variables }>()
 
@@ -94,7 +102,8 @@ app.route('/api/sub-admin', subAdminRoutes)
 app.route('/api/anime-link-control', animeLinkControlRoutes)
 app.route('/api/special-modes', specialModeRoutes)
 app.route('/api/notes', notesRoutes)
-app.route('/api/track', trackRoutes)                              // ← NEW
+app.route('/api/track', trackRoutes)
+app.route('/api/link-generator', linkGeneratorRoutes)
 
 // ============ SITEMAP ============
 app.route('/', sitemapRoutes)
@@ -112,37 +121,90 @@ export default {
   fetch: app.fetch,
 
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
-    const channels = await findMany<ITrackedChannel>(
-      'trackedChannels', {}, {}, env.MONGODB_URI, env.MONGODB_DB
-    )
+    try {
+      const channels = await findMany<ITrackedChannel>(
+        'trackedChannels', { paused: { $ne: true } }, {}, env.MONGODB_URI, env.MONGODB_DB
+      )
 
-    for (const channel of channels) {
-      try {
-        const updates = await checkChannelForUpdates(channel, env.YOUTUBE_API_KEY)
+      // ✅ Per-channel quota tracker, summed at the end
+      const trackers = channels.map(() => ({ units: 0 }))
+      const settled = await Promise.allSettled(
+        channels.map((channel, i) =>
+          processChannelUpdates(channel, env.YOUTUBE_API_KEY, env.MONGODB_URI, env.MONGODB_DB, trackers[i])
+        )
+      )
 
-        for (const update of updates) {
-          await insertOne('trackNotifications', {
-            message: `${channel.channelName} — "${update.title.keyword}" Part ${update.newPart} upload ho gaya hai!`,
-            channelId: channel.channelId,
-            channelName: channel.channelName,
-            titleKeyword: update.title.keyword,
-            videoId: update.videoId,
-            videoUrl: `https://youtube.com/watch?v=${update.videoId}`,
-            isRead: false,
-          }, env.MONGODB_URI, env.MONGODB_DB)
+      let totalUpdatesFound = 0
+      let totalUnitsUsed = 0
+      const errorChannels: string[] = []
 
-          const newTitles = channel.titles.map(t =>
-            t.id === update.title.id ? { ...t, lastKnownPart: update.newPart } : t
-          )
-          await updateOne(
-            'trackedChannels', { _id: channel._id! }, { titles: newTitles },
-            env.MONGODB_URI, env.MONGODB_DB
-          )
+      for (let i = 0; i < settled.length; i++) {
+        const channel = channels[i]
+        const result = settled[i]
+        totalUnitsUsed += trackers[i].units
+
+        // ✅ Per‑channel bookkeeping isolated — one channel's DB failure won't crash the entire cron run
+        try {
+          if (result.status === 'fulfilled') {
+            totalUpdatesFound += result.value.length
+            if (channel.consecutiveErrors) {
+              await updateOne('trackedChannels', { _id: channel._id! }, { consecutiveErrors: 0 }, env.MONGODB_URI, env.MONGODB_DB)
+            }
+          } else {
+            console.error(`Channel check failed: ${channel.channelName}`, result.reason)
+            errorChannels.push(channel.channelName)
+
+            const newErrCount = (channel.consecutiveErrors || 0) + 1
+            const shouldAutoPause = newErrCount >= AUTO_PAUSE_ERROR_THRESHOLD
+            const updateData: any = { consecutiveErrors: newErrCount }
+            if (shouldAutoPause) updateData.paused = true
+            await updateOne('trackedChannels', { _id: channel._id! }, updateData, env.MONGODB_URI, env.MONGODB_DB)
+
+            if (shouldAutoPause) {
+              await insertOne('trackNotifications', {
+                message: `⛔ "${channel.channelName}" lagatar ${newErrCount} baar fail hua (handle change ho sakti hai ya YouTube API error) — channel khud-b-khud pause kar diya gaya hai. Check karke resume karo.`,
+                channelId: channel.channelId,
+                channelName: channel.channelName,
+                titleKeyword: '',
+                newVideoId: '',
+                newVideoTitle: '',
+                newVideoUrl: '',
+                newPart: 0,
+                isRead: false,
+                notifType: 'auto_paused',
+              } as any, env.MONGODB_URI, env.MONGODB_DB)
+            }
+          }
+        } catch (bookkeepingErr) {
+          // ek channel ki DB call fail ho jaye to poora cron run crash na ho —
+          // sirf is channel ko error list me daal ke aage badho
+          console.error(`Post-process bookkeeping failed for ${channel.channelName}`, bookkeepingErr)
+          if (!errorChannels.includes(channel.channelName)) errorChannels.push(channel.channelName)
         }
-      } catch (err) {
-        console.error(`Channel check failed: ${channel.channelName}`, err)
-        // Ek channel fail ho to baaki continue rahenge, loop nahi rukega
       }
+
+      // ✅ Guaranteed to run, even if a bookkeeping call failed above
+      await insertOne('cronRunLogs', {
+        runAt: new Date(),
+        channelsChecked: channels.length,
+        updatesFound: totalUpdatesFound,
+        errorCount: errorChannels.length,
+        errorChannels,
+        apiUnitsUsed: totalUnitsUsed,
+      }, env.MONGODB_URI, env.MONGODB_DB)
+    } catch (fatalErr) {
+      // ✅ Outer safety net — if even findMany or the entire loop crashes, write a fallback log
+      console.error('Scheduled run fatally failed', fatalErr)
+      try {
+        await insertOne('cronRunLogs', {
+          runAt: new Date(),
+          channelsChecked: 0,
+          updatesFound: 0,
+          errorCount: 1,
+          errorChannels: ['FATAL: ' + String(fatalErr).slice(0, 200)],
+          apiUnitsUsed: 0,
+        } as any, env.MONGODB_URI, env.MONGODB_DB)
+      } catch {}
     }
   },
 }

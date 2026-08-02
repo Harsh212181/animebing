@@ -1,4 +1,4 @@
-// components/AnimeCard.tsx
+ // components/AnimeCard.tsx
 import React from 'react';
 import type { Anime } from '../src/types';
 import { PlayIcon } from './icons/PlayIcon';
@@ -10,6 +10,9 @@ interface AnimeCardProps {
   showStatus?: boolean;
   compact?: boolean;
 }
+
+// ✅ NEW — "NEW" ribbon window (hours). Change this to tweak how long the badge stays up.
+const NEW_BADGE_WINDOW_HOURS = 48;
 
 const optimizeImageUrl = (url: string, width: number, height: number): string => {
   if (!url || !url.includes('cloudinary.com')) return url;
@@ -31,8 +34,6 @@ const generateSrcSet = (url: string, baseWidth: number, baseHeight: number): str
     const rest = url.split('/upload/')[1];
     const imagePath = rest.split('/').slice(1).join('/');
 
-    // ✅ 1x aur 1.5x sirf — 2x hata diya (360x540 ki zaroorat nahi jab display 193px hai)
-    // q_auto:eco compression use kar raha hai — visible quality same rahegi
     return `
       ${baseUrl}/upload/f_webp,q_auto:eco,w_${baseWidth},h_${baseHeight},c_fill/${imagePath} ${baseWidth}w,
       ${baseUrl}/upload/f_webp,q_auto:eco,w_${Math.round(baseWidth * 1.5)},h_${Math.round(baseHeight * 1.5)},c_fill/${imagePath} ${Math.round(baseWidth * 1.5)}w
@@ -40,6 +41,16 @@ const generateSrcSet = (url: string, baseWidth: number, baseHeight: number): str
   } catch {
     return '';
   }
+};
+
+// ✅ NEW — true agar anime ka koi episode/link pichle NEW_BADGE_WINDOW_HOURS ke andar add hua ho
+// (backend `lastContentAdded` ko tracker ke auto-add hone par touch karta hai — services/youtubeCheckService.ts)
+const isRecentlyAdded = (anime: Anime): boolean => {
+  if (!anime.lastContentAdded) return false;
+  const addedTime = new Date(anime.lastContentAdded as any).getTime();
+  if (Number.isNaN(addedTime)) return false;
+  const hoursSince = (Date.now() - addedTime) / (1000 * 60 * 60);
+  return hoursSince >= 0 && hoursSince <= NEW_BADGE_WINDOW_HOURS;
 };
 
 const AnimeCard: React.FC<AnimeCardProps> = ({
@@ -58,6 +69,8 @@ const AnimeCard: React.FC<AnimeCardProps> = ({
   const thumbnailSrcSet = generateSrcSet(thumbnail, displayWidth, displayHeight);
 
   const genreList = (anime.genreList ?? []).filter((g: string) => g && g.trim()).slice(0, 3).join(', ') || '';
+
+  const showNewBadge = isRecentlyAdded(anime);
 
   const handleClick = () => {
     onClick(anime);
@@ -91,7 +104,6 @@ const AnimeCard: React.FC<AnimeCardProps> = ({
           loading="lazy"
           width={displayWidth}
           height={displayHeight}
-          // ✅ sizes fix — browser ko exact display size batao taaki sahi image choose kare
           sizes={compact
             ? "(max-width: 640px) 150px, 150px"
             : "(max-width: 640px) calc(50vw - 16px), (max-width: 768px) calc(33vw - 16px), (max-width: 1024px) calc(25vw - 16px), 193px"
@@ -102,20 +114,20 @@ const AnimeCard: React.FC<AnimeCardProps> = ({
           }}
         />
 
-        {/* Episode badge */}
-        {(anime.currentEpisode ?? 0) > 0 && (
-          <div className="absolute top-0.5 right-1 z-10">
-            <span className="bg-gradient-to-r from-red-600 to-orange-600 text-white text-[11px] font-medium px-2 py-0.5 rounded-md shadow-md">
-              EP {anime.currentEpisode}
-            </span>
-          </div>
-        )}
-
         {/* Content Type badge (top left) */}
         {showStatus && !compact && (
           <div className="absolute top-0.5 left-1 z-10">
             <span className="bg-purple-600 text-white text-[11px] font-medium px-2 py-0.5 rounded-md shadow-md whitespace-nowrap">
               {anime.contentType || 'Anime'}
+            </span>
+          </div>
+        )}
+
+        {/* Episode badge — Movie ke liye hide */}
+        {anime.contentType !== 'Movie' && (anime.currentEpisode ?? 0) > 0 && (
+          <div className="absolute top-0.5 right-1 z-10">
+            <span className="bg-gradient-to-r from-red-600 to-orange-600 text-white text-[11px] font-medium px-2 py-0.5 rounded-md shadow-md">
+              {anime.contentType === 'Manga' ? 'Part' : 'Ep'} {anime.currentEpisode}
             </span>
           </div>
         )}
@@ -138,6 +150,14 @@ const AnimeCard: React.FC<AnimeCardProps> = ({
           compact ? 'p-2 sm:p-2' : 'p-2 sm:p-3 md:p-4'
         }`}>
           <div className="transform transition-transform duration-300 group-hover:-translate-y-1">
+
+            {/* ✅ NEW — badge shown directly above the anime title */}
+            {showNewBadge && (
+              <span className="inline-block bg-gradient-to-r from-rose-500 to-pink-500 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-md shadow-md mb- tracking-wider">
+                NEW
+              </span>
+            )}
+
             <h3 className={`text-white font-bold line-clamp-2 mb-1 ${
               compact
                 ? 'text-xs sm:text-xs md:text-sm leading-tight'

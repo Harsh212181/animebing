@@ -18,7 +18,13 @@ export async function getTodaysActiveMode(mongoUri: string, dbName: string): Pro
   const modes = await db.collection('specialmodes').find({ isEnabled: true }).toArray() as ISpecialMode[]
 
   for (const m of modes) {
-    if (m.type === 'weekday' && m.weekday === todayWeekday) return m
+    // ✅ Weekdays array support (with fallback to legacy weekday)
+    const days = (m as any).weekdays && (m as any).weekdays.length > 0
+      ? (m as any).weekdays
+      : (m.weekday !== undefined ? [m.weekday] : [])
+
+    if (m.type === 'weekday' && days.includes(todayWeekday)) return m
+
     if (m.type === 'dateRange' && m.startDate && m.endDate) {
       const start = new Date(m.startDate)
       const end = new Date(m.endDate)
@@ -116,12 +122,18 @@ specialModeRoutes.get('/', adminAuth, async (c) => {
 // ============ ADMIN: create mode ============
 specialModeRoutes.post('/', adminAuth, async (c) => {
   try {
-    const { name, type, weekday, startDate, endDate, bannerText, isEnabled, forceLink5Only } = await c.req.json()
+    const { name, type, weekday, weekdays, startDate, endDate, bannerText, isEnabled, forceLink5Only } = await c.req.json()
 
     if (!name || !name.trim()) return c.json({ success: false, error: 'Name required' }, 400)
     if (!['weekday', 'dateRange'].includes(type)) return c.json({ success: false, error: 'Invalid type' }, 400)
-    if (type === 'weekday' && (weekday === undefined || weekday < 0 || weekday > 6)) {
-      return c.json({ success: false, error: 'Valid weekday (0-6) required' }, 400)
+
+    // ✅ weekdays (array, naya) ya weekday (number, purana) dono support karo
+    const finalWeekdays: number[] = Array.isArray(weekdays) ? weekdays : (typeof weekday === 'number' ? [weekday] : [])
+
+    if (type === 'weekday') {
+      if (finalWeekdays.length === 0 || finalWeekdays.some((d: any) => typeof d !== 'number' || d < 0 || d > 6)) {
+        return c.json({ success: false, error: 'Valid weekday (0-6) required' }, 400)
+      }
     }
     if (type === 'dateRange' && (!startDate || !endDate)) {
       return c.json({ success: false, error: 'Start and end date required for festival mode' }, 400)
@@ -132,21 +144,21 @@ specialModeRoutes.post('/', adminAuth, async (c) => {
       type,
       bannerText: bannerText?.trim() || '',
       isEnabled: isEnabled !== false,
-      forceLink5Only: Boolean(forceLink5Only), // 👈 NEW
+      forceLink5Only: Boolean(forceLink5Only),
       createdAt: new Date(),
       updatedAt: new Date()
     }
-    if (type === 'weekday') mode.weekday = weekday
+    if (type === 'weekday') {
+      mode.weekdays = finalWeekdays
+      mode.weekday = finalWeekdays[0] // legacy field bhi bhar do, purane readers na tootein
+    }
     if (type === 'dateRange') {
       mode.startDate = new Date(startDate)
       mode.endDate = new Date(endDate)
     }
 
     const result = await insertOne('specialmodes', mode, c.env.MONGODB_URI, c.env.MONGODB_DB)
-
-    // 👇 turant sync karo — agar aaj hi ye mode active ban gaya to link foran adjust ho
     await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB)
-
     return c.json({ success: true, message: 'Mode created!', data: result })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
@@ -164,17 +176,28 @@ specialModeRoutes.put('/:id', adminAuth, async (c) => {
     if (body.name !== undefined) updateData.name = body.name.trim()
     if (body.bannerText !== undefined) updateData.bannerText = body.bannerText.trim()
     if (body.isEnabled !== undefined) updateData.isEnabled = Boolean(body.isEnabled)
-    if (body.weekday !== undefined) updateData.weekday = body.weekday
+
+    // ✅ weekdays (array) ko priority do, warna legacy weekday (number) support karo
+    if (body.weekdays !== undefined) {
+      if (!Array.isArray(body.weekdays) || body.weekdays.length === 0 ||
+          body.weekdays.some((d: any) => typeof d !== 'number' || d < 0 || d > 6)) {
+        return c.json({ success: false, error: 'Valid weekday (0-6) required' }, 400)
+      }
+      updateData.weekdays = body.weekdays
+      updateData.weekday = body.weekdays[0]
+    } else if (body.weekday !== undefined) {
+      updateData.weekday = body.weekday
+      updateData.weekdays = [body.weekday]
+    }
+
     if (body.startDate !== undefined) updateData.startDate = new Date(body.startDate)
     if (body.endDate !== undefined) updateData.endDate = new Date(body.endDate)
-    if (body.forceLink5Only !== undefined) updateData.forceLink5Only = Boolean(body.forceLink5Only) // 👈 NEW
+    if (body.forceLink5Only !== undefined) updateData.forceLink5Only = Boolean(body.forceLink5Only)
 
     const updated = await updateOne('specialmodes', { _id: toObjectId(id) }, updateData, c.env.MONGODB_URI, c.env.MONGODB_DB)
     if (!updated) return c.json({ success: false, error: 'Mode not found' }, 404)
 
-    // 👇 turant sync — agar isEnabled/forceLink5Only badla to links foran adjust ho
     await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB)
-
     return c.json({ success: true, message: 'Updated!', data: updated })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)

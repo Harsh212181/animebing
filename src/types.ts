@@ -414,6 +414,7 @@ export interface AnimeAssignmentResponse {
 
 export interface DownloadPageLink {
   episode: number;
+  episodeStart?: number;   // ✅ NEW — range ka start (jaise 1-5 me 1)
   url: string;
   quality?: string;
   language?: string;

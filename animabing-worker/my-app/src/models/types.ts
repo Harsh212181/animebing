@@ -1,4 +1,4 @@
-import { ObjectId } from 'mongodb'
+ import { ObjectId } from 'mongodb'
 
 // ============ ANIME ============
 export interface IVote {
@@ -190,10 +190,12 @@ export interface IContact {
 // ============ DOWNLOAD PAGE ============
 export interface IDownloadPageLink {
   episode: number
+  episodeStart?: number   // ✅ range ka starting episode
   url: string
   quality?: string
   language?: string
   type?: 'download' | 'watch'
+  durationSec?: number   // ✅ NEW — jab video add hota hai tabhi save hota hai, notification me nahi
 }
 
 export interface IDownloadPage {
@@ -229,10 +231,8 @@ export interface ILinkSettings {
   autoModeEnabled?: boolean
   _modeApplied?: boolean
   _activeModeName?: string | null
-
-  // ✅ New fields for special mode tracking
-  specialModeAppliedId?: string    // ObjectId of the active special mode
-  preModeLink1?: boolean           // link states before mode applied
+  specialModeAppliedId?: string
+  preModeLink1?: boolean
   preModeLink2?: boolean
   preModeLink3?: boolean
   preModeLink4?: boolean
@@ -440,7 +440,8 @@ export interface ISpecialMode {
   _id?: ObjectId
   name: string
   type: 'weekday' | 'dateRange'
-  weekday?: number
+  weekday?: number       // legacy single-day (purane data ke liye rehne do)
+  weekdays?: number[]    // ✅ NEW — multi-day, frontend yehi bhejta hai
   startDate?: Date
   endDate?: Date
   bannerText?: string
@@ -462,41 +463,149 @@ export interface INote {
   labels: string[];
   checklist?: { text: string; checked: boolean }[];
   reminder?: string;
-  createdBy: string;      // admin/subadmin id
+  createdBy: string;
   visibility: "private" | "shared";
   createdAt: string;
   updatedAt: string;
 }
 
-// ============ TRACKED CHANNEL (YouTube tracker) ============
+// ============ TRACKED TITLE (inside channel) ============
 export interface ITrackedTitle {
-  id: string          // unique id (crypto.randomUUID())
-  keyword: string      // series naam jisse title match hoga, e.g. "Naruto"
+  id: string
+  keyword: string
   lastKnownPart: number
+  lastKnownVideoId?: string
+  lastKnownVideoTitle?: string
+  lastKnownThumbnail?: string
+  lastKnownPublishedAt?: string
+
+  lastKnownSeason?: number | null
+  lastBlockedVideoId?: string
+
+  linkedAnimeId?: string | null
+  linkedDownloadPageId?: string | null
+  episodeLimit?: number | null
+
+  lastKnownIsRange?: boolean
+  mergeMode?: boolean
+
+  baselineEpisodeDurationSec?: number
+
+  initialized?: boolean
+  approvalNotified?: boolean
+
+  ignoredVideoIds?: string[]
+
+  // ✅ NEW — per-title fuzzy match sensitivity (0.0 - 1.0). Default 0.7 if unset.
+  // Short keywords ("One Piece") benefit from a lower threshold (e.g. 0.5),
+  // long keywords benefit from a higher one (e.g. 0.85) to cut false positives.
+  matchThreshold?: number
+
+  // ✅ NEW — videos whose title contains any of these (case-insensitive) are
+  // skipped entirely before matching, e.g. ["reaction", "amv", "explained"]
+  excludeKeywords?: string[]
+
+  // ✅ NEW — video IDs already flagged as chronology-suspicious or
+  // description-only-detected, so we don't re-notify about them every run
+  flaggedVideoIds?: string[]
 }
 
+// ============ TRACKED CHANNEL (YouTube tracker) ============
 export interface ITrackedChannel {
   _id?: ObjectId
-  channelId: string          // YouTube channel ID (UC...)
+  channelId: string
   channelName: string
-  channelHandle: string       // jo admin ne likha tha, e.g. @AnimeHubHindi
-  uploadsPlaylistId: string   // ek baar fetch karke save, sasta check ke liye
+  channelHandle: string
+  channelThumbnail?: string
+  uploadsPlaylistId: string
   titles: ITrackedTitle[]
+  paused?: boolean
   createdBy?: string
   createdByUsername?: string
   createdAt?: Date
   updatedAt?: Date
+
+  consecutiveErrors?: number
 }
 
-// ============ TRACK NOTIFICATION ============
+// ============ TRACK NOTIFICATION (Updates Feed) ============
 export interface ITrackNotification {
   _id?: ObjectId
   message: string
   channelId: string
   channelName: string
   titleKeyword: string
-  videoId?: string
-  videoUrl?: string
+  newVideoId: string
+  newVideoTitle: string
+  newVideoUrl: string
+  newThumbnail?: string
+  newPart: number
+  oldVideoId?: string
+  oldVideoTitle?: string
+  oldThumbnail?: string
+  oldPart?: number
   isRead: boolean
   createdAt?: Date
+
+  notifType?: 'new_episode' | 'season_change' | 'limit_reached' | 'manual_review' | 'needs_approval' | 'auto_paused'
+  autoAdded?: boolean
+  linkedDownloadPageId?: string
+  linkedDownloadPageSlug?: string
+
+  suggestedRangeStart?: number
+  suggestedRangeEnd?: number
+  suggestedDurationMin?: number
+
+  // ✅ NEW — why this became a manual_review notification
+  reviewReason?: 'duration' | 'chronology' | 'description'
+
+  // ✅ NEW — fuzzy match confidence (0-1) for this video, when relevant
+  matchScore?: number
+
+  removedOldLink?: {
+    episode: number
+    episodeStart?: number
+    url: string
+    type?: string
+    quality?: string
+    language?: string
+  } | null
+  undone?: boolean
+}
+
+// ============ CRON RUN LOG ============
+export interface ICronRunLog {
+  _id?: ObjectId
+  runAt: Date
+  channelsChecked: number
+  updatesFound: number
+  errorCount: number
+  errorChannels?: string[]
+  // ✅ NEW — approximate total YouTube API quota units consumed this run
+  apiUnitsUsed?: number
+}
+
+// ============ CHECK LOG (diagnostic) ============
+export interface ICheckLogTitleEntry {
+  keyword: string
+  matchedVideoCount: number
+  entries: {
+    videoTitle: string
+    videoId: string
+    part: number | null
+    isRange: boolean
+    matchedFormat?: string
+    action: 'added' | 'replaced' | 'already-known' | 'no-format-detected' | 'season-blocked' | 'limit-blocked'
+      | 'chronology-suspicious' | 'description-unconfirmed' | 'reuploaded' | 'needs-approval'
+    matchScore?: number
+  }[]
+}
+
+export interface ICheckLog {
+  _id?: ObjectId
+  runAt: Date
+  channelId: string
+  channelName: string
+  totalRecentVideos: number
+  titles: ICheckLogTitleEntry[]
 }

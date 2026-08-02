@@ -567,7 +567,7 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
 
             {/* Expiry */}
             <div className={S.card + ' p-5'}>
-              <label className="block text-xs font-semibold text-gray-500 dark:text-[#5a6080] uppercase tracking-wider mb-3 flex items-center gap-2">
+              <label className="block text-xs font-semibold text-gray-500 dark:text-[#5a6080] uppercase tracking-wider mb-3 flexl items-center gap-2">
                 <Calendar size={13} /> Expiration Date *
               </label>
               <input type="datetime-local" className={S.input}
@@ -670,7 +670,7 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
 
             {/* Custom Option */}
             <div className={S.card + ' p-5'}>
-              <label className="block text-xs font-semibold text-gray-500 dark:text-[#5a6080] uppercase tracking-wider mb-4 flex items-center gap-2">
+              <label className="block text-xs font-semibold text-gray-500 dark:text-[#5a6080] uppercase tracking-wider mb-4 flexl items-center gap-2">
                 <Link size={13} /> Custom Option
               </label>
               <div className="flex gap-3">

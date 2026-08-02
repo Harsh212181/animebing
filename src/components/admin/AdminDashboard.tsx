@@ -1,4 +1,4 @@
-// src/components/admin/AdminDashboard.tsx - Clean Sidebar with SVG Icons + Day display
+ // src/components/admin/AdminDashboard.tsx - Clean Sidebar with SVG Icons + Day display
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Toaster, toast } from 'react-hot-toast';
 import AnimeListTable from './AnimeListTable';
@@ -50,12 +50,6 @@ const LINK_NAMES: Record<number, string> = {
 };
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
-const isSundayInIndia = (): boolean => {
-  const now = new Date();
-  const indiaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-  return indiaTime.getDay() === 0;
-};
-
 const getCurrentDayInIndia = (): string => {
   const now = new Date();
   const indiaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
@@ -418,8 +412,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   };
 
   const activeLinkCount = [1,2,3,4,5].filter(getLinkStatus).length;
-  const isSunday = isSundayInIndia();
-  const areTogglesDisabled = linkSettingsLoading || (linkSettings.autoSundayMode && isSunday);
+  
+  // ✅ Removed: isSunday, isSundayInIndia, and areTogglesDisabled with Sunday check
+  // Now only linkSettingsLoading disables toggles
+  const areTogglesDisabled = linkSettingsLoading;
 
   const handleLogout = () => {
     if (confirm('Are you sure you want to logout?')) {
@@ -714,12 +710,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               </div>
             )}
 
-            {linkSettings.autoSundayMode && isSunday && (
-              <p className="mt-3 text-center text-xs text-amber-400/80 bg-amber-500/10 rounded-lg py-2 border border-amber-500/20">
-                ⚠️ Auto Sunday mode is active — manual toggles are disabled today.
-              </p>
-            )}
-
+            {/* ✅ REMOVED: Auto Sunday warning block - no longer needed */}
+            
             <p className="mt-3 text-center text-[11px] text-gray-500">
               These settings apply only to anime that are not assigned to any group in the <span className="text-purple-300">Anime Link Control</span> tab. Link 5 is always controlled from here for all anime.
             </p>

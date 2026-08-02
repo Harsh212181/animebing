@@ -247,6 +247,7 @@ const DownloadLinkPage: React.FC = () => {
   }
 
   const isMovie = animeDetails?.contentType === 'Movie';
+  const isManga = animeDetails?.contentType === 'Manga';
   const downloadLinks = page.links.filter(link => link.type !== 'watch');
   const watchLinks = page.links.filter(link => link.type === 'watch');
 
@@ -349,9 +350,10 @@ const DownloadLinkPage: React.FC = () => {
                       <span className="px-2 py-0.5 rounded text-xs font-semibold bg-slate-800/60 text-slate-300 border border-slate-700">
                         {releaseYear}
                       </span>
+                      {/* FIX: Show Ch for manga, else EP */}
                       {!isMovie && currentEpisode > 0 && (
                         <span className="px-2 py-0.5 rounded text-xs font-semibold bg-gradient-to-r from-red-600 to-orange-600 text-white border border-red-500/30">
-                          EP {currentEpisode}
+                          {isManga ? 'Ch' : 'EP'} {currentEpisode}
                         </span>
                       )}
                     </div>
@@ -416,9 +418,10 @@ const DownloadLinkPage: React.FC = () => {
                           {subDubStatus}
                         </span>
                       )}
+                      {/* FIX: Show Ch for manga, else EP */}
                       {!isMovie && currentEpisode > 0 && (
                         <span className="px-2.5 py-1 rounded text-xs font-bold bg-gradient-to-r from-red-600 to-orange-600 text-white border border-red-500/30">
-                          EP {currentEpisode}
+                          {isManga ? 'Ch' : 'EP'} {currentEpisode}
                         </span>
                       )}
                     </div>
@@ -530,12 +533,15 @@ const DownloadLinkPage: React.FC = () => {
             <span className="ml-2 bg-gray-800 text-xs px-2 py-0.5 rounded-full">{watchLinks.length}</span>
             {activeTab === 'watch' && <span className="absolute bottom-0 left-0 w-full h-0.5 bg-gradient-to-r from-purple-600 to-pink-600 rounded-t-full"></span>}
           </button>
-          <button onClick={() => setActiveTab('download')} className={`flex items-center px-6 py-3 font-medium text-sm sm:text-base transition-all relative ${activeTab === 'download' ? 'text-purple-400' : 'text-gray-500 hover:text-gray-300'}`}>
-            <FaDownload className={`mr-2 ${activeTab === 'download' ? 'text-purple-400' : ''}`} />
-            Download
-            <span className="ml-2 bg-gray-800 text-xs px-2 py-0.5 rounded-full">{downloadLinks.length}</span>
-            {activeTab === 'download' && <span className="absolute bottom-0 left-0 w-full h-0.5 bg-gradient-to-r from-purple-600 to-pink-600 rounded-t-full"></span>}
-          </button>
+          {/* ✅ NEW: Download tab sirf tab dikhega jab download links hon */}
+          {downloadLinks.length > 0 && (
+            <button onClick={() => setActiveTab('download')} className={`flex items-center px-6 py-3 font-medium text-sm sm:text-base transition-all relative ${activeTab === 'download' ? 'text-purple-400' : 'text-gray-500 hover:text-gray-300'}`}>
+              <FaDownload className={`mr-2 ${activeTab === 'download' ? 'text-purple-400' : ''}`} />
+              Download
+              <span className="ml-2 bg-gray-800 text-xs px-2 py-0.5 rounded-full">{downloadLinks.length}</span>
+              {activeTab === 'download' && <span className="absolute bottom-0 left-0 w-full h-0.5 bg-gradient-to-r from-purple-600 to-pink-600 rounded-t-full"></span>}
+            </button>
+          )}
         </div>
 
         {activeTab === 'watch' && (
@@ -593,15 +599,12 @@ const DownloadLinkPage: React.FC = () => {
           </div>
         )}
 
-        {activeTab === 'download' && (
+        {/* ✅ NEW: Download tab content bhi sirf tab dikhega jab download links hon (activeTab safety) */}
+        {activeTab === 'download' && downloadLinks.length > 0 && (
           <div className="space-y-3">
-            {downloadLinks.length === 0 ? (
-              <p className="text-center text-gray-500 py-8">No download links available.</p>
-            ) : (
-              downloadLinks.map((link, idx) => (
-                <LinkCard key={idx} link={link} isMovie={isMovie} onAction={() => window.open(link.url, '_blank')} actionIcon={<FaDownload />} actionLabel="Download" />
-              ))
-            )}
+            {downloadLinks.map((link, idx) => (
+              <LinkCard key={idx} link={link} isMovie={isMovie} onAction={() => window.open(link.url, '_blank')} actionIcon={<FaDownload />} actionLabel="Download" />
+            ))}
           </div>
         )}
       </div>
@@ -625,7 +628,13 @@ const LinkCard: React.FC<{
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex-1">
           <div className="flex items-center gap-3 mb-2">
-            <span className="text-lg font-semibold text-white">{isMovie ? 'Movie' : `Episode ${link.episode}`}</span>
+            <span className="text-lg font-semibold text-white">
+              {isMovie
+                ? 'Movie'
+                : (link.episodeStart && link.episodeStart !== link.episode
+                    ? `Episode ${link.episodeStart}-${link.episode}`
+                    : `Episode ${link.episode}`)}
+            </span>
             {link.quality && (
               <span className={`bg-gradient-to-r ${qualityGradient} text-white text-xs px-3 py-1 rounded-full font-medium shadow-lg`}>{link.quality}</span>
             )}

@@ -1,7 +1,10 @@
- import { MongoClient, Db, ObjectId, Filter, Document } from 'mongodb'
+import { MongoClient, Db, ObjectId, Filter, Document } from 'mongodb'
 
 export async function getDb(mongoUri: string, dbName: string): Promise<Db> {
-  const client = new MongoClient(mongoUri)
+  const client = new MongoClient(mongoUri, {
+    connectTimeoutMS: 5000,
+    serverSelectionTimeoutMS: 5000,
+  })
   await client.connect()
   return client.db(dbName)
 }

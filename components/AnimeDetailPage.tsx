@@ -573,7 +573,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                         </span>
                         {!isMovie && currentEpisode > 0 && (
                           <span className="px-2 py-0.5 rounded text-xs font-semibold bg-gradient-to-r from-red-600 to-orange-600 text-white border border-red-500/30">
-                            EP {currentEpisode}
+                            {isManga ? 'Ch' : 'EP'} {currentEpisode}
                           </span>
                         )}
                       </div>
@@ -640,7 +640,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                         )}
                         {!isMovie && currentEpisode > 0 && (
                           <span className="px-2.5 py-1 rounded text-xs font-bold bg-gradient-to-r from-red-600 to-orange-600 text-white border border-red-500/30">
-                            EP {currentEpisode}
+                            {isManga ? 'Ch' : 'EP'} {currentEpisode}
                           </span>
                         )}
                       </div>

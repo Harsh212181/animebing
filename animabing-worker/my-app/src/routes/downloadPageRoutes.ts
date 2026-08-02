@@ -3,6 +3,7 @@ import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
 import { findMany, findOne, insertOne, updateOne, deleteOne, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
 import { IDownloadPage } from '../models/types'
+import { syncAnimeEpisodeCountFromPage, syncEpisodeTitleFromDownloadPage } from '../services/episodeSyncService'   // ✅ UPDATED: both functions imported
 
 const downloadPageRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
@@ -90,10 +91,6 @@ downloadPageRoutes.get('/', adminAuth, async (c) => {
       .toArray()
 
     // ✅ Reliable sub-admin detection: 'subadmins' collection se verify karo
-    // (NOTE: koi separate 'admins' collection nahi hai — super admin ka
-    // createdBy literal string 'admin' hota hai, jabki sub-admin ka
-    // createdBy unki subadmins._id ObjectId string hoti hai). Isse naam
-    // (createdByUsername) pe depend nahi karna padta.
     const creatorIds = [...new Set(
       animes.map((a: any) => a.createdBy?.toString()).filter(Boolean)
     )]
@@ -129,12 +126,13 @@ downloadPageRoutes.get('/', adminAuth, async (c) => {
   }
 })
 
-// CREATE
+// CREATE — ✅ Allows creating a page with no links (links field optional)
 downloadPageRoutes.post('/', adminAuth, async (c) => {
   try {
     const { animeId, slug, title, episodeNumber, links } = await c.req.json()
 
-    if (!animeId || !slug || !episodeNumber || !links || links.length === 0) {
+    // Required fields: animeId and slug
+    if (!animeId || !slug) {
       return c.json({ error: 'Missing required fields' }, 400)
     }
     if (!isValidObjectId(animeId)) return c.json({ error: 'Invalid animeId' }, 400)
@@ -145,14 +143,32 @@ downloadPageRoutes.post('/', adminAuth, async (c) => {
     const anime = await findOne('animes', { _id: toObjectId(animeId) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
     if (!anime) return c.json({ error: 'Anime not found' }, 400)
 
-    // ✅ No cap on link count anymore — watch/download links are unlimited
-    for (const link of links) {
+    // ✅ links optional – if not provided, use empty array
+    const sanitizedLinks = Array.isArray(links) ? links : []
+
+    // Validate each link if any
+    for (const link of sanitizedLinks) {
       if (!link.episode || !link.url) return c.json({ error: 'Each link needs episode and url' }, 400)
       if (!link.type) link.type = 'download'
     }
 
-    const page = { animeId: toObjectId(animeId), slug, title: title || 'Download', episodeNumber, links, isHidden: false }
-    await insertOne('downloadpages', page, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    // episodeNumber default to 1 if not provided
+    const page = { 
+      animeId: toObjectId(animeId), 
+      slug, 
+      title: title || 'Download', 
+      episodeNumber: episodeNumber || 1, 
+      links: sanitizedLinks, 
+      isHidden: false 
+    }
+    const result = await insertOne('downloadpages', page, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    // ✅ UPDATED: agar links ke saath page bana hai toh anime.currentEpisode aur episode titles sync karo
+    if (sanitizedLinks.length > 0) {
+      await syncAnimeEpisodeCountFromPage(result.insertedId.toString(), c.env.MONGODB_URI, c.env.MONGODB_DB)
+      await syncEpisodeTitleFromDownloadPage(result.insertedId.toString(), c.env.MONGODB_URI, c.env.MONGODB_DB)   // ✅ NEW
+    }
+
     return c.json(page, 201)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -181,7 +197,6 @@ downloadPageRoutes.put('/:id', adminAuth, async (c) => {
       updateData.episodeNumber = episodeNumber
     }
     if (links) {
-      // ✅ No cap on link count anymore — watch/download links are unlimited
       for (const link of links) {
         if (!link.episode || !link.url) return c.json({ error: 'Each link needs episode and url' }, 400)
         if (!link.type) link.type = 'download'
@@ -190,6 +205,13 @@ downloadPageRoutes.put('/:id', adminAuth, async (c) => {
     }
 
     const updated = await updateOne('downloadpages', { _id: toObjectId(id) }, updateData, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    // ✅ UPDATED: agar links change hue hain toh anime.currentEpisode aur episode titles sync karo
+    if (links) {
+      await syncAnimeEpisodeCountFromPage(id!, c.env.MONGODB_URI, c.env.MONGODB_DB)
+      await syncEpisodeTitleFromDownloadPage(id!, c.env.MONGODB_URI, c.env.MONGODB_DB)   // ✅ NEW
+    }
+
     return c.json(updated)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -265,7 +287,6 @@ downloadPageRoutes.get('/:slug', async (c) => {
     }
 
     // ✅ Backward compatible format — React component ke liye same structure
-    // animeId ko populated object se replace karo (thumbnail ke liye)
     return c.json({
       ...(page as any),
       animeId: animeData || (page as any).animeId
