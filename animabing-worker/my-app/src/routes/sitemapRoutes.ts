@@ -38,7 +38,7 @@ sitemapRoutes.get('/sitemap-anime.xml', async (c) => {
 
     const animeList = await findMany<IAnime>(
       'animes', {},
-      { projection: { slug: 1, updatedAt: 1, title: 1, thumbnail: 1 } },
+      { projection: { slug: 1, updatedAt: 1, title: 1, thumbnail: 1, createdAt: 1 } },
       c.env.MONGODB_URI, c.env.MONGODB_DB
     )
 
@@ -54,7 +54,9 @@ sitemapRoutes.get('/sitemap-anime.xml', async (c) => {
     animeList.forEach((anime) => {
       const lastmod = anime.updatedAt
         ? new Date(anime.updatedAt).toISOString().split('T')[0]
-        : today
+        : (anime as any).createdAt
+          ? new Date((anime as any).createdAt).toISOString().split('T')[0]
+          : today
 
       xml += `
   <url>

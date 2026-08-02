@@ -1,6 +1,7 @@
-import { Hono } from 'hono'
+ import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { findMany, findOne, insertOne, updateOne, deleteOne, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
+import { ObjectId } from 'mongodb'
 import { IPoll } from '../models/types'
 
 const pollRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
@@ -177,6 +178,7 @@ pollRoutes.post('/admin/create', async (c) => {
     const validatedOptions = options.map((opt: any, index: number) => {
       if (!opt.title || !opt.animeId) throw new Error('Each option needs title and animeId')
       return {
+        _id: new ObjectId(),   // ✅ FIX — bina isse vote karna hamesha fail hota hai
         animeId: opt.animeId,
         title: opt.title.trim(),
         image: opt.image || '',
@@ -279,6 +281,7 @@ pollRoutes.put('/admin/:id', async (c) => {
     if (options !== undefined) {
       if (options.length < 4 || options.length > 10) return c.json({ success: false, message: '4-10 options required' }, 400)
       updateData.options = options.map((opt: any, i: number) => ({
+        _id: opt._id ? toObjectId(opt._id) : new ObjectId(),   // ✅ FIX — purani option ki _id preserve karo, nayi ko generate karo
         animeId: opt.animeId, title: opt.title.trim(),
         image: opt.image || '', votes: opt.votes || 0,
         order: i, isCustom: opt.animeId.startsWith('custom_')

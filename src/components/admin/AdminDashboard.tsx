@@ -293,6 +293,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [downloadStats, setDownloadStats] = useState({ totalPages: 0, totalDownloadEpisodes: 0 });
   const [pendingReportsCount, setPendingReportsCount] = useState(0);
   const [unreadShortMessagesCount, setUnreadShortMessagesCount] = useState(0);
+  const [trackUnreadCount, setTrackUnreadCount] = useState(0); // ✅ NEW — Track List unread updates
 
   const token = localStorage.getItem('adminToken');
   const authHeaders = () => ({ headers: { Authorization: `Bearer ${token}` } });
@@ -318,6 +319,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         const inst = axios.create({ timeout: 10000, headers: { Authorization: `Bearer ${token}` } });
         const res = await inst.get(`${API_BASE}/short-users/admin/messages-count`);
         setUnreadShortMessagesCount(res.data?.unread || 0);
+      } catch { /* ignore */ }
+      try {
+        const inst = axios.create({ timeout: 10000, headers: { Authorization: `Bearer ${token}` } });
+        const res = await inst.get(`${API_BASE}/track/notifications/summary`);
+        const unread = (res.data?.total || 0) - (res.data?.completed || 0);
+        setTrackUnreadCount(unread > 0 ? unread : 0);
       } catch { /* ignore */ }
     }, 30000);
     return () => clearInterval(interval);
@@ -347,6 +354,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       try {
         const msgCountRes = await inst.get(`${API_BASE}/short-users/admin/messages-count`);
         setUnreadShortMessagesCount(msgCountRes.data?.unread || 0);
+      } catch { /* ignore */ }
+
+      // ✅ NEW — Track List unread updates count
+      try {
+        const trackRes = await inst.get(`${API_BASE}/track/notifications/summary`);
+        const unread = (trackRes.data?.total || 0) - (trackRes.data?.completed || 0);
+        setTrackUnreadCount(unread > 0 ? unread : 0);
       } catch { /* ignore */ }
     } catch (err: any) {
       const msg = err.response?.data?.error || err.message || 'Failed to load dashboard data.';
@@ -483,6 +497,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               {tabId === 'shortener' && unreadShortMessagesCount > 0 && (
                 <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full ring-2 ring-[#13121e]" />
               )}
+              {tabId === 'trackList' && trackUnreadCount > 0 && (
+                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full ring-2 ring-[#13121e]" />
+              )}
             </button>
           ))}
         </div>
@@ -533,7 +550,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             <NavItem tabId="polls"           activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
             <NavItem tabId="social"          activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
             <NavItem tabId="notes"           activeTab={activeTab} collapsed={false} onClick={setActiveTab} /> {/* 👈 Notes */}
-            <NavItem tabId="trackList"       activeTab={activeTab} collapsed={false} onClick={setActiveTab} /> {/* ✅ Track List */}
+            <NavItem tabId="trackList"       activeTab={activeTab} collapsed={false} onClick={setActiveTab} badge={trackUnreadCount} /> {/* ✅ Track List with badge */}
           </SidebarSection>
           <SidebarSection label="Downloads">
             <NavItem tabId="downloadPages"   activeTab={activeTab} collapsed={false} onClick={setActiveTab} />

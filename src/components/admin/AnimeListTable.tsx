@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import type { Anime } from '../../types';
 import axios from 'axios';
-import toast from 'react-hot-toast';
+import toast, { Toaster } from 'react-hot-toast';
 import { clearAnimeCache } from '../../../services/animeService';
 import { getAdminToken } from '../../../utils/authToken';
 
@@ -347,6 +347,41 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
 
   return (
     <div className="py-4 px-0 space-y-6 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 min-h-screen">
+      
+      {/* ✅ Toaster with fixed position */}
+      <Toaster
+        position="top-center"
+        toastOptions={{
+          duration: 4000,
+          style: {
+            background: '#1e293b',
+            color: '#fff',
+            border: '1px solid #334155',
+            borderRadius: '12px',
+            padding: '12px 16px',
+            fontSize: '14px',
+            maxWidth: '400px',
+          },
+          success: {
+            style: {
+              background: '#065f46',
+              border: '1px solid #10b981',
+            },
+          },
+          error: {
+            style: {
+              background: '#7f1d1d',
+              border: '1px solid #ef4444',
+            },
+          },
+          loading: {
+            style: {
+              background: '#1e293b',
+              border: '1px solid #f59e0b',
+            },
+          },
+        }}
+      />
 
       {/* Header */}
       <div className="flex items-center gap-3 px-3">
@@ -360,15 +395,39 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
         </h1>
       </div>
 
-      {/* Delete Modal */}
+      {/* ✅ Delete Modal - Fixed to center of screen */}
       {deleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-gray-800 border border-white/20 rounded-2xl shadow-xl p-6 max-w-md w-full mx-4">
-            <h3 className="text-xl font-semibold text-white mb-4">Confirm Delete</h3>
-            <p className="text-slate-300 mb-6">Delete "{deleteConfirm.animeTitle}"? This will also delete all episodes/chapters.</p>
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[999]">
+          <div 
+            className="bg-gray-800 border border-white/20 rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-red-500/20 rounded-xl">
+                <svg className="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </div>
+              <h3 className="text-xl font-semibold text-white">Confirm Delete</h3>
+            </div>
+            <p className="text-slate-300 mb-6 text-sm leading-relaxed">
+              Delete "<span className="text-white font-medium">{deleteConfirm.animeTitle}</span>"? 
+              <br />
+              <span className="text-red-400/70 text-xs">⚠️ This will also delete all episodes/chapters.</span>
+            </p>
             <div className="flex justify-end gap-3">
-              <button onClick={cancelDelete} className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg">Cancel</button>
-              <button onClick={confirmDelete} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg">Delete</button>
+              <button 
+                onClick={cancelDelete} 
+                className="bg-white/10 hover:bg-white/20 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={confirmDelete} 
+                className="bg-red-600 hover:bg-red-500 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition shadow-lg shadow-red-600/20"
+              >
+                Delete Permanently
+              </button>
             </div>
           </div>
         </div>

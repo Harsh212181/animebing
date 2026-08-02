@@ -120,6 +120,16 @@ trackRoutes.delete('/channel/:channelId', async (c) => {
 
   await deleteOne('trackedChannels', { _id: toObjectId(channelId) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
 
+  // ✅ NEW — is channel ki saari purani notifications bhi cascade-delete karo
+  if (channel) {
+    const relatedNotifs = await findMany<ITrackNotification>(
+      'trackNotifications', { channelId: channel.channelId }, {}, c.env.MONGODB_URI, c.env.MONGODB_DB
+    )
+    for (const n of relatedNotifs) {
+      await deleteOne('trackNotifications', { _id: n._id! }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    }
+  }
+
   const admin = c.get('admin')
   await logActivity({
     actorId: admin?.id || 'unknown',
@@ -385,12 +395,28 @@ trackRoutes.delete('/channel/:channelId/title/:titleId', async (c) => {
   )
   if (!channel) return c.json({ success: false, error: 'Channel nahi mila' }, 404)
 
+  // ✅ NEW — pehle title ka data nikaal lo, taaki uske keyword se notifications match kar saken
+  const titleToRemove = (channel.titles || []).find(t => t.id === titleId)
+
   const newTitles = (channel.titles || []).filter(t => t.id !== titleId)
 
   await updateOne(
     'trackedChannels', { _id: toObjectId(channelId) }, { titles: newTitles },
     c.env.MONGODB_URI, c.env.MONGODB_DB
   )
+
+  // ✅ NEW — is title ki saari purani notifications bhi cascade-delete karo
+  if (titleToRemove) {
+    const relatedNotifs = await findMany<ITrackNotification>(
+      'trackNotifications',
+      { channelId: channel.channelId, titleKeyword: titleToRemove.keyword },
+      {}, c.env.MONGODB_URI, c.env.MONGODB_DB
+    )
+    for (const n of relatedNotifs) {
+      await deleteOne('trackNotifications', { _id: n._id! }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    }
+  }
+
   return c.json({ success: true })
 })
 

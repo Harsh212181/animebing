@@ -28,7 +28,7 @@ const Icon = {
   ),
   edit: (cls = 'w-4 h-4') => (
     <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2V5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
     </svg>
   ),
   refresh: (cls = 'w-4 h-4') => (
@@ -452,6 +452,19 @@ const TrackListManager: React.FC = () => {
   const [clearingLogs, setClearingLogs] = useState(false);
   const [clearingRuns, setClearingRuns] = useState(false);
 
+  // ✅ Channel delete confirmation modal state
+  const [channelDeleteConfirm, setChannelDeleteConfirm] = useState<{ channelId: string; channelName: string } | null>(null);
+  const [deletingChannel, setDeletingChannel] = useState(false);
+
+  // ✅ NEW — Notification delete confirmation modal state
+  const [notificationDeleteConfirm, setNotificationDeleteConfirm] = useState<{ 
+    notificationId: string; 
+    count?: number; 
+    isBulk?: boolean;
+    title?: string;
+  } | null>(null);
+  const [deletingNotification, setDeletingNotification] = useState(false);
+
   // Channel Feed visibility
   const [showChannelFeed, setShowChannelFeed] = useState<Record<string, boolean>>({});
 
@@ -538,8 +551,17 @@ const TrackListManager: React.FC = () => {
   };
 
   const clearAllLogs = async () => {
-    if (!confirm('Sabhi check logs hamesha ke liye remove karna hai?')) return;
-    setClearingLogs(true);
+    // ✅ Custom modal for clear all logs
+    setNotificationDeleteConfirm({ 
+      notificationId: 'all-logs', 
+      count: logs.length,
+      isBulk: true,
+      title: 'All Check Logs'
+    });
+  };
+
+  const confirmClearLogs = async () => {
+    setDeletingNotification(true);
     try {
       const { data } = await axios.delete(`${API_BASE}/track/logs/clear-all`, authHeaders());
       toast.success(`${data.count} logs clear ho gaye`);
@@ -547,13 +569,23 @@ const TrackListManager: React.FC = () => {
     } catch {
       toast.error('Clear nahi ho saka');
     } finally {
-      setClearingLogs(false);
+      setDeletingNotification(false);
+      setNotificationDeleteConfirm(null);
     }
   };
 
   const clearAllRuns = async () => {
-    if (!confirm('Sabhi run history hamesha ke liye remove karna hai?')) return;
-    setClearingRuns(true);
+    // ✅ Custom modal for clear all runs
+    setNotificationDeleteConfirm({ 
+      notificationId: 'all-runs', 
+      count: runs.length,
+      isBulk: true,
+      title: 'All Run History'
+    });
+  };
+
+  const confirmClearRuns = async () => {
+    setDeletingNotification(true);
     try {
       const { data } = await axios.delete(`${API_BASE}/track/runs/clear-all`, authHeaders());
       toast.success(`${data.count} runs clear ho gaye`);
@@ -561,7 +593,8 @@ const TrackListManager: React.FC = () => {
     } catch {
       toast.error('Clear nahi ho saka');
     } finally {
-      setClearingRuns(false);
+      setDeletingNotification(false);
+      setNotificationDeleteConfirm(null);
     }
   };
 
@@ -584,15 +617,24 @@ const TrackListManager: React.FC = () => {
     }
   };
 
-  const removeChannel = async (channelId: string) => {
-    if (!confirm('Poora channel remove karna hai?')) return;
+  // ✅ CHANGED — ab sirf modal khol deta hai, actual delete confirmDeleteChannel karta hai
+  const removeChannel = (channelId: string, channelName: string) => {
+    setChannelDeleteConfirm({ channelId, channelName });
+  };
+
+  const confirmDeleteChannel = async () => {
+    if (!channelDeleteConfirm) return;
+    setDeletingChannel(true);
     try {
-      await axios.delete(`${API_BASE}/track/channel/${channelId}`, authHeaders());
+      await axios.delete(`${API_BASE}/track/channel/${channelDeleteConfirm.channelId}`, authHeaders());
       toast.success('Channel remove ho gaya');
-      if (selectedChannelId === channelId) setSelectedChannelId(null);
+      if (selectedChannelId === channelDeleteConfirm.channelId) setSelectedChannelId(null);
       loadData();
     } catch {
       toast.error('Remove nahi ho saka');
+    } finally {
+      setDeletingChannel(false);
+      setChannelDeleteConfirm(null);
     }
   };
 
@@ -1036,14 +1078,30 @@ const TrackListManager: React.FC = () => {
     }
   };
 
-  const deleteNotification = async (id: string) => {
-    if (!confirm('Ye update hamesha ke liye remove karna hai?')) return;
+  // ✅ CHANGED — ab modal kholta hai for single notification delete
+  const deleteNotification = (id: string) => {
+    const notif = notifications.find(n => n._id === id);
+    if (notif) {
+      setNotificationDeleteConfirm({
+        notificationId: id,
+        title: notif.titleKeyword || notif.channelName,
+        isBulk: false,
+      });
+    }
+  };
+
+  const confirmDeleteNotification = async () => {
+    if (!notificationDeleteConfirm) return;
+    setDeletingNotification(true);
     try {
-      await axios.delete(`${API_BASE}/track/notifications/${id}`, authHeaders());
+      await axios.delete(`${API_BASE}/track/notifications/${notificationDeleteConfirm.notificationId}`, authHeaders());
       toast.success('Remove ho gaya');
       loadData();
     } catch {
       toast.error('Remove nahi ho saka');
+    } finally {
+      setDeletingNotification(false);
+      setNotificationDeleteConfirm(null);
     }
   };
 
@@ -1059,15 +1117,42 @@ const TrackListManager: React.FC = () => {
     }
   };
 
-  const deleteAllInList = async (list: TrackNotification[]) => {
+  // ✅ CHANGED — ab modal kholta hai for bulk delete
+  const deleteAllInList = (list: TrackNotification[]) => {
     if (list.length === 0) return;
-    if (!confirm(`${list.length} updates hamesha ke liye remove karna hai? Ye wapas nahi ho sakta.`)) return;
+    setNotificationDeleteConfirm({
+      notificationId: 'bulk-notifications',
+      count: list.length,
+      isBulk: true,
+      title: 'All Notifications in this list',
+    });
+  };
+
+  const confirmBulkDeleteNotifications = async () => {
+    if (!notificationDeleteConfirm || notificationDeleteConfirm.notificationId !== 'bulk-notifications') return;
+    setDeletingNotification(true);
     try {
-      await Promise.all(list.map((n) => axios.delete(`${API_BASE}/track/notifications/${n._id}`, authHeaders())));
-      toast.success(`${list.length} updates remove ho gaye`);
+      // Get the list based on context - this is called from within the component's context
+      // We'll handle this differently - the list is passed from the caller
+      // Let's use a different approach: we'll store the list in a ref or state
+      // For simplicity, we'll use the current pending list
+      const currentList = showGlobalFeed ? 
+        (showAllUpdatesGlobal ? notifications : notifications.filter((n) => !n.isRead)) :
+        (selectedChannel ? 
+          (showAllUpdates ? 
+            notifications.filter((n) => n.channelId === selectedChannel?.channelId) : 
+            notifications.filter((n) => n.channelId === selectedChannel?.channelId && !n.isRead)) : 
+          []
+        );
+      
+      await Promise.all(currentList.map((n) => axios.delete(`${API_BASE}/track/notifications/${n._id}`, authHeaders())));
+      toast.success(`${currentList.length} updates remove ho gaye`);
       loadData();
     } catch {
       toast.error('Clear all fail ho gaya');
+    } finally {
+      setDeletingNotification(false);
+      setNotificationDeleteConfirm(null);
     }
   };
 
@@ -1098,8 +1183,21 @@ const TrackListManager: React.FC = () => {
 
   // ============ UNDO ============
   const undoNotification = async (n: TrackNotification) => {
-    if (!confirm(`"${n.titleKeyword}" ka ye auto-added link page se hata dein?`)) return;
-    setUndoing(prev => ({ ...prev, [n._id]: true }));
+    // ✅ Custom modal for undo
+    setNotificationDeleteConfirm({
+      notificationId: `undo-${n._id}`,
+      title: n.titleKeyword || n.channelName,
+      isBulk: false,
+    });
+  };
+
+  const confirmUndoNotification = async () => {
+    if (!notificationDeleteConfirm || !notificationDeleteConfirm.notificationId.startsWith('undo-')) return;
+    const notifId = notificationDeleteConfirm.notificationId.replace('undo-', '');
+    const n = notifications.find(n => n._id === notifId);
+    if (!n) { setNotificationDeleteConfirm(null); return; }
+    
+    setDeletingNotification(true);
     try {
       await axios.post(`${API_BASE}/track/notifications/${n._id}/undo`, {}, authHeaders());
       toast.success('Undo ho gaya — link page se hata diya gaya');
@@ -1107,7 +1205,8 @@ const TrackListManager: React.FC = () => {
     } catch (err: any) {
       toast.error(err.response?.data?.error || 'Undo fail ho gaya');
     } finally {
-      setUndoing(prev => ({ ...prev, [n._id]: false }));
+      setDeletingNotification(false);
+      setNotificationDeleteConfirm(null);
     }
   };
 
@@ -1260,7 +1359,14 @@ const TrackListManager: React.FC = () => {
             )}
             {n.autoAdded && !n.undone && n.linkedDownloadPageId && (
               <button
-                onClick={() => undoNotification(n)}
+                onClick={() => {
+                  // Use the new undo modal
+                  setNotificationDeleteConfirm({
+                    notificationId: `undo-${n._id}`,
+                    title: n.titleKeyword || n.channelName,
+                    isBulk: false,
+                  });
+                }}
                 disabled={!!undoing[n._id]}
                 className="text-[11px] px-2.5 py-1 rounded-lg bg-orange-500/20 text-orange-300 border border-orange-500/30 hover:bg-orange-500/30 transition flex items-center gap-1 disabled:opacity-50"
               >
@@ -1516,7 +1622,7 @@ const TrackListManager: React.FC = () => {
           {Icon.bell('w-3.5 h-3.5')} Channel Feed
         </button>
         <button
-          onClick={() => removeChannel(ch._id)}
+          onClick={() => removeChannel(ch._id, ch.channelName)}
           className="px-3 py-1.5 text-xs rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-300 transition flex items-center gap-1.5 ml-auto"
         >
           {Icon.trash('w-3.5 h-3.5')} Remove Channel
@@ -2036,7 +2142,7 @@ const TrackListManager: React.FC = () => {
           {pendingChannelNotifs.length === 0 ? (
             <p className="text-sm text-slate-500 text-center py-8">Is channel ke liye koi naya update nahi hai abhi</p>
           ) : (
-            <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+            <div className="space-y-3">
               {pendingChannelNotifs.map((n) => (
                 <NotifCard key={n._id} n={n} showChannelTag={false} />
               ))}
@@ -2047,8 +2153,99 @@ const TrackListManager: React.FC = () => {
     </div>
   );
 
+  // ============ RENDER ============
   return (
     <div className="space-y-6">
+      {/* ✅ NEW — Custom styled channel delete confirmation modal (no browser confirm popup) */}
+      {channelDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-red-500/30 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="p-2.5 bg-red-500/20 rounded-xl">
+                {Icon.trash('w-5 h-5 text-red-300')}
+              </div>
+              <h3 className="text-lg font-bold text-white">Channel Remove Karo</h3>
+            </div>
+            <p className="text-sm text-slate-400 mb-6">
+              <span className="text-white font-semibold">"{channelDeleteConfirm.channelName}"</span> aur uske saare tracked titles hamesha ke liye remove ho jayenge. Ye action wapas nahi ho sakta.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setChannelDeleteConfirm(null)}
+                disabled={deletingChannel}
+                className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white/80 font-medium transition disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteChannel}
+                disabled={deletingChannel}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 rounded-lg text-white font-medium transition shadow-lg shadow-red-600/20 flex items-center gap-2"
+              >
+                {deletingChannel && Icon.spinner('w-3.5 h-3.5')}
+                Remove Karo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ NEW — Custom styled notification delete confirmation modal */}
+      {notificationDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-red-500/30 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="p-2.5 bg-red-500/20 rounded-xl">
+                {Icon.trash('w-5 h-5 text-red-300')}
+              </div>
+              <h3 className="text-lg font-bold text-white">
+                {notificationDeleteConfirm.isBulk ? 'Sabhi Remove Karo' : 'Update Remove Karo'}
+              </h3>
+            </div>
+            <p className="text-sm text-slate-400 mb-6">
+              {notificationDeleteConfirm.isBulk ? (
+                <>
+                  <span className="text-white font-semibold">{notificationDeleteConfirm.count}</span> updates hamesha ke liye remove ho jayenge. Ye action wapas nahi ho sakta.
+                </>
+              ) : (
+                <>
+                  <span className="text-white font-semibold">"{notificationDeleteConfirm.title}"</span> ka ye update hamesha ke liye remove ho jayega. Ye action wapas nahi ho sakta.
+                </>
+              )}
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setNotificationDeleteConfirm(null)}
+                disabled={deletingNotification}
+                className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white/80 font-medium transition disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (notificationDeleteConfirm.notificationId === 'all-logs') {
+                    confirmClearLogs();
+                  } else if (notificationDeleteConfirm.notificationId === 'all-runs') {
+                    confirmClearRuns();
+                  } else if (notificationDeleteConfirm.notificationId === 'bulk-notifications') {
+                    confirmBulkDeleteNotifications();
+                  } else if (notificationDeleteConfirm.notificationId.startsWith('undo-')) {
+                    confirmUndoNotification();
+                  } else {
+                    confirmDeleteNotification();
+                  }
+                }}
+                disabled={deletingNotification}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 rounded-lg text-white font-medium transition shadow-lg shadow-red-600/20 flex items-center gap-2"
+              >
+                {deletingNotification && Icon.spinner('w-3.5 h-3.5')}
+                {notificationDeleteConfirm.notificationId.startsWith('undo-') ? 'Undo Karo' : 'Remove Karo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ---------- Header ---------- */}
       <div className="flex items-center gap-3">
         <span className="text-red-500">{Icon.youtube('w-8 h-8')}</span>
@@ -2282,7 +2479,7 @@ const TrackListManager: React.FC = () => {
               </button>
             </div>
 
-            <div className="space-y-3 max-h-[400px] overflow-y-auto">
+            <div className="space-y-3">
               {pendingGlobalNotifs.length === 0 ? (
                 <p className="text-sm text-slate-500 text-center py-6">Koi naya update nahi</p>
               ) : (

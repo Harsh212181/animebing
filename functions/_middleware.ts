@@ -181,6 +181,43 @@ function injectMeta(html: string, meta: {
   return html;
 }
 
+// ========== BODY FALLBACK CONTENT (for Googlebot / crawlers) ==========
+// Ye function <body> ke bilkul start mein real, visible, crawlable text daalta hai.
+// React mount hone ke baad apna UI is content ke upar render kar dega (normal user
+// experience change nahi hota), lekin Googlebot ko pehli hi HTML response mein
+// asli content mil jaata hai — isse "Discovered/Crawled - not indexed" fix hota hai.
+function injectBodyContent(html: string, seo: {
+  h1: string;
+  description: string;
+  extraLines?: string[];   // e.g. episode list, genres, etc.
+  imageUrl?: string;
+  imageAlt?: string;
+}): string {
+  const h1    = esc(seo.h1);
+  const desc  = esc(seo.description);
+  const img   = seo.imageUrl ? esc(seo.imageUrl) : '';
+  const alt   = seo.imageAlt ? esc(seo.imageAlt) : h1;
+
+  const extraHtml = (seo.extraLines || [])
+    .filter(Boolean)
+    .map(line => `<p>${esc(line)}</p>`)
+    .join('\n    ');
+
+  const block = `
+  <div id="seo-fallback-content" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;">
+    <h1>${h1}</h1>
+    ${img ? `<img src="${img}" alt="${alt}" />` : ''}
+    <p>${desc}</p>
+    ${extraHtml}
+  </div>`;
+
+  // <body ...> tag ke turant baad insert karo, chahe usme attributes ho ya na ho
+  if (/<body[^>]*>/i.test(html)) {
+    return html.replace(/<body[^>]*>/i, (match) => `${match}\n${block}`);
+  }
+  return html;
+}
+
 export async function onRequest(context: CFContext): Promise<Response> {
   const { request, next, env } = context;
   const url  = new URL(request.url);
@@ -400,6 +437,12 @@ export async function onRequest(context: CFContext): Promise<Response> {
         structuredData: structuredData || undefined,
       });
 
+      // ✅ NAYA: Static pages mein body fallback content (homepage, anime list, etc.)
+      html = injectBodyContent(html, {
+        h1: page.title.split('|')[0].trim(),
+        description: page.description,
+      });
+
       return new Response(html, {
         headers: {
           'Content-Type':  'text/html;charset=UTF-8',
@@ -479,6 +522,23 @@ export async function onRequest(context: CFContext): Promise<Response> {
           type:           anime.contentType === 'Movie' ? 'video.movie' : 'video.tv_show',
           structuredData: buildStructuredData(anime, `${SITE_URL}/detail/${String(anime.slug || slug)}`, maxEp)
         });
+
+        // ✅ NAYA: body mein real content bhi daalo
+        const genreLine = Array.isArray((anime as any).genreList) && (anime as any).genreList.length > 0
+          ? `Genres: ${(anime as any).genreList.join(', ')}`
+          : '';
+        const epLine = maxEp > 0
+          ? `Total Episodes: ${maxEp}`
+          : '';
+        const typeLine = `Content Type: ${String(anime.contentType || 'Anime')} | Status: ${String((anime as any).subDubStatus || '')}`;
+
+        html = injectBodyContent(html, {
+          h1: titleText,
+          description: rawDesc,
+          imageUrl: toOgImage(String(anime.thumbnail || LOGO_URL)),
+          imageAlt: `${titleText} poster`,
+          extraLines: [typeLine, genreLine, epLine].filter(Boolean)
+        });
       }
 
       return new Response(html, {
@@ -545,6 +605,15 @@ export async function onRequest(context: CFContext): Promise<Response> {
           image:       toOgImage(anime ? String(anime.thumbnail || LOGO_URL) : LOGO_URL),
           url:         `${SITE_URL}/download/${rawSlug}`,
           type:        'website'
+        });
+
+        // ✅ NAYA: download page body fallback content
+        html = injectBodyContent(html, {
+          h1: `${animeName}${suffix}`,
+          description: description,
+          imageUrl: toOgImage(anime ? String(anime.thumbnail || LOGO_URL) : LOGO_URL),
+          imageAlt: `${animeName} download`,
+          extraLines: [`Available: ${epRange}`]
         });
       }
 
