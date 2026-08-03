@@ -12,6 +12,7 @@
 import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
+import { Toaster } from 'react-hot-toast'; // ✅ ADDED for toast notifications
 
 import type { Anime, FilterType, ContentType, ContentTypeFilter } from './src/types';
 import Header from './components/Header';
@@ -989,10 +990,12 @@ const MainApp: React.FC = () => {
   );
 };
 
-// ✅ FINAL APP WITH HELMETPROVIDER + ANIMEPROVIDER WRAPPER
+// ✅ FINAL APP WITH HELMETPROVIDER + ANIMEPROVIDER + TOASTER WRAPPER
 const App: React.FC = () => {
   return (
     <HelmetProvider>
+      {/* ✅ Toaster added here — renders all toast notifications from anywhere */}
+      <Toaster position="top-right" toastOptions={{ duration: 4000 }} />
       <Router>
         <AnimeProvider>
           <Routes>

@@ -262,6 +262,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [sidebarPinned, setSidebarPinned] = useState(false);
   const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const handleSidebarMouseEnter = () => {
     if (sidebarPinned) return;
@@ -598,7 +599,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           <h1 className="text-sm font-semibold text-white">{TAB_LABELS[activeTab]}</h1>
           <div className="ml-auto flex items-center gap-2">
             <button
-              onClick={() => loadInitialData(true)}
+              onClick={() => {
+                loadInitialData(true);
+                setRefreshKey(k => k + 1);
+              }}
               disabled={isRefreshing}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition border border-white/[0.06] disabled:opacity-50"
             >
@@ -736,7 +740,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
           {/* Active Tab Content */}
           <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4 sm:p-6 min-h-[300px]">
-            <TabContent activeTab={activeTab} token={token || ''} />
+            <TabContent key={`${activeTab}-${refreshKey}`} activeTab={activeTab} token={token || ''} />
           </div>
         </main>
       </div>

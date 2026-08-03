@@ -1,4 +1,4 @@
- // ============================================================
+// ============================================================
 // src/components/admin/TrackListManager.tsx
 // ============================================================
 import React, { useState, useEffect, useRef } from 'react';
@@ -198,7 +198,7 @@ const formatDuration = (sec?: number | null) => {
   const m = Math.floor((sec % 3600) / 60);
   const s = sec % 60;
   if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  return `${m}:${String(s).padStart(2, '0')}`;
+  return `${m}:${String(m).padStart(2, '0')}`;
 };
 
 /* ---------- Page label helper ---------- */
@@ -392,6 +392,12 @@ const TrackListManager: React.FC = () => {
   const [showRunHistory, setShowRunHistory] = useState(false);
   const [runningAll, setRunningAll] = useState(false);
   const [showAllUpdatesGlobal, setShowAllUpdatesGlobal] = useState(false);
+
+  // ✅ NEW loading states for per‑operation indicators
+  const [syncingPage, setSyncingPage] = useState<Record<string, boolean>>({});
+  const [syncingEpStatus, setSyncingEpStatus] = useState<Record<string, boolean>>({});
+  const [refreshingInfo, setRefreshingInfo] = useState<Record<string, boolean>>({});
+  const [togglingPause, setTogglingPause] = useState<Record<string, boolean>>({});
 
   // Unified top row states
   const [showConflicts, setShowConflicts] = useState(false);
@@ -638,13 +644,31 @@ const TrackListManager: React.FC = () => {
     }
   };
 
+  // ✅ UPDATED with loading state
   const refreshChannelInfo = async (channelId: string) => {
+    setRefreshingInfo(prev => ({ ...prev, [channelId]: true }));
     try {
       await axios.post(`${API_BASE}/track/channel/${channelId}/refresh-info`, {}, authHeaders());
       toast.success('Logo/naam update ho gaya');
       loadData();
     } catch {
       toast.error('Refresh nahi ho saka');
+    } finally {
+      setRefreshingInfo(prev => ({ ...prev, [channelId]: false }));
+    }
+  };
+
+  // ✅ UPDATED with loading state
+  const togglePause = async (channelId: string) => {
+    setTogglingPause(prev => ({ ...prev, [channelId]: true }));
+    try {
+      const { data } = await axios.post(`${API_BASE}/track/channel/${channelId}/toggle-pause`, {}, authHeaders());
+      toast.success(data.paused ? 'Channel pause ho gaya' : 'Channel resume ho gaya (error counter reset)');
+      loadData();
+    } catch {
+      toast.error('Pause/Resume fail ho gaya');
+    } finally {
+      setTogglingPause(prev => ({ ...prev, [channelId]: false }));
     }
   };
 
@@ -659,16 +683,6 @@ const TrackListManager: React.FC = () => {
       loadData();
     } finally {
       setCheckingNow((prev) => ({ ...prev, [channelId]: false }));
-    }
-  };
-
-  const togglePause = async (channelId: string) => {
-    try {
-      const { data } = await axios.post(`${API_BASE}/track/channel/${channelId}/toggle-pause`, {}, authHeaders());
-      toast.success(data.paused ? 'Channel pause ho gaya' : 'Channel resume ho gaya (error counter reset)');
-      loadData();
-    } catch {
-      toast.error('Pause/Resume fail ho gaya');
     }
   };
 
@@ -1587,28 +1601,31 @@ const TrackListManager: React.FC = () => {
       <div className="flex items-center gap-2 flex-wrap">
         <button
           onClick={() => togglePause(ch._id)}
+          disabled={!!togglingPause[ch._id]}
           className={`px-3 py-1.5 text-xs rounded-lg border transition flex items-center gap-1.5 ${
             ch.paused
               ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30'
               : 'bg-amber-500/20 text-amber-300 border-amber-500/30 hover:bg-amber-500/30'
-          }`}
+          } disabled:opacity-50`}
         >
-          {ch.paused ? Icon.play('w-3.5 h-3.5') : Icon.pause('w-3.5 h-3.5')}
+          {togglingPause[ch._id] ? Icon.spinner('w-3.5 h-3.5') : (ch.paused ? Icon.play('w-3.5 h-3.5') : Icon.pause('w-3.5 h-3.5'))}
           {ch.paused ? 'Resume' : 'Pause'}
         </button>
         <button
           onClick={() => checkNow(ch._id)}
           disabled={checkingNow[ch._id]}
-          className="px-3 py-1.5 text-xs rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 transition flex items-center gap-1.5"
+          className="px-3 py-1.5 text-xs rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 transition flex items-center gap-1.5 disabled:opacity-50"
         >
           {checkingNow[ch._id] ? Icon.spinner('w-3.5 h-3.5') : Icon.play('w-3.5 h-3.5')}
           Check Now
         </button>
         <button
           onClick={() => refreshChannelInfo(ch._id)}
-          className="px-3 py-1.5 text-xs rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 transition flex items-center gap-1.5"
+          disabled={!!refreshingInfo[ch._id]}
+          className="px-3 py-1.5 text-xs rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 transition flex items-center gap-1.5 disabled:opacity-50"
         >
-          {Icon.refresh('w-3.5 h-3.5')} Refresh Info
+          {refreshingInfo[ch._id] ? Icon.spinner('w-3.5 h-3.5') : Icon.refresh('w-3.5 h-3.5')}
+          Refresh Info
         </button>
         {/* Channel Feed toggle button */}
         <button
@@ -1972,8 +1989,10 @@ const TrackListManager: React.FC = () => {
                       >
                         Edit Link
                       </button>
+                      {/* ✅ UPDATED: Page Se Sync with loading */}
                       <button
                         onClick={async () => {
+                          setSyncingPage(prev => ({ ...prev, [t.id]: true }));
                           try {
                             const { data } = await axios.post(
                               `${API_BASE}/track/channel/${ch._id}/title/${t.id}/sync-with-page`,
@@ -1987,15 +2006,19 @@ const TrackListManager: React.FC = () => {
                             }
                           } catch (err: any) {
                             toast.error(err.response?.data?.error || 'Sync fail ho gaya');
+                          } finally {
+                            setSyncingPage(prev => ({ ...prev, [t.id]: false }));
                           }
                         }}
-                        className="text-[10px] px-2.5 py-1 rounded-full bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/30 transition"
+                        disabled={!!syncingPage[t.id]}
+                        className="text-[10px] px-2.5 py-1 rounded-full bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/30 transition disabled:opacity-50 flex items-center gap-1"
                       >
-                        ^_~ Page Se Sync 
+                        {syncingPage[t.id] && Icon.spinner('w-3 h-3')} Page Se Sync
                       </button>
-                      {/* ✅ NEW — Episode Status Manager wala currentEpisode manually update karne ke liye */}
+                      {/* ✅ UPDATED: Ep Status Update with loading */}
                       <button
                         onClick={async () => {
+                          setSyncingEpStatus(prev => ({ ...prev, [t.id]: true }));
                           try {
                             const { data } = await axios.post(
                               `${API_BASE}/track/channel/${ch._id}/title/${t.id}/sync-episode-status`,
@@ -2008,11 +2031,14 @@ const TrackListManager: React.FC = () => {
                             }
                           } catch (err: any) {
                             toast.error(err.response?.data?.error || 'Episode Status update fail ho gaya');
+                          } finally {
+                            setSyncingEpStatus(prev => ({ ...prev, [t.id]: false }));
                           }
                         }}
-                        className="text-[10px] px-2.5 py-1 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 transition"
+                        disabled={!!syncingEpStatus[t.id]}
+                        className="text-[10px] px-2.5 py-1 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 transition disabled:opacity-50 flex items-center gap-1"
                       >
-                        Ep Status Update
+                        {syncingEpStatus[t.id] && Icon.spinner('w-3 h-3')} Ep Status Update
                       </button>
                       <button
                         onClick={() => unlinkTitle(ch._id, t.id)}
