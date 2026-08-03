@@ -1,6 +1,4 @@
- // ============================================================
 // src/components/admin/TrackListManager.tsx
-// ============================================================
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
@@ -198,11 +196,42 @@ const formatDuration = (sec?: number | null) => {
   const m = Math.floor((sec % 3600) / 60);
   const s = sec % 60;
   if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  return `${m}:${String(m).padStart(2, '0')}`;
+  return `${m}:${String(s).padStart(2, '0')}`;
 };
 
 /* ---------- Page label helper ---------- */
 const pageLabel = (index: number) => `Page ${index + 1}`;
+
+/* ---------- Helper ---------- */
+const formatIST = (isoDate: string) =>
+  new Date(isoDate).toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  }) + ' IST';
+
+/* ---------- High-res YouTube thumbnail with fallback chain ---------- */
+const HighResThumb: React.FC<{ videoId: string }> = ({ videoId }) => {
+  const [srcIndex, setSrcIndex] = useState(0);
+  const qualities = ['maxresdefault', 'sddefault', 'hqdefault', 'mqdefault'];
+  const src = `https://i.ytimg.com/vi/${videoId}/${qualities[srcIndex]}.jpg`;
+
+  return (
+    <img
+      src={src}
+      alt="Enlarged thumbnail"
+      className="max-w-full max-h-full rounded-xl shadow-2xl object-contain"
+      onClick={(e) => e.stopPropagation()}
+      onError={() => {
+        if (srcIndex < qualities.length - 1) setSrcIndex(srcIndex + 1);
+      }}
+    />
+  );
+};
 
 /* ---------- Searchable Dropdown Component ---------- */
 const SearchableDropdown: React.FC<{
@@ -350,18 +379,6 @@ const PageDropdown: React.FC<{
   );
 };
 
-/* ---------- Helper ---------- */
-const formatIST = (isoDate: string) =>
-  new Date(isoDate).toLocaleString('en-IN', {
-    timeZone: 'Asia/Kolkata',
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-  }) + ' IST';
-
 /* ---------- Main Component ---------- */
 const TrackListManager: React.FC = () => {
   // ============ STATE ============
@@ -447,6 +464,9 @@ const TrackListManager: React.FC = () => {
   const [previewScanDepth, setPreviewScanDepth] = useState(50);
   const [browseScanDepth, setBrowseScanDepth] = useState(150);
   const [expandedInfoId, setExpandedInfoId] = useState<string | null>(null);
+
+  // ✅ NEW — enlarged thumbnail viewer state (videoId se high-res image banayenge)
+  const [enlargedVideoId, setEnlargedVideoId] = useState<string | null>(null);
 
   // Conflicts
   const [conflicts, setConflicts] = useState<ConflictEntry[]>([]);
@@ -1286,18 +1306,28 @@ const TrackListManager: React.FC = () => {
       }`}
     >
       <div className="flex items-start gap-3">
+        {/* ✅ UPDATED — oldThumbnail with cursor-zoom-in and onClick for enlarged viewer */}
         {n.oldThumbnail && (
           <div className="flex-shrink-0 text-center">
-            <img src={n.oldThumbnail} className="w-20 h-12 object-cover rounded-lg border border-white/10 opacity-60" />
+            <img
+              src={n.oldThumbnail}
+              className="w-20 h-12 object-cover rounded-lg border border-white/10 opacity-60 cursor-zoom-in hover:opacity-90 transition"
+              onClick={() => n.oldVideoId && setEnlargedVideoId(n.oldVideoId)}
+            />
             <p className="text-[9px] text-slate-500 mt-1 uppercase font-semibold">Old · Part {n.oldPart ?? '?'}</p>
           </div>
         )}
 
         {n.oldThumbnail && <div className="flex-shrink-0 self-center text-slate-500">→</div>}
 
+        {/* ✅ UPDATED — newThumbnail with cursor-zoom-in and onClick for enlarged viewer */}
         {n.newThumbnail && (
           <div className="flex-shrink-0 text-center">
-            <img src={n.newThumbnail} className="w-20 h-12 object-cover rounded-lg border border-emerald-500/40" />
+            <img
+              src={n.newThumbnail}
+              className="w-20 h-12 object-cover rounded-lg border border-emerald-500/40 cursor-zoom-in hover:opacity-90 transition"
+              onClick={() => setEnlargedVideoId(n.newVideoId)}
+            />
             <p className="text-[9px] text-emerald-400 mt-1 uppercase font-semibold">New · Part {n.newPart}</p>
           </div>
         )}
@@ -1531,7 +1561,12 @@ const TrackListManager: React.FC = () => {
                           onClick={(e) => e.stopPropagation()}
                           className="w-4 h-4 flex-shrink-0"
                         />
-                        <img src={v.thumbnail} className="w-16 h-9 object-cover rounded flex-shrink-0" />
+                        {/* ✅ UPDATED — Browse panel thumbnail with cursor-zoom-in */}
+                        <img
+                          src={v.thumbnail}
+                          className="w-16 h-9 object-cover rounded flex-shrink-0 cursor-zoom-in hover:opacity-80 transition"
+                          onClick={(e) => { e.stopPropagation(); setEnlargedVideoId(v.videoId); }}
+                        />
                         <div className="flex-1 min-w-0">
                           <p className="text-[11px] text-white truncate">{v.videoTitle}</p>
                           <p className="text-[9px] text-slate-500">
@@ -1821,7 +1856,12 @@ const TrackListManager: React.FC = () => {
                                 onClick={(e) => e.stopPropagation()}
                                 className="w-3.5 h-3.5 flex-shrink-0"
                               />
-                              <img src={v.thumbnail} className="w-12 h-7 object-cover rounded flex-shrink-0" />
+                              {/* ✅ UPDATED — Preview panel thumbnail with cursor-zoom-in */}
+                              <img
+                                src={v.thumbnail}
+                                className="w-12 h-7 object-cover rounded flex-shrink-0 cursor-zoom-in hover:opacity-80 transition"
+                                onClick={(e) => { e.stopPropagation(); setEnlargedVideoId(v.videoId); }}
+                              />
                               <div className="flex-1 min-w-0">
                                 <p className="text-[10px] text-white truncate">{v.videoTitle}</p>
                                 <p className="text-[9px] text-slate-500 flex items-center gap-1.5">
@@ -2191,6 +2231,24 @@ const TrackListManager: React.FC = () => {
   // ============ RENDER ============
   return (
     <div className="space-y-6">
+      {/* ✅ NEW — Enlarged Thumbnail Viewer (YouTube jaisa high-res) */}
+      {enlargedVideoId && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4"
+          onClick={() => setEnlargedVideoId(null)}
+        >
+          <button
+            onClick={() => setEnlargedVideoId(null)}
+            className="absolute top-4 right-4 text-white/70 hover:text-white p-2 bg-white/10 hover:bg-white/20 rounded-full transition"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <HighResThumb videoId={enlargedVideoId} />
+        </div>
+      )}
+
       {/* ✅ NEW — Custom styled channel delete confirmation modal (no browser confirm popup) */}
       {channelDeleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
