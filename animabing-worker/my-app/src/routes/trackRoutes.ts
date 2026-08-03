@@ -1,4 +1,4 @@
- // ============================================================
+// ============================================================
 // animabing-worker/my-app/src/routes/trackRoutes.ts
 // ============================================================
 
@@ -9,7 +9,7 @@ import {
   findMany, findOne, insertOne, updateOne, deleteOne, countDocuments, toObjectId, isValidObjectId
 } from '../services/mongoService'
 import { ITrackedChannel, ITrackNotification } from '../models/types'
-import { processChannelUpdates, fetchChannelInfoByHandle, fetchRecentVideos, fetchVideoDurations, matchAndParseVideos } from '../services/youtubeCheckService'
+import { processChannelUpdates, fetchChannelInfoByHandle, fetchRecentVideos, fetchVideoDurations, matchAndParseVideos, parseEpisodeOverride } from '../services/youtubeCheckService'
 import { logActivity } from '../services/activityLogService'
 import { syncAnimeEpisodeCountFromPage } from '../services/episodeSyncService'   // ✅ NEW
 
@@ -224,15 +224,20 @@ trackRoutes.post('/channel/:channelId/quick-bulk-add', async (c) => {
   const existingUrls = new Set(existingLinks.map((l: any) => l.url))
   const newLinks = selected
     .filter(v => !existingUrls.has(`https://youtube.com/watch?v=${v.video.videoId}`))
-    .map(v => ({
-      episode: episodeOverrides?.[v.video.videoId] !== undefined ? Number(episodeOverrides[v.video.videoId]) : (v.part as number),
-      episodeStart: v.isRange ? v.rangeStart : undefined,
-      url: `https://youtube.com/watch?v=${v.video.videoId}`,
-      type: 'watch',
-      quality: '',
-      language: '',
-      durationSec: durations[v.video.videoId] ?? undefined,
-    }))
+    .map(v => {
+      const override = episodeOverrides?.[v.video.videoId] !== undefined
+        ? parseEpisodeOverride(episodeOverrides[v.video.videoId])
+        : null
+      return {
+        episode: override ? override.episode : (v.part as number),
+        episodeStart: override ? override.episodeStart : (v.isRange ? v.rangeStart : undefined),
+        url: `https://youtube.com/watch?v=${v.video.videoId}`,
+        type: 'watch',
+        quality: '',
+        language: '',
+        durationSec: durations[v.video.videoId] ?? undefined,
+      }
+    })
 
   if (newLinks.length === 0) return c.json({ success: false, error: 'Sabhi selected videos already page me maujood hain' }, 400)
 
@@ -272,7 +277,6 @@ trackRoutes.post('/channel/:channelId/title/add', async (c) => {
   }
 
   const newTitles = [
-    ...(channel.titles || []),
     {
       id: crypto.randomUUID(),
       keyword,
@@ -280,6 +284,7 @@ trackRoutes.post('/channel/:channelId/title/add', async (c) => {
       matchThreshold: typeof matchThreshold === 'number' ? matchThreshold : undefined,
       excludeKeywords: Array.isArray(excludeKeywords) ? excludeKeywords.filter(Boolean) : undefined,
     },
+    ...(channel.titles || []),
   ]
 
   await updateOne(
@@ -316,7 +321,7 @@ trackRoutes.post('/channel/:channelId/title/bulk-add', async (c) => {
     toAdd.push({ id: crypto.randomUUID(), keyword, lastKnownPart: 0 })
   }
 
-  const newTitles = [...(channel.titles || []), ...toAdd]
+  const newTitles = [...toAdd, ...(channel.titles || [])]
   await updateOne(
     'trackedChannels', { _id: toObjectId(channelId) }, { titles: newTitles },
     c.env.MONGODB_URI, c.env.MONGODB_DB
@@ -762,12 +767,12 @@ trackRoutes.get('/channel/:channelId/title/:titleId/all-videos', async (c) => {
   })
 })
 
-// ============ ✅ bulk-add — ab duration save karta hai ============
+// ============ ✅ bulk-add — ab duration save karta hai, episodeOverrides support, imported parseEpisodeOverride ============
 trackRoutes.post('/channel/:channelId/title/:titleId/bulk-add', async (c) => {
   const channelId = c.req.param('channelId')
   const titleId = c.req.param('titleId')
   const { downloadPageId, videoIds, episodeOverrides } = await c.req.json() as {
-    downloadPageId: string; videoIds: string[]; episodeOverrides?: Record<string, number>
+    downloadPageId: string; videoIds: string[]; episodeOverrides?: Record<string, string | number>
   }
   if (!isValidObjectId(channelId) || !isValidObjectId(downloadPageId)) return c.json({ success: false, error: 'Invalid ID' }, 400)
   if (!Array.isArray(videoIds) || videoIds.length === 0) return c.json({ success: false, error: 'Videos select karo' }, 400)
@@ -793,17 +798,23 @@ trackRoutes.post('/channel/:channelId/title/:titleId/bulk-add', async (c) => {
 
   const existingLinks = page.links || []
   const existingUrls = new Set(existingLinks.map((l: any) => l.url))
+  
   const newLinks = selected
     .filter(v => !existingUrls.has(`https://youtube.com/watch?v=${v.video.videoId}`))
-    .map(v => ({
-      episode: episodeOverrides?.[v.video.videoId] !== undefined ? Number(episodeOverrides[v.video.videoId]) : (v.part as number),
-      episodeStart: v.isRange ? v.rangeStart : undefined,
-      url: `https://youtube.com/watch?v=${v.video.videoId}`,
-      type: 'watch',
-      quality: '',
-      language: '',
-      durationSec: durations[v.video.videoId] ?? undefined,   // ✅ NEW
-    }))
+    .map(v => {
+      const override = episodeOverrides?.[v.video.videoId] !== undefined
+        ? parseEpisodeOverride(episodeOverrides[v.video.videoId])
+        : null
+      return {
+        episode: override ? override.episode : (v.part as number),
+        episodeStart: override ? override.episodeStart : (v.isRange ? v.rangeStart : undefined),
+        url: `https://youtube.com/watch?v=${v.video.videoId}`,
+        type: 'watch',
+        quality: '',
+        language: '',
+        durationSec: durations[v.video.videoId] ?? undefined,   // ✅ NEW
+      }
+    })
 
   if (newLinks.length === 0) return c.json({ success: false, error: 'Sabhi selected videos already page me maujood hain' }, 400)
 

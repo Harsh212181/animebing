@@ -1,5 +1,4 @@
- // ============================================================
-// animabing-worker/my-app/src/services/youtubeCheckService.ts
+ // animabing-worker/my-app/src/services/youtubeCheckService.ts
 // ============================================================
 
 import { ITrackedChannel, ITrackedTitle, ITrackNotification, ICheckLog } from '../models/types'
@@ -14,9 +13,22 @@ interface YouTubeVideoItem {
   description: string
 }
 
-// ============ ✅ NEW — API quota tracking ============
-// Caller creates { units: 0 } and passes it in; we bump it on every YouTube
-// API call so the total can be stored in cronRunLogs.apiUnitsUsed.
+// ============ ✅ NEW — manual override parse karo: single number ya "start-end" range ============
+export function parseEpisodeOverride(raw: string | number): { episode: number; episodeStart?: number } | null {
+  const str = String(raw).trim()
+  const rangeMatch = str.match(/^(\d+)\s*-\s*(\d+)$/)
+  if (rangeMatch) {
+    const start = Number(rangeMatch[1])
+    const end = Number(rangeMatch[2])
+    if (Number.isNaN(start) || Number.isNaN(end)) return null
+    return { episode: end, episodeStart: start }
+  }
+  const single = Number(str)
+  if (Number.isNaN(single)) return null
+  return { episode: single }
+}                            // ============================================================
+
+// ============ ✅ API quota tracking ============
 export interface QuotaTracker {
   units: number
 }
@@ -24,9 +36,7 @@ function addUnits(tracker: QuotaTracker | undefined, n: number) {
   if (tracker) tracker.units += n
 }
 
-// ============ ✅ NEW — retry with backoff for transient YouTube API failures ============
-// A single 5xx/429/network blip used to fail the whole channel check and push
-// it toward auto-pause. Now we retry a couple of times with a short delay.
+// ============ ✅ retry with backoff ============
 async function fetchWithRetry(url: string, retries = 2, delayMs = 600): Promise<Response> {
   let lastErr: any
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -110,7 +120,6 @@ export async function fetchVideoDurations(
 ): Promise<Record<string, number>> {
   if (videoIds.length === 0) return {}
   const map: Record<string, number> = {}
-  // ✅ FIX — YouTube videos.list API max 50 IDs per call leta hai, isliye chunks me batao
   for (let i = 0; i < videoIds.length; i += 50) {
     const batch = videoIds.slice(i, i + 50)
     const url = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${batch.join(',')}&key=${apiKey}`
@@ -151,7 +160,6 @@ function extractPartInfo(title: string): PartInfo {
   m = title.match(/^\s*\(\s*0*(\d+)\s*\)/)
   if (m) return { part: parseInt(m[1], 10), isRange: false, matchedFormat: 'paren-start (12)' }
 
-  // ✅ NEW — leading plus-separated compilation range: "61+62)", "(15+16+17)"
   m = title.match(/^\s*\(?\s*((?:0*\d+\s*\+\s*)+0*\d+)\s*\)?/)
   if (m) {
     const nums = m[1].split('+').map(s => parseInt(s.trim(), 10)).filter(n => !Number.isNaN(n))
@@ -160,10 +168,6 @@ function extractPartInfo(title: string): PartInfo {
     }
   }
 
-  // ✅ NEW — leading "116)" style: number directly followed by a closing
-  // paren at the very start of the title, no opening "(" required.
-  // Anchored to ^ so it only matches when the number leads the title —
-  // safe against false positives from random numbers mid-title.
   m = title.match(/^\s*0*(\d+)\s*\)/)
   if (m) return { part: parseInt(m[1], 10), isRange: false, matchedFormat: 'leading-number-paren (12))' }
 
@@ -194,7 +198,6 @@ function extractSeasonNumber(title: string): number | null {
 }
 
 // ============ Fuzzy Keyword Match ============
-// ✅ CHANGED — default threshold, but callers can pass their own per-title
 const DEFAULT_KEYWORD_MATCH_THRESHOLD = 0.7
 
 function normalizeWords(text: string): string[] {
@@ -216,7 +219,7 @@ function keywordMatchScore(keyword: string, title: string): number {
   return matched / keywordWords.length
 }
 
-// ============ ✅ Shared Matching Function (browse UI + auto-check + test-match preview) ============
+// ============ Shared Matching Function ============
 export interface ParsedVideoItem {
   video: YouTubeVideoItem
   part: number | null
@@ -224,10 +227,7 @@ export interface ParsedVideoItem {
   rangeStart?: number
   matchedFormat?: string
   season: number | null
-  // ✅ NEW — fuzzy match confidence (0-1), kept instead of discarded
   matchScore: number
-  // ✅ NEW — true if the part number came from the description, not the title
-  // (less reliable — random numbers in descriptions can false-positive)
   fromDescription: boolean
 }
 
@@ -249,7 +249,6 @@ export function matchAndParseVideos(
 
   const scored = recentVideos
     .filter(v => !ignoredIds.includes(v.videoId))
-    // ✅ NEW — exclusion keywords filter out unwanted matches (reactions, AMVs, etc.)
     .filter(v => !excludeList.some(ex => v.title.toLowerCase().includes(ex)))
     .map(v => ({ video: v, score: keywordMatchScore(keyword, v.title) }))
 
@@ -275,20 +274,17 @@ export function matchAndParseVideos(
   })
 }
 
-// ============ ✅ NEW — scan depth defaults ============
-const INITIAL_SCAN_DEPTH = 1500   // pehli baar / preview ke liye (approval se pehle)
-const TRACKED_SCAN_DEPTH = 50     // ek baar initialized ho jaye, normal checks isi se chalti hain
+// ============ Scan depth defaults ============
+const INITIAL_SCAN_DEPTH = 1500
+const TRACKED_SCAN_DEPTH = 50
 
-// ============ ✅ Ek title ke saare matched videos fetch karo (browse/approval UI ke liye) ============
-// ✅ CHANGED — ab poora ITrackedTitle leta hai taaki threshold/excludeKeywords bhi use ho sakein
 export async function fetchAllVideosForTitle(
   channel: ITrackedChannel,
   title: ITrackedTitle,
   apiKey: string,
   quotaTracker?: QuotaTracker,
-  scanDepth?: number   // ✅ CHANGED — optional, na diya toh auto-decide hoga
+  scanDepth?: number
 ): Promise<ParsedVideoItem[]> {
-  // ✅ NEW — agar caller ne depth nahi diya, title ke status se decide karo
   const depth = scanDepth ?? (title.initialized ? TRACKED_SCAN_DEPTH : INITIAL_SCAN_DEPTH)
   const recentVideos = await fetchRecentVideos(channel.uploadsPlaylistId, apiKey, depth, quotaTracker)
   return matchAndParseVideos(recentVideos, title.keyword, title.ignoredVideoIds || [], {
@@ -315,17 +311,12 @@ export interface ProcessedUpdate {
   linkedDownloadPageId?: string
   linkedDownloadPageSlug?: string
   removedOldLink?: any
-  // ✅ NEW — why a manual_review notification was raised
   reviewReason?: 'duration' | 'chronology' | 'description'
   matchScore?: number
 }
 
-// ✅ NEW — how much earlier than the previous known video a "newer" episode
-// is allowed to be published before we treat it as suspicious (fuzzy match
-// probably grabbed the wrong video).
-const CHRONOLOGY_TOLERANCE_MS = 2 * 24 * 60 * 60 * 1000 // 2 days grace
+const CHRONOLOGY_TOLERANCE_MS = 2 * 24 * 60 * 60 * 1000
 
-// ============ ✅ MAIN — check + auto-add/replace + notify + log + approval-gate ============
 export async function processChannelUpdates(
   channel: ITrackedChannel,
   apiKey: string,
@@ -354,12 +345,10 @@ export async function processChannelUpdates(
     })
     logEntry.matchedVideoCount = parsedAll.length
 
-    // ---------- ✅ FIRST-TIME APPROVAL GATE ----------
     const distinctParts = new Set(parsedAll.filter(p => p.part !== null).map(p => p.part))
     const isInitialized = trackedTitle.initialized === true || distinctParts.size <= 1
 
     if (!isInitialized) {
-      // ✅ PATCH — jab matches hon par approval pending ho, log me dikhao
       if (parsedAll.length > 0) {
         logEntry.entries.push({
           videoTitle: `${parsedAll.length} video(s) matched — approval pending, Track List Manager me jaake approve karo`,
@@ -373,7 +362,7 @@ export async function processChannelUpdates(
 
       if (!trackedTitle.approvalNotified) {
         await insertOne('trackNotifications', {
-          message: `${channel.channelName} — "${trackedTitle.keyword}" me ${distinctParts.size} episodes/parts mile hain! Pehle inhe approve karo — Track List Manager ke "All Titles" section me jaake anime/page select karo.`,
+          message: `${channel.channelName} — "${trackedTitle.keyword}" me ${distinctParts.size} episodes/parts mile hain! Pehle inhe approve karo — Track List Manager ke "All Titles" section me anime/page select karo.`,
           channelId: channel.channelId,
           channelName: channel.channelName,
           titleKeyword: trackedTitle.keyword,
@@ -406,9 +395,6 @@ export async function processChannelUpdates(
       }
     }
 
-    // ✅ CHANGED — split into reliable (title-based) vs description-based parts.
-    // Description-based ones are NOT auto-added anymore (feature #8) —
-    // they go into a manual-review queue instead.
     const reliableWithPart = parsed.filter((x): x is typeof x & { part: number } => x.part !== null && !x.fromDescription)
     const descriptionWithPart = parsed.filter((x): x is typeof x & { part: number } => x.part !== null && x.fromDescription)
 
@@ -424,7 +410,6 @@ export async function processChannelUpdates(
     const alreadyFlagged = new Set(trackedTitle.flaggedVideoIds || [])
     const newFlaggedIds: string[] = []
 
-    // ---------- ✅ Duration-fallback (manual review suggestion) ----------
     const stillNoNumber = parsed.filter(p => p.part === null)
     const durationSuggestions: { video: YouTubeVideoItem; suggestedStart: number; suggestedEnd: number; durationMin: number }[] = []
     if (stillNoNumber.length > 0 && trackedTitle.baselineEpisodeDurationSec) {
@@ -460,7 +445,6 @@ export async function processChannelUpdates(
     }
 
     for (const item of newOnes) {
-      // ---------- SEASON CHANGE GUARD ----------
       if (curSeason !== null && item.season !== null && item.season !== curSeason) {
         if (lastBlockedVideoId !== item.video.videoId) {
           results.push({
@@ -480,10 +464,6 @@ export async function processChannelUpdates(
         break
       }
 
-      // ---------- ✅ NEW — CHRONOLOGY SANITY CHECK ----------
-      // Agar "naya" part number wala video, publish date me purane known
-      // video se kaafi purana hai — likely fuzzy match galat video pakad
-      // raha hai. Auto-add skip karo, sirf ek baar flag/notify karo.
       if (prevPublishedAt) {
         const prevTime = new Date(prevPublishedAt).getTime()
         const curTime = new Date(item.video.publishedAt).getTime()
@@ -503,7 +483,7 @@ export async function processChannelUpdates(
             newFlaggedIds.push(item.video.videoId)
             mutated = true
           }
-          continue // skip auto-add, don't update prevXxx — re-evaluated next run unless flagged
+          continue
         }
       }
 
@@ -522,10 +502,6 @@ export async function processChannelUpdates(
             matchedFormat: item.matchedFormat, action: 'already-known', matchScore: item.matchScore,
           })
         } else {
-          // ---------- ✅ NEW — RE-UPLOAD / DUPLICATE-EPISODE DETECTION ----------
-          // Same episode number already on the page (non-range), lekin video
-          // ID alag hai (channel ne re-upload kiya, audio fix, etc.) — purana
-          // link replace karo instead of dono ko rakhna.
           const reuploadMatch = !item.isRange
             ? pageLinksLocal.find((l: any) => l.type === 'watch' && l.episode === item.part && l.episodeStart === undefined)
             : undefined
@@ -637,7 +613,6 @@ export async function processChannelUpdates(
       mutated = true
     }
 
-    // ---------- ✅ NEW — description-based parts: manual review only, never auto-added ----------
     const descriptionNewOnes = descriptionWithPart.filter(
       p => p.part > trackedTitle.lastKnownPart && !alreadyFlagged.has(p.video.videoId) && !newFlaggedIds.includes(p.video.videoId)
     )
@@ -657,7 +632,6 @@ export async function processChannelUpdates(
       mutated = true
     }
 
-    // ---------- Duration-suggestions ko log/notification me daalo ----------
     for (const sug of durationSuggestions) {
       results.push({
         titleId: trackedTitle.id, keyword: trackedTitle.keyword,
@@ -679,12 +653,11 @@ export async function processChannelUpdates(
         try {
           await updateOne('animes', { _id: toObjectId(trackedTitle.linkedAnimeId) }, { lastContentAdded: new Date() }, mongoUri, dbName)
         } catch {
-          // silent — non-critical
+          // silent
         }
       }
     }
 
-    // ✅ NEW — sync anime episode counts after page changed (pageId chahiye, animeId nahi)
     if (trackedTitle.linkedDownloadPageId) {
       try {
         await syncAnimeEpisodeCountFromPage(trackedTitle.linkedDownloadPageId, mongoUri, dbName)
@@ -693,9 +666,6 @@ export async function processChannelUpdates(
       }
     }
 
-    // ✅ NEW — merge in newly flagged video IDs regardless of whether the
-    // page itself changed, so we don't spam the same manual_review notif
-    // on every future run.
     const mergedFlaggedIds = newFlaggedIds.length > 0
       ? Array.from(new Set([...(trackedTitle.flaggedVideoIds || []), ...newFlaggedIds]))
       : trackedTitle.flaggedVideoIds
@@ -726,7 +696,6 @@ export async function processChannelUpdates(
     await updateOne('trackedChannels', { _id: channel._id! }, { titles: updatedTitles }, mongoUri, dbName)
   }
 
-  // ---------- Notifications ----------
   for (const r of results) {
     let message = ''
     if (r.notifType === 'manual_review') {

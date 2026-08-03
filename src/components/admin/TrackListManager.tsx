@@ -1,4 +1,4 @@
-// ============================================================
+ // ============================================================
 // src/components/admin/TrackListManager.tsx
 // ============================================================
 import React, { useState, useEffect, useRef } from 'react';
@@ -759,16 +759,17 @@ const TrackListManager: React.FC = () => {
     setPreviewSelectedIds(allSelected ? new Set() : new Set(allIds));
   };
 
+  // ✅ FIXED: Range string ("1-50") ko raw string hi bhej rahe hain, number nahi bana rahe
   const doPreviewBulkAdd = async (channelId: string) => {
     const keyword = titleInputs[channelId]?.trim();
     if (!keyword || !previewBulkPageId || previewSelectedIds.size === 0) return;
     setPreviewAdding(true);
     try {
-      const overridesToSend: Record<string, number> = {};
+      const overridesToSend: Record<string, string> = {};
       for (const vid of previewSelectedIds) {
         const raw = previewEpisodeOverrides[vid];
-        if (raw !== undefined && raw !== '' && !Number.isNaN(Number(raw))) {
-          overridesToSend[vid] = Number(raw);
+        if (raw !== undefined && raw.trim() !== '') {
+          overridesToSend[vid] = raw.trim();
         }
       }
       const { data } = await axios.post(
@@ -1005,14 +1006,16 @@ const TrackListManager: React.FC = () => {
     }
   };
 
+  // ✅ FIXED: Range string ("1-50") ko raw string hi bhej rahe hain, number nahi bana rahe
   const doBulkAdd = async () => {
     if (!browsingTitle || !bulkPageId || selectedVideoIds.size === 0) return;
+    setFinalizing(true);
     try {
-      const overridesToSend: Record<string, number> = {};
+      const overridesToSend: Record<string, string> = {};
       for (const vid of selectedVideoIds) {
         const raw = episodeOverrides[vid];
-        if (raw !== undefined && raw !== '' && !Number.isNaN(Number(raw))) {
-          overridesToSend[vid] = Number(raw);
+        if (raw !== undefined && raw.trim() !== '') {
+          overridesToSend[vid] = raw.trim();
         }
       }
       const { data } = await axios.post(
@@ -1026,6 +1029,8 @@ const TrackListManager: React.FC = () => {
       openBrowseTitle(browsingTitle.channelId, browsingTitle.titleId, browsingTitle.keyword);
     } catch (err: any) {
       toast.error(err.response?.data?.error || 'Add nahi ho saka');
+    } finally {
+      setFinalizing(false);
     }
   };
 
@@ -1491,16 +1496,16 @@ const TrackListManager: React.FC = () => {
                   </button>
                   <button
                     onClick={doBulkAdd}
-                    disabled={!bulkPageId || selectedVideoIds.size === 0}
+                    disabled={!bulkPageId || selectedVideoIds.size === 0 || finalizing}
                     className="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white text-xs rounded-lg font-semibold"
                   >
-                    Selected Ko Is Page Me Add Karo
+                    {finalizing && Icon.spinner('w-3 h-3')} Selected Ko Is Page Me Add Karo
                   </button>
                 </div>
               </div>
               <p className="text-[10px] text-slate-500 flex items-start gap-1">
                 <span className="mt-0.5">{Icon.info('w-3 h-3 flex-shrink-0')}</span>
-                <span>Agar system ne galat/koi part number detect nahi kiya, uss video ke "Ep #" box me sahi number khud daal do — waisa hi add hoga. Video card kahin bhi click karke bhi select/deselect ho jayega.</span>
+                <span>Agar system ne galat/koi part number detect nahi kiya, uss video ke "Ep # ya 1-50" box me sahi number ya range daal do — waisa hi add hoga. Video card kahin bhi click karke bhi select/deselect ho jayega.</span>
               </p>
             </div>
 
@@ -1543,14 +1548,16 @@ const TrackListManager: React.FC = () => {
                             {v.matchedFormat && ` · ${v.matchedFormat}`}
                           </p>
                         </div>
+                        {/* ✅ FIXED: type="text" + inputMode="numeric" — range "1-50" accept karega */}
                         <input
-                          type="number"
-                          placeholder={v.part !== null ? String(v.part) : 'Ep #'}
+                          type="text"
+                          inputMode="numeric"
+                          placeholder={v.part !== null ? String(v.part) : 'Ep # ya 1-50'}
                           value={episodeOverrides[v.videoId] ?? ''}
                           onChange={(e) => setEpisodeOverrides(prev => ({ ...prev, [v.videoId]: e.target.value }))}
                           onClick={(e) => e.stopPropagation()}
-                          title="Manual episode number override — yahan likha number hi save hoga"
-                          className="w-16 flex-shrink-0 bg-gray-700/60 border border-gray-600/80 rounded-lg px-1.5 py-1 text-[11px] text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          title="Single episode number, ya range ke liye '1-50' jaisa likho"
+                          className="w-20 flex-shrink-0 bg-gray-700/60 border border-gray-600/80 rounded-lg px-1.5 py-1 text-[11px] text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
                         />
                         <button
                           onClick={(e) => { e.stopPropagation(); setExpandedInfoId(prev => prev === v.videoId ? null : v.videoId); }}
@@ -1830,14 +1837,16 @@ const TrackListManager: React.FC = () => {
                                   )}
                                 </p>
                               </div>
+                              {/* ✅ FIXED: type="text" + inputMode="numeric" — range "1-50" accept karega */}
                               <input
-                                type="number"
-                                placeholder={v.part !== null ? String(v.part) : 'Ep #'}
+                                type="text"
+                                inputMode="numeric"
+                                placeholder={v.part !== null ? String(v.part) : 'Ep # ya 1-50'}
                                 value={previewEpisodeOverrides[v.videoId] ?? ''}
                                 onChange={(e) => setPreviewEpisodeOverrides(prev => ({ ...prev, [v.videoId]: e.target.value }))}
                                 onClick={(e) => e.stopPropagation()}
-                                title="Manual episode number override"
-                                className="w-14 flex-shrink-0 bg-gray-700/60 border border-gray-600/80 rounded-lg px-1 py-1 text-[10px] text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                title="Single episode number, ya range ke liye '1-50' jaisa likho"
+                                className="w-16 flex-shrink-0 bg-gray-700/60 border border-gray-600/80 rounded-lg px-1 py-1 text-[10px] text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
                               />
                               <button
                                 onClick={(e) => { e.stopPropagation(); setExpandedInfoId(prev => prev === v.videoId ? null : v.videoId); }}
