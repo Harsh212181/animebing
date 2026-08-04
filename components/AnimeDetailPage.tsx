@@ -753,17 +753,19 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                     .sort((a: any, b: any) => isManga ? (a as any).chapterNumber - (b as any).chapterNumber : (a as any).episodeNumber - (b as any).episodeNumber)
                     .map((item: any, index: number) => {
                       const itemData = item as any;
+                      // ✅ FIX: manga chapters ka number field 'chapterNumber' hai, anime/movie ka 'episodeNumber'
+                      const contentNumber = isManga ? itemData.chapterNumber : itemData.episodeNumber;
                       return (
                         <div key={itemData._id || index} className="group bg-slate-700/30 hover:bg-slate-600/40 rounded-lg lg:rounded-xl p-2 lg:p-4 transition-all duration-200 border border-slate-600 hover:border-purple-500/50 backdrop-blur-sm">
                           <div className="flex items-center justify-between gap-2 lg:gap-4">
                             <div className="flex-1 min-w-0">
-                              <h3 className="text-white font-medium text-xs lg:text-lg truncate">{itemData.title || getContentLabelSingular()}</h3>
+                              <h3 className="text-white font-medium text-xs lg:text-lg truncate">{itemData.title || `${getContentLabelSingular()} ${contentNumber}`}</h3>
                             </div>
                             <div className="flex gap-1 lg:gap-2 flex-shrink-0">
                               <DownloadButton item={item as Episode | Chapter} itemId={itemData._id} className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-3 py-2 lg:px-4 lg:py-2 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-1 group text-xs lg:text-sm whitespace-nowrap" showText={true} iconClassName="h-4 w-4 lg:h-5 w-5" />
-                              {import.meta.env.DEV && episodeToPageMap.has(itemData.episodeNumber) && (
+                              {import.meta.env.DEV && episodeToPageMap.has(contentNumber) && (
                                 <>
-                                  {episodeToPageMap.get(itemData.episodeNumber)!.map((page, idx) => (
+                                  {episodeToPageMap.get(contentNumber)!.map((page, idx) => (
                                     <Link key={page._id || idx} to={`/download/${page.slug}`} className="bg-purple-600 hover:bg-purple-700 text-white p-2 rounded-lg text-xs font-medium ml-1 flex items-center justify-center" title={page.title}>
                                       <span className="text-xs">☠️</span>
                                       {page.buttonTitle && <span className="ml-1 hidden sm:inline">{page.buttonTitle}</span>}
@@ -772,7 +774,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                                 </>
                               )}
                               <div className="scale-90">
-                                <ReportButton animeId={anime.id || anime._id} episodeId={itemData._id} episodeNumber={isManga ? itemData.chapterNumber : itemData.episodeNumber} animeTitle={anime.title} />
+                                <ReportButton animeId={anime.id || anime._id} episodeId={itemData._id} episodeNumber={contentNumber} animeTitle={anime.title} />
                               </div>
                             </div>
                           </div>
