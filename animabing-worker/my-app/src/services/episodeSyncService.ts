@@ -113,16 +113,23 @@ export async function syncEpisodeTitleFromDownloadPage(
   const position = allPages.findIndex((p: any) => p._id.toString() === downloadPageId)
   if (position === -1) return
 
-  // ✅ sahi collection + sahi number field se sort karo
+  // ✅ FIX #2: 'chapters' collection mein anime reference field ka naam 'mangaId' hai
+  // (chapterRoutes.ts me insert/query 'mangaId' se hoti hai), jabki 'episodes'
+  // collection mein 'animeId' hai. Pehle dono ke liye hardcoded 'animeId' use ho raha
+  // tha, jo 'chapters' collection ke liye kabhi match hi nahi karta tha (0 results) —
+  // isliye title kabhi update nahi hota tha chahe kitne bhi link add/remove ho jayein.
+  const targetIdField = isManga ? 'mangaId' : 'animeId'
+
+  // ✅ sahi collection + sahi id field + sahi number field se sort karo
   const allTargetItems = await db.collection(collectionName)
-    .find({ animeId: page.animeId })
+    .find({ [targetIdField]: page.animeId })
     .sort({ session: 1, [numberField]: 1 })
     .toArray()
 
   const targetItem = allTargetItems[position]
   if (!targetItem) return // Utna episode/chapter record abhi Manager mein bana hi nahi
 
-  // ✅ FIX: pehle sirf `page.links` (ek array) pass ho raha tha, jiski wajah se
+  // ✅ FIX #1: pehle sirf `page.links` (ek array) pass ho raha tha, jiski wajah se
   // computeEpisodeRangeTitle ke andar `page?.links` hamesha undefined aata tha
   // (kyunki array ke upar .links property nahi hoti) — isliye rangeTitle hamesha
   // '' return karta tha aur title kabhi update nahi hota tha.
