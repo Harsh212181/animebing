@@ -1,4 +1,4 @@
-// ============================================================
+ // ============================================================
 // animabing-worker/my-app/src/routes/trackRoutes.ts
 // ============================================================
 
@@ -11,7 +11,7 @@ import {
 import { ITrackedChannel, ITrackNotification } from '../models/types'
 import { processChannelUpdates, fetchChannelInfoByHandle, fetchRecentVideos, fetchVideoDurations, matchAndParseVideos, parseEpisodeOverride } from '../services/youtubeCheckService'
 import { logActivity } from '../services/activityLogService'
-import { syncAnimeEpisodeCountFromPage } from '../services/episodeSyncService'   // ✅ NEW
+import { syncPageDerivedData } from '../services/episodeSyncService'   // ✅ UPDATED: combined helper (currentEpisode + title dono ek saath)
 
 const trackRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
@@ -188,7 +188,7 @@ trackRoutes.post('/channel/:channelId/title/test-match', async (c) => {
   })
 })
 
-// ============ ✅ NEW — QUICK BULK ADD FROM PREVIEW (title track kiye bina) ============
+// ============ ✅ QUICK BULK ADD FROM PREVIEW (title track kiye bina) ============
 trackRoutes.post('/channel/:channelId/quick-bulk-add', async (c) => {
   const channelId = c.req.param('channelId')
   const { keyword, matchThreshold, excludeKeywords, downloadPageId, videoIds, episodeOverrides } = await c.req.json() as {
@@ -242,7 +242,8 @@ trackRoutes.post('/channel/:channelId/quick-bulk-add', async (c) => {
   if (newLinks.length === 0) return c.json({ success: false, error: 'Sabhi selected videos already page me maujood hain' }, 400)
 
   await updateOne('downloadpages', { _id: page._id }, { links: [...existingLinks, ...newLinks] }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-  await syncAnimeEpisodeCountFromPage(page._id.toString(), c.env.MONGODB_URI, c.env.MONGODB_DB)   // ✅ NEW
+  // ✅ UPDATED: combined helper — currentEpisode (Ch/EP badge) + episode/chapter range-title dono ek saath sync
+  await syncPageDerivedData(page._id.toString(), c.env.MONGODB_URI, c.env.MONGODB_DB)
 
   const admin = c.get('admin')
   await logActivity({
@@ -360,7 +361,7 @@ trackRoutes.put('/channel/:channelId/title/:titleId/edit', async (c) => {
   return c.json({ success: true })
 })
 
-// ============ ✅ NEW — dedicated settings route (threshold + exclude keywords only) ============
+// ============ ✅ dedicated settings route (threshold + exclude keywords only) ============
 trackRoutes.put('/channel/:channelId/title/:titleId/settings', async (c) => {
   const channelId = c.req.param('channelId')
   const titleId = c.req.param('titleId')
@@ -462,7 +463,7 @@ trackRoutes.post('/notifications/:id/read', async (c) => {
   return c.json({ success: true })
 })
 
-// ============ ✅ NEW — UNDO LAST AUTO-ADD ============
+// ============ ✅ UNDO LAST AUTO-ADD ============
 trackRoutes.post('/notifications/:id/undo', async (c) => {
   const id = c.req.param('id')
   if (!isValidObjectId(id)) return c.json({ success: false, error: 'Invalid ID' }, 400)
@@ -486,7 +487,8 @@ trackRoutes.post('/notifications/:id/undo', async (c) => {
   if (oldLink) newLinks = [...newLinks, oldLink]
 
   await updateOne('downloadpages', { _id: page._id }, { links: newLinks }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-  await syncAnimeEpisodeCountFromPage(page._id.toString(), c.env.MONGODB_URI, c.env.MONGODB_DB)   // ✅ NEW
+  // ✅ UPDATED: combined helper — undo ke baad currentEpisode + range-title dono wapas sahi sync
+  await syncPageDerivedData(page._id.toString(), c.env.MONGODB_URI, c.env.MONGODB_DB)
   await updateOne('trackNotifications', { _id: toObjectId(id) }, { undone: true }, c.env.MONGODB_URI, c.env.MONGODB_DB)
 
   const admin = c.get('admin')
@@ -585,7 +587,7 @@ trackRoutes.get('/runs', async (c) => {
   return c.json(runs)
 })
 
-// ============ ✅ NEW — CLEAR RUN HISTORY ============
+// ============ ✅ CLEAR RUN HISTORY ============
 trackRoutes.delete('/runs/clear-all', async (c) => {
   const runs = await findMany<any>('cronRunLogs', {}, {}, c.env.MONGODB_URI, c.env.MONGODB_DB)
   for (const r of runs) {
@@ -629,7 +631,7 @@ trackRoutes.get('/analytics', async (c) => {
   return c.json({ mostActiveChannels, inactiveChannels })
 })
 
-// ============ ✅ NEW — CONFLICT PANEL ============
+// ============ ✅ CONFLICT PANEL ============
 trackRoutes.get('/conflicts', async (c) => {
   const channels = await findMany<ITrackedChannel>('trackedChannels', {}, {}, c.env.MONGODB_URI, c.env.MONGODB_DB)
   const map: Record<string, { channelId: string; channelName: string; titleId: string; keyword: string }[]> = {}
@@ -793,7 +795,7 @@ trackRoutes.post('/channel/:channelId/title/:titleId/bulk-add', async (c) => {
   )
   if (selected.length === 0) return c.json({ success: false, error: 'Koi valid video nahi mila' }, 400)
 
-  // ✅ NEW — sirf jo add ho raha hai unhi ki duration fetch/save karo
+  // ✅ sirf jo add ho raha hai unhi ki duration fetch/save karo
   const durations = await fetchVideoDurations(selected.map(v => v.video.videoId), c.env.YOUTUBE_API_KEY)
 
   const existingLinks = page.links || []
@@ -819,7 +821,8 @@ trackRoutes.post('/channel/:channelId/title/:titleId/bulk-add', async (c) => {
   if (newLinks.length === 0) return c.json({ success: false, error: 'Sabhi selected videos already page me maujood hain' }, 400)
 
   await updateOne('downloadpages', { _id: page._id }, { links: [...existingLinks, ...newLinks] }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-  await syncAnimeEpisodeCountFromPage(page._id.toString(), c.env.MONGODB_URI, c.env.MONGODB_DB)   // ✅ NEW
+  // ✅ UPDATED: combined helper — currentEpisode (Ch/EP badge) + episode/chapter range-title dono ek saath sync
+  await syncPageDerivedData(page._id.toString(), c.env.MONGODB_URI, c.env.MONGODB_DB)
 
   const admin = c.get('admin')
   await logActivity({
@@ -900,7 +903,7 @@ trackRoutes.post('/channel/:channelId/title/:titleId/finalize-initial', async (c
   return c.json({ success: true })
 })
 
-// ============ ✅ NEW — SYNC TITLE STATE WITH ACTUAL PAGE CONTENT ============
+// ============ ✅ SYNC TITLE STATE WITH ACTUAL PAGE CONTENT ============
 trackRoutes.post('/channel/:channelId/title/:titleId/sync-with-page', async (c) => {
   const channelId = c.req.param('channelId')
   const titleId = c.req.param('titleId')
@@ -938,7 +941,7 @@ trackRoutes.post('/channel/:channelId/title/:titleId/sync-with-page', async (c) 
   return c.json({ success: true, syncedToPart: maxLink.episode, videoId })
 })
 
-// ============ ✅ NEW — MANUAL EPISODE STATUS SYNC (anime.currentEpisode ko page se force-update karo) ============
+// ============ ✅ MANUAL EPISODE STATUS SYNC (anime.currentEpisode ko page se force-update karo) ============
 trackRoutes.post('/channel/:channelId/title/:titleId/sync-episode-status', async (c) => {
   const channelId = c.req.param('channelId')
   const titleId = c.req.param('titleId')
@@ -950,7 +953,8 @@ trackRoutes.post('/channel/:channelId/title/:titleId/sync-episode-status', async
   if (!title) return c.json({ success: false, error: 'Title nahi mila' }, 404)
   if (!title.linkedDownloadPageId) return c.json({ success: false, error: 'Title kisi page se linked nahi hai' }, 400)
 
-  const newCount = await syncAnimeEpisodeCountFromPage(title.linkedDownloadPageId, c.env.MONGODB_URI, c.env.MONGODB_DB)
+  // ✅ UPDATED: combined helper — currentEpisode + episode/chapter range-title dono ek saath force-sync
+  const newCount = await syncPageDerivedData(title.linkedDownloadPageId, c.env.MONGODB_URI, c.env.MONGODB_DB)
   if (newCount === null) {
     return c.json({ success: false, error: 'Sync nahi ho saka — page pe koi watch link nahi mila' }, 400)
   }
@@ -1027,7 +1031,7 @@ trackRoutes.post('/channel/:channelId/title/:titleId/ignore-video', async (c) =>
   return c.json({ success: true })
 })
 
-// ============ ✅ NEW — BULK Video Ignore (atomic, avoids race condition on parallel calls) ============
+// ============ ✅ BULK Video Ignore (atomic, avoids race condition on parallel calls) ============
 trackRoutes.post('/channel/:channelId/title/:titleId/ignore-videos-bulk', async (c) => {
   const channelId = c.req.param('channelId')
   const titleId = c.req.param('titleId')
@@ -1070,7 +1074,7 @@ trackRoutes.get('/logs', async (c) => {
   return c.json(logs)
 })
 
-// ============ ✅ NEW — CLEAR ALL CHECK LOGS ============
+// ============ ✅ CLEAR ALL CHECK LOGS ============
 trackRoutes.delete('/logs/clear-all', async (c) => {
   const logs = await findMany<any>('checkLogs', {}, {}, c.env.MONGODB_URI, c.env.MONGODB_DB)
   for (const l of logs) {

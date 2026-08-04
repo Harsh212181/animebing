@@ -3,7 +3,7 @@ import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
 import { findMany, findOne, insertOne, updateOne, deleteOne, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
 import { IDownloadPage } from '../models/types'
-import { syncAnimeEpisodeCountFromPage, syncEpisodeTitleFromDownloadPage } from '../services/episodeSyncService'   // ✅ UPDATED: both functions imported
+import { syncPageDerivedData, syncAnimeEpisodeCountFromAnime } from '../services/episodeSyncService'   // ✅ UPDATED: syncPageDerivedData (combined helper) use kiya
 
 const downloadPageRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
@@ -163,10 +163,10 @@ downloadPageRoutes.post('/', adminAuth, async (c) => {
     }
     const result = await insertOne('downloadpages', page, c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    // ✅ UPDATED: agar links ke saath page bana hai toh anime.currentEpisode aur episode titles sync karo
+    // ✅ agar links ke saath page bana hai toh anime.currentEpisode aur episode titles sync karo
+    // ✅ UPDATED: dono ab ek hi combined helper se sync hote hain
     if (sanitizedLinks.length > 0) {
-      await syncAnimeEpisodeCountFromPage(result.insertedId.toString(), c.env.MONGODB_URI, c.env.MONGODB_DB)
-      await syncEpisodeTitleFromDownloadPage(result.insertedId.toString(), c.env.MONGODB_URI, c.env.MONGODB_DB)   // ✅ NEW
+      await syncPageDerivedData(result.insertedId.toString(), c.env.MONGODB_URI, c.env.MONGODB_DB)
     }
 
     return c.json(page, 201)
@@ -206,10 +206,11 @@ downloadPageRoutes.put('/:id', adminAuth, async (c) => {
 
     const updated = await updateOne('downloadpages', { _id: toObjectId(id) }, updateData, c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    // ✅ UPDATED: agar links change hue hain toh anime.currentEpisode aur episode titles sync karo
+    // ✅ agar links change hue hain (add YA remove/kam bhi) toh anime.currentEpisode
+    // aur episode titles dobara SCRATCH se sync karo — isliye ye ghatna/badhna dono handle karta hai
+    // ✅ UPDATED: dono ab ek hi combined helper se sync hote hain
     if (links) {
-      await syncAnimeEpisodeCountFromPage(id!, c.env.MONGODB_URI, c.env.MONGODB_DB)
-      await syncEpisodeTitleFromDownloadPage(id!, c.env.MONGODB_URI, c.env.MONGODB_DB)   // ✅ NEW
+      await syncPageDerivedData(id!, c.env.MONGODB_URI, c.env.MONGODB_DB)
     }
 
     return c.json(updated)
@@ -247,7 +248,22 @@ downloadPageRoutes.delete('/:id', adminAuth, async (c) => {
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
     const page = await findOne('downloadpages', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
     if (!page) return c.json({ error: 'Page not found' }, 404)
+
+    // ✅ animeId pehle nikaal lo — delete ke baad page hi nahi rahega toh animeId access nahi ho payega
+    const animeId = (page as any).animeId
+
     await deleteOne('downloadpages', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    // ✅ NEW: page delete hone ke baad currentEpisode dobara calculate karo (poore anime
+    // ke baaki bache hue pages ke links se) — taaki agar sabse bada episode wala page hi
+    // delete hua ho, toh currentEpisode automatically kam ho jaye aur detail page turant
+    // sahi "Ch X" / "EP X" dikhaye
+    // (Page delete ho chuka hai isliye syncPageDerivedData/syncEpisodeTitleFromDownloadPage
+    // use nahi kar sakte — wo pageId maangte hain. Sirf currentEpisode hi anime-level se sync hota hai.)
+    if (animeId) {
+      await syncAnimeEpisodeCountFromAnime(animeId, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    }
+
     return c.json({ success: true })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)

@@ -357,14 +357,13 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     if (anime) fetchVoteData();
   }, [anime]);
 
+  // ✅ FIX: currentEpisode jaisi baar-baar badalne wali field ke liye
+  // shortcut hata diya — hamesha fresh fetch karo taaki naye sync
+  // ke baad ka currentEpisode turant detail page par reflect ho
   useEffect(() => {
     const fetchFullAnimeDetails = async () => {
       if (!anime) return;
-      if (anime.description && anime.genreList && anime.genreList.length > 0) {
-        setFullAnime(anime);
-        setAnimeLoading(false);
-        return;
-      }
+
       setAnimeLoading(true);
       try {
         const identifier = anime.slug || anime._id || anime.id;
@@ -373,7 +372,13 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
           setAnimeLoading(false);
           return;
         }
-        const fullAnimeData = await getAnimeByIdOrSlug(identifier, 'title,thumbnail,releaseYear,status,contentType,subDubStatus,description,genreList,seoTitle,seoDescription,seoKeywords,slug,likes,dislikes,createdAt,updatedAt');
+        // ✅ FIX: currentEpisode field ko projection list mein add kiya —
+        // pehle ye missing thi isliye backend se aaya fresh data bhi
+        // currentEpisode kabhi nahi le kar aata tha
+        const fullAnimeData = await getAnimeByIdOrSlug(
+          identifier,
+          'title,thumbnail,releaseYear,status,contentType,subDubStatus,description,genreList,seoTitle,seoDescription,seoKeywords,slug,likes,dislikes,createdAt,updatedAt,currentEpisode'
+        );
         if (fullAnimeData) {
           setFullAnime(fullAnimeData);
         } else {

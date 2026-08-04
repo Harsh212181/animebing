@@ -3,7 +3,7 @@
 
 import { ITrackedChannel, ITrackedTitle, ITrackNotification, ICheckLog } from '../models/types'
 import { findOne, updateOne, insertOne, toObjectId } from './mongoService'
-import { syncAnimeEpisodeCountFromPage } from './episodeSyncService'
+import { syncPageDerivedData } from './episodeSyncService'   // ✅ UPDATED: combined helper (currentEpisode + range-title dono ek saath)
 
 interface YouTubeVideoItem {
   videoId: string
@@ -660,7 +660,10 @@ export async function processChannelUpdates(
 
     if (trackedTitle.linkedDownloadPageId) {
       try {
-        await syncAnimeEpisodeCountFromPage(trackedTitle.linkedDownloadPageId, mongoUri, dbName)
+        // ✅ UPDATED: combined helper — currentEpisode (badge) ke saath-saath Episode/Chapter
+        // record ka range-title text ("Chapter 1-25" / "Episode 1-12") bhi ek hi call se
+        // auto-tracker se sync hoga
+        await syncPageDerivedData(trackedTitle.linkedDownloadPageId, mongoUri, dbName)
       } catch {
         // silent
       }
