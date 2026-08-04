@@ -148,6 +148,8 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
   const [episodesLoading, setEpisodesLoading] = useState(true);
   const [chaptersLoading, setChaptersLoading] = useState(true);
   const [selectedSession, setSelectedSession] = useState<number>(1);
+  // ✅ NEW — ref to prevent auto-select from overriding user's manual session click
+  const hasAutoSelectedSession = React.useRef(false);
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -423,6 +425,20 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     return acc;
   }, {} as Record<number, any>) || {};
   const availableSessions = Object.keys(itemsBySession).map(Number).sort((a, b) => a - b);
+
+  // ✅ NEW — jab sessions load ho jayein, default me sabse latest session select karo
+  useEffect(() => {
+    if (availableSessions.length > 0 && !hasAutoSelectedSession.current) {
+      const latestSession = Math.max(...availableSessions);
+      setSelectedSession(latestSession);
+      hasAutoSelectedSession.current = true;
+    }
+  }, [availableSessions]);
+
+  // ✅ NEW — jab anime change ho (naya anime page khule), auto-select flag reset karo
+  useEffect(() => {
+    hasAutoSelectedSession.current = false;
+  }, [anime?.id, anime?._id]);
 
   useEffect(() => {
     const fetchContent = async () => {
