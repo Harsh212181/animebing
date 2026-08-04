@@ -1,4 +1,4 @@
- // src/components/admin/EpisodeStatusManager.tsx – Redesigned with pill‑button filters + Sub/Dub badge + Creator badge
+// src/components/admin/EpisodeStatusManager.tsx – Redesigned with pill‑button filters + Sub/Dub badge + Creator badge
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
@@ -65,6 +65,12 @@ const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: toke
   const [savingId, setSavingId] = useState<string | null>(null);
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [error, setError] = useState('');
+
+  // ✅ NEW — Page-selection modal states
+  const [syncModalAnime, setSyncModalAnime] = useState<{ id: string; title: string } | null>(null);
+  const [syncModalPages, setSyncModalPages] = useState<DownloadPage[]>([]);
+  const [syncModalLoading, setSyncModalLoading] = useState(false);
+  const [confirmingPageId, setConfirmingPageId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAnime();
@@ -164,10 +170,11 @@ const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: toke
     }
   };
 
-  const handleSync = async (id: string) => {
-    setSyncingId(id);
-    setError('');
-    const toastId = toast.loading('Syncing from download pages...');
+  // ✅ NEW — ab ye sirf pages fetch karke modal kholega
+  const handleSync = async (id: string, title: string) => {
+    setSyncModalLoading(true);
+    setSyncModalAnime({ id, title });
+    setSyncModalPages([]);
     try {
       const token = getToken();
       const { data: pages } = await axios.get<DownloadPage[]>(
@@ -176,58 +183,63 @@ const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: toke
       );
 
       if (!pages || pages.length === 0) {
-        toast.error('No download pages found for this anime.', {
-          id: toastId,
-        });
-        setSyncingId(null);
+        toast.error('No download pages found for this anime.');
+        setSyncModalAnime(null);
         return;
       }
 
+      // Agar sirf ek hi page hai, to seedha usi se sync karo — ambiguity hi nahi
+      if (pages.length === 1) {
+        await syncWithSpecificPage(id, pages[0]);
+        setSyncModalAnime(null);
+        return;
+      }
+
+      // Multiple pages — user ko choose karne do
+      setSyncModalPages(pages);
+    } catch (err: any) {
+      console.error('Sync fetch failed', err);
+      toast.error('Failed to load pages: ' + (err.response?.data?.error || err.message));
+      setSyncModalAnime(null);
+    } finally {
+      setSyncModalLoading(false);
+    }
+  };
+
+  // ✅ NEW — ek specific page ke hisaab se sync karta hai, saare pages ka combined max nahi
+  const syncWithSpecificPage = async (animeId: string, page: DownloadPage) => {
+    setConfirmingPageId(page._id);
+    const toastId = toast.loading('Syncing from selected page...');
+    try {
+      const watchLinks = page.links.filter(l => (l.type || 'watch') === 'watch');
       let maxEpisode = 0;
-      pages.forEach(page => {
-        page.links.forEach(link => {
-          if (link.episode > maxEpisode) {
-            maxEpisode = link.episode;
-          }
-        });
+      watchLinks.forEach(link => {
+        if (link.episode > maxEpisode) maxEpisode = link.episode;
       });
 
       if (maxEpisode === 0) {
-        toast.error('No valid episode numbers found in download pages.', {
-          id: toastId,
-        });
-        setSyncingId(null);
+        toast.error('Is page me koi valid episode number nahi mila.', { id: toastId });
         return;
       }
 
-      const anime = animeList.find(a => a._id === id);
-      if (!anime) throw new Error('Anime not found in local list');
-
+      const token = getToken();
       await axios.patch(
-        `${API_BASE}/admin/protected/anime/${id}/episode-status`,
-        {
-          currentEpisode: maxEpisode,
-        },
+        `${API_BASE}/admin/protected/anime/${animeId}/episode-status`,
+        { currentEpisode: maxEpisode },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
       setAnimeList(prev =>
-        prev.map(a =>
-          a._id === id ? { ...a, currentEpisode: maxEpisode } : a
-        )
+        prev.map(a => (a._id === animeId ? { ...a, currentEpisode: maxEpisode } : a))
       );
 
-      toast.success(`Synced! Current episode set to ${maxEpisode}`, {
-        id: toastId,
-      });
+      toast.success(`Synced! Current episode set to ${maxEpisode}`, { id: toastId });
+      setSyncModalAnime(null);
     } catch (err: any) {
       console.error('Sync failed', err);
-      toast.error(
-        'Sync failed: ' + (err.response?.data?.error || err.message),
-        { id: toastId }
-      );
+      toast.error('Sync failed: ' + (err.response?.data?.error || err.message), { id: toastId });
     } finally {
-      setSyncingId(null);
+      setConfirmingPageId(null);
     }
   };
 
@@ -633,15 +645,16 @@ const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: toke
                             </>
                           )}
                         </button>
+                        {/* ✅ UPDATED — Sync button onClick + disabled state */}
                         <button
-                          onClick={() => handleSync(anime._id)}
-                          disabled={syncingId === anime._id}
+                          onClick={() => handleSync(anime._id, anime.title)}
+                          disabled={syncModalAnime?.id === anime._id && syncModalLoading}
                           className="px-2 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/40 border border-emerald-500/30 rounded-lg text-emerald-200 text-xs font-medium transition-all flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          {syncingId === anime._id ? (
+                          {syncModalAnime?.id === anime._id && syncModalLoading ? (
                             <>
                               <div className="animate-spin h-3 w-3 border-2 border-emerald-200 border-t-transparent rounded-full"></div>
-                              <span className="hidden sm:inline">Syncing...</span>
+                              <span className="hidden sm:inline">Loading...</span>
                             </>
                           ) : (
                             <>
@@ -675,6 +688,69 @@ const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: toke
       {filteredList.length > 0 && (
         <div className="text-sm text-white/40 text-right">
           Showing {filteredList.length} of {animeList.length} anime
+        </div>
+      )}
+
+      {/* ✅ NEW — Page-selection modal */}
+      {syncModalAnime && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => !syncModalLoading && setSyncModalAnime(null)}
+        >
+          <div
+            className="bg-gray-900 border border-white/10 rounded-2xl p-5 max-w-md w-full mx-4 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold text-white mb-1">Kaunse Page Se Sync Karein?</h3>
+            <p className="text-xs text-white/50 mb-4">
+              <span className="text-white font-medium">"{syncModalAnime.title}"</span> ke {syncModalPages.length} download pages hain. Sirf usi page ka episode number use hoga jo aap select karoge.
+            </p>
+
+            {syncModalLoading ? (
+              <div className="flex justify-center py-8">
+                <div className="w-6 h-6 border-2 border-purple-500/30 border-t-purple-500 rounded-full animate-spin"></div>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-80 overflow-y-auto">
+                {syncModalPages.map((page, idx) => {
+                  const watchLinks = page.links.filter(l => (l.type || 'watch') === 'watch');
+                  const maxEp = watchLinks.reduce((m, l) => Math.max(m, l.episode), 0);
+                  return (
+                    <button
+                      key={page._id}
+                      onClick={() => syncWithSpecificPage(syncModalAnime.id, page)}
+                      disabled={confirmingPageId === page._id}
+                      className="w-full flex items-center justify-between bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl px-3 py-2.5 text-left transition disabled:opacity-50"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-white">Page {idx + 1}</p>
+                        <p className="text-[11px] text-white/40 truncate">{page.slug}</p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
+                          {watchLinks.length} watch links
+                        </span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-white/60">
+                          Max Ep: {maxEp || '—'}
+                        </span>
+                        {confirmingPageId === page._id && (
+                          <div className="w-3 h-3 border-2 border-emerald-200 border-t-transparent rounded-full animate-spin"></div>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <button
+              onClick={() => setSyncModalAnime(null)}
+              disabled={syncModalLoading}
+              className="w-full mt-4 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white/80 text-sm font-medium transition disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
     </div>
