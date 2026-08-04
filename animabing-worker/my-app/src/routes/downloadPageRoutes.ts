@@ -1,4 +1,4 @@
- import { Hono } from 'hono'
+import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
 import { findMany, findOne, insertOne, updateOne, deleteOne, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
@@ -12,6 +12,16 @@ function countLinksByType(links: any[]) {
     watch: links.filter(l => l.type === 'watch').length,
     download: links.filter(l => l.type === 'download').length
   }
+}
+
+function slugify(input: string): string {
+  return input
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')   // accents strip
+    .replace(/[''"""]/g, '')          // apostrophes/quotes remove
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')       // baaki sab -> hyphen
+    .replace(/^-+|-+$/g, '')           // trim hyphens
 }
 
 // ============ HELPER: sub-admin (animeAccess:'own') ke owned anime IDs laao (string[]) ============
@@ -137,7 +147,10 @@ downloadPageRoutes.post('/', adminAuth, async (c) => {
     }
     if (!isValidObjectId(animeId)) return c.json({ error: 'Invalid animeId' }, 400)
 
-    const existing = await findOne('downloadpages', { slug }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const cleanSlug = slugify(slug)   // ✅ NEW
+    if (!cleanSlug) return c.json({ error: 'Invalid slug' }, 400)
+
+    const existing = await findOne('downloadpages', { slug: cleanSlug }, c.env.MONGODB_URI, c.env.MONGODB_DB)
     if (existing) return c.json({ error: 'Slug already exists' }, 400)
 
     const anime = await findOne('animes', { _id: toObjectId(animeId) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -155,7 +168,7 @@ downloadPageRoutes.post('/', adminAuth, async (c) => {
     // episodeNumber default to 1 if not provided
     const page = { 
       animeId: toObjectId(animeId), 
-      slug, 
+      slug: cleanSlug,   // ✅ raw slug ki jagah cleanSlug
       title: title || 'Download', 
       episodeNumber: episodeNumber || 1, 
       links: sanitizedLinks, 
@@ -187,9 +200,11 @@ downloadPageRoutes.put('/:id', adminAuth, async (c) => {
 
     const updateData: any = {}
     if (slug && slug !== page.slug) {
-      const existing = await findOne('downloadpages', { slug }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+      const cleanSlug = slugify(slug)   // ✅ NEW
+      if (!cleanSlug) return c.json({ error: 'Invalid slug' }, 400)
+      const existing = await findOne('downloadpages', { slug: cleanSlug }, c.env.MONGODB_URI, c.env.MONGODB_DB)
       if (existing) return c.json({ error: 'Slug already exists' }, 400)
-      updateData.slug = slug
+      updateData.slug = cleanSlug
     }
     if (title !== undefined) updateData.title = title
     if (episodeNumber !== undefined) {

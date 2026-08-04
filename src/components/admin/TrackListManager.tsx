@@ -1,4 +1,4 @@
-// src/components/admin/TrackListManager.tsx
+ // src/components/admin/TrackListManager.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
@@ -284,7 +284,7 @@ const SearchableDropdown: React.FC<{
             filtered.map(opt => (
               <div
                 key={opt._id}
-                className="flex items-center gap-2 px-3 py-2 hover:bg-purple-500/20 cursor-pointer text-sm text-white"
+                className="flex items-center gap-2 px-3 py-2 hover:bg-white/10 cursor-pointer text-sm text-white"
                 onClick={() => { onChange(opt); setOpen(false); }}
               >
                 {opt.thumbnail ? (
@@ -333,7 +333,7 @@ const PageDropdown: React.FC<{
         className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs border transition ${
           disabled
             ? 'bg-gray-800/30 border-gray-800 text-slate-600 cursor-not-allowed'
-            : 'bg-gray-800/60 border-gray-700 text-white cursor-pointer hover:border-purple-500/40'
+            : 'bg-gray-800/60 border-gray-700 text-white cursor-pointer hover:border-white/30'
         }`}
       >
         <span className={`flex-shrink-0 ${disabled ? 'text-slate-600' : 'text-sky-400'}`}>{Icon.file('w-3.5 h-3.5')}</span>
@@ -360,7 +360,7 @@ const PageDropdown: React.FC<{
                 key={p._id}
                 onClick={() => { onChange(p._id); setOpen(false); }}
                 className={`flex items-center gap-2 px-3 py-2 cursor-pointer text-xs transition ${
-                  p._id === value ? 'bg-purple-500/20 text-white' : 'text-slate-300 hover:bg-purple-500/10'
+                  p._id === value ? 'bg-white/10 text-white' : 'text-slate-300 hover:bg-white/5'
                 }`}
               >
                 <span className="text-sky-400 flex-shrink-0">{Icon.file('w-3.5 h-3.5')}</span>
@@ -1293,7 +1293,7 @@ const TrackListManager: React.FC = () => {
   if (loading)
     return (
       <div className="flex items-center justify-center py-20">
-        {Icon.spinner('w-8 h-8 text-purple-400')}
+        {Icon.spinner('w-8 h-8 text-slate-400')}
       </div>
     );
 
@@ -1302,7 +1302,7 @@ const TrackListManager: React.FC = () => {
     <div
       key={n._id}
       className={`rounded-xl border p-3 ${
-        n.isRead ? 'bg-black/10 border-white/5 opacity-60' : 'bg-black/30 border-purple-500/20'
+        n.isRead ? 'bg-black/10 border-white/5 opacity-60' : 'bg-black/30 border-white/10'
       }`}
     >
       <div className="flex items-start gap-3">
@@ -1345,7 +1345,7 @@ const TrackListManager: React.FC = () => {
               <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/30">Limit Reached</span>
             )}
             {n.notifType === 'manual_review' && (
-              <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">Manual Review</span>
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-slate-300 border border-white/20">Manual Review</span>
             )}
             {n.notifType === 'auto_paused' && (
               <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-600/30 text-red-300 border border-red-600/40 flex items-center gap-1">
@@ -1463,7 +1463,7 @@ const TrackListManager: React.FC = () => {
     return (
       <div className="mt-2 bg-black/30 border border-white/10 rounded-xl overflow-hidden">
         {browseLoading ? (
-          <div className="flex justify-center py-6">{Icon.spinner('w-5 h-5 text-purple-400')}</div>
+          <div className="flex justify-center py-6">{Icon.spinner('w-5 h-5 text-slate-400')}</div>
         ) : browseData ? (
           <>
             <div className="flex items-center justify-between p-3 border-b border-white/10 bg-black/20">
@@ -1527,7 +1527,7 @@ const TrackListManager: React.FC = () => {
                   <button
                     onClick={doBulkAdd}
                     disabled={!bulkPageId || selectedVideoIds.size === 0 || finalizing}
-                    className="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white text-xs rounded-lg font-semibold"
+                    className="px-4 py-1.5 bg-white/10 hover:bg-white/20 disabled:opacity-40 text-white text-xs rounded-lg font-semibold border border-white/10"
                   >
                     {finalizing && Icon.spinner('w-3 h-3')} Selected Ko Is Page Me Add Karo
                   </button>
@@ -1550,7 +1550,7 @@ const TrackListManager: React.FC = () => {
                       key={v.videoId}
                       onClick={() => toggleVideoSelect(v.videoId)}
                       className={`rounded-lg p-2 border cursor-pointer transition ${
-                        isSelected ? 'bg-purple-500/10 border-purple-500/40' : 'bg-black/20 hover:bg-black/30 border-white/5'
+                        isSelected ? 'bg-white/10 border-white/30' : 'bg-black/20 hover:bg-black/30 border-white/5'
                       }`}
                     >
                       <div className="flex items-center gap-3">
@@ -1592,7 +1592,7 @@ const TrackListManager: React.FC = () => {
                           onChange={(e) => setEpisodeOverrides(prev => ({ ...prev, [v.videoId]: e.target.value }))}
                           onClick={(e) => e.stopPropagation()}
                           title="Single episode number, ya range ke liye '1-50' jaisa likho"
-                          className="w-20 flex-shrink-0 bg-gray-700/60 border border-gray-600/80 rounded-lg px-1.5 py-1 text-[11px] text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          className="w-20 flex-shrink-0 bg-gray-700/60 border border-gray-600/80 rounded-lg px-1.5 py-1 text-[11px] text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-white/30"
                         />
                         <button
                           onClick={(e) => { e.stopPropagation(); setExpandedInfoId(prev => prev === v.videoId ? null : v.videoId); }}
@@ -1696,7 +1696,7 @@ const TrackListManager: React.FC = () => {
           </h4>
           <button
             onClick={() => setBulkModeChannel(bulkModeChannel === ch._id ? null : ch._id)}
-            className="text-[11px] text-purple-300 hover:text-purple-200 transition"
+            className="text-[11px] text-slate-300 hover:text-white transition"
           >
             {bulkModeChannel === ch._id ? 'Single add pe wapas jao' : 'Bulk add karo (multiple lines)'}
           </button>
@@ -1709,11 +1709,11 @@ const TrackListManager: React.FC = () => {
               onChange={(e) => setBulkText(e.target.value)}
               placeholder={'Har line pe ek series naam likho, jaise:\nNaruto\nOne Piece\nBleach'}
               rows={4}
-              className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+              className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-white/20"
             />
             <button
               onClick={() => addBulkTitles(ch._id)}
-              className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-xs font-semibold text-white rounded-lg transition flex items-center gap-1"
+              className="px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/10 text-xs font-semibold text-white rounded-lg transition flex items-center gap-1"
             >
               {Icon.plus('w-3.5 h-3.5')} Sabhi Add Karo
             </button>
@@ -1729,13 +1729,13 @@ const TrackListManager: React.FC = () => {
                 }}
                 onKeyDown={(e) => e.key === 'Enter' && addTitle(ch._id)}
                 placeholder="Naya series naam (jaise 'Naruto')"
-                className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-white/20"
               />
               <select
                 value={previewScanDepth}
                 onChange={(e) => setPreviewScanDepth(Number(e.target.value))}
                 title="Kitne recent videos scan karne hain"
-                className="bg-black/40 border border-white/10 rounded-lg px-2 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                className="bg-black/40 border border-white/10 rounded-lg px-2 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-white/20"
               >
                 <option value={50}>50</option>
                 <option value={100}>100</option>
@@ -1767,7 +1767,7 @@ const TrackListManager: React.FC = () => {
               value={excludeKeywordsInputs[ch._id] || ''}
               onChange={(e) => setExcludeKeywordsInputs({ ...excludeKeywordsInputs, [ch._id]: e.target.value })}
               placeholder="Exclude karo (comma se alag karo): Sub, English Dub, Tamil, Telugu"
-              className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+              className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-white/20"
             />
 
             {/* Quick-exclude chips */}
@@ -1830,7 +1830,7 @@ const TrackListManager: React.FC = () => {
                         <button
                           onClick={() => doPreviewBulkAdd(ch._id)}
                           disabled={!previewBulkPageId || previewSelectedIds.size === 0 || previewAdding}
-                          className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white text-[11px] rounded-lg font-semibold flex items-center gap-1"
+                          className="px-3 py-1.5 bg-white/10 hover:bg-white/20 disabled:opacity-40 text-white text-[11px] rounded-lg font-semibold border border-white/10 flex items-center gap-1"
                         >
                           {previewAdding && Icon.spinner('w-3 h-3')} Selected Ko Is Page Me Add Karo
                         </button>
@@ -1845,7 +1845,7 @@ const TrackListManager: React.FC = () => {
                             key={v.videoId}
                             onClick={() => togglePreviewVideoSelect(v.videoId)}
                             className={`rounded-lg p-1.5 border cursor-pointer transition ${
-                              isSelected ? 'bg-purple-500/10 border-purple-500/40' : 'bg-black/20 hover:bg-black/30 border-transparent'
+                              isSelected ? 'bg-white/10 border-white/30' : 'bg-black/20 hover:bg-black/30 border-transparent'
                             }`}
                           >
                             <div className="flex items-center gap-2">
@@ -1886,7 +1886,7 @@ const TrackListManager: React.FC = () => {
                                 onChange={(e) => setPreviewEpisodeOverrides(prev => ({ ...prev, [v.videoId]: e.target.value }))}
                                 onClick={(e) => e.stopPropagation()}
                                 title="Single episode number, ya range ke liye '1-50' jaisa likho"
-                                className="w-16 flex-shrink-0 bg-gray-700/60 border border-gray-600/80 rounded-lg px-1 py-1 text-[10px] text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                className="w-16 flex-shrink-0 bg-gray-700/60 border border-gray-600/80 rounded-lg px-1 py-1 text-[10px] text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-white/30"
                               />
                               <button
                                 onClick={(e) => { e.stopPropagation(); setExpandedInfoId(prev => prev === v.videoId ? null : v.videoId); }}
@@ -1960,9 +1960,9 @@ const TrackListManager: React.FC = () => {
               </div>
             ) : (
               <div key={t.id} className="bg-black/20 rounded-xl p-3 border border-white/5 hover:border-white/10 transition">
-                {/* ============ REPLACED TITLE CARD SECTION ============ */}
+                {/* ============ TITLE CARD SECTION ============ */}
                 <div className="flex items-start justify-between gap-2">
-                  {/* NEW: Left side with full title and linked anime info */}
+                  {/* Left side with full title and linked anime info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start gap-2 flex-wrap">
                       <p className="text-sm font-medium text-white break-words" title={t.keyword}>
@@ -1978,19 +1978,34 @@ const TrackListManager: React.FC = () => {
                       )}
                     </div>
 
-                    {/* ✅ NEW — linked anime ka pura naam + thumbnail, apni alag line pe */}
+                    {/* ✅ Linked anime card — neutral, polished, no purple/indigo/emerald */}
                     {anyT.linkedDownloadPageId && (() => {
                       const linkedAnime = animeOptions.find(a => a._id === anyT.linkedAnimeId);
                       return (
-                        <div className="mt-1.5 flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/25 rounded-lg px-2 py-1.5">
-                          {linkedAnime?.thumbnail && (
-                            <img src={linkedAnime.thumbnail} className="w-8 h-11 object-cover rounded flex-shrink-0" alt="" />
+                        <div className="mt-2 flex items-center gap-3 bg-white/[0.04] hover:bg-white/[0.06] border border-white/10 hover:border-white/20 rounded-xl px-3 py-2.5 transition-colors">
+                          {linkedAnime?.thumbnail ? (
+                            <img
+                              src={linkedAnime.thumbnail}
+                              className="w-9 h-12 object-cover rounded-lg flex-shrink-0 ring-1 ring-white/10"
+                              alt=""
+                            />
+                          ) : (
+                            <div className="w-9 h-12 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0 ring-1 ring-white/10">
+                              <span className="text-slate-600">{Icon.file('w-4 h-4')}</span>
+                            </div>
                           )}
-                          <div className="min-w-0">
-                            <p className="text-[11px] text-emerald-300 font-medium break-words flex items-center gap-1">
-                              {Icon.link('w-2.5 h-2.5 flex-shrink-0')} {linkedAnime?.title || 'Linked Anime'}
-                            </p>
-                            <p className="text-[10px] text-emerald-400/70">Limit: {anyT.episodeLimit || 'Unlimited'}</p>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <span className="flex-shrink-0 p-1 rounded-md bg-white/10 text-slate-300">
+                                {Icon.link('w-2.5 h-2.5')}
+                              </span>
+                              <p className="text-[11px] font-semibold text-white/90 truncate" title={linkedAnime?.title}>
+                                {linkedAnime?.title || 'Linked Anime'}
+                              </p>
+                            </div>
+                            <span className="inline-flex items-center text-[9px] px-2 py-0.5 rounded-full bg-white/5 text-slate-400 border border-white/10 font-medium">
+                              {anyT.episodeLimit ? `Limit: ${anyT.episodeLimit} eps` : 'Unlimited episodes'}
+                            </span>
                           </div>
                         </div>
                       );
@@ -2034,7 +2049,7 @@ const TrackListManager: React.FC = () => {
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => openLinkForm(t)}
-                        className="text-[10px] px-2.5 py-1 rounded-full bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 transition"
+                        className="text-[10px] px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 border border-white/20 transition"
                       >
                         Edit Link
                       </button>
@@ -2101,7 +2116,7 @@ const TrackListManager: React.FC = () => {
 
                 {linkFormTitleId === t.id && (
                   <div className="mt-3 pt-3 border-t border-white/10">
-                    <div className="p-3 bg-black/40 border border-purple-500/30 rounded-xl space-y-2 w-full">
+                    <div className="p-3 bg-black/40 border border-white/20 rounded-xl space-y-2 w-full">
                       <div>
                         <SearchableDropdown
                           options={animeOptions}
@@ -2163,7 +2178,7 @@ const TrackListManager: React.FC = () => {
                         <button
                           onClick={() => saveLinkForm(ch._id)}
                           disabled={savingLink || !linkPageId}
-                          className="flex-1 px-3 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-xs rounded-lg"
+                          className="flex-1 px-3 py-1.5 bg-white/10 hover:bg-white/20 disabled:opacity-50 text-white text-xs rounded-lg border border-white/10"
                         >
                           Save
                         </button>
@@ -2231,7 +2246,7 @@ const TrackListManager: React.FC = () => {
   // ============ RENDER ============
   return (
     <div className="space-y-6">
-      {/* ✅ NEW — Enlarged Thumbnail Viewer (YouTube jaisa high-res) */}
+      {/* ✅ Enlarged Thumbnail Viewer (YouTube jaisa high-res) */}
       {enlargedVideoId && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4"
@@ -2249,7 +2264,7 @@ const TrackListManager: React.FC = () => {
         </div>
       )}
 
-      {/* ✅ NEW — Custom styled channel delete confirmation modal (no browser confirm popup) */}
+      {/* ✅ Custom styled channel delete confirmation modal (no browser confirm popup) */}
       {channelDeleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="bg-slate-900 border border-red-500/30 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl">
@@ -2283,7 +2298,7 @@ const TrackListManager: React.FC = () => {
         </div>
       )}
 
-      {/* ✅ NEW — Custom styled notification delete confirmation modal */}
+      {/* ✅ Custom styled notification delete confirmation modal */}
       {notificationDeleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="bg-slate-900 border border-red-500/30 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl">
@@ -2350,10 +2365,10 @@ const TrackListManager: React.FC = () => {
         </div>
       </div>
 
-      {/* ---------- NEW: Overview Stats Card ---------- */}
+      {/* ---------- Overview Stats Card ---------- */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-slate-800/40 backdrop-blur-xl border border-white/10 rounded-2xl p-4 flex items-center gap-3">
-          <div className="p-2.5 bg-purple-500/20 rounded-xl">{Icon.youtube('w-5 h-5 text-purple-300')}</div>
+          <div className="p-2.5 bg-white/10 rounded-xl">{Icon.youtube('w-5 h-5 text-slate-300')}</div>
           <div>
             <p className="text-2xl font-bold text-white">{channels.length}</p>
             <p className="text-xs text-slate-400">Total Channels</p>
@@ -2380,13 +2395,13 @@ const TrackListManager: React.FC = () => {
         <div className="bg-slate-800/40 backdrop-blur-xl border border-white/10 rounded-2xl p-4">
           <div className="flex justify-between text-xs mb-1.5">
             <span className="text-slate-400 font-medium">Channels Tracked</span>
-            <span className="text-purple-300 font-semibold">
+            <span className="text-slate-200 font-semibold">
               {capacity.channelsUsed} / {capacity.channelsLimit}
             </span>
           </div>
           <div className="w-full h-2 bg-black/30 rounded-full overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full transition-all duration-500"
+              className="h-full bg-white/40 rounded-full transition-all duration-500"
               style={{ width: `${channelPercent}%` }}
             />
           </div>
@@ -2416,12 +2431,12 @@ const TrackListManager: React.FC = () => {
             onChange={(e) => setNewHandle(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && addChannel()}
             placeholder="@channelhandle"
-            className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition"
+            className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-white/20 transition"
           />
           <button
             onClick={addChannel}
             disabled={adding}
-            className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 text-white font-semibold rounded-xl transition shadow-lg shadow-purple-600/20 flex items-center gap-2"
+            className="px-5 py-2.5 bg-white/10 hover:bg-white/20 disabled:opacity-50 text-white font-semibold rounded-xl transition border border-white/10 flex items-center gap-2"
           >
             {adding ? Icon.spinner() : Icon.plus()}
             <span className="hidden sm:inline">Add</span>
@@ -2535,7 +2550,7 @@ const TrackListManager: React.FC = () => {
                           </span>
                           <button
                             onClick={() => setSelectedChannelId(t.channelId)}
-                            className="text-purple-300 hover:text-purple-200 underline text-[10px] flex-shrink-0 ml-2"
+                            className="text-slate-300 hover:text-white underline text-[10px] flex-shrink-0 ml-2"
                           >
                             Channel
                           </button>
@@ -2590,7 +2605,7 @@ const TrackListManager: React.FC = () => {
                 value={allTitlesSearch}
                 onChange={(e) => setAllTitlesSearch(e.target.value)}
                 placeholder="Search title or channel..."
-                className="w-full bg-gray-800/60 border border-gray-700 rounded-lg pl-8 pr-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                className="w-full bg-gray-800/60 border border-gray-700 rounded-lg pl-8 pr-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-white/20"
               />
             </div>
 
@@ -2656,7 +2671,7 @@ const TrackListManager: React.FC = () => {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Channel dhoondo..."
-                className="w-48 bg-gray-800/60 border border-gray-700 rounded-lg pl-8 pr-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                className="w-48 bg-gray-800/60 border border-gray-700 rounded-lg pl-8 pr-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-white/20"
               />
             </div>
           </div>
@@ -2679,13 +2694,13 @@ const TrackListManager: React.FC = () => {
                 <div
                   key={ch._id}
                   className={`bg-slate-800/30 backdrop-blur-xl border rounded-2xl overflow-hidden transition-colors ${
-                    isOpen ? 'border-purple-500/40' : 'border-white/10'
+                    isOpen ? 'border-white/30' : 'border-white/10'
                   }`}
                 >
                   <button
                     onClick={() => setSelectedChannelId(isOpen ? null : ch._id)}
                     className={`w-full flex items-center gap-3 p-3 text-left transition ${
-                      isOpen ? 'bg-purple-500/10' : 'hover:bg-white/[0.03]'
+                      isOpen ? 'bg-white/10' : 'hover:bg-white/[0.03]'
                     }`}
                   >
                     <div className="relative flex-shrink-0">
@@ -2755,7 +2770,7 @@ const TrackListManager: React.FC = () => {
             <button
               onClick={runAllNow}
               disabled={runningAll}
-              className="text-xs px-3 py-1.5 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 text-purple-300 transition flex items-center gap-1.5 disabled:opacity-50"
+              className="text-xs px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-slate-200 transition flex items-center gap-1.5 disabled:opacity-50"
             >
               {runningAll ? Icon.spinner('w-3.5 h-3.5') : Icon.play('w-3.5 h-3.5')}
               Test Run
@@ -2862,7 +2877,7 @@ const TrackListManager: React.FC = () => {
                         <p className="text-[10px] text-slate-500">{log.totalRecentVideos} recent videos fetched</p>
                         {log.titles.map((t: any, i: number) => (
                           <div key={i} className="bg-black/30 rounded-lg p-2.5 border border-white/5">
-                            <p className="text-[11px] font-medium text-purple-300 mb-1">
+                            <p className="text-[11px] font-medium text-slate-300 mb-1">
                               "{t.keyword}" — {t.matchedVideoCount} matched
                             </p>
                             {t.entries.length === 0 ? (
