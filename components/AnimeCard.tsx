@@ -1,4 +1,4 @@
- // components/AnimeCard.tsx
+// components/AnimeCard.tsx
 import React from 'react';
 import type { Anime } from '../src/types';
 import { PlayIcon } from './icons/PlayIcon';
@@ -123,11 +123,11 @@ const AnimeCard: React.FC<AnimeCardProps> = ({
           </div>
         )}
 
-        {/* Episode badge — Movie ke liye hide */}
+        {/* Episode badge — Movie ke liye hide, Manga ke liye "Ch", Anime ke liye "Ep" */}
         {anime.contentType !== 'Movie' && (anime.currentEpisode ?? 0) > 0 && (
           <div className="absolute top-0.5 right-1 z-10">
             <span className="bg-gradient-to-r from-red-600 to-orange-600 text-white text-[11px] font-medium px-2 py-0.5 rounded-md shadow-md">
-              {anime.contentType === 'Manga' ? 'Part' : 'Ep'} {anime.currentEpisode}
+              {anime.contentType === 'Manga' ? 'Ch' : 'Ep'} {anime.currentEpisode}
             </span>
           </div>
         )}

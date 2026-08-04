@@ -1,4 +1,4 @@
- // src/components/FeaturedAnimeCarousel.tsx – Section visibility respected
+// src/components/FeaturedAnimeCarousel.tsx – Section visibility respected
 import React, { useRef, useState, useEffect } from 'react';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Autoplay, Pagination } from 'swiper/modules';
@@ -123,6 +123,7 @@ const FeaturedAnimeCarousel: React.FC<Props> = ({ featuredAnimes, onAnimeSelect 
             const optimizedThumbnail = optimizeImageUrl(safeThumbnail, 193, 289);
             const thumbnailSrcSet = generateSrcSet(safeThumbnail, 193, 289);
             const isMovie = anime.contentType?.toLowerCase() === 'movie';
+            const isManga = anime.contentType?.toLowerCase() === 'manga';
 
             return (
               <SwiperSlide key={anime.id || anime._id || index}>
@@ -140,7 +141,7 @@ const FeaturedAnimeCarousel: React.FC<Props> = ({ featuredAnimes, onAnimeSelect 
                     </div>
                     {!isMovie && anime.currentEpisode && anime.currentEpisode > 0 && (
                       <div className="absolute top-0.5 right-2 z-20">
-                        <span className="bg-gradient-to-r from-red-600 to-orange-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-md shadow-lg border border-white/20">EP {anime.currentEpisode}</span>
+                        <span className="bg-gradient-to-r from-red-600 to-orange-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-md shadow-lg border border-white/20">{isManga ? 'Ch' : 'EP'} {anime.currentEpisode}</span>
                       </div>
                     )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent transition-colors duration-300 group-hover:from-black/97 flex flex-col justify-end p-2 sm:p-3 md:p-4">
@@ -191,6 +192,7 @@ const FeaturedAnimeCarousel: React.FC<Props> = ({ featuredAnimes, onAnimeSelect 
           {bannerAnimes.map((anime, index) => {
             const safeThumbnail = anime.thumbnail || '';
             const isMovie = anime.contentType?.toLowerCase() === 'movie';
+            const isManga = anime.contentType?.toLowerCase() === 'manga';
             return (
               <SwiperSlide key={anime.id || anime._id || index}>
                 {/* MOBILE BANNER */}
@@ -214,7 +216,7 @@ const FeaturedAnimeCarousel: React.FC<Props> = ({ featuredAnimes, onAnimeSelect 
                             <div className="flex flex-wrap gap-1.5">
                               {anime.subDubStatus && <span className="px-2 py-0.5 rounded text-xs font-semibold bg-purple-600/80 text-white border border-purple-500">{anime.subDubStatus}</span>}
                               {anime.releaseYear && <span className="px-2 py-0.5 rounded text-xs font-semibold bg-slate-800/60 text-slate-300 border border-slate-700">{anime.releaseYear}</span>}
-                              {!isMovie && anime.currentEpisode && anime.currentEpisode > 0 && <span className="px-2 py-0.5 rounded text-xs font-semibold bg-gradient-to-r from-red-600 to-orange-600 text-white border border-red-500/30">EP {anime.currentEpisode}</span>}
+                              {!isMovie && anime.currentEpisode && anime.currentEpisode > 0 && <span className="px-2 py-0.5 rounded text-xs font-semibold bg-gradient-to-r from-red-600 to-orange-600 text-white border border-red-500/30">{isManga ? 'Ch' : 'EP'} {anime.currentEpisode}</span>}
                             </div>
                             {isMovie && anime.genreList && anime.genreList.length > 0 && (
                               <div className="flex flex-wrap gap-1 mt-1">
@@ -252,7 +254,7 @@ const FeaturedAnimeCarousel: React.FC<Props> = ({ featuredAnimes, onAnimeSelect 
                             <div className="flex flex-wrap gap-1.5">
                               {anime.releaseYear && <span className="px-2.5 py-1 rounded text-xs font-bold bg-gradient-to-r from-slate-800/40 to-slate-900/40 text-slate-300 border border-slate-700">{anime.releaseYear}</span>}
                               {anime.subDubStatus && <span className="px-2.5 py-1 rounded text-xs font-bold bg-gradient-to-r from-purple-600 to-purple-700 text-white border border-purple-500">{anime.subDubStatus}</span>}
-                              {!isMovie && anime.currentEpisode && anime.currentEpisode > 0 && <span className="px-2.5 py-1 rounded text-xs font-bold bg-gradient-to-r from-red-600 to-orange-600 text-white border border-red-500/30">EP {anime.currentEpisode}</span>}
+                              {!isMovie && anime.currentEpisode && anime.currentEpisode > 0 && <span className="px-2.5 py-1 rounded text-xs font-bold bg-gradient-to-r from-red-600 to-orange-600 text-white border border-red-500/30">{isManga ? 'Ch' : 'EP'} {anime.currentEpisode}</span>}
                             </div>
                             {anime.description && <p className="text-slate-300 text-xs leading-relaxed max-w-2xl line-clamp-2">{anime.description}</p>}
                             {anime.genreList && anime.genreList.length > 0 && (
