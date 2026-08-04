@@ -307,14 +307,24 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
     } catch (e: any) { toast.error(e.message); } finally { setUpdatingPoll(false); }
   };
 
+  // ✅ UPDATED: TypeScript-safe handleEditPoll - no 'as any' needed
   const handleEditPoll = (poll: Poll) => {
-    setEditingPollId(poll._id); setIsEditing(true);
+    setEditingPollId(poll._id);
+    setIsEditing(true);
     setNewPoll({
       question: poll.question,
-      options: poll.options?.map(o => ({ animeId: o.animeId || '', title: o.title, image: o.image || '' })) || [],
+      options: poll.options?.map(o => ({
+        _id: o._id,
+        animeId: o.animeId || '',
+        title: o.title,
+        image: o.image || '',
+        votes: o.votes || 0,
+      })) || [],
       expiresAt: poll.expiresAt ? new Date(poll.expiresAt).toISOString().slice(0, 16) : ''
     });
-    setSelectedAnimeIds(poll.options?.filter(o => o.animeId && !o.animeId.startsWith('custom_')).map(o => o.animeId!) || []);
+    setSelectedAnimeIds(
+      poll.options?.filter(o => o.animeId && !o.animeId.startsWith('custom_')).map(o => o.animeId!) || []
+    );
     setViewMode('create');
   };
 

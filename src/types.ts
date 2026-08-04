@@ -1,4 +1,5 @@
  // src/types.ts – COMPLETE UPDATED VERSION WITH DEVICE-BASED POLL VOTING & isHidden
+
 /* =========================
    DOWNLOAD / EPISODE / CHAPTER
 ========================= */
@@ -307,6 +308,7 @@ export interface CheckVoteResponse {
 ========================= */
 
 export interface PollFormOption {
+  _id?: string;   // ✅ NEW — edit karte waqt existing option ki id preserve karne ke liye
   animeId: string;
   title: string;
   image: string;
