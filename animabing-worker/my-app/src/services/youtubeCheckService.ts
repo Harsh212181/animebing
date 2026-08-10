@@ -28,6 +28,59 @@ export function parseEpisodeOverride(raw: string | number): { episode: number; e
   return { episode: single }
 }                            // ============================================================
 
+// ============ ✅ NEW — duplicate-notification guard ============
+// Race-proof: agar cron aur manual "Check Now"/"Test Run" overlap ho jayein (dono purana
+// channel doc padh ke apna-apna updateOne se overwrite kar dein), tab bhi same video ke
+// liye same-type notification dobara DB me nahi jaayegi. flaggedVideoIds wala in-memory
+// dedup ke upar ye ek DB-level safety net hai.
+export async function notifyOnce(
+  payload: ITrackNotification,
+  mongoUri: string,
+  dbName: string
+) {
+  const dupeFilter: Record<string, any> = {
+    channelId: payload.channelId,
+    titleKeyword: payload.titleKeyword,
+    notifType: payload.notifType,
+  }
+  // newVideoId empty ho sakta hai kuch notif types (jaise auto_paused) me — tab keyword+type+message se dedup karo
+  if (payload.newVideoId) {
+    dupeFilter.newVideoId = payload.newVideoId
+  } else {
+    dupeFilter.message = payload.message
+  }
+
+  const existing = await findOne('trackNotifications', dupeFilter, mongoUri, dbName)
+  if (existing) return existing
+
+  return insertOne('trackNotifications', payload, mongoUri, dbName)
+}                            // ============================================================
+
+// ============ ✅ NEW — batched parallel processing (chunk load: max N items ek saath) ============
+// Cron/Test Run jab sab channels ek saath (Promise.allSettled) process karte the, tab
+// YouTube API pe burst load jaata tha aur 429/quota errors aate the — jo consecutiveErrors
+// badha ke channels ko galti se auto-pause kar dete the. Ab sirf `batchSize` channels ek
+// saath chalenge, batches ke beech `delayMs` ka gap rahega.
+export async function processInBatches<T, R>(
+  items: T[],
+  batchSize: number,
+  delayMs: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = []
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize)
+    const batchResults = await Promise.allSettled(
+      batch.map((item, idx) => fn(item, i + idx))
+    )
+    results.push(...batchResults)
+    if (i + batchSize < items.length && delayMs > 0) {
+      await new Promise((r) => setTimeout(r, delayMs))
+    }
+  }
+  return results
+}                            // ============================================================
+
 // ============ ✅ API quota tracking ============
 export interface QuotaTracker {
   units: number
@@ -276,7 +329,7 @@ export function matchAndParseVideos(
 
 // ============ Scan depth defaults ============
 const INITIAL_SCAN_DEPTH = 1500
-const TRACKED_SCAN_DEPTH = 50
+const TRACKED_SCAN_DEPTH = 50   // ✅ ye waisa hi hai — sirf already-approved titles ke fallback depth ke liye, isko badalne ki zarurat nahi
 
 export async function fetchAllVideosForTitle(
   channel: ITrackedChannel,
@@ -326,7 +379,11 @@ export async function processChannelUpdates(
 ): Promise<ProcessedUpdate[]> {
   if (channel.paused) return []
 
-  const recentVideos = await fetchRecentVideos(channel.uploadsPlaylistId, apiKey, 50, quotaTracker)
+  // ✅ FIX: 50 → 150 — pehle sirf last-50 videos scan hote the jisse channel pe agar
+  // beech me dusre uploads (shorts/other titles) aa jayein to naye episodes miss ho jaate
+  // the. Ab 150 tak scan hota hai taaki manual "Saare Episodes Dekho" (jo already deeper
+  // scan karta hai) aur auto-check dono consistent result den.
+  const recentVideos = await fetchRecentVideos(channel.uploadsPlaylistId, apiKey, 150, quotaTracker)
   const results: ProcessedUpdate[] = []
   const updatedTitles: ITrackedTitle[] = []
   let titlesChanged = false
@@ -361,7 +418,8 @@ export async function processChannelUpdates(
       }
 
       if (!trackedTitle.approvalNotified) {
-        await insertOne('trackNotifications', {
+        // ✅ FIX: insertOne → notifyOnce (race-proof dedup)
+        await notifyOnce({
           message: `${channel.channelName} — "${trackedTitle.keyword}" me ${distinctParts.size} episodes/parts mile hain! Pehle inhe approve karo — Track List Manager ke "All Titles" section me anime/page select karo.`,
           channelId: channel.channelId,
           channelName: channel.channelName,
@@ -719,7 +777,10 @@ export async function processChannelUpdates(
       message = `${channel.channelName} — "${r.keyword}" ka naya part (${r.newPart}) aa gaya hai!${r.autoAdded ? ' (Watch section me automatically add ho gaya ✅)' : ''}`
     }
 
-    await insertOne('trackNotifications', {
+    // ✅ FIX: insertOne → notifyOnce (race-proof dedup) — yahi wo jagah hai jaha
+    // "same video 4-5 baar Manual Review me dikhna" wala duplicate bug bana raha tha
+    // jab cron aur Check Now/Test Run overlap ho jaate the
+    await notifyOnce({
       message,
       channelId: channel.channelId,
       channelName: channel.channelName,

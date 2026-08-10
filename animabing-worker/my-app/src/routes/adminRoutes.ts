@@ -316,13 +316,21 @@ adminRoutes.get('/chapter/:id', adminAuth, async (c) => {
   }
 })
 
-// ============ REPORTS PENDING COUNT (red dot ke liye) - /reports se PEHLE, koi conflict nahi hai but safe rakhte hain ============
+// ============ REPORTS "UNSEEN" PENDING COUNT (red dot ke liye) ============
+// Query param `since` (ISO date string, optional): jab diya jaye to sirf us
+// waqt ke BAAD create hue Pending reports count hote hain — isse red dot
+// tab tak hi dikhta hai jab tak admin ne Reports tab open (seen) nahi kiya.
+// `since` na diya jaye to purana behaviour (sab Pending reports count) chalta hai.
 adminRoutes.get('/reports/pending-count', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    // ✅ Sub-admin (animeAccess:'own') → sirf apne anime ke pending reports count
+    const sinceParam = c.req.query('since')
+    const since = sinceParam ? new Date(sinceParam) : null
+    const hasValidSince = !!(since && !isNaN(since.getTime()))
+
+    // ✅ Sub-admin (animeAccess:'own') → sirf apne anime ke pending episode reports count
     const ownedAnimeIds = await getOwnedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
 
     if (ownedAnimeIds !== null) {
@@ -330,16 +338,20 @@ adminRoutes.get('/reports/pending-count', adminAuth, async (c) => {
         return c.json({ success: true, count: 0 })
       }
       const objectIds = ownedAnimeIds.map((id: string) => toObjectId(id))
-      const count = await db.collection('reports').countDocuments({
+      const filter: any = {
         type: 'episode',
         status: 'Pending',
         animeId: { $in: objectIds }
-      })
+      }
+      if (hasValidSince) filter.createdAt = { $gt: since }
+      const count = await db.collection('reports').countDocuments(filter)
       return c.json({ success: true, count })
     }
 
     // Super admin ya animeAccess:'all' wala sub-admin → sab pending reports
-    const count = await db.collection('reports').countDocuments({ status: 'Pending' })
+    const filter: any = { status: 'Pending' }
+    if (hasValidSince) filter.createdAt = { $gt: since }
+    const count = await db.collection('reports').countDocuments(filter)
     return c.json({ success: true, count })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
@@ -360,15 +372,13 @@ adminRoutes.get('/reports', adminAuth, async (c) => {
       .sort({ createdAt: -1 })
       .toArray()
 
-    // Sub-admin (own access) ke liye filter: contact reports sabko dikhein,
-    // episode reports sirf jinka anime owned ho
+    // 🔒 Sub-admin (own access) ke liye filter: SIRF apne anime ke EPISODE reports.
+    // Contact form reports ab kisi bhi sub-admin ko nahi dikhenge — sirf super admin ko.
     let filteredReports = reports
     if (ownedAnimeIds !== null) {
       const ownedIdSet = new Set(ownedAnimeIds)
       filteredReports = reports.filter((r: any) => {
-        if (r.type === 'contact') return true
-        if (r.animeId) return ownedIdSet.has(r.animeId.toString())
-        return false
+        return r.type === 'episode' && r.animeId && ownedIdSet.has(r.animeId.toString())
       })
     }
 

@@ -2,9 +2,12 @@
   "name": "animabing-backend",
   "main": "src/index.ts",
   "compatibility_date": "2025-01-01",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": ["nodejs_compat", "no_handle_cross_request_promise_resolution"],
   "workers_dev": true,
   "preview_urls": true,
+  "limits": {
+    "cpu_ms": 300000
+  },
   "vars": {
     "MONGODB_DB": "animabing",
     "ALLOWED_ORIGIN": "*",

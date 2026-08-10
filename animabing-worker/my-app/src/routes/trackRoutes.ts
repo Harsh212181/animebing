@@ -1,4 +1,4 @@
- // ============================================================
+// ============================================================
 // animabing-worker/my-app/src/routes/trackRoutes.ts
 // ============================================================
 
@@ -9,7 +9,7 @@ import {
   findMany, findOne, insertOne, updateOne, deleteOne, countDocuments, toObjectId, isValidObjectId
 } from '../services/mongoService'
 import { ITrackedChannel, ITrackNotification } from '../models/types'
-import { processChannelUpdates, fetchChannelInfoByHandle, fetchRecentVideos, fetchVideoDurations, matchAndParseVideos, parseEpisodeOverride } from '../services/youtubeCheckService'
+import { processChannelUpdates, fetchChannelInfoByHandle, fetchRecentVideos, fetchVideoDurations, matchAndParseVideos, parseEpisodeOverride, notifyOnce, processInBatches } from '../services/youtubeCheckService'
 import { logActivity } from '../services/activityLogService'
 import { syncPageDerivedData } from '../services/episodeSyncService'   // ✅ UPDATED: combined helper (currentEpisode + title dono ek saath)
 
@@ -561,7 +561,8 @@ trackRoutes.post('/channel/:channelId/check-now', async (c) => {
     if (shouldAutoPause) updateData.paused = true
     await updateOne('trackedChannels', { _id: channel._id! }, updateData, c.env.MONGODB_URI, c.env.MONGODB_DB)
     if (shouldAutoPause) {
-      await insertOne('trackNotifications', {
+      // ✅ FIX: insertOne → notifyOnce (race-proof dedup)
+      await notifyOnce({
         message: `⛔ "${channel.channelName}" lagatar ${newErrCount} baar fail hua (handle change ho sakta hai ya YouTube API error) — channel khud-b-khud pause kar diya gaya hai. Check karke resume karo.`,
         channelId: channel.channelId,
         channelName: channel.channelName,
@@ -1101,17 +1102,16 @@ trackRoutes.get('/page-links', async (c) => {
   return c.json(map)
 })
 
-// ============ ✅ RUN ALL NOW — ab quota tracker sum bhi karta hai ============
+// ============ ✅ RUN ALL NOW — ab quota tracker sum bhi karta hai, batch me 2-2 channels ============
 trackRoutes.post('/run-all-now', async (c) => {
   const channels = await findMany<ITrackedChannel>(
     'trackedChannels', { paused: { $ne: true } }, {}, c.env.MONGODB_URI, c.env.MONGODB_DB
   )
 
   const trackers = channels.map(() => ({ units: 0 }))
-  const settled = await Promise.allSettled(
-    channels.map((channel, i) =>
-      processChannelUpdates(channel, c.env.YOUTUBE_API_KEY, c.env.MONGODB_URI, c.env.MONGODB_DB, trackers[i])
-    )
+  // ✅ FIX: 2-2 channels ka batch, beech me 3 sec gap — chunk load
+  const settled = await processInBatches(channels, 2, 3000, (channel, i) =>
+    processChannelUpdates(channel, c.env.YOUTUBE_API_KEY, c.env.MONGODB_URI, c.env.MONGODB_DB, trackers[i])
   )
 
   let totalUpdatesFound = 0
@@ -1139,7 +1139,8 @@ trackRoutes.post('/run-all-now', async (c) => {
       await updateOne('trackedChannels', { _id: channel._id! }, updateData, c.env.MONGODB_URI, c.env.MONGODB_DB)
 
       if (shouldAutoPause) {
-        await insertOne('trackNotifications', {
+        // ✅ FIX: insertOne → notifyOnce (race-proof dedup)
+        await notifyOnce({
           message: `⛔ "${channel.channelName}" lagatar ${newErrCount} baar fail hua (handle change ho sakta hai ya YouTube API error) — channel khud-b-khud pause kar diya gaya hai. Check karke resume karo.`,
           channelId: channel.channelId,
           channelName: channel.channelName,

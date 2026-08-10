@@ -25,7 +25,7 @@ import notesRoutes from './routes/notesRoutes'
 import trackRoutes from './routes/trackRoutes'
 import { findMany, insertOne, updateOne } from './services/mongoService'
 import { ITrackedChannel } from './models/types'
-import { processChannelUpdates } from './services/youtubeCheckService'
+import { processChannelUpdates, notifyOnce, processInBatches } from './services/youtubeCheckService'
 import linkGeneratorRoutes from './routes/linkGeneratorRoutes'
 
 export type Env = {
@@ -54,6 +54,17 @@ export type Variables = {
 
 // ✅ Consecutive-failure threshold before a channel is auto-paused (kept in sync with trackRoutes.ts)
 const AUTO_PAUSE_ERROR_THRESHOLD = 5
+
+// ✅ NEW — cron duplicate-invocation guard window. Cloudflare can retry a scheduled()
+// invocation if the previous one threw/crashed — this makes sure we don't process the
+// same cron tick twice and write duplicate cronRunLogs / notifications.
+const CRON_DEDUPE_WINDOW_MS = 5 * 60 * 1000
+
+// ✅ NEW — chunk load: kitne channels ek saath process honge, aur batches ke beech gap.
+// Groups of 2 rakha gaya hai taaki YouTube API pe burst load kam ho aur 429/quota errors
+// se bachte hue channels galti se auto-pause na hon.
+const CHANNEL_BATCH_SIZE = 2
+const CHANNEL_BATCH_DELAY_MS = 3000
 
 const app = new Hono<{ Bindings: Env, Variables: Variables }>()
 
@@ -122,16 +133,30 @@ export default {
 
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     try {
+      // ✅ NEW — idempotency guard: agar Cloudflare ne pichle 5 min me already ek run
+      // start/complete kiya hai (retry ki wajah se), toh skip karo. Isse duplicate
+      // cronRunLogs entries aur duplicate notifications rukte hain.
+      const recentRun = await findMany<any>(
+        'cronRunLogs',
+        { runAt: { $gte: new Date(Date.now() - CRON_DEDUPE_WINDOW_MS) } },
+        { limit: 1 },
+        env.MONGODB_URI, env.MONGODB_DB
+      )
+      if (recentRun.length > 0) {
+        console.log('Duplicate scheduled invocation detected within dedupe window — skipping')
+        return
+      }
+
       const channels = await findMany<ITrackedChannel>(
         'trackedChannels', { paused: { $ne: true } }, {}, env.MONGODB_URI, env.MONGODB_DB
       )
 
       // ✅ Per-channel quota tracker, summed at the end
       const trackers = channels.map(() => ({ units: 0 }))
-      const settled = await Promise.allSettled(
-        channels.map((channel, i) =>
-          processChannelUpdates(channel, env.YOUTUBE_API_KEY, env.MONGODB_URI, env.MONGODB_DB, trackers[i])
-        )
+      // ✅ FIX: sab channels ek saath (Promise.allSettled) nahi — ab 2-2 ka group,
+      // batches ke beech 3 sec gap. YouTube API pe burst load kam, 429/quota errors kam.
+      const settled = await processInBatches(channels, CHANNEL_BATCH_SIZE, CHANNEL_BATCH_DELAY_MS, (channel, i) =>
+        processChannelUpdates(channel, env.YOUTUBE_API_KEY, env.MONGODB_URI, env.MONGODB_DB, trackers[i])
       )
 
       let totalUpdatesFound = 0
@@ -161,7 +186,8 @@ export default {
             await updateOne('trackedChannels', { _id: channel._id! }, updateData, env.MONGODB_URI, env.MONGODB_DB)
 
             if (shouldAutoPause) {
-              await insertOne('trackNotifications', {
+              // ✅ FIX: insertOne → notifyOnce (race-proof dedup)
+              await notifyOnce({
                 message: `⛔ "${channel.channelName}" lagatar ${newErrCount} baar fail hua (handle change ho sakti hai ya YouTube API error) — channel khud-b-khud pause kar diya gaya hai. Check karke resume karo.`,
                 channelId: channel.channelId,
                 channelName: channel.channelName,

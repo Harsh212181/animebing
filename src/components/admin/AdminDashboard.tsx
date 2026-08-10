@@ -16,9 +16,9 @@ import ShortenerManager from './ShortenerManager';
 import ShortUsersManager from './ShortUsersManager';
 import SubAdminManager from './SubAdminManager';
 import AnimeLinkControlManager from './AnimeLinkControlManager';
-import SpecialModeManager from './SpecialModeManager'; // ✅ new import
-import NotesManager from './NotesManager'; // 👈 Notes import
-import TrackListManager from './TrackListManager'; // ✅ Track List import
+import SpecialModeManager from './SpecialModeManager';
+import NotesManager from './NotesManager';
+import TrackListManager from './TrackListManager';
 import Spinner from '../Spinner';
 import axios from 'axios';
 
@@ -36,7 +36,7 @@ interface LinkSettings {
   link4: boolean;
   link5: boolean;
   autoSundayMode: boolean;
-  autoModeEnabled?: boolean; // ✅ new field (backward compatible)
+  autoModeEnabled?: boolean;
   _id?: string;
   lastUpdated?: string;
 }
@@ -80,9 +80,9 @@ const ICONS: Record<string, string> = {
   pageviews:       'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
   subadmins:       'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z',
   linkControl:     'M4 6h4m0 0a2 2 0 104 0m-4 0a2 2 0 114 0m4 0h4M4 12h10m0 0a2 2 0 104 0m-4 0a2 2 0 114 0m4 0h-2M4 18h4m0 0a2 2 0 104 0m-4 0a2 2 0 114 0m4 0h6',
-  specialModes:    'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z', // ✅ new icon
-  notes:           'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', // 👈 Notes icon
-  trackList:       'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z', // ✅ Track List icon
+  specialModes:    'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z',
+  notes:           'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
+  trackList:       'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z',
 };
 
 const TAB_LABELS: Record<string, string> = {
@@ -101,9 +101,9 @@ const TAB_LABELS: Record<string, string> = {
   pageviews:       'Page Views',
   subadmins:       'Sub-Admins',
   linkControl:     'Anime Link Control',
-  specialModes:    'Special Modes', // ✅ new label
-  notes:           'Notes', // 👈 Notes label
-  trackList:       'Track List', // ✅ Track List label
+  specialModes:    'Special Modes',
+  notes:           'Notes',
+  trackList:       'Track List',
 };
 
 // ─── TabContent ──────────────────────────────────────────────────────────────
@@ -124,9 +124,9 @@ const TabContent: React.FC<{ activeTab: string; token: string }> = React.memo(({
     case 'pageviews':      return <PageViewManager token={token} />;
     case 'subadmins':      return <SubAdminManager />;
     case 'linkControl':    return <AnimeLinkControlManager />;
-    case 'specialModes':   return <SpecialModeManager token={token} apiBase={API_BASE} />; // ✅ new case
-    case 'notes':          return <NotesManager token={token} apiBase={API_BASE} isSuperAdmin={true} />; // 👈 Notes tab (super admin)
-    case 'trackList':      return <TrackListManager />; // ✅ Track List case
+    case 'specialModes':   return <SpecialModeManager token={token} apiBase={API_BASE} />;
+    case 'notes':          return <NotesManager token={token} apiBase={API_BASE} isSuperAdmin={true} />;
+    case 'trackList':      return <TrackListManager />;
     default:               return <AnimeListTable token={token} isMainAdmin={true} />;
   }
 });
@@ -288,18 +288,43 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     autoSundayMode: false,
   });
 
-  // ✅ New state for Restore Preview
   const [restorePreview, setRestorePreview] = useState<{ forced: boolean; willRestoreTo?: Record<string, boolean> }>({ forced: false });
 
   const [downloadStats, setDownloadStats] = useState({ totalPages: 0, totalDownloadEpisodes: 0 });
   const [pendingReportsCount, setPendingReportsCount] = useState(0);
   const [unreadShortMessagesCount, setUnreadShortMessagesCount] = useState(0);
-  const [trackUnreadCount, setTrackUnreadCount] = useState(0); // ✅ NEW — Track List unread updates
+  const [trackUnreadCount, setTrackUnreadCount] = useState(0);
 
   const token = localStorage.getItem('adminToken');
   const authHeaders = () => ({ headers: { Authorization: `Bearer ${token}` } });
 
   const currentDayName = useMemo(() => getCurrentDayInIndia(), []);
+
+  // 📌 Reports "seen" timestamp key
+  const REPORTS_SEEN_KEY = 'adminReportsLastSeenAt';
+  const getLastSeenReportsAt = () => localStorage.getItem(REPORTS_SEEN_KEY) || '';
+
+  // 📌 Fetch pending reports count, using `since` if we have a last-seen timestamp
+  const fetchPendingReportsCount = async () => {
+    try {
+      const inst = axios.create({ timeout: 10000, headers: { Authorization: `Bearer ${token}` } });
+      const since = getLastSeenReportsAt();
+      const url = since
+        ? `${API_BASE}/admin/reports/pending-count?since=${encodeURIComponent(since)}`
+        : `${API_BASE}/admin/reports/pending-count`;
+      const res = await inst.get(url);
+      setPendingReportsCount(res.data?.count || 0);
+    } catch { /* ignore */ }
+  };
+
+  // 📌 Tab change handler: marks reports as seen
+  const handleTabChange = (tabId: string) => {
+    setActiveTab(tabId);
+    if (tabId === 'reports') {
+      localStorage.setItem(REPORTS_SEEN_KEY, new Date().toISOString());
+      setPendingReportsCount(0);
+    }
+  };
 
   useEffect(() => {
     if (!token) {
@@ -310,12 +335,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     loadInitialData();
     fetchLinkSettings();
     fetchDownloadStats();
-    fetchRestorePreview(); // ✅ Naya fetch call
+    fetchRestorePreview();
+    fetchPendingReportsCount(); // initial fetch with `since`
   }, []);
 
   useEffect(() => {
     if (!token) return;
     const interval = setInterval(async () => {
+      // poll unread short messages & track updates
       try {
         const inst = axios.create({ timeout: 10000, headers: { Authorization: `Bearer ${token}` } });
         const res = await inst.get(`${API_BASE}/short-users/admin/messages-count`);
@@ -327,6 +354,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         const unread = (res.data?.total || 0) - (res.data?.completed || 0);
         setTrackUnreadCount(unread > 0 ? unread : 0);
       } catch { /* ignore */ }
+
+      // 📌 also refresh pending reports count periodically
+      fetchPendingReportsCount();
     }, 30000);
     return () => clearInterval(interval);
   }, [token]);
@@ -347,17 +377,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       setUser(userRes.data);
       setAnalytics(analyticsRes.data);
 
-      try {
-        const countRes = await inst.get(`${API_BASE}/admin/reports/pending-count`);
-        setPendingReportsCount(countRes.data?.count || 0);
-      } catch { /* ignore */ }
+      // 📌 replaced inline report count with dedicated function
+      fetchPendingReportsCount();
 
       try {
         const msgCountRes = await inst.get(`${API_BASE}/short-users/admin/messages-count`);
         setUnreadShortMessagesCount(msgCountRes.data?.unread || 0);
       } catch { /* ignore */ }
 
-      // ✅ NEW — Track List unread updates count
       try {
         const trackRes = await inst.get(`${API_BASE}/track/notifications/summary`);
         const unread = (trackRes.data?.total || 0) - (trackRes.data?.completed || 0);
@@ -389,7 +416,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
-  // ✅ Naya fetch function for Restore Preview
   const fetchRestorePreview = async () => {
     try {
       const { data } = await axios.get(`${API_BASE}/link-settings/restore-preview`, { timeout: 5000 });
@@ -427,9 +453,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   };
 
   const activeLinkCount = [1,2,3,4,5].filter(getLinkStatus).length;
-  
-  // ✅ Removed: isSunday, isSundayInIndia, and areTogglesDisabled with Sunday check
-  // Now only linkSettingsLoading disables toggles
   const areTogglesDisabled = linkSettingsLoading;
 
   const handleLogout = () => {
@@ -485,7 +508,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           {Object.keys(TAB_LABELS).map(tabId => (
             <button
               key={tabId}
-              onClick={() => setActiveTab(tabId)}
+              onClick={() => handleTabChange(tabId)}  // 📌 use handler
               title={TAB_LABELS[tabId]}
               className={`relative w-9 h-9 rounded-lg flex items-center justify-center transition-colors ${
                 activeTab === tabId ? 'bg-purple-900/60' : 'hover:bg-white/5'
@@ -540,32 +563,32 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         </div>
         <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-4 scrollbar-thin scrollbar-thumb-white/10">
           <SidebarSection label="Content">
-            <NavItem tabId="list"            activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
-            <NavItem tabId="add"             activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
-            <NavItem tabId="episodes"        activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
-            <NavItem tabId="episode-status"  activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
+            <NavItem tabId="list"            activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
+            <NavItem tabId="add"             activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
+            <NavItem tabId="episodes"        activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
+            <NavItem tabId="episode-status"  activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
           </SidebarSection>
           <SidebarSection label="Manage">
-            <NavItem tabId="featured"        activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
-            <NavItem tabId="reports"         activeTab={activeTab} collapsed={false} onClick={setActiveTab} badge={pendingReportsCount} />
-            <NavItem tabId="polls"           activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
-            <NavItem tabId="social"          activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
-            <NavItem tabId="notes"           activeTab={activeTab} collapsed={false} onClick={setActiveTab} /> {/* 👈 Notes */}
-            <NavItem tabId="trackList"       activeTab={activeTab} collapsed={false} onClick={setActiveTab} badge={trackUnreadCount} /> {/* ✅ Track List with badge */}
+            <NavItem tabId="featured"        activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
+            <NavItem tabId="reports"         activeTab={activeTab} collapsed={false} onClick={handleTabChange} badge={pendingReportsCount} />
+            <NavItem tabId="polls"           activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
+            <NavItem tabId="social"          activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
+            <NavItem tabId="notes"           activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
+            <NavItem tabId="trackList"       activeTab={activeTab} collapsed={false} onClick={handleTabChange} badge={trackUnreadCount} />
           </SidebarSection>
           <SidebarSection label="Downloads">
-            <NavItem tabId="downloadPages"   activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
-            <NavItem tabId="linkControl"     activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
-            <NavItem tabId="specialModes"    activeTab={activeTab} collapsed={false} onClick={setActiveTab} /> {/* ✅ new item */}
-            <NavItem tabId="shortener"       activeTab={activeTab} collapsed={false} onClick={setActiveTab} badge={unreadShortMessagesCount} />
-            <NavItem tabId="shortusers"      activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
-            <NavItem tabId="partners"        activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
+            <NavItem tabId="downloadPages"   activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
+            <NavItem tabId="linkControl"     activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
+            <NavItem tabId="specialModes"    activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
+            <NavItem tabId="shortener"       activeTab={activeTab} collapsed={false} onClick={handleTabChange} badge={unreadShortMessagesCount} />
+            <NavItem tabId="shortusers"      activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
+            <NavItem tabId="partners"        activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
           </SidebarSection>
           <SidebarSection label="Analytics">
-            <NavItem tabId="pageviews" activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
+            <NavItem tabId="pageviews" activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
           </SidebarSection>
           <SidebarSection label="Administration">
-            <NavItem tabId="subadmins" activeTab={activeTab} collapsed={false} onClick={setActiveTab} />
+            <NavItem tabId="subadmins" activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
           </SidebarSection>
         </nav>
         <div className="flex-shrink-0 border-t border-white/[0.06] p-3">
@@ -688,7 +711,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               })}
             </div>
 
-            {/* ✅ Restore Preview Panel – improved design */}
             {restorePreview.forced && restorePreview.willRestoreTo && (
               <div className="mt-4 bg-gradient-to-br from-sky-500/5 to-indigo-500/5 border border-sky-500/20 rounded-xl p-4 shadow-lg backdrop-blur-sm">
                 <div className="flex items-center gap-2 mb-3">
@@ -731,8 +753,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               </div>
             )}
 
-            {/* ✅ REMOVED: Auto Sunday warning block - no longer needed */}
-            
             <p className="mt-3 text-center text-[11px] text-gray-500">
               These settings apply only to anime that are not assigned to any group in the <span className="text-purple-300">Anime Link Control</span> tab. Link 5 is always controlled from here for all anime.
             </p>

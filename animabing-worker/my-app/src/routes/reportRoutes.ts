@@ -51,7 +51,10 @@ reportRoutes.get('/pending-count', adminAuth, async (c) => {
     const admin = c.get('admin')
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    if (admin.role === 'subadmin') {
+    // 🔒 Sirf 'admin' role ko full/unrestricted access.
+    // Baaki sab (subadmin ya role-string mismatch waale bhi) ko sirf apne
+    // anime ke episode reports ka pending count milega — contact form kabhi nahi.
+    if (admin.role !== 'admin') {
       const ownAnimes = await db.collection('animes')
         .find({ createdBy: admin.id }, { projection: { _id: 1 } })
         .toArray()
@@ -136,8 +139,10 @@ reportRoutes.get('/', adminAuth, async (c) => {
       return { ...report, _createdBy: null }
     })
 
-    // 🔒 Sub-admin: sirf apna add kiya hua anime ke reports dikhao
-    if (admin.role === 'subadmin') {
+    // 🔒 Sub-admin (ya koi bhi role jo 'admin' nahi hai): sirf apna add kiya hua
+    // anime ke EPISODE reports dikhao. Contact form reports kabhi nahi dikhenge,
+    // chahe role field ka exact naam/value kuch bhi ho — sirf 'admin' ko full access.
+    if (admin.role !== 'admin') {
       enrichedReports = enrichedReports.filter(
         (r: any) => r.type === 'episode' && r._createdBy === admin.id
       )
