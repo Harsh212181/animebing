@@ -1,4 +1,4 @@
-// src/types/trackTypes.ts
+ // src/types/trackTypes.ts
 export interface TrackedTitle {
   id: string;
   keyword: string;
@@ -14,6 +14,8 @@ export interface TrackedChannel {
   paused?: boolean;
   titles: TrackedTitle[];
   consecutiveErrors?: number;
+  createdBy?: string;          // 🆕
+  createdByUsername?: string;  // 🆕
 }
 
 export interface Capacity {

@@ -177,6 +177,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
   const closeToast = () => setToast(prev => ({ ...prev, visible: false }));
 
   const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; id: string | null }>({ show: false, id: null });
+  const [settingPrimaryId, setSettingPrimaryId] = useState<string | null>(null);
 
   const [contentTypeFilter, setContentTypeFilter] = useState<'all' | ContentType>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'ongoing' | 'complete'>('all');
@@ -416,6 +417,58 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
       showToast('Network error while deleting', 'error');
     } finally {
       setDeleteConfirm({ show: false, id: null });
+    }
+  };
+
+  const handleSetPrimary = async (pageId: string) => {
+    setSettingPrimaryId(pageId);
+    try {
+      const token = resolveToken();
+      const res = await fetch(`${API_BASE}/download-pages/${pageId}/set-primary-episode-count`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        fetchPages();
+        showToast(`Primary set ho gaya! Ab badge episode ${data.currentEpisode} dikhayega.`, 'success');
+      } else {
+        showToast('Set primary fail ho gaya', 'error');
+      }
+    } catch (error) {
+      console.error('Set primary error:', error);
+      showToast('Network error', 'error');
+    } finally {
+      setSettingPrimaryId(null);
+    }
+  };
+
+  const handleUnsetPrimary = async (pageId: string) => {
+    setSettingPrimaryId(pageId);
+    try {
+      const token = resolveToken();
+      const res = await fetch(`${API_BASE}/download-pages/${pageId}/unset-primary-episode-count`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        fetchPages();
+        showToast(`Primary hata diya. Ab badge episode ${data.currentEpisode} dikhayega (sabhi pages ka max).`, 'success');
+      } else {
+        showToast('Unset primary fail ho gaya', 'error');
+      }
+    } catch (error) {
+      console.error('Unset primary error:', error);
+      showToast('Network error', 'error');
+    } finally {
+      setSettingPrimaryId(null);
     }
   };
 
@@ -926,6 +979,11 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
                                 Page {pageIndex}
                               </span>
                             )}
+                            {animePageList.length > 1 && (page as any).isPrimaryForEpisodeCount && (
+                              <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-cyan-600/30 text-cyan-300 border border-cyan-500/50 flex items-center gap-1">
+                                ⭐ Primary (Episode Badge Source)
+                              </span>
+                            )}
                             {hidden ? (
                               <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-red-600/30 text-red-300 border border-red-500/50">
                                 Hidden
@@ -970,7 +1028,8 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
                                 {animeDetails.status}
                               </span>
                             )}
-                            {!subAdminMode && animeDetails.createdByUsername && (
+                            {/* ✅ FIX: Sirf sub-admin pages ke liye creator name dikhao */}
+                            {!subAdminMode && animeDetails.isSubAdminCreated && animeDetails.createdByUsername && (
                               <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-amber-600/30 text-amber-300 border border-amber-500/50">
                                 By: {animeDetails.createdByUsername}
                               </span>
@@ -1048,6 +1107,34 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                         </svg>
                       </button>
+                      {animePageList.length > 1 && (
+                        <button
+                          onClick={() =>
+                            (page as any).isPrimaryForEpisodeCount
+                              ? handleUnsetPrimary(page._id)
+                              : handleSetPrimary(page._id)
+                          }
+                          disabled={settingPrimaryId === page._id}
+                          title={
+                            (page as any).isPrimaryForEpisodeCount
+                              ? 'Primary hatao (wapas combined-max pe jao)'
+                              : 'Is page ko Episode Badge ka source banao'
+                          }
+                          className={`p-2.5 border rounded-xl transition-all disabled:opacity-50 ${
+                            (page as any).isPrimaryForEpisodeCount
+                              ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300 hover:bg-cyan-500/30'
+                              : 'bg-white/5 hover:bg-cyan-500/20 border-white/10 hover:border-cyan-500/50 text-white/80 hover:text-cyan-300'
+                          }`}
+                        >
+                          {settingPrimaryId === page._id ? (
+                            <Spinner size="sm" />
+                          ) : (
+                            <svg className="w-5 h-5" fill={(page as any).isPrimaryForEpisodeCount ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.196-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.783-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                            </svg>
+                          )}
+                        </button>
+                      )}
                       <button
                         onClick={() => requestDelete(page._id)}
                         title="Delete page"

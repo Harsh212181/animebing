@@ -71,7 +71,7 @@ async function withDb<T>(
   const client = new MongoClient(mongoUri, {
     connectTimeoutMS: 5000,
     serverSelectionTimeoutMS: 5000,
-    socketTimeoutMS: 8000,
+    socketTimeoutMS: 10000,
     maxPoolSize: 5,
     minPoolSize: 0,
   })

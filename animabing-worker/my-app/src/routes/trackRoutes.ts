@@ -1,25 +1,56 @@
-// ============================================================
+ // ============================================================
 // animabing-worker/my-app/src/routes/trackRoutes.ts
 // ============================================================
 
 import { Hono } from 'hono'
 import { Env, Variables } from '../index'
-import { adminAuth } from '../middleware/auth'
+import { adminAuth, requirePermission } from '../middleware/auth'
 import {
-  findMany, findOne, insertOne, updateOne, deleteOne, countDocuments, toObjectId, isValidObjectId
+  findMany, findOne, insertOne, updateOne, deleteOne, countDocuments, toObjectId, isValidObjectId, getDb
 } from '../services/mongoService'
 import { ITrackedChannel, ITrackNotification } from '../models/types'
 import { processChannelUpdates, fetchChannelInfoByHandle, fetchRecentVideos, fetchVideoDurations, matchAndParseVideos, parseEpisodeOverride, notifyOnce, processInBatches } from '../services/youtubeCheckService'
 import { logActivity } from '../services/activityLogService'
-import { syncPageDerivedData } from '../services/episodeSyncService'   // ✅ UPDATED: combined helper (currentEpisode + title dono ek saath)
+import { syncPageDerivedData } from '../services/episodeSyncService'
 
 const trackRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
-// ✅ Consecutive-failure threshold before a channel is auto-paused
 const AUTO_PAUSE_ERROR_THRESHOLD = 5
 
-// Sab routes admin-protected hain (super admin + sub-admin dono chala sakte hain)
 trackRoutes.use('*', adminAuth)
+trackRoutes.use('*', requirePermission('tracklist'))
+
+// ============ HELPER: sub-admin (animeAccess:'own') ke owned+assigned anime IDs ============
+async function getAllowedAnimeIds(admin: any, mongoUri: string, dbName: string): Promise<string[] | null> {
+  if (admin.role !== 'subadmin' || admin.animeAccess !== 'own') return null
+  const db = await getDb(mongoUri, dbName)
+  const animes = await db.collection('animes')
+    .find({ createdBy: admin.id }, { projection: { _id: 1 } })
+    .toArray()
+  const createdIds = animes.map((a: any) => a._id.toString())
+
+  const subAdminDoc = await db.collection('subadmins').findOne({ _id: toObjectId(admin.id) })
+  const assignedIds: string[] = subAdminDoc?.assignedAnimeIds || []
+
+  return Array.from(new Set([...createdIds, ...assignedIds]))
+}
+
+// ============ 🆕 HELPER: sub-admin ko dikhne wale channelId (YouTube channelId, _id nahi) ============
+async function getVisibleChannelIds(admin: any, mongoUri: string, dbName: string): Promise<string[] | null> {
+  const allowedAnimeIds = await getAllowedAnimeIds(admin, mongoUri, dbName)
+  if (allowedAnimeIds === null) return null // super admin / animeAccess:'all'
+
+  const allowedSet = new Set(allowedAnimeIds)
+  const allChannels = await findMany<ITrackedChannel>('trackedChannels', {}, {}, mongoUri, dbName)
+
+  const visible = allChannels.filter(ch => {
+    const hasVisibleTitle = (ch.titles || []).some((t: any) =>
+      t.linkedAnimeId ? allowedSet.has(t.linkedAnimeId) : ch.createdBy === admin.id
+    )
+    return hasVisibleTitle || ch.createdBy === admin.id
+  })
+  return visible.map(ch => ch.channelId)
+}
 
 // ============ CHANNEL ADD ============
 trackRoutes.post('/channel/add', async (c) => {
@@ -70,6 +101,15 @@ trackRoutes.post('/channel/:channelId/refresh-info', async (c) => {
   )
   if (!channel) return c.json({ success: false, error: 'Channel nahi mila' }, 404)
 
+  const admin = c.get('admin')
+  if (admin.role === 'subadmin' && admin.animeAccess === 'own' && channel.createdBy !== admin.id) {
+    const allowedAnimeIds = await getAllowedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const hasAccess = (channel.titles || []).some((t: any) => t.linkedAnimeId && allowedAnimeIds?.includes(t.linkedAnimeId))
+    if (!hasAccess) {
+      return c.json({ success: false, error: 'Aapko is channel ko manage karne ki permission nahi hai.' }, 403)
+    }
+  }
+
   const info = await fetchChannelInfoByHandle(channel.channelHandle, c.env.YOUTUBE_API_KEY)
   if (!info) return c.json({ success: false, error: 'YouTube se info nahi mili' }, 404)
 
@@ -83,10 +123,27 @@ trackRoutes.post('/channel/:channelId/refresh-info', async (c) => {
 
 // ============ CHANNELS LIST ============
 trackRoutes.get('/channels', async (c) => {
-  const channels = await findMany<ITrackedChannel>(
+  const admin = c.get('admin')
+  const allChannels = await findMany<ITrackedChannel>(
     'trackedChannels', {}, { sort: { createdAt: -1 } }, c.env.MONGODB_URI, c.env.MONGODB_DB
   )
-  return c.json(channels)
+
+  const allowedAnimeIds = await getAllowedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+  if (allowedAnimeIds === null) return c.json(allChannels)
+
+  const allowedSet = new Set(allowedAnimeIds)
+
+  const filteredChannels = allChannels
+    .map(ch => {
+      const visibleTitles = (ch.titles || []).filter((t: any) => {
+        if (t.linkedAnimeId) return allowedSet.has(t.linkedAnimeId)
+        return ch.createdBy === admin.id
+      })
+      return { ...ch, titles: visibleTitles }
+    })
+    .filter(ch => ch.titles.length > 0 || ch.createdBy === admin.id)
+
+  return c.json(filteredChannels)
 })
 
 // ============ CHANNEL PAUSE/RESUME ============
@@ -99,9 +156,17 @@ trackRoutes.post('/channel/:channelId/toggle-pause', async (c) => {
   )
   if (!channel) return c.json({ success: false, error: 'Channel nahi mila' }, 404)
 
+  const admin = c.get('admin')
+  if (admin.role === 'subadmin' && admin.animeAccess === 'own' && channel.createdBy !== admin.id) {
+    const allowedAnimeIds = await getAllowedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const hasAccess = (channel.titles || []).some((t: any) => t.linkedAnimeId && allowedAnimeIds?.includes(t.linkedAnimeId))
+    if (!hasAccess) {
+      return c.json({ success: false, error: 'Aapko is channel ko manage karne ki permission nahi hai.' }, 403)
+    }
+  }
+
   const nowPaused = !channel.paused
   const updateData: any = { paused: nowPaused }
-  // ✅ Manually resuming clears the auto-pause error counter
   if (!nowPaused) updateData.consecutiveErrors = 0
 
   await updateOne(
@@ -117,10 +182,19 @@ trackRoutes.delete('/channel/:channelId', async (c) => {
   if (!isValidObjectId(channelId)) return c.json({ success: false, error: 'Invalid ID' }, 400)
 
   const channel = await findOne<ITrackedChannel>('trackedChannels', { _id: toObjectId(channelId) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+  if (!channel) return c.json({ success: false, error: 'Channel nahi mila' }, 404)
+
+  const admin = c.get('admin')
+  if (admin.role === 'subadmin' && admin.animeAccess === 'own' && channel.createdBy !== admin.id) {
+    const allowedAnimeIds = await getAllowedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const hasAccess = (channel.titles || []).some((t: any) => t.linkedAnimeId && allowedAnimeIds?.includes(t.linkedAnimeId))
+    if (!hasAccess) {
+      return c.json({ success: false, error: 'Aapko is channel ko manage karne ki permission nahi hai.' }, 403)
+    }
+  }
 
   await deleteOne('trackedChannels', { _id: toObjectId(channelId) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-  // ✅ NEW — is channel ki saari purani notifications bhi cascade-delete karo
   if (channel) {
     const relatedNotifs = await findMany<ITrackNotification>(
       'trackNotifications', { channelId: channel.channelId }, {}, c.env.MONGODB_URI, c.env.MONGODB_DB
@@ -130,7 +204,6 @@ trackRoutes.delete('/channel/:channelId', async (c) => {
     }
   }
 
-  const admin = c.get('admin')
   await logActivity({
     actorId: admin?.id || 'unknown',
     actorUsername: admin?.username || 'unknown',
@@ -144,7 +217,24 @@ trackRoutes.delete('/channel/:channelId', async (c) => {
   return c.json({ success: true })
 })
 
-// ============ ✅ TEST MATCH PREVIEW — ab threshold/excludeKeywords accept karta hai, durations bhi include, scanDepth support ============
+// ============ Channel-level Strict Chronology defaults ============
+trackRoutes.put('/channel/:channelId/chronology-defaults', async (c) => {
+  const channelId = c.req.param('channelId')
+  const { defaultStrictChronology, defaultChronologyGraceGap } = await c.req.json()
+  if (!isValidObjectId(channelId)) return c.json({ success: false, error: 'Invalid ID' }, 400)
+
+  await updateOne(
+    'trackedChannels', { _id: toObjectId(channelId) },
+    {
+      defaultStrictChronology: !!defaultStrictChronology,
+      defaultChronologyGraceGap: Number(defaultChronologyGraceGap) || 0,
+    },
+    c.env.MONGODB_URI, c.env.MONGODB_DB
+  )
+  return c.json({ success: true })
+})
+
+// ============ TEST MATCH PREVIEW ============
 trackRoutes.post('/channel/:channelId/title/test-match', async (c) => {
   const channelId = c.req.param('channelId')
   if (!isValidObjectId(channelId)) return c.json({ success: false, error: 'Invalid ID' }, 400)
@@ -156,7 +246,6 @@ trackRoutes.post('/channel/:channelId/title/test-match', async (c) => {
   )
   if (!channel) return c.json({ success: false, error: 'Channel nahi mila' }, 404)
 
-  // ✅ Default scan depth is 1500 for first-time preview (no tracked title)
   const depth = typeof scanDepth === 'number' && scanDepth > 0 ? scanDepth : 1500
   const recentVideos = await fetchRecentVideos(channel.uploadsPlaylistId, c.env.YOUTUBE_API_KEY, depth)
   const matched = matchAndParseVideos(recentVideos, String(keyword).trim(), [], {
@@ -164,17 +253,16 @@ trackRoutes.post('/channel/:channelId/title/test-match', async (c) => {
     excludeKeywords: Array.isArray(excludeKeywords) ? excludeKeywords : undefined,
   })
 
-  // ✅ Sabhi matched videos ki duration ek hi batch call me fetch karo
   const durations = await fetchVideoDurations(matched.map(m => m.video.videoId), c.env.YOUTUBE_API_KEY)
 
   return c.json({
     success: true,
     matchedCount: matched.length,
-    scannedCount: recentVideos.length,   // ✅ frontend ko batayega kitne total videos scan hue
-    videos: matched.map(v => ({          // ✅ slice(0,15) hata diya — ab saare matches dikhenge
+    scannedCount: recentVideos.length,
+    videos: matched.map(v => ({
       videoId: v.video.videoId,
       videoTitle: v.video.title,
-      description: v.video.description,          // ✅ "More" button ke liye
+      description: v.video.description,
       thumbnail: v.video.thumbnail,
       publishedAt: v.video.publishedAt,
       part: v.part,
@@ -183,12 +271,12 @@ trackRoutes.post('/channel/:channelId/title/test-match', async (c) => {
       matchedFormat: v.matchedFormat,
       matchScore: v.matchScore,
       fromDescription: v.fromDescription,
-      durationSec: durations[v.video.videoId] ?? null,   // ✅ duration
+      durationSec: durations[v.video.videoId] ?? null,
     })),
   })
 })
 
-// ============ ✅ QUICK BULK ADD FROM PREVIEW (title track kiye bina) ============
+// ============ QUICK BULK ADD FROM PREVIEW ============
 trackRoutes.post('/channel/:channelId/quick-bulk-add', async (c) => {
   const channelId = c.req.param('channelId')
   const { keyword, matchThreshold, excludeKeywords, downloadPageId, videoIds, episodeOverrides } = await c.req.json() as {
@@ -205,8 +293,6 @@ trackRoutes.post('/channel/:channelId/quick-bulk-add', async (c) => {
   const page = await findOne<any>('downloadpages', { _id: toObjectId(downloadPageId) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
   if (!page) return c.json({ success: false, error: 'Page nahi mila' }, 404)
 
-  // ✅ keyword ke sath dobara match run karo — client se part number trust nahi karte,
-  // sirf ye trust karte hain ki user ne kaunsa videoId select kiya
   const recentVideos = await fetchRecentVideos(channel.uploadsPlaylistId, c.env.YOUTUBE_API_KEY, 50)
   const matched = matchAndParseVideos(recentVideos, String(keyword).trim(), [], {
     threshold: typeof matchThreshold === 'number' ? matchThreshold : undefined,
@@ -242,7 +328,6 @@ trackRoutes.post('/channel/:channelId/quick-bulk-add', async (c) => {
   if (newLinks.length === 0) return c.json({ success: false, error: 'Sabhi selected videos already page me maujood hain' }, 400)
 
   await updateOne('downloadpages', { _id: page._id }, { links: [...existingLinks, ...newLinks] }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-  // ✅ UPDATED: combined helper — currentEpisode (Ch/EP badge) + episode/chapter range-title dono ek saath sync
   await syncPageDerivedData(page._id.toString(), c.env.MONGODB_URI, c.env.MONGODB_DB)
 
   const admin = c.get('admin')
@@ -259,10 +344,10 @@ trackRoutes.post('/channel/:channelId/quick-bulk-add', async (c) => {
   return c.json({ success: true, added: newLinks.length })
 })
 
-// ============ TITLE ADD — ab matchThreshold/excludeKeywords bhi accept karta hai ============
+// ============ TITLE ADD ============
 trackRoutes.post('/channel/:channelId/title/add', async (c) => {
   const channelId = c.req.param('channelId')
-  const { keyword, currentKnownPart, matchThreshold, excludeKeywords } = await c.req.json()
+  const { keyword, currentKnownPart, matchThreshold, excludeKeywords, autoInit } = await c.req.json()
   if (!keyword) return c.json({ success: false, error: 'Keyword zaroori hai' }, 400)
   if (!isValidObjectId(channelId)) return c.json({ success: false, error: 'Invalid ID' }, 400)
 
@@ -277,16 +362,50 @@ trackRoutes.post('/channel/:channelId/title/add', async (c) => {
     return c.json({ success: false, error: `"${keyword}" pehle se track ho raha hai is channel me` }, 400)
   }
 
-  const newTitles = [
-    {
-      id: crypto.randomUUID(),
-      keyword,
-      lastKnownPart: Number(currentKnownPart) || 0,
-      matchThreshold: typeof matchThreshold === 'number' ? matchThreshold : undefined,
-      excludeKeywords: Array.isArray(excludeKeywords) ? excludeKeywords.filter(Boolean) : undefined,
-    },
-    ...(channel.titles || []),
-  ]
+  let lastKnownPart = Number(currentKnownPart) || 0
+  let initialized = false
+  let lastKnownVideoId: string | undefined
+  let lastKnownVideoTitle: string | undefined
+  let lastKnownThumbnail: string | undefined
+  let lastKnownPublishedAt: string | undefined
+  let lastKnownIsRange: boolean | undefined
+
+  if (autoInit) {
+    const recentVideos = await fetchRecentVideos(channel.uploadsPlaylistId, c.env.YOUTUBE_API_KEY, 1500)
+    const matched = matchAndParseVideos(recentVideos, keyword.trim(), [], {
+      threshold: typeof matchThreshold === 'number' ? matchThreshold : undefined,
+      excludeKeywords: Array.isArray(excludeKeywords) ? excludeKeywords : undefined,
+    })
+    const withPart = matched.filter(v => v.part !== null).sort((a, b) => a.part! - b.part!)
+    if (withPart.length > 0) {
+      const latest = withPart[withPart.length - 1]
+      lastKnownPart = latest.part!
+      lastKnownVideoId = latest.video.videoId
+      lastKnownVideoTitle = latest.video.title
+      lastKnownThumbnail = latest.video.thumbnail
+      lastKnownPublishedAt = latest.video.publishedAt
+      lastKnownIsRange = latest.isRange
+      initialized = true
+    }
+  }
+
+  const newTitleObj: any = {
+    id: crypto.randomUUID(),
+    keyword,
+    lastKnownPart,
+    lastKnownVideoId,
+    lastKnownVideoTitle,
+    lastKnownThumbnail,
+    lastKnownPublishedAt,
+    lastKnownIsRange,
+    initialized,
+    matchThreshold: typeof matchThreshold === 'number' ? matchThreshold : undefined,
+    excludeKeywords: Array.isArray(excludeKeywords) ? excludeKeywords.filter(Boolean) : undefined,
+    strictChronology: channel.defaultStrictChronology === true,
+    chronologyGraceGap: channel.defaultChronologyGraceGap || 0,
+  }
+
+  const newTitles = [newTitleObj, ...(channel.titles || [])]
 
   await updateOne(
     'trackedChannels', { _id: toObjectId(channelId) }, { titles: newTitles },
@@ -330,7 +449,7 @@ trackRoutes.post('/channel/:channelId/title/bulk-add', async (c) => {
   return c.json({ success: true, added: toAdd.length, skipped })
 })
 
-// ============ TITLE EDIT — ab matchThreshold/excludeKeywords bhi update kar sakta hai ============
+// ============ TITLE EDIT ============
 trackRoutes.put('/channel/:channelId/title/:titleId/edit', async (c) => {
   const channelId = c.req.param('channelId')
   const titleId = c.req.param('titleId')
@@ -361,7 +480,7 @@ trackRoutes.put('/channel/:channelId/title/:titleId/edit', async (c) => {
   return c.json({ success: true })
 })
 
-// ============ ✅ dedicated settings route (threshold + exclude keywords only) ============
+// ============ dedicated settings route ============
 trackRoutes.put('/channel/:channelId/title/:titleId/settings', async (c) => {
   const channelId = c.req.param('channelId')
   const titleId = c.req.param('titleId')
@@ -401,7 +520,6 @@ trackRoutes.delete('/channel/:channelId/title/:titleId', async (c) => {
   )
   if (!channel) return c.json({ success: false, error: 'Channel nahi mila' }, 404)
 
-  // ✅ NEW — pehle title ka data nikaal lo, taaki uske keyword se notifications match kar saken
   const titleToRemove = (channel.titles || []).find(t => t.id === titleId)
 
   const newTitles = (channel.titles || []).filter(t => t.id !== titleId)
@@ -411,7 +529,6 @@ trackRoutes.delete('/channel/:channelId/title/:titleId', async (c) => {
     c.env.MONGODB_URI, c.env.MONGODB_DB
   )
 
-  // ✅ NEW — is title ki saari purani notifications bhi cascade-delete karo
   if (titleToRemove) {
     const relatedNotifs = await findMany<ITrackNotification>(
       'trackNotifications',
@@ -426,9 +543,15 @@ trackRoutes.delete('/channel/:channelId/title/:titleId', async (c) => {
   return c.json({ success: true })
 })
 
-// ============ CAPACITY METER ============
+// ============ 🆕 CAPACITY METER — sub-admin ko sirf apne visible channels ka count ============
 trackRoutes.get('/capacity', async (c) => {
-  const channelsUsed = await countDocuments('trackedChannels', {}, c.env.MONGODB_URI, c.env.MONGODB_DB)
+  const admin = c.get('admin')
+  const visibleChannelIds = await getVisibleChannelIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+  const channelsUsed = visibleChannelIds === null
+    ? await countDocuments('trackedChannels', {}, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    : visibleChannelIds.length
+
   return c.json({
     channelsUsed,
     channelsLimit: 5000,
@@ -437,18 +560,28 @@ trackRoutes.get('/capacity', async (c) => {
   })
 })
 
-// ============ NOTIFICATIONS ============
+// ============ 🆕 NOTIFICATIONS — sub-admin ko sirf apne visible channels ki notifications ============
 trackRoutes.get('/notifications', async (c) => {
+  const admin = c.get('admin')
+  const visibleChannelIds = await getVisibleChannelIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+  const filter: any = {}
+  if (visibleChannelIds !== null) filter.channelId = { $in: visibleChannelIds }
+
   const notifs = await findMany<ITrackNotification>(
-    'trackNotifications', {}, { sort: { createdAt: -1 }, limit: 50 },
+    'trackNotifications', filter, { sort: { createdAt: -1 }, limit: 50 },
     c.env.MONGODB_URI, c.env.MONGODB_DB
   )
   return c.json(notifs)
 })
 
 trackRoutes.get('/notifications/summary', async (c) => {
-  const total = await countDocuments('trackNotifications', {}, c.env.MONGODB_URI, c.env.MONGODB_DB)
-  const completed = await countDocuments('trackNotifications', { isRead: true }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+  const admin = c.get('admin')
+  const visibleChannelIds = await getVisibleChannelIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+  const baseFilter: any = {}
+  if (visibleChannelIds !== null) baseFilter.channelId = { $in: visibleChannelIds }
+
+  const total = await countDocuments('trackNotifications', baseFilter, c.env.MONGODB_URI, c.env.MONGODB_DB)
+  const completed = await countDocuments('trackNotifications', { ...baseFilter, isRead: true }, c.env.MONGODB_URI, c.env.MONGODB_DB)
   return c.json({ total, completed })
 })
 
@@ -463,7 +596,7 @@ trackRoutes.post('/notifications/:id/read', async (c) => {
   return c.json({ success: true })
 })
 
-// ============ ✅ UNDO LAST AUTO-ADD ============
+// ============ UNDO LAST AUTO-ADD ============
 trackRoutes.post('/notifications/:id/undo', async (c) => {
   const id = c.req.param('id')
   if (!isValidObjectId(id)) return c.json({ success: false, error: 'Invalid ID' }, 400)
@@ -487,7 +620,6 @@ trackRoutes.post('/notifications/:id/undo', async (c) => {
   if (oldLink) newLinks = [...newLinks, oldLink]
 
   await updateOne('downloadpages', { _id: page._id }, { links: newLinks }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-  // ✅ UPDATED: combined helper — undo ke baad currentEpisode + range-title dono wapas sahi sync
   await syncPageDerivedData(page._id.toString(), c.env.MONGODB_URI, c.env.MONGODB_DB)
   await updateOne('trackNotifications', { _id: toObjectId(id) }, { undone: true }, c.env.MONGODB_URI, c.env.MONGODB_DB)
 
@@ -513,27 +645,35 @@ trackRoutes.delete('/notifications/:id', async (c) => {
   return c.json({ success: true })
 })
 
+// ============ 🆕 mark-all-read — ab sirf visible channels ki notifications ============
 trackRoutes.post('/notifications/mark-all-read', async (c) => {
-  const notifs = await findMany<ITrackNotification>(
-    'trackNotifications', { isRead: false }, {}, c.env.MONGODB_URI, c.env.MONGODB_DB
-  )
+  const admin = c.get('admin')
+  const visibleChannelIds = await getVisibleChannelIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+  const filter: any = { isRead: false }
+  if (visibleChannelIds !== null) filter.channelId = { $in: visibleChannelIds }
+
+  const notifs = await findMany<ITrackNotification>('trackNotifications', filter, {}, c.env.MONGODB_URI, c.env.MONGODB_DB)
   for (const n of notifs) {
     await updateOne('trackNotifications', { _id: n._id! }, { isRead: true }, c.env.MONGODB_URI, c.env.MONGODB_DB)
   }
   return c.json({ success: true, count: notifs.length })
 })
 
+// ============ 🆕 clear-all — ab sirf visible channels ki notifications ============
 trackRoutes.delete('/notifications/clear-all', async (c) => {
-  const notifs = await findMany<ITrackNotification>(
-    'trackNotifications', {}, {}, c.env.MONGODB_URI, c.env.MONGODB_DB
-  )
+  const admin = c.get('admin')
+  const visibleChannelIds = await getVisibleChannelIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+  const filter: any = {}
+  if (visibleChannelIds !== null) filter.channelId = { $in: visibleChannelIds }
+
+  const notifs = await findMany<ITrackNotification>('trackNotifications', filter, {}, c.env.MONGODB_URI, c.env.MONGODB_DB)
   for (const n of notifs) {
     await deleteOne('trackNotifications', { _id: n._id! }, c.env.MONGODB_URI, c.env.MONGODB_DB)
   }
   return c.json({ success: true, count: notifs.length })
 })
 
-// ============ ✅ CHECK NOW — ab quota tracker use karta hai ============
+// ============ CHECK NOW ============
 trackRoutes.post('/channel/:channelId/check-now', async (c) => {
   const channelId = c.req.param('channelId')
   if (!isValidObjectId(channelId)) return c.json({ success: false, error: 'Invalid ID' }, 400)
@@ -542,6 +682,15 @@ trackRoutes.post('/channel/:channelId/check-now', async (c) => {
     'trackedChannels', { _id: toObjectId(channelId) }, c.env.MONGODB_URI, c.env.MONGODB_DB
   )
   if (!channel) return c.json({ success: false, error: 'Channel nahi mila' }, 404)
+
+  const admin = c.get('admin')
+  if (admin.role === 'subadmin' && admin.animeAccess === 'own' && channel.createdBy !== admin.id) {
+    const allowedAnimeIds = await getAllowedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const hasAccess = (channel.titles || []).some((t: any) => t.linkedAnimeId && allowedAnimeIds?.includes(t.linkedAnimeId))
+    if (!hasAccess) {
+      return c.json({ success: false, error: 'Aapko is channel ko manage karne ki permission nahi hai.' }, 403)
+    }
+  }
 
   if (channel.paused) {
     return c.json({ success: true, updatesFound: 0, message: 'Channel paused hai, skip kiya gaya' })
@@ -561,7 +710,6 @@ trackRoutes.post('/channel/:channelId/check-now', async (c) => {
     if (shouldAutoPause) updateData.paused = true
     await updateOne('trackedChannels', { _id: channel._id! }, updateData, c.env.MONGODB_URI, c.env.MONGODB_DB)
     if (shouldAutoPause) {
-      // ✅ FIX: insertOne → notifyOnce (race-proof dedup)
       await notifyOnce({
         message: `⛔ "${channel.channelName}" lagatar ${newErrCount} baar fail hua (handle change ho sakta hai ya YouTube API error) — channel khud-b-khud pause kar diya gaya hai. Check karke resume karo.`,
         channelId: channel.channelId,
@@ -579,8 +727,11 @@ trackRoutes.post('/channel/:channelId/check-now', async (c) => {
   }
 })
 
-// ============ RUN HISTORY ============
+// ============ 🆕 RUN HISTORY — global cron batch hai, sub-admin ke liye meaningless, isliye empty ============
 trackRoutes.get('/runs', async (c) => {
+  const admin = c.get('admin')
+  if (admin.role === 'subadmin') return c.json([])
+
   const runs = await findMany<any>(
     'cronRunLogs', {}, { sort: { runAt: -1 }, limit: 20 },
     c.env.MONGODB_URI, c.env.MONGODB_DB
@@ -588,13 +739,37 @@ trackRoutes.get('/runs', async (c) => {
   return c.json(runs)
 })
 
-// ============ ✅ CLEAR RUN HISTORY ============
+// ============ 🆕 CLEAR RUN HISTORY — sirf super admin ============
 trackRoutes.delete('/runs/clear-all', async (c) => {
+  const admin = c.get('admin')
+  if (admin.role === 'subadmin') return c.json({ success: false, error: 'Ye action sirf super admin kar sakta hai' }, 403)
+
   const runs = await findMany<any>('cronRunLogs', {}, {}, c.env.MONGODB_URI, c.env.MONGODB_DB)
   for (const r of runs) {
     await deleteOne('cronRunLogs', { _id: r._id }, c.env.MONGODB_URI, c.env.MONGODB_DB)
   }
   return c.json({ success: true, count: runs.length })
+})
+
+// ============ 🆕 SUB-ADMIN STATS — kis sub-admin ne kitne channels/titles track kiye ============
+trackRoutes.get('/sub-admin-stats', async (c) => {
+  const admin = c.get('admin')
+  if (admin.role === 'subadmin') return c.json({ success: false, error: 'Ye sirf super admin dekh sakta hai' }, 403)
+
+  const channels = await findMany<ITrackedChannel>('trackedChannels', {}, {}, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+  const map: Record<string, { channelsCount: number; titlesCount: number; username?: string }> = {}
+  for (const ch of channels) {
+    const ownerId = ch.createdBy
+    if (!ownerId || ownerId === 'admin') continue // super-admin ke apne channels skip
+    if (!map[ownerId]) {
+      map[ownerId] = { channelsCount: 0, titlesCount: 0, username: (ch as any).createdByUsername }
+    }
+    map[ownerId].channelsCount += 1
+    map[ownerId].titlesCount += (ch.titles || []).length
+  }
+
+  return c.json(map)
 })
 
 // ============ ANALYTICS ============
@@ -632,12 +807,17 @@ trackRoutes.get('/analytics', async (c) => {
   return c.json({ mostActiveChannels, inactiveChannels })
 })
 
-// ============ ✅ CONFLICT PANEL ============
+// ============ 🆕 CONFLICT PANEL — sub-admin ko sirf apne visible channels ke conflicts ============
 trackRoutes.get('/conflicts', async (c) => {
+  const admin = c.get('admin')
+  const visibleChannelIds = await getVisibleChannelIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+  const visibleSet = visibleChannelIds !== null ? new Set(visibleChannelIds) : null
+
   const channels = await findMany<ITrackedChannel>('trackedChannels', {}, {}, c.env.MONGODB_URI, c.env.MONGODB_DB)
   const map: Record<string, { channelId: string; channelName: string; titleId: string; keyword: string }[]> = {}
 
   for (const ch of channels) {
+    if (visibleSet && !visibleSet.has(ch.channelId)) continue
     for (const t of ch.titles || []) {
       if (!t.linkedDownloadPageId) continue
       if (!map[t.linkedDownloadPageId]) map[t.linkedDownloadPageId] = []
@@ -661,11 +841,21 @@ trackRoutes.get('/conflicts', async (c) => {
   return c.json(results)
 })
 
-// ============ TITLE LINK (anime + page + limit set/update karo) ============
+// ============ TITLE LINK ============
 trackRoutes.put('/channel/:channelId/title/:titleId/link', async (c) => {
   const channelId = c.req.param('channelId')
   const titleId = c.req.param('titleId')
-  const { linkedAnimeId, linkedDownloadPageId, episodeLimit, resetSeason, mergeMode, baselineEpisodeMinutes } = await c.req.json()
+  const { 
+    linkedAnimeId, 
+    linkedDownloadPageId, 
+    episodeLimit, 
+    resetSeason, 
+    mergeMode, 
+    baselineEpisodeMinutes,
+    strictChronology,
+    chronologyFloorDate,
+    chronologyGraceGap
+  } = await c.req.json()
   if (!isValidObjectId(channelId)) return c.json({ success: false, error: 'Invalid ID' }, 400)
 
   const channel = await findOne<ITrackedChannel>(
@@ -673,7 +863,14 @@ trackRoutes.put('/channel/:channelId/title/:titleId/link', async (c) => {
   )
   if (!channel) return c.json({ success: false, error: 'Channel nahi mila' }, 404)
 
-  // ✅ Multi-channel same-page warning
+  const admin = c.get('admin')
+  if (linkedAnimeId) {
+    const allowedAnimeIds = await getAllowedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    if (allowedAnimeIds !== null && !allowedAnimeIds.includes(linkedAnimeId)) {
+      return c.json({ success: false, error: 'Aap sirf apne assigned/created anime se hi link kar sakte ho.' }, 403)
+    }
+  }
+
   let warning: string | null = null
   if (linkedDownloadPageId) {
     const allChannels = await findMany<ITrackedChannel>('trackedChannels', {}, {}, c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -696,6 +893,9 @@ trackRoutes.put('/channel/:channelId/title/:titleId/link', async (c) => {
       mergeMode: mergeMode !== undefined ? !!mergeMode : (t.mergeMode ?? true),
       baselineEpisodeDurationSec: baselineEpisodeMinutes ? Number(baselineEpisodeMinutes) * 60 : t.baselineEpisodeDurationSec,
       lastBlockedVideoId: undefined,
+      strictChronology: strictChronology !== undefined ? !!strictChronology : t.strictChronology,
+      chronologyFloorDate: chronologyFloorDate !== undefined ? chronologyFloorDate : t.chronologyFloorDate,
+      chronologyGraceGap: chronologyGraceGap !== undefined ? Number(chronologyGraceGap) : t.chronologyGraceGap,
       ...(resetSeason ? { lastKnownSeason: null } : {}),
     }
   })
@@ -705,8 +905,6 @@ trackRoutes.put('/channel/:channelId/title/:titleId/link', async (c) => {
     c.env.MONGODB_URI, c.env.MONGODB_DB
   )
 
-  // ✅ Activity log
-  const admin = c.get('admin')
   const updatedKeyword = newTitles.find(t => t.id === titleId)?.keyword
   await logActivity({
     actorId: admin?.id || 'unknown',
@@ -721,7 +919,7 @@ trackRoutes.put('/channel/:channelId/title/:titleId/link', async (c) => {
   return c.json({ success: true, warning })
 })
 
-// ============ ✅ all-videos — ab duration bhi include karta hai, depth query param support ============
+// ============ all-videos ============
 trackRoutes.get('/channel/:channelId/title/:titleId/all-videos', async (c) => {
   const channelId = c.req.param('channelId')
   const titleId = c.req.param('titleId')
@@ -734,13 +932,11 @@ trackRoutes.get('/channel/:channelId/title/:titleId/all-videos', async (c) => {
   if (!title) return c.json({ success: false, error: 'Title nahi mila' }, 404)
 
   const depthParam = c.req.query('depth')
-  // ✅ depth na diya ho toh auto: initialized => 50, warna 1500
   const scanDepth = depthParam ? Number(depthParam) : (title.initialized ? 50 : 1500)
 
   const { fetchAllVideosForTitle } = await import('../services/youtubeCheckService')
   const videos = await fetchAllVideosForTitle(channel, title, c.env.YOUTUBE_API_KEY, undefined, scanDepth)
 
-  // ✅ durations fetch karo
   const durations = await fetchVideoDurations(videos.map(v => v.video.videoId), c.env.YOUTUBE_API_KEY)
 
   return c.json({
@@ -751,11 +947,11 @@ trackRoutes.get('/channel/:channelId/title/:titleId/all-videos', async (c) => {
     excludeKeywords: title.excludeKeywords || [],
     initialized: title.initialized === true || videos.filter(v => v.part !== null).length <= 1,
     lastKnownPart: title.lastKnownPart,
-    scannedCount: videos.length,   // hint
+    scannedCount: videos.length,
     videos: videos.map(v => ({
       videoId: v.video.videoId,
       videoTitle: v.video.title,
-      description: v.video.description,   // ✅ NEW
+      description: v.video.description,
       thumbnail: v.video.thumbnail,
       publishedAt: v.video.publishedAt,
       url: `https://youtube.com/watch?v=${v.video.videoId}`,
@@ -765,12 +961,12 @@ trackRoutes.get('/channel/:channelId/title/:titleId/all-videos', async (c) => {
       matchedFormat: v.matchedFormat,
       matchScore: v.matchScore,
       fromDescription: v.fromDescription,
-      durationSec: durations[v.video.videoId] ?? null,   // ✅ NEW
+      durationSec: durations[v.video.videoId] ?? null,
     })),
   })
 })
 
-// ============ ✅ bulk-add — ab duration save karta hai, episodeOverrides support, imported parseEpisodeOverride ============
+// ============ bulk-add ============
 trackRoutes.post('/channel/:channelId/title/:titleId/bulk-add', async (c) => {
   const channelId = c.req.param('channelId')
   const titleId = c.req.param('titleId')
@@ -796,7 +992,6 @@ trackRoutes.post('/channel/:channelId/title/:titleId/bulk-add', async (c) => {
   )
   if (selected.length === 0) return c.json({ success: false, error: 'Koi valid video nahi mila' }, 400)
 
-  // ✅ sirf jo add ho raha hai unhi ki duration fetch/save karo
   const durations = await fetchVideoDurations(selected.map(v => v.video.videoId), c.env.YOUTUBE_API_KEY)
 
   const existingLinks = page.links || []
@@ -815,14 +1010,13 @@ trackRoutes.post('/channel/:channelId/title/:titleId/bulk-add', async (c) => {
         type: 'watch',
         quality: '',
         language: '',
-        durationSec: durations[v.video.videoId] ?? undefined,   // ✅ NEW
+        durationSec: durations[v.video.videoId] ?? undefined,
       }
     })
 
   if (newLinks.length === 0) return c.json({ success: false, error: 'Sabhi selected videos already page me maujood hain' }, 400)
 
   await updateOne('downloadpages', { _id: page._id }, { links: [...existingLinks, ...newLinks] }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-  // ✅ UPDATED: combined helper — currentEpisode (Ch/EP badge) + episode/chapter range-title dono ek saath sync
   await syncPageDerivedData(page._id.toString(), c.env.MONGODB_URI, c.env.MONGODB_DB)
 
   const admin = c.get('admin')
@@ -839,7 +1033,7 @@ trackRoutes.post('/channel/:channelId/title/:titleId/bulk-add', async (c) => {
   return c.json({ success: true, added: newLinks.length })
 })
 
-// ============ ✅ finalize-initial — PERMANENT FIX: page content se sync karo, scan ke max se nahi ============
+// ============ finalize-initial ============
 trackRoutes.post('/channel/:channelId/title/:titleId/finalize-initial', async (c) => {
   const channelId = c.req.param('channelId')
   const titleId = c.req.param('titleId')
@@ -856,8 +1050,6 @@ trackRoutes.post('/channel/:channelId/title/:titleId/finalize-initial', async (c
   const withPart = allVideos.filter(v => v.part !== null).sort((a, b) => (a.part! - b.part!))
   let latest = withPart[withPart.length - 1]
 
-  // ✅ PERMANENT FIX: Agar page already linked hai, toh scan ke max ke bajaye
-  // page pe actually jo add hai wahi "known" maano
   if (title.linkedDownloadPageId) {
     const page = await findOne<any>('downloadpages', { _id: toObjectId(title.linkedDownloadPageId) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
     const watchLinks = (page?.links || []).filter((l: any) => l.type === 'watch')
@@ -866,7 +1058,6 @@ trackRoutes.post('/channel/:channelId/title/:titleId/finalize-initial', async (c
       const vidMatch = String(maxLink.url || '').match(/[?&]v=([^&]+)/)
       const matchedScanned = vidMatch ? withPart.find(v => v.video.videoId === vidMatch[1]) : undefined
       if (matchedScanned) latest = matchedScanned
-      // agar scan me nahi mila (purana/manual link), phir bhi part number trust karo:
       else if (vidMatch) {
         latest = { part: maxLink.episode, video: { videoId: vidMatch[1], title: '', publishedAt: '', thumbnail: '', description: '' }, isRange: !!maxLink.episodeStart, rangeStart: maxLink.episodeStart, season: null, matchScore: 0, fromDescription: false } as any
       }
@@ -904,7 +1095,7 @@ trackRoutes.post('/channel/:channelId/title/:titleId/finalize-initial', async (c
   return c.json({ success: true })
 })
 
-// ============ ✅ SYNC TITLE STATE WITH ACTUAL PAGE CONTENT ============
+// ============ SYNC TITLE STATE WITH ACTUAL PAGE CONTENT ============
 trackRoutes.post('/channel/:channelId/title/:titleId/sync-with-page', async (c) => {
   const channelId = c.req.param('channelId')
   const titleId = c.req.param('titleId')
@@ -942,7 +1133,7 @@ trackRoutes.post('/channel/:channelId/title/:titleId/sync-with-page', async (c) 
   return c.json({ success: true, syncedToPart: maxLink.episode, videoId })
 })
 
-// ============ ✅ MANUAL EPISODE STATUS SYNC (anime.currentEpisode ko page se force-update karo) ============
+// ============ MANUAL EPISODE STATUS SYNC ============
 trackRoutes.post('/channel/:channelId/title/:titleId/sync-episode-status', async (c) => {
   const channelId = c.req.param('channelId')
   const titleId = c.req.param('titleId')
@@ -954,7 +1145,6 @@ trackRoutes.post('/channel/:channelId/title/:titleId/sync-episode-status', async
   if (!title) return c.json({ success: false, error: 'Title nahi mila' }, 404)
   if (!title.linkedDownloadPageId) return c.json({ success: false, error: 'Title kisi page se linked nahi hai' }, 400)
 
-  // ✅ UPDATED: combined helper — currentEpisode + episode/chapter range-title dono ek saath force-sync
   const newCount = await syncPageDerivedData(title.linkedDownloadPageId, c.env.MONGODB_URI, c.env.MONGODB_DB)
   if (newCount === null) {
     return c.json({ success: false, error: 'Sync nahi ho saka — page pe koi watch link nahi mila' }, 400)
@@ -963,7 +1153,7 @@ trackRoutes.post('/channel/:channelId/title/:titleId/sync-episode-status', async
   return c.json({ success: true, currentEpisode: newCount })
 })
 
-// ============ ✅ Season Change Resolve — naya page banao aur re-link karo (lastKnownPart reset) ============
+// ============ Season Change Resolve ============
 trackRoutes.post('/channel/:channelId/title/:titleId/resolve-season', async (c) => {
   const channelId = c.req.param('channelId')
   const titleId = c.req.param('titleId')
@@ -1013,7 +1203,7 @@ trackRoutes.post('/channel/:channelId/title/:titleId/resolve-season', async (c) 
   return c.json({ success: true, pageId: result.insertedId, slug: newSlug })
 })
 
-// ============ ✅ Video Ignore Karo (permanently hide from match) ============
+// ============ Video Ignore Karo ============
 trackRoutes.post('/channel/:channelId/title/:titleId/ignore-video', async (c) => {
   const channelId = c.req.param('channelId')
   const titleId = c.req.param('titleId')
@@ -1032,7 +1222,7 @@ trackRoutes.post('/channel/:channelId/title/:titleId/ignore-video', async (c) =>
   return c.json({ success: true })
 })
 
-// ============ ✅ BULK Video Ignore (atomic, avoids race condition on parallel calls) ============
+// ============ BULK Video Ignore ============
 trackRoutes.post('/channel/:channelId/title/:titleId/ignore-videos-bulk', async (c) => {
   const channelId = c.req.param('channelId')
   const titleId = c.req.param('titleId')
@@ -1056,7 +1246,7 @@ trackRoutes.post('/channel/:channelId/title/:titleId/ignore-videos-bulk', async 
   return c.json({ success: true, ignored: videoIds.length })
 })
 
-// ============ ✅ Activity Logs (track-related actions) ============
+// ============ Activity Logs ============
 trackRoutes.get('/activity-logs', async (c) => {
   const { getActivityLogs } = await import('../services/activityLogService')
   const logs = await getActivityLogs(
@@ -1066,17 +1256,25 @@ trackRoutes.get('/activity-logs', async (c) => {
   return c.json(logs)
 })
 
-// ============ CHECK LOGS ============
+// ============ 🆕 CHECK LOGS — sub-admin ko sirf apne visible channels ke logs ============
 trackRoutes.get('/logs', async (c) => {
+  const admin = c.get('admin')
+  const visibleChannelIds = await getVisibleChannelIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+  const filter: any = {}
+  if (visibleChannelIds !== null) filter.channelId = { $in: visibleChannelIds }
+
   const logs = await findMany<any>(
-    'checkLogs', {}, { sort: { runAt: -1 }, limit: 40 },
+    'checkLogs', filter, { sort: { runAt: -1 }, limit: 40 },
     c.env.MONGODB_URI, c.env.MONGODB_DB
   )
   return c.json(logs)
 })
 
-// ============ ✅ CLEAR ALL CHECK LOGS ============
+// ============ 🆕 CLEAR ALL CHECK LOGS — sirf super admin ============
 trackRoutes.delete('/logs/clear-all', async (c) => {
+  const admin = c.get('admin')
+  if (admin.role === 'subadmin') return c.json({ success: false, error: 'Ye action sirf super admin kar sakta hai' }, 403)
+
   const logs = await findMany<any>('checkLogs', {}, {}, c.env.MONGODB_URI, c.env.MONGODB_DB)
   for (const l of logs) {
     await deleteOne('checkLogs', { _id: l._id }, c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -1102,14 +1300,16 @@ trackRoutes.get('/page-links', async (c) => {
   return c.json(map)
 })
 
-// ============ ✅ RUN ALL NOW — ab quota tracker sum bhi karta hai, batch me 2-2 channels ============
+// ============ 🆕 RUN ALL NOW — sirf super admin (global batch, sub-admin ke liye meaningless) ============
 trackRoutes.post('/run-all-now', async (c) => {
+  const admin = c.get('admin')
+  if (admin.role === 'subadmin') return c.json({ success: false, error: 'Ye action sirf super admin kar sakta hai' }, 403)
+
   const channels = await findMany<ITrackedChannel>(
     'trackedChannels', { paused: { $ne: true } }, {}, c.env.MONGODB_URI, c.env.MONGODB_DB
   )
 
   const trackers = channels.map(() => ({ units: 0 }))
-  // ✅ FIX: 2-2 channels ka batch, beech me 3 sec gap — chunk load
   const settled = await processInBatches(channels, 2, 3000, (channel, i) =>
     processChannelUpdates(channel, c.env.YOUTUBE_API_KEY, c.env.MONGODB_URI, c.env.MONGODB_DB, trackers[i])
   )
@@ -1139,7 +1339,6 @@ trackRoutes.post('/run-all-now', async (c) => {
       await updateOne('trackedChannels', { _id: channel._id! }, updateData, c.env.MONGODB_URI, c.env.MONGODB_DB)
 
       if (shouldAutoPause) {
-        // ✅ FIX: insertOne → notifyOnce (race-proof dedup)
         await notifyOnce({
           message: `⛔ "${channel.channelName}" lagatar ${newErrCount} baar fail hua (handle change ho sakta hai ya YouTube API error) — channel khud-b-khud pause kar diya gaya hai. Check karke resume karo.`,
           channelId: channel.channelId,

@@ -42,7 +42,7 @@ export interface IAnime {
   weeklyLikes?: number
   totalVotes?: number
   isBlocked?: boolean
-  createdBy?: string           
+  createdBy?: string
   createdByUsername?: string
   createdAt?: Date
   updatedAt?: Date
@@ -155,8 +155,8 @@ export interface ISocialMedia {
 export interface IPartner {
   _id?: ObjectId
   name: string
-  createdBy?: string           
-  createdByUsername?: string    
+  createdBy?: string
+  createdByUsername?: string
   createdAt?: Date
 }
 
@@ -190,12 +190,12 @@ export interface IContact {
 // ============ DOWNLOAD PAGE ============
 export interface IDownloadPageLink {
   episode: number
-  episodeStart?: number   // ✅ range ka starting episode
+  episodeStart?: number    
   url: string
   quality?: string
   language?: string
   type?: 'download' | 'watch'
-  durationSec?: number   // ✅ NEW — jab video add hota hai tabhi save hota hai, notification me nahi
+  durationSec?: number    
 }
 
 export interface IDownloadPage {
@@ -206,6 +206,7 @@ export interface IDownloadPage {
   episodeNumber?: number
   links: IDownloadPageLink[]
   isHidden?: boolean
+  isPrimaryForEpisodeCount?: boolean    
   createdAt?: Date
   updatedAt?: Date
 }
@@ -280,14 +281,14 @@ export interface IShortUser {
   totalEarnings: number
   unpaidEarnings: number
   paidEarnings: number
-  gmailLinked?: string         
+  gmailLinked?: string
   profile?: IShortUserProfile
   avatarId?: number | null
   createdAt?: Date
   updatedAt?: Date
-  referralCode?: string         
-  referredBy?: string           
-  registrationIp?: string       
+  referralCode?: string
+  referredBy?: string
+  registrationIp?: string
   createdBy?: 'admin' | 'self'
   createdByAdminId?: string
   createdByAdminUsername?: string
@@ -357,8 +358,8 @@ export interface IShortMessage {
   realName: string
   text: string
   fromAdmin: boolean
-  senderRole?: 'admin' | 'subadmin'    
-  senderName?: string                  
+  senderRole?: 'admin' | 'subadmin'
+  senderName?: string
   readByAdmin: boolean
   readByUser: boolean
   createdAt?: Date
@@ -370,19 +371,19 @@ export interface IShortUserLogin {
   userId: ObjectId
   username: string
   loginAt: Date
-  date: string    
+  date: string
 }
 
 // ============ REFERRAL TYPES ============
 export interface IShortReferral {
   _id?: ObjectId
-  referrerId: ObjectId       
+  referrerId: ObjectId
   referrerUsername: string
-  referredId: ObjectId       
+  referredId: ObjectId
   referredUsername: string
-  referrerReward: number      
-  referredReward: number      
-  commissionPercent: number   
+  referrerReward: number
+  referredReward: number
+  commissionPercent: number
   status: 'pending' | 'unlocked' | 'flagged'
   referrerRewardCredited: boolean
   referredRewardCredited: boolean
@@ -395,13 +396,14 @@ export interface IShortReferral {
 export interface ISubAdmin {
   _id?: ObjectId
   username: string
-  password: string         
-  salt: string              
+  password: string
+  salt: string
   fullName?: string
-  permissions: string[]    
-  animeAccess: 'own' | 'all'    
+  permissions: string[]
+  animeAccess: 'own' | 'all'
+  assignedAnimeIds?: string[]   // 🆕 super admin ne manually assign kiya hua anime
   isBlocked?: boolean
-  createdBy?: string         
+  createdBy?: string
   lastLogin?: Date
   createdAt?: Date
   updatedAt?: Date
@@ -410,13 +412,13 @@ export interface ISubAdmin {
 // ============ ACTIVITY LOG ============
 export interface IActivityLog {
   _id?: ObjectId
-  actorId: string            
+  actorId: string
   actorUsername: string
   actorRole: 'admin' | 'subadmin'
-  action: string              
-  targetType?: string         
+  action: string
+  targetType?: string
   targetId?: string
-  targetTitle?: string        
+  targetTitle?: string
   createdAt?: Date
 }
 
@@ -440,8 +442,8 @@ export interface ISpecialMode {
   _id?: ObjectId
   name: string
   type: 'weekday' | 'dateRange'
-  weekday?: number       // legacy single-day (purane data ke liye rehne do)
-  weekdays?: number[]    // ✅ NEW — multi-day, frontend yehi bhejta hai
+  weekday?: number        
+  weekdays?: number[]     
   startDate?: Date
   endDate?: Date
   bannerText?: string
@@ -492,22 +494,16 @@ export interface ITrackedTitle {
   baselineEpisodeDurationSec?: number
 
   initialized?: boolean
-  approvalNotified?: boolean
-
+  approvalNotified?: boolean           
+  lastApprovalNotifiedAt?: string      
+  noFormatSeenIds?: string[]           
   ignoredVideoIds?: string[]
-
-  // ✅ NEW — per-title fuzzy match sensitivity (0.0 - 1.0). Default 0.7 if unset.
-  // Short keywords ("One Piece") benefit from a lower threshold (e.g. 0.5),
-  // long keywords benefit from a higher one (e.g. 0.85) to cut false positives.
   matchThreshold?: number
-
-  // ✅ NEW — videos whose title contains any of these (case-insensitive) are
-  // skipped entirely before matching, e.g. ["reaction", "amv", "explained"]
   excludeKeywords?: string[]
-
-  // ✅ NEW — video IDs already flagged as chronology-suspicious or
-  // description-only-detected, so we don't re-notify about them every run
   flaggedVideoIds?: string[]
+  strictChronology?: boolean
+  chronologyFloorDate?: string
+  chronologyGraceGap?: number
 }
 
 // ============ TRACKED CHANNEL (YouTube tracker) ============
@@ -526,6 +522,10 @@ export interface ITrackedChannel {
   updatedAt?: Date
 
   consecutiveErrors?: number
+
+  // ✅ NEW — naya title add hote hi ye defaults auto-apply hon
+  defaultStrictChronology?: boolean
+  defaultChronologyGraceGap?: number
 }
 
 // ============ TRACK NOTIFICATION (Updates Feed) ============
@@ -557,7 +557,7 @@ export interface ITrackNotification {
   suggestedDurationMin?: number
 
   // ✅ NEW — why this became a manual_review notification
-  reviewReason?: 'duration' | 'chronology' | 'description'
+  reviewReason?: 'duration' | 'chronology' | 'description' | 'unparseable'
 
   // ✅ NEW — fuzzy match confidence (0-1) for this video, when relevant
   matchScore?: number
@@ -596,7 +596,7 @@ export interface ICheckLogTitleEntry {
     isRange: boolean
     matchedFormat?: string
     action: 'added' | 'replaced' | 'already-known' | 'no-format-detected' | 'season-blocked' | 'limit-blocked'
-      | 'chronology-suspicious' | 'description-unconfirmed' | 'reuploaded' | 'needs-approval'
+      | 'chronology-suspicious' | 'description-unconfirmed' | 'reuploaded' | 'needs-approval' | 'chronology-floor-blocked'
     matchScore?: number
   }[]
 }

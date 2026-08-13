@@ -15,6 +15,7 @@ import ShortUsersManager from './ShortUsersManager';
 import SubAdminPageViewManager from './SubAdminPageViewManager';
 import AnimeLinkControlManager from './AnimeLinkControlManager';
 import NotesManager from './NotesManager'; // 👈 Notes import
+import TrackListManager from './TrackListManager'; // 🆕 Track List import
 import Spinner from '../Spinner';
 import axios from 'axios';
 
@@ -60,6 +61,7 @@ const ICONS: Record<string, string> = {
   pin:             'M12 2l1.5 4.5L18 8l-4.5 1.5L12 14l-1.5-4.5L6 8l4.5-1.5L12 2zM12 14v8',
   chevron:         'M9 18l6-6-6-6',
   notes:           'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', // 👈 Notes icon
+  tracklist:       'M4 6h16M4 10h16M4 14h10 M18 15l2 2 4-4', // 🆕 Track List icon
 };
 
 const TAB_LABELS: Record<string, string> = {
@@ -77,6 +79,7 @@ const TAB_LABELS: Record<string, string> = {
   pageviews:       'Analytics',
   linkControl:     'Link Control',
   notes:           'Notes', // 👈 Notes label
+  tracklist:       'Track List', // 🆕 Track List label
 };
 
 const TAB_PERMISSIONS: Record<string, string | null> = {
@@ -94,13 +97,14 @@ const TAB_PERMISSIONS: Record<string, string | null> = {
   pageviews:       'pageviews',
   linkControl:     'link-control',
   notes:           'notes', // 👈 Notes permission
+  tracklist:       'tracklist', // 🆕 Track List permission
 };
 
 // ─── Sidebar sections ──────────────────────────────────────────────
 const SIDEBAR_SECTIONS = [
   { id: 'content', label: 'Content', tabs: ['list', 'add', 'episodes', 'episode-status'] },
   { id: 'engagement', label: 'Engagement', tabs: ['polls', 'social', 'reports', 'notes'] }, // 👈 notes added
-  { id: 'links', label: 'Links & Downloads', tabs: ['downloadPages', 'partners', 'shortenerLinks', 'shortenerUsers', 'linkControl'] },
+  { id: 'links', label: 'Links & Downloads', tabs: ['downloadPages', 'partners', 'shortenerLinks', 'shortenerUsers', 'linkControl', 'tracklist'] }, // 🆕 tracklist added
   { id: 'analytics', label: 'Analytics', tabs: ['pageviews'] },
 ];
 
@@ -240,6 +244,7 @@ const TabContent: React.FC<{ activeTab: string; token: string }> = React.memo(({
     case 'pageviews':      return <SubAdminPageViewManager token={token} />;
     case 'linkControl':    return <AnimeLinkControlManager token={token} />;
     case 'notes':          return <NotesManager token={token} apiBase={API_BASE} />; // 👈 Notes tab
+    case 'tracklist':      return <TrackListManager />; // 🆕 Track List tab
     default:               return <AnimeListTable token={token} />;
   }
 });

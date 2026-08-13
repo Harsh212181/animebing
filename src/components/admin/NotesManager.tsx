@@ -12,12 +12,14 @@ interface Note {
   _id: string;
   title: string;
   content: string;
-  color: string;
+  color: string;          // background color
+  textColor?: string;     // new: text color (optional)
   pinned: boolean;
   archived: boolean;
   trashed: boolean;
   labels: string[];
   checklist?: ChecklistItem[];
+  reminder?: string | null;
   createdBy: string;
   createdByName?: string;
   createdByRole?: 'admin' | 'subadmin';
@@ -31,8 +33,8 @@ interface NotesManagerProps {
   isSuperAdmin?: boolean;
 }
 
-// ── Color palette ──────────────────────────────────────────────────
-const COLORS = [
+// ── Color palette (presets) ──────────────────────────────────────
+const PRESET_COLORS = [
   { name: 'Default', value: '#1c1b29', ring: 'ring-white/20' },
   { name: 'Red',     value: '#4a1e1e', ring: 'ring-red-500/50' },
   { name: 'Orange',  value: '#4a331a', ring: 'ring-orange-500/50' },
@@ -43,6 +45,164 @@ const COLORS = [
   { name: 'Purple',  value: '#2e1a4a', ring: 'ring-purple-500/50' },
   { name: 'Pink',    value: '#4a1a3d', ring: 'ring-pink-500/50' },
 ];
+
+// ── Text color presets ──────────────────────────────────────────
+const TEXT_COLORS = [
+  { name: 'White',  value: '#ffffff' },
+  { name: 'Black',  value: '#000000' },
+  { name: 'Gray',   value: '#9ca3af' },
+  { name: 'Red',    value: '#f87171' },
+  { name: 'Orange', value: '#fb923c' },
+  { name: 'Yellow', value: '#fbbf24' },
+  { name: 'Green',  value: '#34d399' },
+  { name: 'Blue',   value: '#60a5fa' },
+  { name: 'Purple', value: '#a78bfa' },
+  { name: 'Pink',   value: '#f472b6' },
+];
+
+// ── Custom Color Picker Graph (compact) ─────────────────────────
+interface ColorPickerGraphProps {
+  color: string;
+  onChange: (color: string) => void;
+}
+
+const ColorPickerGraph: React.FC<ColorPickerGraphProps> = ({ color, onChange }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [lightness, setLightness] = useState(50);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const hslToHex = (h: number, s: number, l: number): string => {
+    s /= 100;
+    l /= 100;
+    const k = (n: number) => (n + h / 30) % 12;
+    const a = s * Math.min(l, 1 - l);
+    const f = (n: number) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+    const toHex = (x: number) => Math.round(255 * x).toString(16).padStart(2, '0');
+    return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
+  };
+
+  const drawGraph = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const w = canvas.width;
+    const h = canvas.height;
+    const imageData = ctx.createImageData(w, h);
+    const data = imageData.data;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const hue = (x / w) * 360;
+        const sat = (y / h) * 100;
+        const hex = hslToHex(hue, sat, lightness);
+        const r = parseInt(hex.slice(1,3), 16);
+        const g = parseInt(hex.slice(3,5), 16);
+        const b = parseInt(hex.slice(5,7), 16);
+        const idx = (y * w + x) * 4;
+        data[idx] = r;
+        data[idx+1] = g;
+        data[idx+2] = b;
+        data[idx+3] = 255;
+      }
+    }
+    ctx.putImageData(imageData, 0, 0);
+  }, [lightness]);
+
+  useEffect(() => {
+    drawGraph();
+  }, [drawGraph]);
+
+  const getColorAt = (x: number, y: number): string => {
+    const canvas = canvasRef.current;
+    if (!canvas) return '#1c1b29';
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const px = Math.min(Math.max(0, x * scaleX), canvas.width - 1);
+    const py = Math.min(Math.max(0, y * scaleY), canvas.height - 1);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return '#1c1b29';
+    const pixel = ctx.getImageData(px, py, 1, 1).data;
+    const [r, g, b] = pixel;
+    return `#${[r,g,b].map(v => v.toString(16).padStart(2,'0')).join('')}`;
+  };
+
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const newColor = getColorAt(x, y);
+    onChange(newColor);
+  };
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    setIsDragging(true);
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const newColor = getColorAt(x, y);
+    onChange(newColor);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDragging) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const newColor = getColorAt(x, y);
+    onChange(newColor);
+  };
+
+  const handleMouseUp = () => setIsDragging(false);
+
+  useEffect(() => {
+    if (isDragging) {
+      window.addEventListener('mouseup', handleMouseUp);
+      return () => window.removeEventListener('mouseup', handleMouseUp);
+    }
+  }, [isDragging]);
+
+  useEffect(() => {
+    const r = parseInt(color.slice(1,3), 16);
+    const g = parseInt(color.slice(3,5), 16);
+    const b = parseInt(color.slice(5,7), 16);
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const l = (max + min) / 2 / 255 * 100;
+    setLightness(Math.round(l));
+  }, [color]);
+
+  return (
+    <div className="space-y-1.5">
+      <canvas
+        ref={canvasRef}
+        width={160}
+        height={100}
+        onClick={handleCanvasClick}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        className="w-full h-auto rounded-lg border border-white/10 cursor-crosshair"
+        style={{ touchAction: 'none' }}
+      />
+      <div className="flex items-center gap-1.5">
+        <span className="text-[9px] text-white/30 w-5">L</span>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={lightness}
+          onChange={(e) => {
+            const val = parseInt(e.target.value);
+            setLightness(val);
+            drawGraph();
+          }}
+          className="flex-1 h-1 rounded-full bg-white/20 accent-purple-500"
+        />
+        <span className="text-[9px] text-white/30 w-6">{lightness}%</span>
+      </div>
+    </div>
+  );
+};
 
 // ── Icons ──────────────────────────────────────────────────────────
 const SvgIcon: React.FC<{ d: string; className?: string; fill?: boolean }> = ({ d, className = 'w-4 h-4', fill = false }) => (
@@ -80,6 +240,8 @@ const ICONS = {
   user: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z',
   admin: 'M12 4l8 4v5c0 5.25-3.13 10.15-8 11.5-4.87-1.35-8-6.25-8-11.5V8l8-4z',
   all: 'M4 5a1 1 0 011-1h4a1 1 0 011 1v5a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zm0 8a1 1 0 011-1h4a1 1 0 011 1v5a1 1 0 01-1 1h-4a1 1 0 01-1-1v-5zM4 13a1 1 0 011-1h4a1 1 0 011 1v5a1 1 0 01-1 1H5a1 1 0 01-1-1v-5z',
+  clear: 'M6 18L18 6M6 6l12 12',
+  textColorIcon: 'M4 6h16M4 12h12M4 18h8',
 };
 
 const StickyNoteIcon: React.FC<{ className?: string }> = ({ className = 'w-10 h-10' }) => (
@@ -95,7 +257,7 @@ const extractFirstUrl = (text: string): string | null => {
   if (!text) return null;
   const match = text.match(URL_REGEX);
   if (!match) return null;
-  return match[0].replace(/[.,)>\]]+$/, ''); // trailing punctuation hata do
+  return match[0].replace(/[.,)>\]]+$/, '');
 };
 
 interface LinkPreview {
@@ -107,7 +269,6 @@ interface LinkPreview {
   domain: string;
 }
 
-// Session ke liye simple in-memory cache — same link baar baar fetch nahi hoga
 const linkPreviewCache = new Map<string, LinkPreview | null>();
 
 const LinkPreviewCard: React.FC<{ url: string; apiBase: string; token: string }> = ({ url, apiBase, token }) => {
@@ -191,7 +352,6 @@ const LinkPreviewCard: React.FC<{ url: string; apiBase: string; token: string }>
 type ViewTab = 'notes' | 'archive' | 'trash';
 type CreatorFilter = 'all' | 'admin' | 'subadmin';
 
-// ── Relative time helper ──────────────────────────────────────────
 const timeAgo = (dateStr?: string): string => {
   if (!dateStr) return '';
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -206,6 +366,22 @@ const timeAgo = (dateStr?: string): string => {
   return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 };
 
+const formatReminder = (iso?: string | null): string => {
+  if (!iso) return '';
+  const dt = new Date(iso);
+  if (isNaN(dt.getTime())) return '';
+  const now = Date.now();
+  const diff = dt.getTime() - now;
+  if (diff < 0) return '⏰ Overdue';
+  const min = Math.floor(diff / 60000);
+  if (min < 60) return `in ${min}m`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `in ${hr}h`;
+  const days = Math.floor(hr / 24);
+  if (days < 7) return `in ${days}d`;
+  return dt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) + ' ' + dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+};
+
 const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmin }) => {
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
@@ -214,30 +390,46 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
   const [labelFilter, setLabelFilter] = useState<string | null>(null);
   const [creatorFilter, setCreatorFilter] = useState<CreatorFilter>('all');
 
+  // ── Composer state ──────────────────────────────────────────────
   const [composerOpen, setComposerOpen] = useState(false);
   const [composerTitle, setComposerTitle] = useState('');
   const [composerContent, setComposerContent] = useState('');
   const [composerColor, setComposerColor] = useState('#1c1b29');
+  const [composerTextColor, setComposerTextColor] = useState<string>('#ffffff');
   const [composerChecklist, setComposerChecklist] = useState<ChecklistItem[]>([]);
   const [composerLabels, setComposerLabels] = useState<string[]>([]);
   const [composerLabelInput, setComposerLabelInput] = useState('');
   const [composerChecklistInput, setComposerChecklistInput] = useState('');
   const [composerShowChecklist, setComposerShowChecklist] = useState(false);
+  const [composerReminder, setComposerReminder] = useState<string>('');
   const [showColorPicker, setShowColorPicker] = useState<string | null>(null);
+  const [colorPickerTarget, setColorPickerTarget] = useState<'bg' | 'text'>('bg');
   const [composerLabelFocused, setComposerLabelFocused] = useState(false);
 
-  const [editingNote, setEditingNote] = useState<Note | null>(null);
+  // ── Inline edit state ────────────────────────────────────────────
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
   const [editColor, setEditColor] = useState('#1c1b29');
+  const [editTextColor, setEditTextColor] = useState<string>('#ffffff');
   const [editChecklist, setEditChecklist] = useState<ChecklistItem[]>([]);
   const [editLabels, setEditLabels] = useState<string[]>([]);
   const [editLabelInput, setEditLabelInput] = useState('');
   const [editChecklistInput, setEditChecklistInput] = useState('');
   const [editLabelFocused, setEditLabelFocused] = useState(false);
+  const [editReminder, setEditReminder] = useState<string>('');
+  const editTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const composerRef = useRef<HTMLDivElement>(null);
   const authHeaders = { headers: { Authorization: `Bearer ${token}` } };
+
+  // ── Auto‑grow textarea for inline edit ──────────────────────────
+  useEffect(() => {
+    if (editTextareaRef.current && editingNoteId) {
+      editTextareaRef.current.style.height = 'auto';
+      editTextareaRef.current.style.height = `${editTextareaRef.current.scrollHeight}px`;
+    }
+  }, [editContent, editingNoteId]);
 
   // ── Fetch notes ─────────────────────────────────────────────
   const fetchNotes = async (silent = false) => {
@@ -281,18 +473,20 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
 
   // ── Composer save/reset ─────────────────────────────────────
   const composerHasContent = () =>
-    composerTitle.trim() || composerContent.trim() || composerChecklist.length > 0 || composerLabels.length > 0;
+    composerTitle.trim() || composerContent.trim() || composerChecklist.length > 0 || composerLabels.length > 0 || composerReminder;
 
   const resetComposer = () => {
     setComposerOpen(false);
     setComposerTitle('');
     setComposerContent('');
     setComposerColor('#1c1b29');
+    setComposerTextColor('#ffffff');
     setComposerChecklist([]);
     setComposerLabels([]);
     setComposerLabelInput('');
     setComposerChecklistInput('');
     setComposerShowChecklist(false);
+    setComposerReminder('');
     setShowColorPicker(null);
   };
 
@@ -308,8 +502,10 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
           title: composerTitle.trim(),
           content: composerContent.trim(),
           color: composerColor,
+          textColor: composerTextColor,
           checklist: composerChecklist,
           labels: composerLabels,
+          reminder: composerReminder || undefined,
         },
         authHeaders
       );
@@ -319,9 +515,8 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
       toast.error(err.response?.data?.error || 'Failed to save note');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [composerTitle, composerContent, composerColor, composerChecklist, composerLabels]);
+  }, [composerTitle, composerContent, composerColor, composerTextColor, composerChecklist, composerLabels, composerReminder]);
 
-  // Click-outside → auto-save composer, Keep-style
   useEffect(() => {
     if (!composerOpen) return;
     const handler = (e: MouseEvent) => {
@@ -346,7 +541,7 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
     setComposerLabelInput('');
   };
 
-  // ── Note actions (with undo) ─────────────────────────────────
+  // ── Note actions ─────────────────────────────────────────────────
   const togglePin = async (note: Note) => {
     setNotes(prev => prev.map(n => (n._id === note._id ? { ...n, pinned: !n.pinned } : n)));
     try {
@@ -357,13 +552,23 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
     }
   };
 
-  const changeColor = async (note: Note, color: string) => {
-    setNotes(prev => prev.map(n => (n._id === note._id ? { ...n, color } : n)));
-    try {
-      await axios.put(`${apiBase}/notes/${note._id}`, { color }, authHeaders);
-    } catch {
-      toast.error('Failed to update color');
-      fetchNotes(true);
+  const changeColor = async (note: Note, color: string, target: 'bg' | 'text') => {
+    if (target === 'bg') {
+      setNotes(prev => prev.map(n => (n._id === note._id ? { ...n, color } : n)));
+      try {
+        await axios.put(`${apiBase}/notes/${note._id}`, { color }, authHeaders);
+      } catch {
+        toast.error('Failed to update background color');
+        fetchNotes(true);
+      }
+    } else {
+      setNotes(prev => prev.map(n => (n._id === note._id ? { ...n, textColor: color } : n)));
+      try {
+        await axios.put(`${apiBase}/notes/${note._id}`, { textColor: color }, authHeaders);
+      } catch {
+        toast.error('Failed to update text color');
+        fetchNotes(true);
+      }
     }
   };
 
@@ -484,60 +689,72 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
     }
   };
 
-  // ── Edit modal ──────────────────────────────────────────────
-  const openEdit = (note: Note) => {
-    setEditingNote(note);
+  // ── Inline edit handlers ──────────────────────────────────────
+  const startEdit = (note: Note) => {
+    if (activeView !== 'notes') return;
+    setEditingNoteId(note._id);
     setEditTitle(note.title);
     setEditContent(note.content);
     setEditColor(note.color || '#1c1b29');
+    setEditTextColor(note.textColor || '#ffffff');
     setEditChecklist(note.checklist || []);
     setEditLabels(note.labels || []);
+    setEditReminder(note.reminder || '');
     setEditLabelInput('');
     setEditChecklistInput('');
   };
 
-  const closeEdit = useCallback(async () => {
-    if (editingNote) {
-      const changed =
-        editTitle.trim() !== editingNote.title ||
-        editContent.trim() !== editingNote.content ||
-        editColor !== editingNote.color ||
-        JSON.stringify(editChecklist) !== JSON.stringify(editingNote.checklist || []) ||
-        JSON.stringify(editLabels) !== JSON.stringify(editingNote.labels || []);
+  const cancelEdit = () => {
+    setEditingNoteId(null);
+  };
 
-      if (changed) {
-        try {
-          const { data } = await axios.put(
-            `${apiBase}/notes/${editingNote._id}`,
-            {
-              title: editTitle.trim(),
-              content: editContent.trim(),
-              color: editColor,
-              checklist: editChecklist,
-              labels: editLabels,
-            },
-            authHeaders
-          );
-          setNotes(prev => prev.map(n => (n._id === editingNote._id ? { ...n, ...data.note } : n)));
-        } catch (err: any) {
-          toast.error(err.response?.data?.error || 'Failed to save changes');
-        }
+  const saveEdit = async () => {
+    if (!editingNoteId) return;
+    const note = notes.find(n => n._id === editingNoteId);
+    if (!note) return;
+
+    const changed =
+      editTitle.trim() !== note.title ||
+      editContent.trim() !== note.content ||
+      editColor !== note.color ||
+      editTextColor !== (note.textColor || '#ffffff') ||
+      JSON.stringify(editChecklist) !== JSON.stringify(note.checklist || []) ||
+      JSON.stringify(editLabels) !== JSON.stringify(note.labels || []) ||
+      editReminder !== (note.reminder || '');
+
+    if (changed) {
+      try {
+        const { data } = await axios.put(
+          `${apiBase}/notes/${editingNoteId}`,
+          {
+            title: editTitle.trim(),
+            content: editContent.trim(),
+            color: editColor,
+            textColor: editTextColor,
+            checklist: editChecklist,
+            labels: editLabels,
+            reminder: editReminder || undefined,
+          },
+          authHeaders
+        );
+        setNotes(prev => prev.map(n => (n._id === editingNoteId ? { ...n, ...data.note } : n)));
+        toast.success('Note updated');
+      } catch (err: any) {
+        toast.error(err.response?.data?.error || 'Failed to save changes');
       }
     }
-    setEditingNote(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editingNote, editTitle, editContent, editColor, editChecklist, editLabels]);
+    setEditingNoteId(null);
+  };
 
-  // Keyboard shortcuts for edit modal
   useEffect(() => {
-    if (!editingNote) return;
+    if (!editingNoteId) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeEdit();
-      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) closeEdit();
+      if (e.key === 'Escape') cancelEdit();
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') saveEdit();
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [editingNote, closeEdit]);
+  }, [editingNoteId, saveEdit]);
 
   const addEditChecklistItem = () => {
     if (!editChecklistInput.trim()) return;
@@ -582,16 +799,268 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
     />
   );
 
+  // ── Color picker popover content (shared) ────────────────────────
+  const ColorPickerPopover: React.FC<{
+    targetColor: string;
+    onChange: (color: string) => void;
+    target: 'bg' | 'text';
+    setTarget: (t: 'bg' | 'text') => void;
+  }> = ({ targetColor, onChange, target, setTarget }) => {
+    const presetList = target === 'bg' ? PRESET_COLORS : TEXT_COLORS;
+    return (
+      <div className="p-2 rounded-xl bg-[#1a1926] border border-white/10 shadow-xl w-44 animate-[fadeIn_0.15s_ease]">
+        <div className="flex gap-1 mb-2">
+          <button
+            onClick={() => setTarget('bg')}
+            className={`flex-1 text-[10px] font-medium px-2 py-1 rounded-md transition-all ${
+              target === 'bg'
+                ? 'bg-purple-500/20 text-purple-200'
+                : 'text-white/40 hover:text-white/70'
+            }`}
+          >
+            Bg
+          </button>
+          <button
+            onClick={() => setTarget('text')}
+            className={`flex-1 text-[10px] font-medium px-2 py-1 rounded-md transition-all ${
+              target === 'text'
+                ? 'bg-purple-500/20 text-purple-200'
+                : 'text-white/40 hover:text-white/70'
+            }`}
+          >
+            Text
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {presetList.map(c => (
+            <button
+              key={c.value}
+              onClick={() => onChange(c.value)}
+              className={`w-6 h-6 rounded-full border border-white/20 transition-transform hover:scale-110 ${
+                targetColor === c.value ? 'ring-2 ring-offset-1 ring-offset-[#1a1926] ring-white/50' : ''
+              }`}
+              style={{ backgroundColor: c.value }}
+              title={c.name}
+            />
+          ))}
+        </div>
+        <ColorPickerGraph color={targetColor} onChange={onChange} />
+      </div>
+    );
+  };
+
   // ── Note Card ────────────────────────────────────────────────
   const NoteCard: React.FC<{ note: Note }> = ({ note }) => {
     const progress = checklistProgress(note.checklist);
+    const isEditing = editingNoteId === note._id;
+    const textColor = note.textColor || '#ffffff';
+
+    if (isEditing) {
+      // ── INLINE EDIT MODE ──
+      return (
+        <div
+          className="rounded-2xl border border-purple-500/40 p-5 space-y-3 shadow-2xl shadow-purple-900/20 mb-4 transition-all"
+          style={{ backgroundColor: editColor }}
+        >
+          <input
+            type="text"
+            value={editTitle}
+            onChange={e => setEditTitle(e.target.value)}
+            placeholder="Title"
+            className="w-full bg-transparent text-base font-bold outline-none"
+            style={{ color: editTextColor }}
+          />
+          <div className="flex items-center gap-2 flex-wrap" style={{ color: editTextColor }}>
+            {isSuperAdmin && note.createdByRole === 'subadmin' && (
+              <span className="text-[9px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-200 border border-purple-500/30">
+                by {note.createdByName || 'Sub-Admin'}
+              </span>
+            )}
+            <span className="text-[9px] flex items-center gap-1" style={{ opacity: 0.6 }}>
+              <SvgIcon d={ICONS.clock} className="w-2.5 h-2.5" />
+              Edited {timeAgo(note.updatedAt || note.createdAt)}
+            </span>
+          </div>
+
+          <textarea
+            ref={editTextareaRef}
+            value={editContent}
+            onChange={e => setEditContent(e.target.value)}
+            placeholder="Note content"
+            className="w-full bg-transparent text-sm outline-none resize-none leading-relaxed"
+            style={{ color: editTextColor, minHeight: '60px' }}
+          />
+
+          {(() => {
+            const url = extractFirstUrl(editContent) || extractFirstUrl(editTitle);
+            return url ? <LinkPreviewCard url={url} apiBase={apiBase} token={token} /> : null;
+          })()}
+
+          {/* Checklist */}
+          <div className="space-y-1.5">
+            {editChecklist.map((item, idx) => (
+              <div key={idx} className="flex items-center gap-2 text-xs group/edit">
+                <input
+                  type="checkbox"
+                  checked={item.checked}
+                  onChange={() => toggleEditChecklistItem(idx)}
+                  className="rounded accent-purple-500"
+                />
+                <span className={`flex-1 ${item.checked ? 'line-through' : ''}`} style={{ color: editTextColor, opacity: item.checked ? 0.3 : 0.8 }}>
+                  {item.text}
+                </span>
+                <button onClick={() => removeEditChecklistItem(idx)} className="text-white/20 group-hover/edit:text-white/50 hover:!text-red-400">
+                  <SvgIcon d={ICONS.close} className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+            <div className="flex items-center gap-2">
+              <SvgIcon d={ICONS.plusSmall} className="w-3.5 h-3.5 text-white/30" />
+              <input
+                type="text"
+                value={editChecklistInput}
+                onChange={e => setEditChecklistInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEditChecklistItem())}
+                placeholder="List item"
+                className="flex-1 bg-transparent text-xs outline-none"
+                style={{ color: editTextColor, opacity: 0.6 }}
+              />
+            </div>
+          </div>
+
+          {/* Labels */}
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap gap-1.5 items-center">
+              <SvgIcon d={ICONS.tag} className="w-3.5 h-3.5 text-white/30" />
+              {editLabels.map(l => (
+                <span key={l} className="text-[9px] px-2 py-0.5 rounded-full bg-white/10 flex items-center gap-1" style={{ color: editTextColor, opacity: 0.6 }}>
+                  {l}
+                  <button onClick={() => removeEditLabel(l)}>
+                    <SvgIcon d={ICONS.close} className="w-2.5 h-2.5" />
+                  </button>
+                </span>
+              ))}
+            </div>
+            <div className="relative pl-5">
+              <input
+                type="text"
+                value={editLabelInput}
+                onChange={e => setEditLabelInput(e.target.value)}
+                onFocus={() => setEditLabelFocused(true)}
+                onBlur={() => setTimeout(() => setEditLabelFocused(false), 150)}
+                onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEditLabel())}
+                placeholder="+ Add label"
+                className="bg-transparent text-[10px] outline-none w-32"
+                style={{ color: editTextColor, opacity: 0.6 }}
+              />
+              {editLabelFocused && editLabelInput.trim() && (
+                <div className="absolute z-20 top-5 left-5 w-40 bg-[#1a1926] border border-white/10 rounded-lg shadow-xl overflow-hidden">
+                  {labelSuggestions
+                    .filter(l => l.toLowerCase().includes(editLabelInput.toLowerCase()) && !editLabels.includes(l))
+                    .slice(0, 5)
+                    .map(l => (
+                      <button
+                        key={l}
+                        onMouseDown={() => addEditLabel(l)}
+                        className="block w-full text-left px-3 py-1.5 text-[11px] text-white/70 hover:bg-white/10"
+                      >
+                        {l}
+                      </button>
+                    ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Reminder */}
+          <div className="flex items-center gap-2 flex-wrap pt-1">
+            <SvgIcon d={ICONS.clock} className="w-4 h-4 text-white/50" />
+            <input
+              type="datetime-local"
+              value={editReminder}
+              onChange={e => setEditReminder(e.target.value)}
+              className="bg-black/20 border border-white/10 rounded-lg px-2 py-1 text-xs outline-none focus:border-purple-500/50"
+              style={{ color: editTextColor }}
+            />
+            {editReminder && (
+              <button
+                onClick={() => setEditReminder('')}
+                className="text-white/30 hover:text-red-400 transition-colors"
+                title="Clear reminder"
+              >
+                <SvgIcon d={ICONS.clear} className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Color picker: presets + custom graph with toggle */}
+          <div className="pt-2 border-t border-white/10">
+            <div className="flex flex-wrap gap-1.5">
+              {PRESET_COLORS.map(c => (
+                <button
+                  key={c.value}
+                  onClick={() => setEditColor(c.value)}
+                  className={`w-6 h-6 rounded-full border border-white/20 transition-transform hover:scale-110 ${editColor === c.value ? 'ring-2 ring-offset-1 ' + c.ring : ''}`}
+                  style={{ backgroundColor: c.value }}
+                  title={c.name}
+                />
+              ))}
+            </div>
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-[9px] text-white/30">Text:</span>
+              <div className="flex flex-wrap gap-1.5">
+                {TEXT_COLORS.map(c => (
+                  <button
+                    key={c.value}
+                    onClick={() => setEditTextColor(c.value)}
+                    className={`w-5 h-5 rounded-full border border-white/20 transition-transform hover:scale-110 ${editTextColor === c.value ? 'ring-2 ring-offset-1 ring-offset-[#1a1926] ring-white/50' : ''}`}
+                    style={{ backgroundColor: c.value }}
+                    title={c.name}
+                  />
+                ))}
+                <button
+                  onClick={() => {
+                    // open the custom color picker for text
+                    setShowColorPicker('textEdit');
+                    setColorPickerTarget('text');
+                  }}
+                  className="w-5 h-5 rounded-full border border-white/20 flex items-center justify-center text-[10px] text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+                  title="Custom text color"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center justify-between pt-2 border-t border-white/10">
+            <div className="text-[10px] text-white/20 flex items-center gap-3">
+              <span>{editContent.split(/\s+/).filter(Boolean).length} words</span>
+              <span>·</span>
+              <span>{editContent.length} characters</span>
+              <span className="hidden sm:inline">· Esc to close · Ctrl+Enter to save</span>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={cancelEdit} className="px-3 py-1.5 text-xs text-white/60 hover:text-white rounded-lg hover:bg-white/5 transition-all">
+                Cancel
+              </button>
+              <button onClick={saveEdit} className="px-4 py-1.5 text-xs font-semibold text-white rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 hover:shadow-lg hover:shadow-purple-500/25 transition-all">
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ── VIEW MODE ──
     return (
       <div
         className="group relative rounded-2xl border border-white/10 p-4 flex flex-col gap-2 break-inside-avoid mb-4 transition-all duration-200 hover:border-white/30 hover:shadow-xl hover:shadow-black/20 hover:-translate-y-0.5 cursor-pointer"
         style={{ backgroundColor: note.color || '#1c1b29' }}
-        onClick={() => activeView === 'notes' && openEdit(note)}
+        onClick={() => startEdit(note)}
       >
-        {/* Pin button */}
         {activeView !== 'trash' && (
           <button
             onClick={(e) => { e.stopPropagation(); togglePin(note); }}
@@ -606,14 +1075,13 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
           </button>
         )}
 
-        {note.title && <h3 className="text-sm font-semibold text-white pr-6 break-words leading-snug">{note.title}</h3>}
+        {note.title && <h3 className="text-sm font-semibold pr-6 break-words leading-snug" style={{ color: textColor }}>{note.title}</h3>}
         {note.content && (
-          <p className="text-xs text-white/70 whitespace-pre-wrap break-words leading-relaxed line-clamp-[10]">
+          <p className="text-xs whitespace-pre-wrap break-words leading-relaxed line-clamp-[10]" style={{ color: textColor, opacity: 0.85 }}>
             {note.content}
           </p>
         )}
 
-        {/* Checklist */}
         {note.checklist && note.checklist.length > 0 && (
           <div className="space-y-1 mt-1">
             {note.checklist.slice(0, 6).map((item, idx) => (
@@ -628,13 +1096,13 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
                   onChange={() => toggleChecklistItem(note, idx)}
                   className="rounded accent-purple-500 w-3.5 h-3.5"
                 />
-                <span className={`transition-colors ${item.checked ? 'line-through text-white/30' : 'text-white/80'}`}>
+                <span className={`transition-colors ${item.checked ? 'line-through' : ''}`} style={{ color: textColor, opacity: item.checked ? 0.3 : 0.8 }}>
                   {item.text}
                 </span>
               </label>
             ))}
             {note.checklist.length > 6 && (
-              <p className="text-[10px] text-white/30 pl-5">+{note.checklist.length - 6} more</p>
+              <p className="text-[10px] pl-5" style={{ color: textColor, opacity: 0.3 }}>+{note.checklist.length - 6} more</p>
             )}
             {progress && (
               <div className="flex items-center gap-1.5 pt-0.5">
@@ -644,46 +1112,48 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
                     style={{ width: `${(progress.done / progress.total) * 100}%` }}
                   />
                 </div>
-                <span className="text-[9px] text-white/30 shrink-0">{progress.done}/{progress.total}</span>
+                <span className="text-[9px] shrink-0" style={{ color: textColor, opacity: 0.3 }}>{progress.done}/{progress.total}</span>
               </div>
             )}
           </div>
         )}
 
-        {/* Labels */}
         {note.labels && note.labels.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1">
             {note.labels.map(l => (
-              <span key={l} className="text-[9px] px-2 py-0.5 rounded-full bg-white/10 text-white/60 border border-white/10">
+              <span key={l} className="text-[9px] px-2 py-0.5 rounded-full bg-white/10 border border-white/10" style={{ color: textColor, opacity: 0.6 }}>
                 {l}
               </span>
             ))}
           </div>
         )}
 
-        {/* Link preview */}
         {(() => {
           const url = extractFirstUrl(note.content) || extractFirstUrl(note.title);
           return url ? <LinkPreviewCard url={url} apiBase={apiBase} token={token} /> : null;
         })()}
 
-        {/* Footer meta row */}
+        {note.reminder && (
+          <div className="mt-1 flex items-center gap-1.5 text-[10px] text-amber-300/80 bg-amber-500/10 border border-amber-500/20 rounded-full px-2.5 py-0.5 self-start">
+            <SvgIcon d={ICONS.clock} className="w-3 h-3" />
+            <span>{formatReminder(note.reminder)}</span>
+          </div>
+        )}
+
         <div className="flex items-center justify-between gap-2 mt-1">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {/* Sub‑admin badge — sirf super-admin ko dikhega, sub-admin ko khud pe nahi */}
+          <div className="flex items-center gap-1.5 flex-wrap" style={{ color: textColor, opacity: 0.5 }}>
             {isSuperAdmin && note.createdByRole === 'subadmin' && (
               <span className="text-[9px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-200 border border-purple-500/30">
                 by {note.createdByName || 'Sub-Admin'}
               </span>
             )}
-            <span className="text-[9px] text-white/25 flex items-center gap-1">
+            <span className="text-[9px] flex items-center gap-1">
               <SvgIcon d={ICONS.clock} className="w-2.5 h-2.5" />
               {timeAgo(note.updatedAt || note.createdAt)}
             </span>
           </div>
         </div>
 
-        {/* Footer actions */}
         <div
           className="flex items-center gap-1 mt-1 pt-2 border-t border-white/10 opacity-0 group-hover:opacity-100 transition-opacity"
           onClick={(e) => e.stopPropagation()}
@@ -702,24 +1172,19 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
             <>
               <div className="relative">
                 <button
-                  onClick={() => setShowColorPicker(showColorPicker === note._id ? null : note._id)}
+                  onClick={(e) => { e.stopPropagation(); setShowColorPicker(showColorPicker === note._id ? null : note._id); setColorPickerTarget('bg'); }}
                   className="p-1.5 rounded-lg text-white/50 hover:text-white hover:bg-white/10"
                   title="Change color"
                 >
                   <SvgIcon d={ICONS.palette} className="w-3.5 h-3.5" />
                 </button>
                 {showColorPicker === note._id && (
-                  <div className="absolute z-20 top-8 left-0 flex gap-1.5 p-2 rounded-xl bg-[#1a1926] border border-white/10 shadow-xl flex-wrap w-44 animate-[fadeIn_0.15s_ease]">
-                    {COLORS.map(c => (
-                      <button
-                        key={c.value}
-                        onClick={() => { changeColor(note, c.value); setShowColorPicker(null); }}
-                        className={`w-6 h-6 rounded-full border border-white/20 transition-transform hover:scale-110 ${note.color === c.value ? 'ring-2 ring-offset-1 ring-offset-[#1a1926] ' + c.ring : ''}`}
-                        style={{ backgroundColor: c.value }}
-                        title={c.name}
-                      />
-                    ))}
-                  </div>
+                  <ColorPickerPopover
+                    targetColor={colorPickerTarget === 'bg' ? note.color : (note.textColor || '#ffffff')}
+                    onChange={(col) => changeColor(note, col, colorPickerTarget)}
+                    target={colorPickerTarget}
+                    setTarget={setColorPickerTarget}
+                  />
                 )}
               </div>
               <button onClick={() => archiveNote(note)} className="p-1.5 rounded-lg text-white/50 hover:text-blue-300 hover:bg-white/10" title={note.archived ? 'Unarchive' : 'Archive'}>
@@ -740,6 +1205,7 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
       <style>{`
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes popIn { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
 
       {/* Header */}
@@ -754,7 +1220,6 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
           </p>
         </div>
 
-        {/* Search */}
         <div className="relative w-full sm:w-64">
           <SvgIcon d={ICONS.search} className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
           <input
@@ -775,13 +1240,13 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
         </div>
       </div>
 
-      {/* View tabs + Creator filter (combined row) */}
+      {/* View tabs + Creator filter */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2">
           {(['notes', 'archive', 'trash'] as ViewTab[]).map(v => (
             <button
               key={v}
-              onClick={() => { setActiveView(v); setLabelFilter(null); }}
+              onClick={() => { setActiveView(v); setLabelFilter(null); setEditingNoteId(null); }}
               className={`rounded-xl border px-4 py-2 text-xs font-medium capitalize transition-all ${
                 activeView === v
                   ? 'border-purple-500/50 bg-purple-500/10 text-purple-200'
@@ -793,14 +1258,13 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
           ))}
         </div>
 
-        {/* Creator filter */}
         {isSuperAdmin && (
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-white/30">Created by:</span>
             {(['all', 'admin', 'subadmin'] as CreatorFilter[]).map(f => (
               <button
                 key={f}
-                onClick={() => setCreatorFilter(f)}
+                onClick={() => { setCreatorFilter(f); setEditingNoteId(null); }}
                 className={`rounded-lg border px-3 py-1.5 text-[10px] font-medium capitalize transition-all flex items-center gap-1 ${
                   creatorFilter === f
                     ? 'border-purple-500/50 bg-purple-500/10 text-purple-200'
@@ -843,7 +1307,7 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
           {allLabels.map(([l, count]) => (
             <button
               key={l}
-              onClick={() => setLabelFilter(labelFilter === l ? null : l)}
+              onClick={() => { setLabelFilter(labelFilter === l ? null : l); setEditingNoteId(null); }}
               className={`text-[10px] px-2.5 py-1 rounded-full border transition-all flex items-center gap-1 ${
                 labelFilter === l
                   ? 'border-purple-500/50 bg-purple-500/15 text-purple-200'
@@ -880,20 +1344,22 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
                 onChange={e => setComposerTitle(e.target.value)}
                 placeholder="Title"
                 autoFocus
-                className="w-full bg-transparent text-sm font-semibold text-white placeholder-white/30 outline-none"
+                className="w-full bg-transparent text-sm font-semibold outline-none"
+                style={{ color: composerTextColor }}
               />
               <textarea
                 value={composerContent}
                 onChange={e => setComposerContent(e.target.value)}
                 placeholder="Take a note..."
                 rows={3}
-                className="w-full bg-transparent text-xs text-white/80 placeholder-white/30 outline-none resize-none"
+                className="w-full bg-transparent text-xs outline-none resize-none"
+                style={{ color: composerTextColor }}
               />
 
               {composerShowChecklist && (
                 <div className="space-y-1.5">
                   {composerChecklist.map((item, idx) => (
-                    <div key={idx} className="flex items-center gap-2 text-xs text-white/70">
+                    <div key={idx} className="flex items-center gap-2 text-xs" style={{ color: composerTextColor }}>
                       <SvgIcon d={ICONS.check} className="w-3 h-3 text-emerald-400" />
                       <span className="flex-1">{item.text}</span>
                       <button onClick={() => setComposerChecklist(prev => prev.filter((_, i) => i !== idx))} className="text-white/30 hover:text-red-400">
@@ -910,17 +1376,17 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
                       onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addComposerChecklistItem())}
                       placeholder="List item"
                       autoFocus
-                      className="flex-1 bg-transparent text-[11px] text-white/60 placeholder-white/25 outline-none"
+                      className="flex-1 bg-transparent text-[11px] outline-none"
+                      style={{ color: composerTextColor, opacity: 0.6 }}
                     />
                   </div>
                 </div>
               )}
 
-              {/* Labels */}
               {composerLabels.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {composerLabels.map(l => (
-                    <span key={l} className="text-[9px] px-2 py-0.5 rounded-full bg-white/10 text-white/60 flex items-center gap-1">
+                    <span key={l} className="text-[9px] px-2 py-0.5 rounded-full bg-white/10 flex items-center gap-1" style={{ color: composerTextColor, opacity: 0.6 }}>
                       {l}
                       <button onClick={() => setComposerLabels(prev => prev.filter(x => x !== l))}>
                         <SvgIcon d={ICONS.close} className="w-2.5 h-2.5" />
@@ -938,7 +1404,8 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
                   onBlur={() => setTimeout(() => setComposerLabelFocused(false), 150)}
                   onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addComposerLabel())}
                   placeholder="+ Add label (press Enter)"
-                  className="w-full bg-transparent text-[11px] text-white/60 placeholder-white/25 outline-none"
+                  className="w-full bg-transparent text-[11px] outline-none"
+                  style={{ color: composerTextColor, opacity: 0.6 }}
                 />
                 {composerLabelFocused && composerLabelInput.trim() && (
                   <div className="absolute z-20 top-6 left-0 w-full bg-[#1a1926] border border-white/10 rounded-lg shadow-xl overflow-hidden">
@@ -958,7 +1425,27 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
                 )}
               </div>
 
-              {/* Toolbar row */}
+              {/* Reminder */}
+              <div className="flex items-center gap-2 flex-wrap pt-1">
+                <SvgIcon d={ICONS.clock} className="w-4 h-4 text-white/50" />
+                <input
+                  type="datetime-local"
+                  value={composerReminder}
+                  onChange={e => setComposerReminder(e.target.value)}
+                  className="bg-black/20 border border-white/10 rounded-lg px-2 py-1 text-xs outline-none focus:border-purple-500/50"
+                  style={{ color: composerTextColor }}
+                />
+                {composerReminder && (
+                  <button
+                    onClick={() => setComposerReminder('')}
+                    className="text-white/30 hover:text-red-400 transition-colors"
+                    title="Clear reminder"
+                  >
+                    <SvgIcon d={ICONS.clear} className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
               <div className="flex items-center justify-between pt-1 border-t border-white/10">
                 <div className="flex items-center gap-1 pt-2">
                   <button
@@ -977,17 +1464,15 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
                       <SvgIcon d={ICONS.palette} className="w-4 h-4" />
                     </button>
                     {showColorPicker === 'composer' && (
-                      <div className="absolute z-20 top-9 left-0 flex gap-1.5 p-2 rounded-xl bg-[#1a1926] border border-white/10 shadow-xl flex-wrap w-44 animate-[fadeIn_0.15s_ease]">
-                        {COLORS.map(c => (
-                          <button
-                            key={c.value}
-                            onClick={() => { setComposerColor(c.value); setShowColorPicker(null); }}
-                            className={`w-6 h-6 rounded-full border border-white/20 transition-transform hover:scale-110 ${composerColor === c.value ? 'ring-2 ring-offset-1 ring-offset-[#1a1926] ' + c.ring : ''}`}
-                            style={{ backgroundColor: c.value }}
-                            title={c.name}
-                          />
-                        ))}
-                      </div>
+                      <ColorPickerPopover
+                        targetColor={colorPickerTarget === 'bg' ? composerColor : composerTextColor}
+                        onChange={(col) => {
+                          if (colorPickerTarget === 'bg') setComposerColor(col);
+                          else setComposerTextColor(col);
+                        }}
+                        target={colorPickerTarget}
+                        setTarget={setColorPickerTarget}
+                      />
                     )}
                   </div>
                 </div>
@@ -1023,174 +1508,43 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
         </div>
       ) : (
         <>
-          {pinnedNotes.length > 0 && activeView === 'notes' && (
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-2 flex items-center gap-1.5">
-                <SvgIcon d={ICONS.pin} className="w-3 h-3" fill /> Pinned
-              </p>
-              <div className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-4">
-                {pinnedNotes.map(n => <NoteCard key={n._id} note={n} />)}
-              </div>
+          {editingNoteId && (
+            <div className="mb-4">
+              {notes.find(n => n._id === editingNoteId) && (
+                <NoteCard note={notes.find(n => n._id === editingNoteId)!} />
+              )}
             </div>
           )}
-          {otherNotes.length > 0 && (
-            <div>
-              {pinnedNotes.length > 0 && activeView === 'notes' && (
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-2 mt-4">Others</p>
-              )}
-              <div className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-4">
-                {otherNotes.map(n => <NoteCard key={n._id} note={n} />)}
-              </div>
-            </div>
-          )}
-        </>
-      )}
 
-      {/* Edit modal */}
-      {editingNote && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-          onClick={closeEdit}
-        >
-          <div
-            className="w-full max-w-lg rounded-2xl border border-white/10 p-5 space-y-3 shadow-2xl max-h-[85vh] overflow-y-auto animate-[popIn_0.15s_ease]"
-            style={{ backgroundColor: editColor }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <input
-                type="text"
-                value={editTitle}
-                onChange={e => setEditTitle(e.target.value)}
-                placeholder="Title"
-                autoFocus
-                className="flex-1 bg-transparent text-base font-semibold text-white placeholder-white/30 outline-none"
-              />
-              <button onClick={closeEdit} className="p-1.5 rounded-lg text-white/50 hover:text-white hover:bg-white/10">
-                <SvgIcon d={ICONS.close} className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* Sub‑admin badge — sirf super-admin ko dikhega */}
-              {isSuperAdmin && editingNote.createdByRole === 'subadmin' && (
-                <span className="text-[9px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-200 border border-purple-500/30">
-                  by {editingNote.createdByName || 'Sub-Admin'}
-                </span>
-              )}
-              <span className="text-[9px] text-white/30 flex items-center gap-1">
-                <SvgIcon d={ICONS.clock} className="w-2.5 h-2.5" />
-                Edited {timeAgo(editingNote.updatedAt || editingNote.createdAt)}
-              </span>
-            </div>
-
-            <textarea
-              value={editContent}
-              onChange={e => setEditContent(e.target.value)}
-              placeholder="Note"
-              rows={5}
-              className="w-full bg-transparent text-sm text-white/85 placeholder-white/30 outline-none resize-none"
-            />
-
-            {/* Link preview in edit modal */}
-            {(() => {
-              const url = extractFirstUrl(editContent) || extractFirstUrl(editTitle);
-              return url ? <LinkPreviewCard url={url} apiBase={apiBase} token={token} /> : null;
-            })()}
-
-            {/* Checklist */}
-            <div className="space-y-1.5">
-              {editChecklist.map((item, idx) => (
-                <div key={idx} className="flex items-center gap-2 text-xs group/edit">
-                  <input
-                    type="checkbox"
-                    checked={item.checked}
-                    onChange={() => toggleEditChecklistItem(idx)}
-                    className="rounded accent-purple-500"
-                  />
-                  <span className={`flex-1 ${item.checked ? 'line-through text-white/30' : 'text-white/80'}`}>{item.text}</span>
-                  <button onClick={() => removeEditChecklistItem(idx)} className="text-white/20 group-hover/edit:text-white/50 hover:!text-red-400">
-                    <SvgIcon d={ICONS.close} className="w-3 h-3" />
-                  </button>
-                </div>
-              ))}
-              <div className="flex items-center gap-2">
-                <SvgIcon d={ICONS.plusSmall} className="w-3.5 h-3.5 text-white/30" />
-                <input
-                  type="text"
-                  value={editChecklistInput}
-                  onChange={e => setEditChecklistInput(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEditChecklistItem())}
-                  placeholder="List item"
-                  className="flex-1 bg-transparent text-xs text-white/60 placeholder-white/25 outline-none"
-                />
-              </div>
-            </div>
-
-            {/* Labels */}
-            <div className="space-y-1.5">
-              <div className="flex flex-wrap gap-1.5 items-center">
-                <SvgIcon d={ICONS.tag} className="w-3.5 h-3.5 text-white/30" />
-                {editLabels.map(l => (
-                  <span key={l} className="text-[9px] px-2 py-0.5 rounded-full bg-white/10 text-white/60 flex items-center gap-1">
-                    {l}
-                    <button onClick={() => removeEditLabel(l)}>
-                      <SvgIcon d={ICONS.close} className="w-2.5 h-2.5" />
-                    </button>
-                  </span>
-                ))}
-              </div>
-              <div className="relative pl-5">
-                <input
-                  type="text"
-                  value={editLabelInput}
-                  onChange={e => setEditLabelInput(e.target.value)}
-                  onFocus={() => setEditLabelFocused(true)}
-                  onBlur={() => setTimeout(() => setEditLabelFocused(false), 150)}
-                  onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEditLabel())}
-                  placeholder="+ Add label"
-                  className="bg-transparent text-[10px] text-white/60 placeholder-white/25 outline-none w-32"
-                />
-                {editLabelFocused && editLabelInput.trim() && (
-                  <div className="absolute z-20 top-5 left-5 w-40 bg-[#1a1926] border border-white/10 rounded-lg shadow-xl overflow-hidden">
-                    {labelSuggestions
-                      .filter(l => l.toLowerCase().includes(editLabelInput.toLowerCase()) && !editLabels.includes(l))
-                      .slice(0, 5)
-                      .map(l => (
-                        <button
-                          key={l}
-                          onMouseDown={() => addEditLabel(l)}
-                          className="block w-full text-left px-3 py-1.5 text-[11px] text-white/70 hover:bg-white/10"
-                        >
-                          {l}
-                        </button>
-                      ))}
+          {(() => {
+            const filtered = notes.filter(n => n._id !== editingNoteId);
+            const pinned = filtered.filter(n => n.pinned);
+            const others = filtered.filter(n => !n.pinned);
+            const hasPinned = pinned.length > 0 && activeView === 'notes';
+            return (
+              <>
+                {hasPinned && (
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-2 flex items-center gap-1.5">
+                      <SvgIcon d={ICONS.pin} className="w-3 h-3" fill /> Pinned
+                    </p>
+                    <div className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-4">
+                      {pinned.map(n => <NoteCard key={n._id} note={n} />)}
+                    </div>
                   </div>
                 )}
-              </div>
-            </div>
-
-            {/* Colors */}
-            <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-white/10 mt-2">
-              {COLORS.map(c => (
-                <button
-                  key={c.value}
-                  onClick={() => setEditColor(c.value)}
-                  className={`w-6 h-6 mt-2 rounded-full border border-white/20 transition-transform hover:scale-110 ${editColor === c.value ? 'ring-2 ring-offset-1 ' + c.ring : ''}`}
-                  style={{ backgroundColor: c.value }}
-                  title={c.name}
-                />
-              ))}
-            </div>
-
-            <div className="flex items-center justify-between pt-2">
-              <p className="text-[9px] text-white/20">Esc to close · Ctrl+Enter to save</p>
-              <button onClick={closeEdit} className="px-4 py-1.5 text-xs font-semibold text-white rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 hover:shadow-lg hover:shadow-purple-500/25 transition-all">
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
+                {others.length > 0 && (
+                  <div>
+                    {hasPinned && <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-2 mt-4">Others</p>}
+                    <div className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-4">
+                      {others.map(n => <NoteCard key={n._id} note={n} />)}
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </>
       )}
     </div>
   );

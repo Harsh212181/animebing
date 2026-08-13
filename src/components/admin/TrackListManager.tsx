@@ -40,16 +40,17 @@ const TrackListManager: React.FC = () => {
   const [adding, setAdding] = useState(false);
   const [titleInputs, setTitleInputs] = useState<Record<string, string>>({});
   const [excludeKeywordsInputs, setExcludeKeywordsInputs] = useState<Record<string, string>>({});
+  const [matchThresholdInputs, setMatchThresholdInputs] = useState<Record<string, number>>({});
   const [checkingNow, setCheckingNow] = useState<Record<string, boolean>>({});
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const [editKeyword, setEditKeyword] = useState('');
   const [editLastPart, setEditLastPart] = useState('');
-  const [showAllUpdates, setShowAllUpdates] = useState(false); // per-channel feed toggle
+  const [showAllUpdates, setShowAllUpdates] = useState(false);
   const [bulkModeChannel, setBulkModeChannel] = useState<string | null>(null);
   const [bulkText, setBulkText] = useState('');
   const [showRunHistory, setShowRunHistory] = useState(false);
   const [runningAll, setRunningAll] = useState(false);
-  const [showAllUpdatesGlobal, setShowAllUpdatesGlobal] = useState(false); // global feed toggle
+  const [showAllUpdatesGlobal, setShowAllUpdatesGlobal] = useState(false);
 
   const [syncingPage, setSyncingPage] = useState<Record<string, boolean>>({});
   const [syncingEpStatus, setSyncingEpStatus] = useState<Record<string, boolean>>({});
@@ -69,6 +70,11 @@ const TrackListManager: React.FC = () => {
   const [linkMergeMode, setLinkMergeMode] = useState(true);
   const [linkBaselineMin, setLinkBaselineMin] = useState('');
   const [savingLink, setSavingLink] = useState(false);
+
+  // 🆕 Strict Chronology Mode states
+  const [linkStrictChronology, setLinkStrictChronology] = useState(false);
+  const [linkChronologyFloorDate, setLinkChronologyFloorDate] = useState('');
+  const [linkChronologyGraceGap, setLinkChronologyGraceGap] = useState('0');
 
   const [logs, setLogs] = useState<any[]>([]);
   const [showLogs, setShowLogs] = useState(false);
@@ -121,8 +127,14 @@ const TrackListManager: React.FC = () => {
 
   const [showChannelFeed, setShowChannelFeed] = useState<Record<string, boolean>>({});
 
-  const token = localStorage.getItem('adminToken');
-  const authHeaders = () => ({ headers: { Authorization: `Bearer ${token}` } });
+  // ✅ FIX — jis dashboard se khula hai uska sahi token use karo
+  // Super-admin dashboard → localStorage.adminToken
+  // Sub-admin dashboard   → sessionStorage.subAdminToken
+  const isSubAdminContext = !!sessionStorage.getItem('subAdminToken')
+  const token = isSubAdminContext
+    ? sessionStorage.getItem('subAdminToken')
+    : localStorage.getItem('adminToken')
+  const authHeaders = () => ({ headers: { Authorization: `Bearer ${token}` } })
 
   // ============ DATA LOADING ============
   const loadData = async () => {
@@ -342,6 +354,7 @@ const TrackListManager: React.FC = () => {
     }
     const excludeKeywords = (excludeKeywordsInputs[channelId] || '').split(',').map((s) => s.trim()).filter(Boolean);
     const useDepth = depth ?? previewScanDepth;
+    const threshold = matchThresholdInputs[channelId] ?? 0.7;
     setPreviewLoading(true);
     setPreviewResults(null);
     setPreviewSelectedIds(new Set());
@@ -349,7 +362,7 @@ const TrackListManager: React.FC = () => {
     try {
       const { data } = await axios.post(
         `${API_BASE}/track/channel/${channelId}/title/test-match`,
-        { keyword, scanDepth: useDepth, excludeKeywords },
+        { keyword, scanDepth: useDepth, excludeKeywords, matchThreshold: threshold },
         authHeaders()
       );
       setPreviewResults({ matchedCount: data.matchedCount, videos: data.videos });
@@ -432,7 +445,11 @@ const TrackListManager: React.FC = () => {
     const kw = keyword.trim();
     if (!kw) return;
     try {
-      await axios.post(`${API_BASE}/track/channel/${channelId}/title/add`, { keyword: kw, currentKnownPart: 0, excludeKeywords }, authHeaders());
+      await axios.post(
+        `${API_BASE}/track/channel/${channelId}/title/add`,
+        { keyword: kw, currentKnownPart: 0, excludeKeywords, matchThreshold: matchThresholdInputs[channelId] ?? 0.7, autoInit: true },
+        authHeaders()
+      );
       toast.success(`"${kw}" add ho gaya`);
       setTitleInputs({ ...titleInputs, [channelId]: '' });
       setExcludeKeywordsInputs({ ...excludeKeywordsInputs, [channelId]: '' });
@@ -502,6 +519,10 @@ const TrackListManager: React.FC = () => {
     setLinkLimit(String(anyT.episodeLimit || 0));
     setLinkMergeMode(anyT.mergeMode !== false);
     setLinkBaselineMin(anyT.baselineEpisodeDurationSec ? String(Math.round(anyT.baselineEpisodeDurationSec / 60)) : '');
+    // 🆕 Strict Chronology fields
+    setLinkStrictChronology(anyT.strictChronology === true);
+    setLinkChronologyFloorDate(anyT.chronologyFloorDate || '');
+    setLinkChronologyGraceGap(String(anyT.chronologyGraceGap ?? 0));
     if (anyT.linkedAnimeId) fetchPagesForAnime(anyT.linkedAnimeId);
   };
 
@@ -513,6 +534,10 @@ const TrackListManager: React.FC = () => {
     setLinkBaselineMin('');
     setPagesForAnime([]);
     setLinkMergeMode(true);
+    // 🆕 Reset Strict Chronology fields
+    setLinkStrictChronology(false);
+    setLinkChronologyFloorDate('');
+    setLinkChronologyGraceGap('0');
   };
 
   const saveLinkForm = async (channelId: string) => {
@@ -527,6 +552,10 @@ const TrackListManager: React.FC = () => {
           episodeLimit: Number(linkLimit) || 0,
           mergeMode: linkMergeMode,
           baselineEpisodeMinutes: linkBaselineMin ? Number(linkBaselineMin) : undefined,
+          // 🆕 Include Strict Chronology
+          strictChronology: linkStrictChronology,
+          chronologyFloorDate: linkChronologyFloorDate || null,
+          chronologyGraceGap: Number(linkChronologyGraceGap) || 0,
         },
         authHeaders()
       );
@@ -568,12 +597,69 @@ const TrackListManager: React.FC = () => {
     }))
   );
 
+  // ✅ NEW — Needs Attention stats
+  const approvalPendingCount = allTitlesFlat.filter((t: any) => t.initialized === false).length;
+  const manualReviewCount = notifications.filter(n => n.notifType === 'manual_review' && !n.isRead).length;
+  const pausedOrErrorCount = channels.filter(ch => ch.paused || (ch.consecutiveErrors && ch.consecutiveErrors > 0)).length;
+
   const filteredAllTitles = allTitlesFlat.filter((t: any) => {
     const q = allTitlesSearch.trim().toLowerCase();
     if (!q) return true;
     return t.keyword.toLowerCase().includes(q) || t.channelName?.toLowerCase().includes(q);
   });
 
+  // ✅ NEW — Item 9 helper: sequential low-risk detection
+  const isSequentialLowRisk = (videos: any[]): boolean => {
+    const parts = Array.from(
+      new Set(videos.filter((v: any) => v.part !== null).map((v: any) => v.part))
+    ).sort((a: any, b: any) => a - b);
+    if (parts.length < 2) return false;
+    for (let i = 1; i < parts.length; i++) {
+      if (parts[i] !== parts[i - 1] + 1) return false;
+    }
+    return true;
+  };
+
+  // ✅ NEW — Item 9: Quick Approve (Sequential) — bulk add + finalize ek saath
+  const quickApproveSequential = async () => {
+    if (!browsingTitle || !bulkPageId || !browseData?.videos) {
+      toast.error('Pehle page select karo aur videos load karo');
+      return;
+    }
+    const allIds = browseData.videos.map((v: any) => v.videoId);
+    setSelectedVideoIds(new Set(allIds));
+    setFinalizing(true);
+    try {
+      const overridesToSend: Record<string, string> = {};
+      for (const vid of allIds) {
+        const raw = episodeOverrides[vid];
+        if (raw !== undefined && raw.trim() !== '') {
+          overridesToSend[vid] = raw.trim();
+        }
+      }
+      // Step 1: bulk add all videos
+      await axios.post(
+        `${API_BASE}/track/channel/${browsingTitle.channelId}/title/${browsingTitle.titleId}/bulk-add`,
+        { downloadPageId: bulkPageId, videoIds: allIds, episodeOverrides: overridesToSend },
+        authHeaders()
+      );
+      // Step 2: finalize (approve)
+      await axios.post(
+        `${API_BASE}/track/channel/${browsingTitle.channelId}/title/${browsingTitle.titleId}/finalize-initial`,
+        {},
+        authHeaders()
+      );
+      toast.success('Quick Approve ho gaya — sab episodes add + auto-tracking ON!');
+      closeBrowseTitle();
+      loadData();
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'Quick approve fail ho gaya');
+    } finally {
+      setFinalizing(false);
+    }
+  };
+
+  // ✅ NEW — openBrowseTitle with auto-fill linked anime/page
   const openBrowseTitle = async (channelId: string, titleId: string, keyword: string, depth?: number) => {
     const useDepth = depth ?? 150;
     if (browsingTitle?.titleId === titleId && browsingTitle?.channelId === channelId && !depth) {
@@ -587,8 +673,23 @@ const TrackListManager: React.FC = () => {
     if (!depth) {
       setSelectedVideoIds(new Set());
       setEpisodeOverrides({});
-      setBulkPageId('');
-      setBulkAnimeId('');
+
+      // ✅ NEW — pehle se linked anime/page ho toh auto-select karo
+      const ch = channels.find((c) => c._id === channelId);
+      const t = ch?.titles.find((tt: any) => tt.id === titleId) as any;
+      if (t?.linkedAnimeId && t?.linkedDownloadPageId) {
+        setBulkAnimeId(t.linkedAnimeId);
+        try {
+          const res = await axios.get(`${API_BASE}/download-pages/anime/${t.linkedAnimeId}`, authHeaders());
+          if (Array.isArray(res.data)) setBulkPages(res.data);
+        } catch {
+          setBulkPages([]);
+        }
+        setBulkPageId(t.linkedDownloadPageId);
+      } else {
+        setBulkPageId('');
+        setBulkAnimeId('');
+      }
     }
     try {
       const res = await axios.get(`${API_BASE}/track/channel/${channelId}/title/${titleId}/all-videos?depth=${useDepth}`, authHeaders());
@@ -775,11 +876,9 @@ const TrackListManager: React.FC = () => {
       isBulk: true,
       title: 'All Notifications in this list',
     });
-    // stash the list so confirmBulkDeleteNotifications knows exactly what to delete
     pendingBulkDeleteRef.current = list;
   };
 
-  // ref-like holder for whichever list "deleteAllInList" was called with (channel feed or global feed)
   const pendingBulkDeleteRef = React.useRef<TrackNotification[]>([]);
 
   const confirmBulkDeleteNotifications = async () => {
@@ -885,7 +984,6 @@ const TrackListManager: React.FC = () => {
     });
   };
 
-  // when a title is clicked from the global "All Titles" list, jump to its channel accordion + open its browse panel
   const jumpToTitleInChannel = (channelId: string, titleId: string, keyword: string) => {
     setSelectedChannelId(channelId);
     setShowAllTitles(false);
@@ -1045,34 +1143,59 @@ const TrackListManager: React.FC = () => {
         </div>
       </div>
 
-      {/* Capacity Meters */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="bg-slate-800/40 backdrop-blur-xl border border-white/10 rounded-2xl p-4">
-          <div className="flex justify-between text-xs mb-1.5">
-            <span className="text-slate-400 font-medium">Channels Tracked</span>
-            <span className="text-slate-200 font-semibold">
-              {capacity.channelsUsed} / {capacity.channelsLimit}
-            </span>
+      {/* Capacity Meters — only for super‑admin */}
+      {!isSubAdminContext && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="bg-slate-800/40 backdrop-blur-xl border border-white/10 rounded-2xl p-4">
+            <div className="flex justify-between text-xs mb-1.5">
+              <span className="text-slate-400 font-medium">Channels Tracked</span>
+              <span className="text-slate-200 font-semibold">
+                {capacity.channelsUsed} / {capacity.channelsLimit}
+              </span>
+            </div>
+            <div className="w-full h-2 bg-black/30 rounded-full overflow-hidden">
+              <div className="h-full bg-white/40 rounded-full transition-all duration-500" style={{ width: `${channelPercent}%` }} />
+            </div>
           </div>
-          <div className="w-full h-2 bg-black/30 rounded-full overflow-hidden">
-            <div className="h-full bg-white/40 rounded-full transition-all duration-500" style={{ width: `${channelPercent}%` }} />
+          <div className="bg-slate-800/40 backdrop-blur-xl border border-white/10 rounded-2xl p-4">
+            <div className="flex justify-between text-xs mb-1.5">
+              <span className="text-slate-400 font-medium">YouTube API Units (per cycle)</span>
+              <span className="text-sky-300 font-semibold">
+                {capacity.unitsUsedPerCheck} / {capacity.unitsLimit}
+              </span>
+            </div>
+            <div className="w-full h-2 bg-black/30 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-sky-500 to-cyan-500 rounded-full transition-all duration-500"
+                style={{ width: `${unitsPercent}%` }}
+              />
+            </div>
           </div>
         </div>
-        <div className="bg-slate-800/40 backdrop-blur-xl border border-white/10 rounded-2xl p-4">
-          <div className="flex justify-between text-xs mb-1.5">
-            <span className="text-slate-400 font-medium">YouTube API Units (per cycle)</span>
-            <span className="text-sky-300 font-semibold">
-              {capacity.unitsUsedPerCheck} / {capacity.unitsLimit}
-            </span>
-          </div>
-          <div className="w-full h-2 bg-black/30 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-sky-500 to-cyan-500 rounded-full transition-all duration-500"
-              style={{ width: `${unitsPercent}%` }}
-            />
+      )}
+
+      {/* ✅ NEW — Needs Attention widget */}
+      {(approvalPendingCount > 0 || manualReviewCount > 0 || pausedOrErrorCount > 0) && (
+        <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-4">
+          <h4 className="text-xs font-semibold text-amber-300 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+            {Icon.warn('w-3.5 h-3.5')} Needs Attention
+          </h4>
+          <div className="grid grid-cols-3 gap-3">
+            <button onClick={() => setShowAllTitles(true)} className="text-left bg-black/20 hover:bg-black/30 rounded-xl p-3 transition">
+              <p className="text-xl font-bold text-amber-300">{approvalPendingCount}</p>
+              <p className="text-[10px] text-slate-400">Approval Pending</p>
+            </button>
+            <button onClick={() => setShowGlobalFeed(true)} className="text-left bg-black/20 hover:bg-black/30 rounded-xl p-3 transition">
+              <p className="text-xl font-bold text-orange-300">{manualReviewCount}</p>
+              <p className="text-[10px] text-slate-400">Manual Review</p>
+            </button>
+            <div className="text-left bg-black/20 rounded-xl p-3">
+              <p className="text-xl font-bold text-red-300">{pausedOrErrorCount}</p>
+              <p className="text-[10px] text-slate-400">Paused / Error Channels</p>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Unified row: Conflicts | All Updates | All Titles */}
       <div>
@@ -1393,6 +1516,8 @@ const TrackListManager: React.FC = () => {
         setTitleInputs={setTitleInputs}
         excludeKeywordsInputs={excludeKeywordsInputs}
         setExcludeKeywordsInputs={setExcludeKeywordsInputs}
+        matchThresholdInputs={matchThresholdInputs}
+        setMatchThresholdInputs={setMatchThresholdInputs}
         quickExcludes={quickExcludes}
         addToExclude={addToExclude}
         bulkModeChannel={bulkModeChannel}
@@ -1419,6 +1544,19 @@ const TrackListManager: React.FC = () => {
         linkBaselineMin={linkBaselineMin}
         setLinkBaselineMin={setLinkBaselineMin}
         savingLink={savingLink}
+        // ✅ Item 9 — Quick Approve props
+        quickApproveSequential={quickApproveSequential}
+        isSequentialLowRisk={isSequentialLowRisk}
+        // 🆕 Strict Chronology Mode
+        linkStrictChronology={linkStrictChronology}
+        setLinkStrictChronology={setLinkStrictChronology}
+        linkChronologyFloorDate={linkChronologyFloorDate}
+        setLinkChronologyFloorDate={setLinkChronologyFloorDate}
+        // 🆕 Grace Gap
+        linkChronologyGraceGap={linkChronologyGraceGap}
+        setLinkChronologyGraceGap={setLinkChronologyGraceGap}
+        // 🆕 Sub-admin context
+        isSubAdmin={isSubAdminContext}
       />
 
       {/* Run History + Check Logs */}
@@ -1435,6 +1573,7 @@ const TrackListManager: React.FC = () => {
         runningAll={runningAll}
         clearAllRuns={clearAllRuns}
         clearingRuns={clearingRuns}
+        isSubAdmin={isSubAdminContext}
       />
     </div>
   );

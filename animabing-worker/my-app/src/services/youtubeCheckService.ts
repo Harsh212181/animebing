@@ -1,4 +1,5 @@
- // animabing-worker/my-app/src/services/youtubeCheckService.ts
+ // ============================================================
+// animabing-worker/my-app/src/services/youtubeCheckService.ts
 // ============================================================
 
 import { ITrackedChannel, ITrackedTitle, ITrackNotification, ICheckLog } from '../models/types'
@@ -29,10 +30,6 @@ export function parseEpisodeOverride(raw: string | number): { episode: number; e
 }                            // ============================================================
 
 // ============ ✅ NEW — duplicate-notification guard ============
-// Race-proof: agar cron aur manual "Check Now"/"Test Run" overlap ho jayein (dono purana
-// channel doc padh ke apna-apna updateOne se overwrite kar dein), tab bhi same video ke
-// liye same-type notification dobara DB me nahi jaayegi. flaggedVideoIds wala in-memory
-// dedup ke upar ye ek DB-level safety net hai.
 export async function notifyOnce(
   payload: ITrackNotification,
   mongoUri: string,
@@ -43,7 +40,6 @@ export async function notifyOnce(
     titleKeyword: payload.titleKeyword,
     notifType: payload.notifType,
   }
-  // newVideoId empty ho sakta hai kuch notif types (jaise auto_paused) me — tab keyword+type+message se dedup karo
   if (payload.newVideoId) {
     dupeFilter.newVideoId = payload.newVideoId
   } else {
@@ -57,10 +53,6 @@ export async function notifyOnce(
 }                            // ============================================================
 
 // ============ ✅ NEW — batched parallel processing (chunk load: max N items ek saath) ============
-// Cron/Test Run jab sab channels ek saath (Promise.allSettled) process karte the, tab
-// YouTube API pe burst load jaata tha aur 429/quota errors aate the — jo consecutiveErrors
-// badha ke channels ko galti se auto-pause kar dete the. Ab sirf `batchSize` channels ek
-// saath chalenge, batches ke beech `delayMs` ka gap rahega.
 export async function processInBatches<T, R>(
   items: T[],
   batchSize: number,
@@ -364,7 +356,7 @@ export interface ProcessedUpdate {
   linkedDownloadPageId?: string
   linkedDownloadPageSlug?: string
   removedOldLink?: any
-  reviewReason?: 'duration' | 'chronology' | 'description'
+  reviewReason?: 'duration' | 'chronology' | 'description' | 'unparseable'
   matchScore?: number
 }
 
@@ -379,10 +371,6 @@ export async function processChannelUpdates(
 ): Promise<ProcessedUpdate[]> {
   if (channel.paused) return []
 
-  // ✅ FIX: 50 → 150 — pehle sirf last-50 videos scan hote the jisse channel pe agar
-  // beech me dusre uploads (shorts/other titles) aa jayein to naye episodes miss ho jaate
-  // the. Ab 150 tak scan hota hai taaki manual "Saare Episodes Dekho" (jo already deeper
-  // scan karta hai) aur auto-check dono consistent result den.
   const recentVideos = await fetchRecentVideos(channel.uploadsPlaylistId, apiKey, 150, quotaTracker)
   const results: ProcessedUpdate[] = []
   const updatedTitles: ITrackedTitle[] = []
@@ -417,10 +405,15 @@ export async function processChannelUpdates(
         })
       }
 
-      if (!trackedTitle.approvalNotified) {
-        // ✅ FIX: insertOne → notifyOnce (race-proof dedup)
-        await notifyOnce({
-          message: `${channel.channelName} — "${trackedTitle.keyword}" me ${distinctParts.size} episodes/parts mile hain! Pehle inhe approve karo — Track List Manager ke "All Titles" section me anime/page select karo.`,
+      const APPROVAL_REMIND_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000
+      const lastNotified = trackedTitle.lastApprovalNotifiedAt
+        ? new Date(trackedTitle.lastApprovalNotifiedAt).getTime()
+        : 0
+      const shouldRemind = !lastNotified || (Date.now() - lastNotified > APPROVAL_REMIND_INTERVAL_MS)
+
+      if (shouldRemind) {
+        await insertOne('trackNotifications', {
+          message: `${channel.channelName} — "${trackedTitle.keyword}" me ${distinctParts.size} episodes/parts mile hain, abhi tak approve nahi hua! Track List Manager me jaake approve karo.`,
           channelId: channel.channelId,
           channelName: channel.channelName,
           titleKeyword: trackedTitle.keyword,
@@ -433,7 +426,7 @@ export async function processChannelUpdates(
           notifType: 'needs_approval',
         } as ITrackNotification, mongoUri, dbName)
 
-        updatedTitles.push({ ...trackedTitle, approvalNotified: true })
+        updatedTitles.push({ ...trackedTitle, lastApprovalNotifiedAt: new Date().toISOString() })
         titlesChanged = true
       } else {
         updatedTitles.push(trackedTitle)
@@ -469,6 +462,40 @@ export async function processChannelUpdates(
     const newFlaggedIds: string[] = []
 
     const stillNoNumber = parsed.filter(p => p.part === null)
+
+    let prevVideoId = trackedTitle.lastKnownVideoId
+    let prevVideoTitle = trackedTitle.lastKnownVideoTitle
+    let prevThumbnail = trackedTitle.lastKnownThumbnail
+    let prevPublishedAt = trackedTitle.lastKnownPublishedAt
+    let prevPart = trackedTitle.lastKnownPart
+    let curSeason: number | null = trackedTitle.lastKnownSeason ?? null
+    let curIsRange: boolean = trackedTitle.lastKnownIsRange ?? false
+    let lastBlockedVideoId = trackedTitle.lastBlockedVideoId
+    let mutated = false
+
+    const noFormatSeenIds = new Set(trackedTitle.noFormatSeenIds || [])
+    const newNoFormatSeenIds: string[] = []
+    for (const p of stillNoNumber) {
+      if (alreadyFlagged.has(p.video.videoId) || newFlaggedIds.includes(p.video.videoId)) continue
+      if (noFormatSeenIds.has(p.video.videoId)) {
+        results.push({
+          titleId: trackedTitle.id, keyword: trackedTitle.keyword,
+          newPart: 0, newVideoId: p.video.videoId, newVideoTitle: p.video.title,
+          newThumbnail: p.video.thumbnail, newPublishedAt: p.video.publishedAt,
+          notifType: 'manual_review', autoAdded: false, replaced: false,
+          reviewReason: 'unparseable', matchScore: p.matchScore,
+        })
+        logEntry.entries.push({
+          videoTitle: p.video.title, videoId: p.video.videoId, part: null, isRange: false,
+          action: 'no-format-detected', matchScore: p.matchScore,
+        })
+        newFlaggedIds.push(p.video.videoId)
+        mutated = true
+      } else {
+        newNoFormatSeenIds.push(p.video.videoId)
+      }
+    }
+
     const durationSuggestions: { video: YouTubeVideoItem; suggestedStart: number; suggestedEnd: number; durationMin: number }[] = []
     if (stillNoNumber.length > 0 && trackedTitle.baselineEpisodeDurationSec) {
       const durations = await fetchVideoDurations(stillNoNumber.map(p => p.video.videoId), apiKey, quotaTracker)
@@ -484,16 +511,6 @@ export async function processChannelUpdates(
       }
     }
 
-    let prevVideoId = trackedTitle.lastKnownVideoId
-    let prevVideoTitle = trackedTitle.lastKnownVideoTitle
-    let prevThumbnail = trackedTitle.lastKnownThumbnail
-    let prevPublishedAt = trackedTitle.lastKnownPublishedAt
-    let prevPart = trackedTitle.lastKnownPart
-    let curSeason: number | null = trackedTitle.lastKnownSeason ?? null
-    let curIsRange: boolean = trackedTitle.lastKnownIsRange ?? false
-    let lastBlockedVideoId = trackedTitle.lastBlockedVideoId
-    let mutated = false
-
     let pageDoc: any = null
     let pageLinksLocal: any[] = []
     let pageChanged = false
@@ -503,6 +520,7 @@ export async function processChannelUpdates(
     }
 
     for (const item of newOnes) {
+      // Existing season-blocked code
       if (curSeason !== null && item.season !== null && item.season !== curSeason) {
         if (lastBlockedVideoId !== item.video.videoId) {
           results.push({
@@ -522,7 +540,44 @@ export async function processChannelUpdates(
         break
       }
 
-      if (prevPublishedAt) {
+      // ✅ NEW — Strict Chronology mode (with auto-advance floor + grace gap)
+      if (trackedTitle.strictChronology) {
+        const floorSource = trackedTitle.chronologyFloorDate || prevPublishedAt
+        const floorTime = floorSource ? new Date(floorSource).getTime() : NaN
+        const itemTime = new Date(item.video.publishedAt).getTime()
+
+        if (!Number.isNaN(floorTime) && !Number.isNaN(itemTime) && itemTime < floorTime) {
+          logEntry.entries.push({
+            videoTitle: item.video.title, videoId: item.video.videoId, part: item.part, isRange: item.isRange,
+            matchedFormat: item.matchedFormat, action: 'chronology-floor-blocked', matchScore: item.matchScore,
+          })
+          continue
+        }
+
+        const graceGap = trackedTitle.chronologyGraceGap || 0
+        const isSequential = item.part > prevPart && item.part <= prevPart + 1 + graceGap
+        if (!isSequential) {
+          if (!alreadyFlagged.has(item.video.videoId) && !newFlaggedIds.includes(item.video.videoId)) {
+            results.push({
+              titleId: trackedTitle.id, keyword: trackedTitle.keyword,
+              newPart: item.part, newVideoId: item.video.videoId, newVideoTitle: item.video.title,
+              newThumbnail: item.video.thumbnail, newPublishedAt: item.video.publishedAt,
+              oldVideoId: prevVideoId, oldVideoTitle: prevVideoTitle, oldThumbnail: prevThumbnail, oldPart: prevPart || undefined,
+              notifType: 'manual_review', autoAdded: false, replaced: false,
+              reviewReason: 'chronology', matchScore: item.matchScore,
+            })
+            logEntry.entries.push({
+              videoTitle: item.video.title, videoId: item.video.videoId, part: item.part, isRange: item.isRange,
+              matchedFormat: item.matchedFormat, action: 'chronology-suspicious', matchScore: item.matchScore,
+            })
+            newFlaggedIds.push(item.video.videoId)
+            mutated = true
+          }
+          continue
+        }
+      }
+      // Existing (non‑strict) chronology check — only runs when strictChronology is OFF
+      else if (prevPublishedAt) {
         const prevTime = new Date(prevPublishedAt).getTime()
         const curTime = new Date(item.video.publishedAt).getTime()
         if (!Number.isNaN(prevTime) && !Number.isNaN(curTime) && curTime < prevTime - CHRONOLOGY_TOLERANCE_MS) {
@@ -545,6 +600,7 @@ export async function processChannelUpdates(
         }
       }
 
+      // ... yahan se neeche existing auto-add / page-link code same rahega ...
       let autoAdded = false
       let replaced = false
       let linkedSlug: string | undefined
@@ -704,6 +760,7 @@ export async function processChannelUpdates(
       })
     }
 
+    // ✅ FIX — syncPageDerivedData only inside pageChanged block, not unconditionally
     if (pageChanged && pageDoc) {
       await updateOne('downloadpages', { _id: pageDoc._id }, { links: pageLinksLocal }, mongoUri, dbName)
 
@@ -714,22 +771,27 @@ export async function processChannelUpdates(
           // silent
         }
       }
-    }
 
-    if (trackedTitle.linkedDownloadPageId) {
-      try {
-        // ✅ UPDATED: combined helper — currentEpisode (badge) ke saath-saath Episode/Chapter
-        // record ka range-title text ("Chapter 1-25" / "Episode 1-12") bhi ek hi call se
-        // auto-tracker se sync hoga
-        await syncPageDerivedData(trackedTitle.linkedDownloadPageId, mongoUri, dbName)
-      } catch {
-        // silent
+      // ✅ FIX — sirf tabhi is title ke page ko re-sync karo jab isme actually
+      // kuch naya add/replace hua ho. Pehle ye unconditional tha, isliye
+      // dusre session/title ka check chalte hi ye page ka currentEpisode
+      // dobara force-overwrite ho jata tha — chahe kuch naya na mila ho.
+      if (trackedTitle.linkedDownloadPageId) {
+        try {
+          await syncPageDerivedData(trackedTitle.linkedDownloadPageId, mongoUri, dbName)
+        } catch {
+          // silent
+        }
       }
     }
 
     const mergedFlaggedIds = newFlaggedIds.length > 0
       ? Array.from(new Set([...(trackedTitle.flaggedVideoIds || []), ...newFlaggedIds]))
       : trackedTitle.flaggedVideoIds
+
+    const mergedNoFormatSeenIds = newNoFormatSeenIds.length > 0
+      ? Array.from(new Set([...(trackedTitle.noFormatSeenIds || []), ...newNoFormatSeenIds]))
+      : trackedTitle.noFormatSeenIds
 
     updatedTitles.push(
       mutated
@@ -745,6 +807,7 @@ export async function processChannelUpdates(
             lastKnownIsRange: curIsRange,
             lastBlockedVideoId,
             flaggedVideoIds: mergedFlaggedIds,
+            noFormatSeenIds: mergedNoFormatSeenIds,
           }
         : { ...trackedTitle, initialized: true }
     )
@@ -764,6 +827,8 @@ export async function processChannelUpdates(
         message = `${channel.channelName} — "${r.keyword}" ke liye ek video mila (Part ${r.newPart}) jiski publish date purani lagti hai. Ho sakta hai ye video galat match hua ho — kripya khud check karo.`
       } else if (r.reviewReason === 'description') {
         message = `${channel.channelName} — "${r.keyword}" ka Part ${r.newPart} sirf VIDEO DESCRIPTION se detect hua hai (title me number nahi tha). Confirm karke manually add karo — auto-add nahi kiya gaya.`
+      } else if (r.reviewReason === 'unparseable') {
+        message = `${channel.channelName} — "${r.keyword}" ka video "${r.newVideoTitle}" lagataar 2+ checks se episode number detect nahi kar pa raha. Video kholke manually check karo.`
       } else {
         message = `${channel.channelName} — "${r.keyword}" ka naya video mila jiske title/description me episode number nahi hai. Video kholke check karo aur MANUALLY add karo.`
       }
@@ -777,9 +842,6 @@ export async function processChannelUpdates(
       message = `${channel.channelName} — "${r.keyword}" ka naya part (${r.newPart}) aa gaya hai!${r.autoAdded ? ' (Watch section me automatically add ho gaya ✅)' : ''}`
     }
 
-    // ✅ FIX: insertOne → notifyOnce (race-proof dedup) — yahi wo jagah hai jaha
-    // "same video 4-5 baar Manual Review me dikhna" wala duplicate bug bana raha tha
-    // jab cron aur Check Now/Test Run overlap ho jaate the
     await notifyOnce({
       message,
       channelId: channel.channelId,

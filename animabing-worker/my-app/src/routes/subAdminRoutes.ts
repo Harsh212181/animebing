@@ -234,31 +234,104 @@ subAdminRoutes.delete('/:id', adminAuth, superAdminOnly, async (c) => {
   }
 })
 
-// ============ ACTIVITY LOGS ============
-subAdminRoutes.get('/activity-logs', adminAuth, superAdminOnly, async (c) => {
+// ============ ASSIGN ANIME TO SUB-ADMIN (single/bulk) ============
+subAdminRoutes.post('/:id/assign-anime', adminAuth, superAdminOnly, async (c) => {
   try {
-    const subAdminId = c.req.query('subAdminId')
-    const filter: any = {}
-    if (subAdminId) filter.actorId = subAdminId
-    const logs = await getActivityLogs(filter, c.env.MONGODB_URI, c.env.MONGODB_DB, 200)
-    return c.json({ success: true, data: logs })
+    const id = c.req.param('id')
+    if (!isValidObjectId(id)) return c.json({ success: false, error: 'Invalid sub-admin ID' }, 400)
+
+    const { animeIds } = await c.req.json() // string[] — ek ya multiple dono chalega
+    if (!Array.isArray(animeIds) || animeIds.length === 0) {
+      return c.json({ success: false, error: 'animeIds array required' }, 400)
+    }
+    const validIds = animeIds.filter((aid: string) => isValidObjectId(aid))
+    if (validIds.length === 0) return c.json({ success: false, error: 'No valid anime IDs' }, 400)
+
+    const subAdmin = await findOne<ISubAdmin>('subadmins', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    if (!subAdmin) return c.json({ success: false, error: 'Sub-admin not found' }, 404)
+
+    const current = new Set(subAdmin.assignedAnimeIds || [])
+    validIds.forEach((aid: string) => current.add(aid))
+
+    await updateOne('subadmins', { _id: toObjectId(id) }, { assignedAnimeIds: Array.from(current) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const admin = c.get('admin')
+    await logActivity({
+      actorId: admin.id, actorUsername: admin.username, actorRole: 'admin',
+      action: 'assign-anime-to-subadmin', targetType: 'subadmin', targetId: id,
+      targetTitle: `${validIds.length} anime assigned`
+    }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    return c.json({ success: true, message: `${validIds.length} anime assign ho gaye`, assignedAnimeIds: Array.from(current) })
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 500)
+  }
+})
+
+// ============ UNASSIGN ANIME FROM SUB-ADMIN (single/bulk) ============
+subAdminRoutes.post('/:id/unassign-anime', adminAuth, superAdminOnly, async (c) => {
+  try {
+    const id = c.req.param('id')
+    if (!isValidObjectId(id)) return c.json({ success: false, error: 'Invalid sub-admin ID' }, 400)
+
+    const { animeIds } = await c.req.json()
+    if (!Array.isArray(animeIds) || animeIds.length === 0) {
+      return c.json({ success: false, error: 'animeIds array required' }, 400)
+    }
+
+    const subAdmin = await findOne<ISubAdmin>('subadmins', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    if (!subAdmin) return c.json({ success: false, error: 'Sub-admin not found' }, 404)
+
+    const removeSet = new Set(animeIds)
+    const updated = (subAdmin.assignedAnimeIds || []).filter((aid: string) => !removeSet.has(aid))
+
+    await updateOne('subadmins', { _id: toObjectId(id) }, { assignedAnimeIds: updated }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    return c.json({ success: true, message: 'Anime unassign ho gaye', assignedAnimeIds: updated })
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 500)
+  }
+})
+
+// ============ GET ASSIGNED ANIME LIST (with full details, for showing in UI) ============
+subAdminRoutes.get('/:id/assigned-anime', adminAuth, superAdminOnly, async (c) => {
+  try {
+    const id = c.req.param('id')
+    if (!isValidObjectId(id)) return c.json({ success: false, error: 'Invalid ID' }, 400)
+
+    const subAdmin = await findOne<ISubAdmin>('subadmins', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    if (!subAdmin) return c.json({ success: false, error: 'Sub-admin not found' }, 404)
+
+    const ids = (subAdmin.assignedAnimeIds || []).filter(isValidObjectId).map((aid: string) => toObjectId(aid))
+    const animes = ids.length
+      ? await findMany('animes', { _id: { $in: ids } }, {
+          projection: { title: 1, thumbnail: 1, contentType: 1, status: 1, createdBy: 1, createdByUsername: 1 }
+        }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+      : []
+
+    return c.json({ success: true, data: animes })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
   }
 })
 
 // ============ GET FULL ANIME LIST FOR A SUB-ADMIN (super admin only) ============
+// ✅ Updated: ab "createdBy" + "assignedAnimeIds" dono milaake anime list return hogi
 subAdminRoutes.get('/:id/anime', adminAuth, superAdminOnly, async (c) => {
   try {
     const id = c.req.param('id')
+    const subAdmin = await findOne<ISubAdmin>('subadmins', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const assignedIds = (subAdmin?.assignedAnimeIds || []).filter(isValidObjectId).map((aid: string) => toObjectId(aid))
+
     const animes = await findMany(
       'animes',
-      { createdBy: id },
+      { $or: [{ createdBy: id }, { _id: { $in: assignedIds } }] },
       {
         sort: { createdAt: -1 },
         projection: {
           title: 1, thumbnail: 1, contentType: 1, subDubStatus: 1, status: 1,
-          releaseYear: 1, views: 1, likes: 1, slug: 1, isHidden: 1, isBlocked: 1, createdAt: 1
+          releaseYear: 1, views: 1, likes: 1, slug: 1, isHidden: 1, isBlocked: 1, createdAt: 1,
+          createdBy: 1
         }
       },
       c.env.MONGODB_URI, c.env.MONGODB_DB

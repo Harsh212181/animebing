@@ -1,5 +1,5 @@
  // src/components/admin/TrackChannelsPanel.tsx
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import {
@@ -90,6 +90,18 @@ const SearchableDropdown: React.FC<{
     </div>
   );
 };
+
+/* ---------- ✅ Item 9 helper — sequential low-risk detection ---------- */
+function isSequentialLowRiskLocal(videos: any[]): boolean {
+  const parts = Array.from(
+    new Set(videos.filter((v: any) => v.part !== null).map((v: any) => v.part))
+  ).sort((a: any, b: any) => a - b);
+  if (parts.length < 2) return false;
+  for (let i = 1; i < parts.length; i++) {
+    if (parts[i] !== parts[i - 1] + 1) return false;
+  }
+  return true;
+}
 
 /* ---------- Props ---------- */
 interface TrackChannelsPanelProps {
@@ -222,6 +234,21 @@ interface TrackChannelsPanelProps {
   linkBaselineMin: string;
   setLinkBaselineMin: (v: string) => void;
   savingLink: boolean;
+  // ✅ Item 8 — match strictness
+  matchThresholdInputs: Record<string, number>;
+  setMatchThresholdInputs: React.Dispatch<React.SetStateAction<Record<string, number>>>;
+  // ✅ Item 9 — quick approve
+  quickApproveSequential: () => void;
+  isSequentialLowRisk: (videos: any[]) => boolean;
+  // 🆕 Strict Chronology Mode
+  linkStrictChronology: boolean;
+  setLinkStrictChronology: (v: boolean) => void;
+  linkChronologyFloorDate: string;
+  setLinkChronologyFloorDate: (v: string) => void;
+  linkChronologyGraceGap: string;
+  setLinkChronologyGraceGap: (v: string) => void;
+  // 🆕 sub-admin detection
+  isSubAdmin?: boolean;
 }
 
 const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
@@ -292,7 +319,6 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
   bulkPages,
   finalizing,
   bulkIgnoring,
-  // preview
   previewForChannel,
   setPreviewForChannel,
   previewLoading,
@@ -314,19 +340,16 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
   runPreview,
   previewScanDepth,
   setPreviewScanDepth,
-  // title inputs
   titleInputs,
   setTitleInputs,
   excludeKeywordsInputs,
   setExcludeKeywordsInputs,
   quickExcludes,
   addToExclude,
-  // bulk title
   bulkModeChannel,
   setBulkModeChannel,
   bulkText,
   setBulkText,
-  // edit title
   editingTitle,
   setEditingTitle,
   editKeyword,
@@ -334,7 +357,6 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
   editLastPart,
   setEditLastPart,
   cancelEditTitle,
-  // link form
   linkFormTitleId,
   linkAnimeId,
   setLinkAnimeId,
@@ -347,16 +369,68 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
   linkBaselineMin,
   setLinkBaselineMin,
   savingLink,
+  matchThresholdInputs,
+  setMatchThresholdInputs,
+  quickApproveSequential,
+  isSequentialLowRisk,
+  linkStrictChronology,
+  setLinkStrictChronology,
+  linkChronologyFloorDate,
+  setLinkChronologyFloorDate,
+  linkChronologyGraceGap,
+  setLinkChronologyGraceGap,
+  isSubAdmin,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [addedByFilter, setAddedByFilter] = useState<string>('main'); // 🆕 'main' = default (sirf main admin ke channels)
+  const titleCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // 🆕 Channels se unique sub-admins nikalo (dropdown ke liye)
+  const subAdminOwners = Array.from(
+    new Map(
+      channels
+        .filter((ch) => ch.createdBy && ch.createdBy !== 'admin')
+        .map((ch) => [ch.createdBy as string, ch.createdByUsername || (ch.createdBy as string)])
+    ).entries()
+  ).map(([id, username]) => ({ id, username }));
+
   const unreadCountFor = (channelId: string) =>
     notifications.filter((n) => n.channelId === channelId && !n.isRead).length;
 
   const filteredChannels = channels.filter((ch) => {
+    // 🆕 Added-by filter — sirf super-admin dashboard mein apply hota hai
+    if (!isSubAdmin) {
+      if (addedByFilter === 'main' && ch.createdBy && ch.createdBy !== 'admin') return false;
+      if (addedByFilter !== 'main' && addedByFilter !== 'all' && ch.createdBy !== addedByFilter) return false;
+    }
+
     const q = searchQuery.trim().toLowerCase();
     if (!q) return true;
-    return ch.channelName.toLowerCase().includes(q) || ch.channelHandle?.toLowerCase().includes(q);
+    const channelMatch =
+      ch.channelName.toLowerCase().includes(q) || ch.channelHandle?.toLowerCase().includes(q);
+    const titleMatch = (ch.titles || []).some((t) => t.keyword.toLowerCase().includes(q));
+    return channelMatch || titleMatch;
   });
+
+  // Auto-expand & scroll to first matching title when search query changes
+  useEffect(() => {
+    if (searchQuery.trim() && filteredChannels.length > 0) {
+      const q = searchQuery.trim().toLowerCase();
+      for (const ch of filteredChannels) {
+        const matchedTitle = (ch.titles || []).find((t) => t.keyword.toLowerCase().includes(q));
+        if (matchedTitle) {
+          setSelectedChannelId(ch._id);
+          setTimeout(() => {
+            const el = titleCardRefs.current[matchedTitle.id];
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          }, 100);
+          break;
+        }
+      }
+    }
+  }, [searchQuery]);
 
   const channelNotifications = notifications.filter(
     (n) => n.channelId === (channels.find((c) => c._id === selectedChannelId)?.channelId)
@@ -528,7 +602,7 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
     </div>
   );
 
-  // Browse Panel renderer (same as original, adapted)
+  // Browse Panel renderer
   const renderBrowsePanel = (channelId: string, titleId: string) => {
     if (!(browsingTitle?.titleId === titleId && browsingTitle?.channelId === channelId)) return null;
     return (
@@ -736,6 +810,15 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
 
             {!browseData.initialized && (
               <div className="p-3 border-t border-white/10 bg-amber-500/5">
+                {isSequentialLowRisk(browseData.videos) && bulkPageId && (
+                  <button
+                    onClick={quickApproveSequential}
+                    disabled={finalizing}
+                    className="w-full mb-2 px-4 py-2 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5"
+                  >
+                    ⚡ Quick Approve (Sequential Order Detected — sab episodes ek saath add + approve)
+                  </button>
+                )}
                 <p className="text-[10px] text-amber-300 mb-2">
                   Sab episodes add karne ke baad "Approve & Finalize" dabao, fir auto-tracking chalu ho jayega.
                 </p>
@@ -748,7 +831,7 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
                     'Finalizing...'
                   ) : (
                     <>
-                      {Icon.checkAll('w-3.5 h-3.5')} Approve & Finalize (ab auto-tracking shuru ho)
+                      {Icon.checkAll('w-3.5 h-3.5')} Approve & Finalize (auto-tracking shuru ho)
                     </>
                   )}
                 </button>
@@ -762,8 +845,15 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
     );
   };
 
-  // Render channel detail (accordion body)
-  const renderChannelDetail = (ch: TrackedChannel) => (
+  // Render channel detail (accordion body) — titles now filtered by search query
+  const renderChannelDetail = (ch: TrackedChannel) => {
+    const q = searchQuery.trim().toLowerCase();
+    // If search query exists, filter titles to only those matching
+    const visibleTitles = q
+      ? (ch.titles || []).filter((t) => t.keyword.toLowerCase().includes(q))
+      : ch.titles;
+
+    return (
     <div className="border-t border-white/10 bg-black/20 p-4 space-y-5">
       {/* Actions bar */}
       <div className="flex items-center gap-2 flex-wrap">
@@ -817,7 +907,7 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
       <div className="bg-slate-900/40 border border-white/5 rounded-xl p-3" id={`titles-${ch._id}`}>
         <div className="flex items-center justify-between mb-3">
           <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wide flex items-center gap-1.5">
-            {Icon.eye('w-3.5 h-3.5 text-sky-400')} Tracked Titles ({ch.titles.length})
+            {Icon.eye('w-3.5 h-3.5 text-sky-400')} Tracked Titles ({ch.titles.length}{q ? ` · ${visibleTitles.length} matched` : ''})
           </h4>
           <button
             onClick={() => setBulkModeChannel(bulkModeChannel === ch._id ? null : ch._id)}
@@ -888,6 +978,24 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
               >
                 {Icon.plus('w-3.5 h-3.5')} Add
               </button>
+            </div>
+
+            {/* ✅ Item 8 — Match Strictness Slider */}
+            <div className="flex items-center gap-2 px-1">
+              <label className="text-[10px] text-slate-400 whitespace-nowrap w-28">
+                Match Strictness: {Math.round((matchThresholdInputs[ch._id] ?? 0.7) * 100)}%
+              </label>
+              <input
+                type="range"
+                min="0.3"
+                max="1"
+                step="0.05"
+                value={matchThresholdInputs[ch._id] ?? 0.7}
+                onChange={(e) =>
+                  setMatchThresholdInputs((prev) => ({ ...prev, [ch._id]: Number(e.target.value) }))
+                }
+                className="flex-1 accent-sky-500"
+              />
             </div>
 
             <input
@@ -1072,12 +1180,14 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
           </div>
         )}
 
-        {/* Title cards list */}
+        {/* Title cards list — only visible titles */}
         <div className="space-y-2">
-          {ch.titles.length === 0 && (
-            <p className="text-xs text-slate-500">Abhi koi title track nahi ho raha.</p>
+          {visibleTitles.length === 0 && (
+            <p className="text-xs text-slate-500">
+              {q ? 'Is search se koi title match nahi hua.' : 'Abhi koi title track nahi ho raha.'}
+            </p>
           )}
-          {ch.titles.map((t) => {
+          {visibleTitles.map((t) => {
             const anyT = t as any;
             return editingTitle === t.id ? (
               <div key={t.id} className="flex items-center gap-2 bg-black/20 rounded-lg p-2 border border-white/5">
@@ -1105,7 +1215,11 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
                 </button>
               </div>
             ) : (
-              <div key={t.id} className="bg-black/20 rounded-xl p-3 border border-white/5 hover:border-white/10 transition">
+              <div
+                key={t.id}
+                ref={(el) => { titleCardRefs.current[t.id] = el; }}
+                className="bg-black/20 rounded-xl p-3 border border-white/5 hover:border-white/10 transition"
+              >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start gap-2 flex-wrap">
@@ -1115,7 +1229,6 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-slate-400 border border-white/10 flex-shrink-0">
                         last part: {t.lastKnownPart}
                       </span>
-                      {/* 📌 Updated badge with conditional logic */}
                       {anyT.initialized === false ? (
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1 flex-shrink-0">
                           {Icon.clock('w-2.5 h-2.5')} Approval Pending (Auto OFF)
@@ -1124,6 +1237,26 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 flex-shrink-0">
                           {Icon.check('w-2.5 h-2.5')} Auto-Tracking ON
                         </span>
+                      )}
+                      {anyT.lastKnownPublishedAt && (() => {
+                        const days = Math.floor((Date.now() - new Date(anyT.lastKnownPublishedAt).getTime()) / 86400000);
+                        if (days < 14) return null;
+                        return (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-600/30 text-slate-400 border border-slate-500/30 flex items-center gap-1 flex-shrink-0">
+                            {Icon.clock('w-2.5 h-2.5')} {days} din se naya episode nahi
+                          </span>
+                        );
+                      })()}
+                      {anyT.strictChronology && (
+                        anyT.chronologyFloorDate || anyT.lastKnownPublishedAt ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30 flex items-center gap-1 flex-shrink-0">
+                            {Icon.clock('w-2.5 h-2.5')} Floor: {new Date(anyT.chronologyFloorDate || anyT.lastKnownPublishedAt).toLocaleDateString('en-IN')}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/30 flex items-center gap-1 flex-shrink-0">
+                            {Icon.warn('w-2.5 h-2.5')} Floor date nahi mili — pehle ek video approve karo
+                          </span>
+                        )
                       )}
                     </div>
 
@@ -1187,7 +1320,7 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
                     onClick={() => openBrowseTitle(ch._id, t.id, t.keyword)}
                     className="text-[10px] px-2.5 py-1 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-400 transition flex items-center gap-1"
                   >
-                    {Icon.eye('w-3 h-3')} Saare Episodes Dekho
+                    {Icon.eye('w-3 h-3')} See all Episodes 
                   </button>
 
                   {!anyT.linkedDownloadPageId ? (
@@ -1195,7 +1328,7 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
                       onClick={() => openLinkForm(t)}
                       className="text-[10px] px-2.5 py-1 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-400 transition flex items-center gap-1"
                     >
-                      {Icon.plus('w-2.5 h-2.5')} Page se link karo (auto-add ke liye)
+                      {Icon.plus('w-2.5 h-2.5')} Page se link karo (auto-add )
                     </button>
                   ) : (
                     <div className="flex items-center gap-1">
@@ -1319,6 +1452,48 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
                         Compilation Merge Mode (1-2 → 1-5 jaisi range videos ka purana link auto-replace karo)
                       </label>
 
+                      <label className="flex items-center gap-2 text-xs text-slate-300">
+                        <input
+                          type="checkbox"
+                          checked={linkStrictChronology}
+                          onChange={(e) => setLinkStrictChronology(e.target.checked)}
+                        />
+                        Strict Chronology Mode
+                      </label>
+                      {linkStrictChronology && (
+                        <div className="space-y-2">
+                          <div>
+                            <label className="text-[10px] text-slate-500">
+                              Manual Floor Date (optional — khaali chhodo toh system khud "last known video" ki date use karega, aur naya video add hote hi ye date automatically aage badh jayegi)
+                            </label>
+                            <input
+                              type="date"
+                              value={linkChronologyFloorDate}
+                              onChange={(e) => setLinkChronologyFloorDate(e.target.value)}
+                              className="w-full bg-gray-800/60 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-500">
+                              Grace Gap (kitna part-number jump allow karo, 0 = sirf exact next part)
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              max="10"
+                              value={linkChronologyGraceGap}
+                              onChange={(e) => setLinkChronologyGraceGap(e.target.value)}
+                              placeholder="0"
+                              className="w-full bg-gray-800/60 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white"
+                            />
+                          </div>
+                          <p className="text-[10px] text-slate-500">
+                            Sequential agla episode (jaise 1→2, ya grace gap ke andar) floor date ke baad ho to seedha auto-add hoga.
+                            Bade gap wala episode manual review me jayega. Floor date se pehle ka koi bhi video hamesha ignore hoga.
+                          </p>
+                        </div>
+                      )}
+
                       <div className="flex gap-2">
                         <button
                           onClick={() => saveLinkForm(ch._id)}
@@ -1386,28 +1561,69 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
         </div>
       )}
     </div>
-  );
+    );
+  };
 
   // Main render
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h4 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
           {Icon.eye('w-4 h-4 text-sky-400')} Tracked Channels
         </h4>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/5 text-slate-400 border border-white/10 font-medium">
-            {channels.length}
+            {filteredChannels.length}/{channels.length}
           </span>
+
+          {/* 🆕 Added-by filter — sirf super-admin ko dikhega */}
+          {!isSubAdmin && (
+            <select
+              value={addedByFilter}
+              onChange={(e) => setAddedByFilter(e.target.value)}
+              title="Kis admin ne channel add kiya, uske hisaab se filter karo"
+              className="bg-gray-800/60 border border-gray-700 rounded-lg px-2 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+            >
+              <option value="main">👑 Main Admin (default)</option>
+              <option value="all">🌐 Sab Dikhao</option>
+              {subAdminOwners.map((sa) => (
+                <option key={sa.id} value={sa.id}>
+                 🏛️ {sa.username}
+                </option>
+              ))}
+            </select>
+          )}
+
           <div className="relative">
             {Icon.search('w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2')}
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Channel dhoondo..."
+              placeholder="Channel or title Find..."
               className="w-48 bg-gray-800/60 border border-gray-700 rounded-lg pl-8 pr-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-white/20"
             />
           </div>
+        </div>
+      </div>
+
+      {/* Add Channel form */}
+      <div className="bg-slate-800/30 backdrop-blur-xl border border-white/10 rounded-2xl p-4">
+        <div className="flex gap-2">
+          <input
+            value={newHandle}
+            onChange={(e) => setNewHandle(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && !adding && addChannel()}
+            placeholder="YouTube channel handle daalo (jaise @ChannelName)"
+            className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-white/20"
+          />
+          <button
+            onClick={addChannel}
+            disabled={adding || !newHandle.trim()}
+            className="px-4 py-2 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition flex items-center gap-1.5 flex-shrink-0"
+          >
+            {adding ? Icon.spinner('w-4 h-4') : Icon.plus('w-4 h-4')}
+            Channel Add Karo
+          </button>
         </div>
       </div>
 
@@ -1417,13 +1633,34 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
         </div>
       ) : filteredChannels.length === 0 ? (
         <div className="text-center py-10 bg-slate-800/20 rounded-2xl border border-dashed border-white/10">
-          <p className="text-slate-500 text-sm">Is naam ka koi channel nahi mila</p>
+          <p className="text-slate-500 text-sm">
+            {searchQuery.trim()
+              ? 'Is naam ka koi channel nahi mila'
+              : !isSubAdmin && addedByFilter === 'main'
+              ? 'Main admin ne abhi tak koi channel add nahi kiya. Filter se "Sab Dikhao" select karo sub-admins ke channels dekhne ke liye.'
+              : !isSubAdmin && addedByFilter !== 'all'
+              ? 'Is sub-admin ne abhi tak koi channel add nahi kiya'
+              : 'Koi channel nahi mila'}
+          </p>
         </div>
       ) : (
         <div className="space-y-2">
           {filteredChannels.map((ch) => {
             const unread = unreadCountFor(ch.channelId);
             const isOpen = selectedChannelId === ch._id;
+            const q = searchQuery.trim().toLowerCase();
+
+            const matchedTitles = q
+              ? (ch.titles || []).filter((t) => t.keyword.toLowerCase().includes(q))
+              : [];
+            const channelNameMatch = q ? (ch.channelName.toLowerCase().includes(q) || ch.channelHandle?.toLowerCase().includes(q)) : false;
+            const primaryName = (q && matchedTitles.length > 0 && !channelNameMatch)
+              ? matchedTitles[0].keyword
+              : ch.channelName;
+            const subtitle = (q && matchedTitles.length > 0 && !channelNameMatch)
+              ? ch.channelName
+              : undefined;
+
             return (
               <div
                 key={ch._id}
@@ -1455,13 +1692,28 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
                   </div>
 
                   <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-white text-sm truncate" title={ch.channelName}>
-                      {ch.channelName}
+                    <p className="font-semibold text-white text-sm truncate" title={primaryName}>
+                      {primaryName}
+                      {matchedTitles.length > 1 && !channelNameMatch ? ` +${matchedTitles.length - 1} more` : ''}
                     </p>
+                    {subtitle && (
+                      <p className="text-[10px] text-slate-400 truncate" title={subtitle}>
+                        {subtitle}
+                      </p>
+                    )}
                     <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-400 font-medium">
                         {ch.titles.length} titles
                       </span>
+                      {/* 🆕 Kis sub-admin ne add kiya — sirf main admin ko dikhega */}
+                      {!isSubAdmin && ch.createdByUsername && ch.createdBy !== 'admin' && (
+                        <span
+                          className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-medium flex items-center gap-1"
+                          title={`Is channel ko "${ch.createdByUsername}" (sub-admin) ne add kiya tha`}
+                        >
+                          +_+ {ch.createdByUsername}
+                        </span>
+                      )}
                       {ch.paused && (
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 font-medium flex items-center gap-1">
                           {Icon.pause('w-2.5 h-2.5')} Paused

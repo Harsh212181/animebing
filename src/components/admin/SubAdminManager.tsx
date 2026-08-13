@@ -41,6 +41,8 @@ interface SubAnime {
   isHidden?: boolean;
   isBlocked?: boolean;
   createdAt?: string;
+  createdBy?: string;
+  createdByUsername?: string;
 }
 
 interface SubShortUser {
@@ -70,6 +72,7 @@ const AVAILABLE_PERMISSIONS = [
   { key: 'shortener', label: 'Shortener & Short Users', icon: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1' },
   { key: 'pageviews', label: 'Analytics (Page Views)', icon: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z' },
   { key: 'link-control', label: 'Link Control', icon: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z' },
+  { key: 'tracklist', label: 'YouTube Track List', icon: 'M15 10l4.55-2.27a1 1 0 011.45.9v6.74a1 1 0 01-1.45.9L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z' },
 ];
 
 const COPY_ICON = 'M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z';
@@ -169,6 +172,7 @@ const ICONS = {
 const SubAdminManager: React.FC = () => {
   const [subAdmins, setSubAdmins] = useState<SubAdmin[]>([]);
   const [stats, setStats] = useState<Record<string, SubAdminStat>>({});
+  const [trackStats, setTrackStats] = useState<Record<string, { channelsCount: number; titlesCount: number }>>({});
   const [loading, setLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -179,6 +183,14 @@ const SubAdminManager: React.FC = () => {
   const [animeData, setAnimeData] = useState<Record<string, SubAnime[]>>({});
   const [shortUsersData, setShortUsersData] = useState<Record<string, SubShortUser[]>>({});
   const [detailLoading, setDetailLoading] = useState<Record<string, boolean>>({});
+
+  // ✅ NEW — Assign Anime modal state
+  const [assignModalFor, setAssignModalFor] = useState<SubAdmin | null>(null);
+  const [allAnime, setAllAnime] = useState<SubAnime[]>([]);
+  const [assignedAnimeIds, setAssignedAnimeIds] = useState<Set<string>>(new Set());
+  const [animeSearch, setAnimeSearch] = useState('');
+  const [assignLoading, setAssignLoading] = useState(false);
+  const [assignSaving, setAssignSaving] = useState(false);
 
   const [form, setForm] = useState({
     username: '',
@@ -223,9 +235,19 @@ const SubAdminManager: React.FC = () => {
     }
   };
 
+  const fetchTrackStats = async () => {
+    try {
+      const { data } = await axios.get(`${API_BASE}/track/sub-admin-stats`, authHeaders);
+      setTrackStats(data || {});
+    } catch {
+      // non-fatal
+    }
+  };
+
   useEffect(() => {
     fetchSubAdmins();
     fetchStats();
+    fetchTrackStats();
   }, []);
 
   const resetForm = () => {
@@ -342,6 +364,72 @@ const SubAdminManager: React.FC = () => {
     });
     if (tab === 'anime' && !animeData[id]) fetchAnimeForSubAdmin(id);
     if (tab === 'users' && !shortUsersData[id]) fetchShortUsersForSubAdmin(id);
+  };
+
+  // ✅ NEW — Assign Anime functions
+  const openAssignModal = async (sa: SubAdmin) => {
+    setAssignModalFor(sa);
+    setAssignLoading(true);
+    setAnimeSearch('');
+    try {
+      const [{ data: animeListRes }, { data: assignedRes }] = await Promise.all([
+        axios.get<any>(`${API_BASE}/admin/anime-list`, authHeaders),
+        axios.get<{ success: boolean; data: SubAnime[] }>(`${API_BASE}/sub-admin/${sa._id}/assigned-anime`, authHeaders),
+      ]);
+      const list: SubAnime[] = Array.isArray(animeListRes) ? animeListRes : (animeListRes?.data || []);
+      setAllAnime(list);
+      setAssignedAnimeIds(new Set((assignedRes.data || []).map((a: SubAnime) => a._id)));
+    } catch (err: any) {
+      toast.error('Anime list load nahi ho saka');
+    } finally {
+      setAssignLoading(false);
+    }
+  };
+
+  const toggleAssignAnime = (id: string) => {
+    setAssignedAnimeIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const saveAssignments = async () => {
+    if (!assignModalFor) return;
+    setAssignSaving(true);
+    const toastId = toast.loading('Saving...');
+    try {
+      const { data: currentRes } = await axios.get<{ success: boolean; data: SubAnime[] }>(
+        `${API_BASE}/sub-admin/${assignModalFor._id}/assigned-anime`,
+        authHeaders
+      );
+
+      // ✅ explicit Set<string> — ab id: string properly infer hoga, red line hat jayegi
+      const currentIds: Set<string> = new Set(
+        (currentRes.data || []).map((a: SubAnime) => a._id)
+      );
+      const selectedIds: string[] = Array.from(assignedAnimeIds);
+
+      const toAdd: string[] = selectedIds.filter((id: string) => !currentIds.has(id));
+      const toRemove: string[] = Array.from(currentIds).filter(
+        (id: string) => !assignedAnimeIds.has(id)
+      );
+
+      if (toAdd.length) {
+        await axios.post(`${API_BASE}/sub-admin/${assignModalFor._id}/assign-anime`, { animeIds: toAdd }, authHeaders);
+      }
+      if (toRemove.length) {
+        await axios.post(`${API_BASE}/sub-admin/${assignModalFor._id}/unassign-anime`, { animeIds: toRemove }, authHeaders);
+      }
+
+      toast.success('Anime assignments update ho gaye', { id: toastId });
+      setAssignModalFor(null);
+      fetchStats();
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'Save fail ho gaya', { id: toastId });
+    } finally {
+      setAssignSaving(false);
+    }
   };
 
   const copyToClipboard = (text: string, label: string) => {
@@ -710,13 +798,25 @@ const SubAdminManager: React.FC = () => {
                 {isExpanded && (
                   <div className="border-t border-white/10 bg-white/[0.01] p-5 space-y-6">
                     {s && (
-                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-8">
                         <StatPill icon={<SvgIcon d={ICONS.anime} />} label="Anime" value={s.animeCount} color="text-purple-300" />
                         <StatPill icon={<SvgIcon d={ICONS.download} />} label="Download Pages" value={s.downloadPagesCount} color="text-fuchsia-300" />
                         <StatPill icon={<SvgIcon d={ICONS.eye} />} label="Views" value={s.totalViews} color="text-cyan-300" />
                         <StatPill icon={<SvgIcon d={ICONS.users} />} label="Short Users" value={s.shortUsersCount} color="text-emerald-300" />
                         <StatPill icon={<SvgIcon d={ICONS.links} />} label="Links" value={s.linksCount} color="text-blue-300" />
                         <StatPill icon={<SvgIcon d={ICONS.clicks} />} label="Clicks" value={s.totalClicks} color="text-amber-300" />
+                        <StatPill
+                          icon={<SvgIcon d="M15 10l4.55-2.27a1 1 0 011.45.9v6.74a1 1 0 01-1.45.9L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />}
+                          label="YT Channels"
+                          value={trackStats[sa._id]?.channelsCount ?? 0}
+                          color="text-red-300"
+                        />
+                        <StatPill
+                          icon={<SvgIcon d={ICONS.anime} />}
+                          label="Tracked Titles"
+                          value={trackStats[sa._id]?.titlesCount ?? 0}
+                          color="text-orange-300"
+                        />
                       </div>
                     )}
 
@@ -886,9 +986,12 @@ const SubAdminManager: React.FC = () => {
                     )}
 
                     {/* Action buttons */}
-                    <div className="flex gap-2 pt-1">
+                    <div className="flex gap-2 pt-1 flex-wrap">
                       <OutlineButton onClick={() => handleEdit(sa)} color="indigo">
                         <SvgIcon d={ICONS.edit} className="h-3.5 w-3.5" /> Edit
+                      </OutlineButton>
+                      <OutlineButton onClick={() => openAssignModal(sa)} color="indigo">
+                        <SvgIcon d={ICONS.plus} className="h-3.5 w-3.5" /> Assign Anime
                       </OutlineButton>
                       <OutlineButton onClick={() => handleBlock(sa)} color={sa.isBlocked ? 'green' : 'yellow'}>
                         <SvgIcon d={ICONS.block} className="h-3.5 w-3.5" />
@@ -905,6 +1008,70 @@ const SubAdminManager: React.FC = () => {
           })
         )}
       </div>
+
+      {/* ✅ NEW — Assign Anime Modal */}
+      {assignModalFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-2xl max-h-[85vh] overflow-hidden rounded-3xl border border-white/10 bg-slate-900 flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-white/10">
+              <h3 className="text-lg font-bold text-white">
+                Assign Anime — {assignModalFor.fullName || assignModalFor.username}
+              </h3>
+              <button onClick={() => setAssignModalFor(null)} className="text-white/50 hover:text-white text-xl leading-none">✕</button>
+            </div>
+
+            <div className="p-4 border-b border-white/10">
+              <input
+                value={animeSearch}
+                onChange={e => setAnimeSearch(e.target.value)}
+                placeholder="Anime search karo..."
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white placeholder-white/30 outline-none focus:border-purple-500/50"
+              />
+              <p className="mt-2 text-xs text-white/40">{assignedAnimeIds.size} anime selected</p>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-1.5">
+              {assignLoading ? (
+                <p className="text-center text-white/40 py-8">Loading...</p>
+              ) : (
+                allAnime
+                  .filter(a => a.title?.toLowerCase().includes(animeSearch.toLowerCase()))
+                  .map(a => {
+                    const isChecked = assignedAnimeIds.has(a._id);
+                    return (
+                      <label
+                        key={a._id}
+                        className={`flex items-center gap-3 rounded-xl border px-3 py-2 cursor-pointer transition ${
+                          isChecked ? 'border-purple-500/50 bg-purple-500/10' : 'border-white/5 bg-white/[0.02] hover:border-white/10'
+                        }`}
+                      >
+                        <input type="checkbox" checked={isChecked} onChange={() => toggleAssignAnime(a._id)} className="accent-purple-500" />
+                        <img
+                          src={a.thumbnail || 'https://via.placeholder.com/40x56/1e293b/64748b?text=NA'}
+                          className="w-8 h-11 object-cover rounded"
+                          onError={e => {
+                            (e.currentTarget as HTMLImageElement).src = 'https://via.placeholder.com/40x56/1e293b/64748b?text=NA';
+                          }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm text-white truncate">{a.title}</p>
+                          <p className="text-[10px] text-white/40">{a.contentType} · {a.createdByUsername || 'admin'}</p>
+                        </div>
+                      </label>
+                    );
+                  })
+              )}
+            </div>
+
+            <div className="p-4 border-t border-white/10 flex gap-3">
+              <GradientButton onClick={saveAssignments} disabled={assignSaving}>
+                {assignSaving ? 'Saving...' : 'Save Assignments'}
+              </GradientButton>
+              <OutlineButton onClick={() => setAssignModalFor(null)}>Cancel</OutlineButton>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

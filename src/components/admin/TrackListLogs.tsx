@@ -1,4 +1,4 @@
-// src/components/admin/TrackListLogs.tsx
+ // src/components/admin/TrackListLogs.tsx
 import React, { useMemo, useState } from 'react';
 import { RunLog } from '../../types/trackTypes';
 import { Icon, formatIST } from '../../utils/trackUtils';
@@ -16,6 +16,7 @@ interface TrackListLogsProps {
   runningAll: boolean;
   clearAllRuns: () => void;
   clearingRuns: boolean;
+  isSubAdmin?: boolean;   // 🆕
 }
 
 // ============ small local helpers ============
@@ -51,6 +52,22 @@ const ACTION_META: Record<string, { label: string; className: string; dot: strin
 };
 const ACTION_FILTERS = ['all', ...Object.keys(ACTION_META)] as const;
 
+// ✅ Item 5 — priority order jab default (all) filter selected ho: action-needed
+// wale (approval pending, no format) sabse upar, phir season/limit blocks, phir
+// added/replaced, sabse aakhir me already-known (sabse kam relevant)
+const ACTION_PRIORITY: Record<string, number> = {
+  'needs-approval': 0,
+  'no-format-detected': 1,
+  'season-blocked': 2,
+  'limit-blocked': 3,
+  'chronology-suspicious': 3,
+  'description-unconfirmed': 3,
+  'added': 4,
+  'reuploaded': 4,
+  'replaced': 5,
+  'already-known': 6,
+};
+
 const TrackListLogs: React.FC<TrackListLogsProps> = ({
   logs,
   showLogs,
@@ -64,9 +81,13 @@ const TrackListLogs: React.FC<TrackListLogsProps> = ({
   runningAll,
   clearAllRuns,
   clearingRuns,
+  isSubAdmin = false,   // 🆕
 }) => {
   const [logSearch, setLogSearch] = useState('');
   const [actionFilter, setActionFilter] = useState<(typeof ACTION_FILTERS)[number]>('all');
+
+  // ✅ Item 4 — Auto-Update History collapsible state
+  const [showUpdateHistory, setShowUpdateHistory] = useState(false);
 
   // ---- Run history derived stats ----
   const latestRun = runs[0];
@@ -77,141 +98,247 @@ const TrackListLogs: React.FC<TrackListLogsProps> = ({
       ? Math.round(((runs.length - runs.filter((r) => r.errorCount > 0).length) / runs.length) * 100)
       : null;
 
-  // ---- Filtered logs (search + action type) ----
+  // ---- Filtered + priority-sorted logs (search + action type) ----
   const filteredLogs = useMemo(() => {
     const q = logSearch.trim().toLowerCase();
     return logs
       .map((log: any) => {
         if (q && !log.channelName.toLowerCase().includes(q)) return null;
-        if (actionFilter === 'all') return log;
-        const filteredTitles = log.titles
-          .map((t: any) => ({ ...t, entries: t.entries.filter((e: any) => e.action === actionFilter) }))
-          .filter((t: any) => t.entries.length > 0);
-        if (filteredTitles.length === 0) return null;
-        return { ...log, titles: filteredTitles };
+
+        let titles = log.titles;
+        if (actionFilter !== 'all') {
+          titles = titles
+            .map((t: any) => ({ ...t, entries: t.entries.filter((e: any) => e.action === actionFilter) }))
+            .filter((t: any) => t.entries.length > 0);
+          if (titles.length === 0) return null;
+        }
+
+        // ✅ Item 5 — har title ke andar entries ko priority se sort karo
+        titles = titles.map((t: any) => ({
+          ...t,
+          entries: [...t.entries].sort(
+            (a: any, b: any) => (ACTION_PRIORITY[a.action] ?? 9) - (ACTION_PRIORITY[b.action] ?? 9)
+          ),
+        }));
+
+        return { ...log, titles };
       })
       .filter(Boolean);
   }, [logs, logSearch, actionFilter]);
 
+  // ✅ Item 4 — sirf added/replaced entries ko date-wise group karo
+  const updateHistoryByDate = useMemo(() => {
+    const groups: Record<
+      string,
+      { channelName: string; keyword: string; videoTitle: string; action: string }[]
+    > = {};
+    for (const log of logs) {
+      const dateKey = new Date(log.runAt).toLocaleDateString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      });
+      for (const t of log.titles) {
+        for (const e of t.entries) {
+          if (e.action === 'added' || e.action === 'replaced') {
+            if (!groups[dateKey]) groups[dateKey] = [];
+            groups[dateKey].push({
+              channelName: log.channelName,
+              keyword: t.keyword,
+              videoTitle: e.videoTitle,
+              action: e.action,
+            });
+          }
+        }
+      }
+    }
+    return groups;
+  }, [logs]);
+
+  // logs already runAt-desc order me aate hain backend se (sort: { runAt: -1 })
+  const updateHistoryDates = Object.keys(updateHistoryByDate);
+
   return (
     <>
-      {/* ============ Run History ============ */}
+      {/* ============ ✅ NEW — Auto-Update History (Item 4) ============ */}
       <div className="bg-slate-800/30 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden">
         <div
-          onClick={() => setShowRunHistory((v) => !v)}
+          onClick={() => setShowUpdateHistory((v) => !v)}
           className="flex items-center justify-between p-4 border-b border-white/5 cursor-pointer hover:bg-white/[0.02] transition"
         >
           <h4 className="text-sm font-semibold text-white flex items-center gap-2">
-            <span className={`transition-transform ${showRunHistory ? 'rotate-90' : ''}`}>
+            <span className={`transition-transform ${showUpdateHistory ? 'rotate-90' : ''}`}>
               {Icon.chevronRight('w-3.5 h-3.5 text-slate-500')}
             </span>
-            {Icon.history('w-4 h-4 text-slate-400')} Run History
-            {runs.length > 0 && (
+            {Icon.checkAll('w-4 h-4 text-emerald-400')} Auto-Update History
+            {updateHistoryDates.length > 0 && (
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-slate-300 border border-white/10 font-medium">
-                {runs.length}
+                {updateHistoryDates.length} din
               </span>
             )}
           </h4>
-          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-            <button
-              onClick={runAllNow}
-              disabled={runningAll}
-              className="text-xs px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-slate-200 transition flex items-center gap-1.5 disabled:opacity-50"
-            >
-              {runningAll ? Icon.spinner('w-3.5 h-3.5') : Icon.play('w-3.5 h-3.5')}
-              Test Run
-            </button>
-            {runs.length > 0 && (
-              <button
-                onClick={clearAllRuns}
-                disabled={clearingRuns}
-                className="text-xs px-3 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-300 transition flex items-center gap-1.5 disabled:opacity-50"
-              >
-                {clearingRuns ? Icon.spinner('w-3.5 h-3.5') : Icon.trash('w-3.5 h-3.5')}
-                Clear
-              </button>
-            )}
-          </div>
         </div>
 
-        {/* Always-visible quick stats strip, even when collapsed */}
-        {runs.length > 0 && (
-          <div className="grid grid-cols-4 divide-x divide-white/5 border-b border-white/5 bg-black/10">
-            {[
-              { label: 'Last Run', value: timeAgo(latestRun.runAt) },
-              { label: 'Total Runs', value: String(runs.length) },
-              { label: 'Total Updates', value: String(totalUpdates) },
-              {
-                label: 'Success Rate',
-                value: successRate !== null ? `${successRate}%` : '—',
-                accent: successRate !== null && successRate < 90 ? 'text-amber-300' : 'text-emerald-300',
-              },
-            ].map((stat) => (
-              <div key={stat.label} className="px-3 py-2.5 text-center">
-                <p className={`text-sm font-bold ${(stat as any).accent || 'text-white'}`}>{stat.value}</p>
-                <p className="text-[9px] uppercase tracking-wide text-slate-500 mt-0.5">{stat.label}</p>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {showRunHistory && (
-          <div className="p-4">
-            {runs.length === 0 ? (
+        {showUpdateHistory && (
+          <div className="p-4 space-y-4 max-h-[500px] overflow-y-auto">
+            {updateHistoryDates.length === 0 ? (
               <p className="text-sm text-slate-500 text-center py-6">
-                Abhi tak koi automatic run nahi hua — cron din me 2 baar (8 AM, 8 PM IST) chalega.
+                Abhi tak koi auto-add/replace nahi hua. Jab bhi koi episode automatically kisi
+                page pe add/replace hoga, wo yahan date-wise dikhega.
               </p>
             ) : (
-              <div className="relative max-h-[320px] overflow-y-auto pr-1">
-                {/* vertical timeline line */}
-                <div className="absolute left-[5px] top-1 bottom-1 w-px bg-white/10" />
-                <div className="space-y-2">
-                  {runs.map((r) => {
-                    const status = r.errorCount > 0 ? 'error' : r.updatesFound > 0 ? 'updates' : 'clean';
-                    const dotClass =
-                      status === 'error' ? 'bg-red-400' : status === 'updates' ? 'bg-emerald-400' : 'bg-slate-500';
-                    return (
-                      <div key={r._id} className="relative pl-6">
+              updateHistoryDates.map((dateKey) => (
+                <div key={dateKey}>
+                  <p className="text-xs font-semibold text-slate-300 mb-2 sticky top-0 bg-slate-800/80 backdrop-blur px-1 py-1 rounded">
+                    {dateKey}
+                  </p>
+                  <div className="space-y-1.5 pl-2">
+                    {updateHistoryByDate[dateKey].map((e, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center gap-2 text-[11px] bg-black/20 rounded-lg px-2.5 py-1.5"
+                      >
                         <span
-                          className={`absolute left-0 top-3 w-[11px] h-[11px] rounded-full border-2 border-slate-900 ${dotClass}`}
-                        />
-                        <div className="flex items-center justify-between bg-black/20 rounded-xl px-3 py-2.5 text-xs border border-white/5">
-                          <div className="flex flex-col flex-shrink-0">
-                            <span className="text-slate-300 font-medium">{timeAgo(r.runAt)}</span>
-                            <span className="text-slate-600 text-[10px]">{formatIST(r.runAt)}</span>
-                          </div>
-                          <div className="flex items-center gap-2 flex-wrap justify-end">
-                            <span className="px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-300 border border-sky-500/20">
-                              {r.channelsChecked} channels
-                            </span>
-                            <span
-                              className={`px-2 py-0.5 rounded-full border ${
-                                r.updatesFound > 0
-                                  ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20 font-semibold'
-                                  : 'bg-white/5 text-slate-500 border-white/10'
-                              }`}
-                            >
-                              {r.updatesFound > 0 ? `${r.updatesFound} updates` : 'no updates'}
-                            </span>
-                            {r.errorCount > 0 && (
-                              <span
-                                className="px-2 py-0.5 rounded-full bg-red-500/10 text-red-300 border border-red-500/20 flex items-center gap-1"
-                                title={r.errorChannels?.join(', ')}
-                              >
-                                {Icon.warn('w-3 h-3')} {r.errorCount} error
-                              </span>
-                            )}
-                          </div>
-                        </div>
+                          className={`px-1.5 py-0.5 rounded border flex-shrink-0 font-medium ${
+                            e.action === 'replaced' ? ACTION_META.replaced.className : ACTION_META.added.className
+                          }`}
+                        >
+                          {e.action === 'replaced' ? 'Replaced' : 'Added'}
+                        </span>
+                        <span className="text-slate-400 truncate">
+                          <span className="text-white">{e.keyword}</span> — {e.videoTitle}
+                          <span className="text-slate-600"> · {e.channelName}</span>
+                        </span>
                       </div>
-                    );
-                  })}
+                    ))}
+                  </div>
                 </div>
-              </div>
+              ))
             )}
           </div>
         )}
       </div>
+
+      {/* ============ Run History (only for super admin) ============ */}
+      {!isSubAdmin && (
+        <div className="bg-slate-800/30 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden">
+          <div
+            onClick={() => setShowRunHistory((v) => !v)}
+            className="flex items-center justify-between p-4 border-b border-white/5 cursor-pointer hover:bg-white/[0.02] transition"
+          >
+            <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+              <span className={`transition-transform ${showRunHistory ? 'rotate-90' : ''}`}>
+                {Icon.chevronRight('w-3.5 h-3.5 text-slate-500')}
+              </span>
+              {Icon.history('w-4 h-4 text-slate-400')} Run History
+              {runs.length > 0 && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-slate-300 border border-white/10 font-medium">
+                  {runs.length}
+                </span>
+              )}
+            </h4>
+            <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={runAllNow}
+                disabled={runningAll}
+                className="text-xs px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-slate-200 transition flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {runningAll ? Icon.spinner('w-3.5 h-3.5') : Icon.play('w-3.5 h-3.5')}
+                Test Run
+              </button>
+              {runs.length > 0 && (
+                <button
+                  onClick={clearAllRuns}
+                  disabled={clearingRuns}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-300 transition flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {clearingRuns ? Icon.spinner('w-3.5 h-3.5') : Icon.trash('w-3.5 h-3.5')}
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Always-visible quick stats strip, even when collapsed */}
+          {runs.length > 0 && (
+            <div className="grid grid-cols-4 divide-x divide-white/5 border-b border-white/5 bg-black/10">
+              {[
+                { label: 'Last Run', value: timeAgo(latestRun.runAt) },
+                { label: 'Total Runs', value: String(runs.length) },
+                { label: 'Total Updates', value: String(totalUpdates) },
+                {
+                  label: 'Success Rate',
+                  value: successRate !== null ? `${successRate}%` : '—',
+                  accent: successRate !== null && successRate < 90 ? 'text-amber-300' : 'text-emerald-300',
+                },
+              ].map((stat) => (
+                <div key={stat.label} className="px-3 py-2.5 text-center">
+                  <p className={`text-sm font-bold ${(stat as any).accent || 'text-white'}`}>{stat.value}</p>
+                  <p className="text-[9px] uppercase tracking-wide text-slate-500 mt-0.5">{stat.label}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {showRunHistory && (
+            <div className="p-4">
+              {runs.length === 0 ? (
+                <p className="text-sm text-slate-500 text-center py-6">
+                  Abhi tak koi automatic run nahi hua — cron din me 2 baar (8 AM, 8 PM IST) chalega.
+                </p>
+              ) : (
+                <div className="relative max-h-[320px] overflow-y-auto pr-1">
+                  {/* vertical timeline line */}
+                  <div className="absolute left-[5px] top-1 bottom-1 w-px bg-white/10" />
+                  <div className="space-y-2">
+                    {runs.map((r) => {
+                      const status = r.errorCount > 0 ? 'error' : r.updatesFound > 0 ? 'updates' : 'clean';
+                      const dotClass =
+                        status === 'error' ? 'bg-red-400' : status === 'updates' ? 'bg-emerald-400' : 'bg-slate-500';
+                      return (
+                        <div key={r._id} className="relative pl-6">
+                          <span
+                            className={`absolute left-0 top-3 w-[11px] h-[11px] rounded-full border-2 border-slate-900 ${dotClass}`}
+                          />
+                          <div className="flex items-center justify-between bg-black/20 rounded-xl px-3 py-2.5 text-xs border border-white/5">
+                            <div className="flex flex-col flex-shrink-0">
+                              <span className="text-slate-300 font-medium">{timeAgo(r.runAt)}</span>
+                              <span className="text-slate-600 text-[10px]">{formatIST(r.runAt)}</span>
+                            </div>
+                            <div className="flex items-center gap-2 flex-wrap justify-end">
+                              <span className="px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-300 border border-sky-500/20">
+                                {r.channelsChecked} channels
+                              </span>
+                              <span
+                                className={`px-2 py-0.5 rounded-full border ${
+                                  r.updatesFound > 0
+                                    ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20 font-semibold'
+                                    : 'bg-white/5 text-slate-500 border-white/10'
+                                }`}
+                              >
+                                {r.updatesFound > 0 ? `${r.updatesFound} updates` : 'no updates'}
+                              </span>
+                              {r.errorCount > 0 && (
+                                <span
+                                  className="px-2 py-0.5 rounded-full bg-red-500/10 text-red-300 border border-red-500/20 flex items-center gap-1"
+                                  title={r.errorChannels?.join(', ')}
+                                >
+                                  {Icon.warn('w-3 h-3')} {r.errorCount} error
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ============ Check Logs ============ */}
       <div className="bg-slate-800/30 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden">
@@ -231,12 +358,12 @@ const TrackListLogs: React.FC<TrackListLogsProps> = ({
             )}
           </div>
           <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-            {totalErrors > 0 && (
+            {totalErrors > 0 && !isSubAdmin && (
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/10 text-red-300 border border-red-500/20 hidden sm:inline">
                 {totalErrors} total errors
               </span>
             )}
-            {logs.length > 0 && (
+            {logs.length > 0 && !isSubAdmin && (
               <button
                 onClick={clearAllLogs}
                 disabled={clearingLogs}

@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+ import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
 import { findMany, findOne, insertOne, updateOne, deleteOne, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
@@ -280,6 +280,57 @@ downloadPageRoutes.delete('/:id', adminAuth, async (c) => {
     }
 
     return c.json({ success: true })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ✅ NEW — Multi-session anime ke liye: is page ko "primary" mark karo taaki
+// anime.currentEpisode badge SIRF isi page ke max episode se calculate ho,
+// dusre sessions ke bade numbers usse overwrite na karein
+downloadPageRoutes.post('/:id/set-primary-episode-count', adminAuth, async (c) => {
+  try {
+    const id = c.req.param('id')
+    if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
+
+    const page = await findOne<IDownloadPage>('downloadpages', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    if (!page) return c.json({ error: 'Page not found' }, 404)
+
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    // sabhi is anime ke pages ko unmark karo, phir sirf isi ko mark karo
+    await db.collection('downloadpages').updateMany(
+      { animeId: (page as any).animeId },
+      { $set: { isPrimaryForEpisodeCount: false } }
+    )
+    await db.collection('downloadpages').updateOne(
+      { _id: toObjectId(id) },
+      { $set: { isPrimaryForEpisodeCount: true } }
+    )
+
+    // ✅ turant currentEpisode is naye primary page ke hisaab se recalculate karo
+    const newCount = await syncAnimeEpisodeCountFromAnime((page as any).animeId, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    return c.json({ success: true, currentEpisode: newCount })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ✅ NEW — primary status hataao (wapas normal "combined max" behavior pe)
+downloadPageRoutes.post('/:id/unset-primary-episode-count', adminAuth, async (c) => {
+  try {
+    const id = c.req.param('id')
+    if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
+
+    const page = await findOne<IDownloadPage>('downloadpages', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    if (!page) return c.json({ error: 'Page not found' }, 404)
+
+    await updateOne('downloadpages', { _id: toObjectId(id) }, { isPrimaryForEpisodeCount: false }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const newCount = await syncAnimeEpisodeCountFromAnime((page as any).animeId, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    return c.json({ success: true, currentEpisode: newCount })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }

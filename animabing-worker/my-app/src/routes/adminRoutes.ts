@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+ import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth, requirePermission } from '../middleware/auth'
 import {
@@ -19,7 +19,13 @@ async function getOwnedAnimeIds(admin: any, mongoUri: string, dbName: string): P
   const animes = await db.collection('animes')
     .find({ createdBy: admin.id }, { projection: { _id: 1 } })
     .toArray()
-  return animes.map((a: any) => a._id.toString())
+  const createdIds = animes.map((a: any) => a._id.toString())
+
+  // 🆕 assigned anime bhi shaamil karo
+  const subAdminDoc = await db.collection('subadmins').findOne({ _id: toObjectId(admin.id) })
+  const assignedIds: string[] = subAdminDoc?.assignedAnimeIds || []
+
+  return Array.from(new Set([...createdIds, ...assignedIds]))
 }
 
 // ============ RANDOM LIKES HELPER ============
@@ -79,9 +85,12 @@ adminRoutes.get('/anime-list', adminAuth, async (c) => {
     const filter: any = {}
     if (status && status !== 'All') filter.status = status
     if (contentType && contentType !== 'All') filter.contentType = contentType
-    // Sub-admin with 'own' access → sirf apna anime dekhe
+    // Sub-admin with 'own' access → sirf apna anime dekhe (createdBy + assigned)
     if (admin.role === 'subadmin' && admin.animeAccess === 'own') {
-      filter.createdBy = admin.id
+      const ownedIds = await getOwnedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+      const objectIds = (ownedIds || []).filter(isValidObjectId).map((aid: string) => toObjectId(aid))
+      filter._id = { $in: objectIds }
+      delete filter.createdBy
     }
     const animes = await findMany<IAnime>('animes', filter, { sort: { createdAt: -1 } }, c.env.MONGODB_URI, c.env.MONGODB_DB)
     return c.json(animes)
@@ -146,12 +155,25 @@ adminRoutes.post('/add-anime', adminAuth, requirePermission('add-anime'), async 
   }
 })
 
-// ============ EDIT ANIME ============
+// ============ EDIT ANIME (FIXED - WHITELIST APPROACH) ============
 adminRoutes.put('/edit-anime/:id', adminAuth, requirePermission('edit-anime'), async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
-    const updateData = await c.req.json()
+    const body = await c.req.json()
+
+    // ✅ sirf allowed fields hi update honge, currentEpisode/totalEpisodes
+    // is route se kabhi touch nahi honge — wo sirf episode-status route se update hote hain
+    const allowedFields = [
+      'title', 'description', 'thumbnail', 'bannerImage', 'status', 'subDubStatus',
+      'genreList', 'releaseYear', 'contentType', 'seoTitle', 'seoDescription',
+      'seoKeywords', 'slug', 'featured', 'featuredOrder', 'isHidden'
+    ]
+    const updateData: any = {}
+    for (const key of allowedFields) {
+      if (body[key] !== undefined) updateData[key] = body[key]
+    }
+
     const anime = await updateOne('animes', { _id: toObjectId(id) }, updateData, c.env.MONGODB_URI, c.env.MONGODB_DB)
     if (!anime) return c.json({ error: 'Anime not found' }, 404)
     return c.json({ success: true, message: 'Updated successfully!', anime })
@@ -528,9 +550,12 @@ adminRoutes.get('/protected/anime-list', adminAuth, async (c) => {
     const filter: any = {}
     if (status && status !== 'All') filter.status = status
     if (contentType && contentType !== 'All') filter.contentType = contentType
-    // Sub-admin with 'own' access → sirf apna anime dekhe
+    // Sub-admin with 'own' access → sirf apna anime dekhe (createdBy + assigned)
     if (admin.role === 'subadmin' && admin.animeAccess === 'own') {
-      filter.createdBy = admin.id
+      const ownedIds = await getOwnedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+      const objectIds = (ownedIds || []).filter(isValidObjectId).map((aid: string) => toObjectId(aid))
+      filter._id = { $in: objectIds }
+      delete filter.createdBy
     }
     const animes = await findMany<IAnime>('animes', filter, { sort: { createdAt: -1 } }, c.env.MONGODB_URI, c.env.MONGODB_DB)
     return c.json(animes)
@@ -552,11 +577,25 @@ adminRoutes.delete('/protected/delete-anime', adminAuth, requirePermission('dele
   }
 })
 
+// ============ PROTECTED EDIT ANIME (FIXED - WHITELIST APPROACH) ============
 adminRoutes.put('/protected/edit-anime/:id', adminAuth, requirePermission('edit-anime'), async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
-    const updateData = await c.req.json()
+    const body = await c.req.json()
+
+    // ✅ sirf allowed fields hi update honge, currentEpisode/totalEpisodes
+    // is route se kabhi touch nahi honge — wo sirf episode-status route se update hote hain
+    const allowedFields = [
+      'title', 'description', 'thumbnail', 'bannerImage', 'status', 'subDubStatus',
+      'genreList', 'releaseYear', 'contentType', 'seoTitle', 'seoDescription',
+      'seoKeywords', 'slug', 'featured', 'featuredOrder', 'isHidden'
+    ]
+    const updateData: any = {}
+    for (const key of allowedFields) {
+      if (body[key] !== undefined) updateData[key] = body[key]
+    }
+
     const anime = await updateOne('animes', { _id: toObjectId(id) }, updateData, c.env.MONGODB_URI, c.env.MONGODB_DB)
     if (!anime) return c.json({ error: 'Anime not found' }, 404)
     return c.json({ success: true, message: 'Updated successfully!', anime })
