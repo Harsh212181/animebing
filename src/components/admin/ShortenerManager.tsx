@@ -1,8 +1,9 @@
- // src/components/admin/ShortenerManager.tsx – UPDATED (monthly click view + sender badge)
+ // src/components/admin/ShortenerManager.tsx – UPDATED (monthly click view + sender badge + ClickVerificationSettings integration)
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import Spinner from '../Spinner';
+import ClickVerificationSettings from './ClickVerificationSettings';
 
 const SHORTENER_BASE = 'https://go.animebing.in';
 const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
@@ -1053,6 +1054,8 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
     <>
       <style>{css}</style>
       <div className="sm">
+        {/* ✅ Click Verification Settings added at top */}
+        <ClickVerificationSettings token={getToken()} />
 
         {/* Stats */}
         <div className="sm-stats">

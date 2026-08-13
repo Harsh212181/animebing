@@ -1,6 +1,7 @@
  // components/DownloadRedirectPage.tsx - FIXED VERSION (with anime-specific link control)
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { completeFunnel } from '../utils/clickFunnel';
 
 interface LinkSettings {
   link1: boolean;
@@ -194,23 +195,11 @@ const DownloadRedirectPage: React.FC = () => {
   // ✅ Handle auto-download
   const handleAutoDownload = (url: string) => {
     if (!url || isDownloading) return;
-    
     setIsDownloading(true);
-    console.log('📥 Opening download URL:', url.substring(0, 50) + '...');
-    
-    // Open in new tab for better user experience
+    completeFunnel();
     const newWindow = window.open(url, '_blank');
-    
-    if (!newWindow) {
-      console.warn('⚠️ Popup blocked! Opening in same tab...');
-      window.location.href = url;
-    }
-    
-    // Reset downloading state after delay
-    setTimeout(() => {
-      setIsDownloading(false);
-      console.log('✅ Download initiated');
-    }, 2000);
+    if (!newWindow) window.location.href = url;
+    setTimeout(() => setIsDownloading(false), 2000);
   };
 
   // ✅ Handle manual download

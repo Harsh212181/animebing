@@ -4,6 +4,11 @@ import { getDb } from '../services/mongoService'
 import { adminAuth, requirePermission } from '../middleware/auth'
 import { ObjectId } from 'mongodb'
 import { checkAndUnlockReferral, creditCommissionToReferrer } from './referralRoutes'
+import {
+  getClickSettings, updateClickSettings,
+  createClickSession, advanceClickSession, completeClickSession,
+  isFunnelBot
+} from '../services/clickVerificationService'
 
 const shortenerRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
@@ -23,6 +28,12 @@ function isBot(userAgent: string | null | undefined): boolean {
   if (!userAgent) return false
   const ua = userAgent.toLowerCase()
   return BOT_PATTERNS.some((p) => ua.includes(p))
+}
+
+// ============ ORIGIN CHECK — funnel endpoints ko external abuse se bachane ke liye ============
+function isValidFunnelOrigin(c: any): boolean {
+  const origin = c.req.header('Origin') || c.req.header('Referer') || ''
+  return origin.includes('animebing.in')
 }
 
 // ============ HTML ESCAPE ============
@@ -148,6 +159,64 @@ async function canManageShortLink(link: any, admin: any, db: any): Promise<boole
     return owner?.createdByAdminId === admin.id
   }
   return false
+}
+
+// ============ SHARED: ACTUAL CLICK COUNT + EARNINGS CREDIT ============
+async function creditClickForLink(link: any, c: any, db: any, opts: { skipDedup?: boolean } = {}) {
+  const code = link.code
+  const userAgent = c.req.header('User-Agent') || ''
+  const ip = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || 'unknown'
+
+  if (!opts.skipDedup) {
+    const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    const dup = await db.collection('shortclicks').findOne({ code, ip, clickedAt: { $gte: last24h } })
+    if (dup) return { credited: false, reason: 'duplicate-24h' }
+  }
+
+  const country = c.req.header('CF-IPCountry') || 'Unknown'
+  const deviceType = /mobile|android|iphone|ipad/i.test(userAgent) ? 'mobile' : /tablet/i.test(userAgent) ? 'tablet' : 'desktop'
+
+  const clickData: any = {
+    code, ip, country,
+    city: (c as any).req.raw?.cf?.city || 'Unknown',
+    device: deviceType,
+    browser: userAgent.substring(0, 100),
+    clickedAt: new Date(),
+  }
+  if (link.userId) clickData.userId = link.userId
+
+  await Promise.all([
+    db.collection('shortclicks').insertOne(clickData),
+    db.collection('shortlinks').updateOne({ code }, { $inc: { clicks: 1 }, $set: { lastClicked: new Date() } })
+  ])
+
+  if (link.userId) {
+    const earningsPromise = (async () => {
+      try {
+        const user = await db.collection('shortusers').findOne({ _id: link.userId })
+        if (!user) return
+        const earn = (user.ratePerThousand || 10) / 1000
+        await db.collection('shortusers').updateOne(
+          { _id: link.userId },
+          { $inc: { totalClicks: 1, totalEarnings: earn, unpaidEarnings: earn } }
+        )
+        await checkAndUnlockReferral(link.userId, db)
+        if (earn > 0) await creditCommissionToReferrer(link.userId, earn, db)
+
+        // 🆕 Anomaly flag — 500+ clicks/day per user = just flag for review, no block
+        const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
+        const todayCount = await db.collection('shortclicks').countDocuments({ userId: link.userId, clickedAt: { $gte: todayStart } })
+        if (todayCount > 500) {
+          await db.collection('shortusers').updateOne({ _id: link.userId }, { $set: { flaggedForReview: true } })
+        }
+      } catch (e) {
+        console.error('earnings update error:', e)
+      }
+    })()
+    c.executionCtx.waitUntil(earningsPromise)
+  }
+
+  return { credited: true }
 }
 
 // ============ ADMIN — ALL LINKS ============
@@ -405,82 +474,116 @@ shortenerRoutes.get('/:code', async (c) => {
       )
     }
 
-    // ============ REAL USER: Click count + redirect ============
-    const ip =
-      c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || 'unknown'
+    // ============ REAL USER ============
+    const settings = await getClickSettings(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    // 24h dedup — same IP se ek baar hi count hoga
-    const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000)
-    const dup = await db.collection('shortclicks').findOne({
-      code,
-      ip,
-      clickedAt: { $gte: last24h },
-    })
+    if (settings.requireFullCycle) {
+      const ip = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || 'unknown'
+      const token = await createClickSession(
+        code, link._id, link.userId || null, ip, userAgent,
+        c.env.JWT_SECRET, c.env.MONGODB_URI, c.env.MONGODB_DB
+      )
 
-    if (!dup) {
-      const country = c.req.header('CF-IPCountry') || 'Unknown'
-      const rawUA = userAgent
-      const deviceType = /mobile|android|iphone|ipad/i.test(rawUA)
-        ? 'mobile'
-        : /tablet/i.test(rawUA)
-          ? 'tablet'
-          : 'desktop'
-
-      const clickData: any = {
-        code,
-        ip,
-        country,
-        city: (c as any).req.raw?.cf?.city || 'Unknown',
-        device: deviceType,
-        browser: rawUA.substring(0, 100),
-        clickedAt: new Date(),
+      // 🆕 Rate-limited ho gaya — session nahi bana, seedha redirect kar do bina token ke
+      // (user ko normal experience milega, bas uska click count nahi hoga)
+      if (!token) {
+        return c.redirect(link.url, 302)
       }
-      if (link.userId) clickData.userId = link.userId
 
-      // Click insert + link update parallel mein
-      await Promise.all([
-        db.collection('shortclicks').insertOne(clickData),
-        db.collection('shortlinks').updateOne(
-          { code },
-          { $inc: { clicks: 1 }, $set: { lastClicked: new Date() } }
-        ),
-      ])
-
-      // ============ EARNINGS + REFERRAL UNLOCK + COMMISSION ============
-      if (link.userId) {
-        const earningsPromise = (async () => {
-          try {
-            const user = await db.collection('shortusers').findOne({ _id: link.userId })
-            if (!user) return
-
-            const earn = (user.ratePerThousand || 10) / 1000
-
-            // User ki earnings update karo
-            await db.collection('shortusers').updateOne(
-              { _id: link.userId },
-              { $inc: { totalClicks: 1, totalEarnings: earn, unpaidEarnings: earn } }
-            )
-
-            // ✅ REFERRAL UNLOCK CHECK — har click ke baad check karo
-            // Agar 1000 clicks ho gaye toh auto unlock hoga
-            await checkAndUnlockReferral(link.userId, db)
-
-            // ✅ COMMISSION CREDIT — referrer ka 5% commission
-            // Sirf tab kaam karega jab is user ka koi unlocked referral ho
-            if (earn > 0) {
-              await creditCommissionToReferrer(link.userId, earn, db)
-            }
-          } catch (e) {
-            console.error('earnings update error:', e)
-          }
-        })()
-
-        c.executionCtx.waitUntil(earningsPromise)
-      }
+      const redirectUrl = new URL(link.url)
+      redirectUrl.searchParams.set('cs', token)
+      return c.redirect(redirectUrl.toString(), 302)
     }
 
-    // Instant 302 redirect
+    // OLD MODE (setting OFF)
+    await creditClickForLink(link, c, db)
     return c.redirect(link.url, 302)
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============ CLICK FUNNEL — STEP 2 ============
+shortenerRoutes.post('/click/advance', async (c) => {
+  try {
+    // 🆕 Origin check — sirf animebing.in se aane wali requests allow
+    if (!isValidFunnelOrigin(c)) return c.json({ success: false }, 200)
+
+    const ua = c.req.header('User-Agent') || ''
+    if (isFunnelBot(ua)) return c.json({ success: false }, 200)
+
+    const { token, animeId } = await c.req.json()
+    if (!token) return c.json({ error: 'token required' }, 400)
+    const ip = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || 'unknown'
+    const ok = await advanceClickSession(token, animeId, ip, c.env.JWT_SECRET, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    return c.json({ success: ok })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============ CLICK FUNNEL — STEP 3 ============
+shortenerRoutes.post('/click/complete', async (c) => {
+  try {
+    // 🆕 Origin check
+    if (!isValidFunnelOrigin(c)) return c.json({ success: false }, 200)
+
+    const ua = c.req.header('User-Agent') || ''
+    if (isFunnelBot(ua)) return c.json({ success: false }, 200)
+
+    const { token } = await c.req.json()
+    if (!token) return c.json({ error: 'token required' }, 400)
+
+    const result = await completeClickSession(token, c.env.JWT_SECRET, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    if (!result.success) return c.json({ success: false, error: result.error }, 400)
+
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    if (result.linkId) {
+      const link = await db.collection('shortlinks').findOne({ _id: result.linkId })
+      if (link) await creditClickForLink(link, c, db, { skipDedup: true })
+    }
+    return c.json({ success: true })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============ ADMIN — TOGGLE SETTINGS ============
+shortenerRoutes.get('/admin/click-settings', adminAuth, requirePermission('shortener'), async (c) => {
+  try {
+    const settings = await getClickSettings(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    return c.json({ success: true, data: settings })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+shortenerRoutes.put('/admin/click-settings', adminAuth, requirePermission('shortener'), async (c) => {
+  try {
+    const { requireFullCycle, sessionExpiryMinutes, minDwellSeconds } = await c.req.json()
+    const updateData: any = {}
+    if (requireFullCycle !== undefined) updateData.requireFullCycle = !!requireFullCycle
+    if (sessionExpiryMinutes !== undefined) updateData.sessionExpiryMinutes = Math.max(5, parseInt(sessionExpiryMinutes) || 45)
+    if (minDwellSeconds !== undefined) updateData.minDwellSeconds = Math.max(1, parseInt(minDwellSeconds) || 3)
+    const settings = await updateClickSettings(updateData, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    return c.json({ success: true, data: settings })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============ ADMIN — FUNNEL ANALYTICS (7-day conversion) ============
+shortenerRoutes.get('/admin/click-funnel-stats', adminAuth, requirePermission('shortener'), async (c) => {
+  try {
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+    const stats = await db.collection('clicksessions').aggregate([
+      { $match: { createdAt: { $gte: since } } },
+      { $group: { _id: '$stage', count: { $sum: 1 } } }
+    ]).toArray()
+    const ipMismatchCount = await db.collection('clicksessions').countDocuments({ ipMismatch: true, createdAt: { $gte: since } })
+    const flaggedUsers = await db.collection('shortusers').countDocuments({ flaggedForReview: true })
+    return c.json({ success: true, stats, ipMismatchCount, flaggedUsers })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }

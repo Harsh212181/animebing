@@ -15,6 +15,7 @@ import {
 } from '../services/animeService';
 import SEO from '../src/components/SEO';
 import ShareIcon from './icons/ShareIcon';
+import { captureTokenFromUrl, advanceFunnel, completeFunnel, appendTokenToPath } from '../utils/clickFunnel';
 
 // Simple SVG Icons for Like/Dislike
 const HeartIcon = ({ className = "w-5 h-5", filled = false }: { className?: string, filled?: boolean }) => (
@@ -174,6 +175,20 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
 
   const isManga = anime?.contentType === 'Manga';
   const isMovie = anime?.contentType === 'Movie';
+
+  // ✅ Funnel: Capture token from URL on mount
+  useEffect(() => {
+    captureTokenFromUrl();
+  }, []);
+
+  // ✅ Funnel: Advance stage when anime is viewed
+  // Option B: Sirf anime._id use karo (simplest fallback)
+  useEffect(() => {
+    const id = anime?._id || anime?.id;
+    if (id) {
+      advanceFunnel(id as string);
+    }
+  }, [anime?._id, anime?.id]);
 
   const getContentLabel = () => {
     if (isManga) return 'Chapters';
@@ -474,8 +489,12 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     }
     setDownloadingItem(itemData._id);
     const randomLink = activeLinks[Math.floor(Math.random() * activeLinks.length)].url;
-    if (randomLink) window.open(randomLink, '_blank');
-    else alert('⚠️ No valid download link found!');
+    if (randomLink) {
+      completeFunnel(); // ✅ Funnel: mark as completed
+      window.open(randomLink, '_blank');
+    } else {
+      alert('⚠️ No valid download link found!');
+    }
     setDownloadingItem(null);
   };
 
@@ -787,7 +806,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                               {import.meta.env.DEV && episodeToPageMap.has(contentNumber) && (
                                 <>
                                   {episodeToPageMap.get(contentNumber)!.map((page, idx) => (
-                                    <Link key={page._id || idx} to={`/download/${page.slug}`} className="bg-purple-600 hover:bg-purple-700 text-white p-2 rounded-lg text-xs font-medium ml-1 flex items-center justify-center" title={page.title}>
+                                    <Link key={page._id || idx} to={appendTokenToPath(`/download/${page.slug}`)} className="bg-purple-600 hover:bg-purple-700 text-white p-2 rounded-lg text-xs font-medium ml-1 flex items-center justify-center" title={page.title}>
                                       <span className="text-xs">☠️</span>
                                       {page.buttonTitle && <span className="ml-1 hidden sm:inline">{page.buttonTitle}</span>}
                                     </Link>

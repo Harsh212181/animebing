@@ -609,3 +609,29 @@ export interface ICheckLog {
   totalRecentVideos: number
   titles: ICheckLogTitleEntry[]
 }
+
+// ============ SHORTENER CLICK VERIFICATION SETTINGS ============
+export interface IShortenerClickSettings {
+  _id?: ObjectId
+  requireFullCycle: boolean
+  sessionExpiryMinutes: number
+  minDwellSeconds: number          // 🆕 anti-bot minimum time on anime page
+  updatedAt?: Date
+}
+
+// ============ CLICK SESSION (funnel/anti-fraud tracker) ============
+export interface IClickSession {
+  _id?: ObjectId
+  code: string
+  linkId: ObjectId
+  userId?: ObjectId | null
+  ip: string
+  userAgent?: string
+  animeId?: string
+  stage: 'started' | 'anime_viewed' | 'completed'
+  createdAt: Date
+  expiresAt: Date
+  animeViewedAt?: Date | null      // 🆕 dwell-time check ke liye
+  completedAt?: Date | null
+  ipMismatch?: boolean             // 🆕 suspicious flag
+}

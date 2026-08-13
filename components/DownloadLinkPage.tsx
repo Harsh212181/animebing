@@ -6,6 +6,7 @@ import VideoPlayer from './VideoPlayer';
 import YouTubeEmbed from './YouTubeEmbed';
 import { isYouTubeUrl } from './utils/videoHelpers';
 import { DownloadPage, Anime } from '../src/types';
+import { captureTokenFromUrl, completeFunnel } from '../utils/clickFunnel';
 
 const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
 
@@ -112,6 +113,10 @@ const DownloadLinkPage: React.FC = () => {
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
 
   useEffect(() => {
+    captureTokenFromUrl();
+  }, []);
+
+  useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
@@ -207,6 +212,7 @@ const DownloadLinkPage: React.FC = () => {
   };
 
   const togglePlayer = (idx: number) => {
+    if (selectedIndex !== idx) completeFunnel();
     setSelectedIndex(selectedIndex === idx ? null : idx);
   };
 
@@ -603,7 +609,7 @@ const DownloadLinkPage: React.FC = () => {
         {activeTab === 'download' && downloadLinks.length > 0 && (
           <div className="space-y-3">
             {downloadLinks.map((link, idx) => (
-              <LinkCard key={idx} link={link} isMovie={isMovie} onAction={() => window.open(link.url, '_blank')} actionIcon={<FaDownload />} actionLabel="Download" />
+              <LinkCard key={idx} link={link} isMovie={isMovie} onAction={() => { completeFunnel(); window.open(link.url, '_blank'); }} actionIcon={<FaDownload />} actionLabel="Download" />
             ))}
           </div>
         )}
