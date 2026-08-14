@@ -26,55 +26,17 @@ export const advanceFunnel = async (animeId?: string) => {
   const token = getStoredToken();
   if (!token) return;
   try {
-    const res = await fetch(`${SHORTENER_API_BASE}/click/advance`, {
+    await fetch(`${SHORTENER_API_BASE}/click/advance`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token, animeId }),
     });
-    const data = await res.json();
-    // 🆕 TEMP DEBUG
-    alert('🔵 DEBUG /click/advance response: ' + JSON.stringify(data));
   } catch (e) {
     console.error('advanceFunnel error:', e);
-    alert('❌ DEBUG /click/advance network error: ' + (e as Error).message);
   }
 };
 
 // STEP 3 — final watch/download click = cycle complete
-export const completeFunnel = () => {
-  const token = getStoredToken();
-  if (!token) {
-    // 🆕 TEMP DEBUG
-    alert('❌ DEBUG: No token found in sessionStorage — funnel token hi missing hai');
-    return;
-  }
-  const payload = JSON.stringify({ token });
-
-  // 🆕 TEMP DEBUG — sendBeacon ki jagah fetch use kar rahe hain taaki
-  // response mobile par bhi alert() ke through dikh jaye.
-  // ⚠️ Testing khatam hone ke baad iss poore function ko wapas
-  //     neeche diye "ORIGINAL VERSION" se replace kar dena.
-  fetch(`${SHORTENER_API_BASE}/click/complete`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: payload,
-    keepalive: true,
-  })
-    .then(res => res.json())
-    .then(data => {
-      alert('✅ DEBUG /click/complete response: ' + JSON.stringify(data));
-    })
-    .catch(err => {
-      alert('❌ DEBUG /click/complete network error: ' + err.message);
-    });
-
-  clearStoredToken();
-};
-
-/* ============================================================
-   ORIGINAL VERSION — testing khatam hone ke baad completeFunnel
-   ko isse replace kar dena (production-safe, silent, sendBeacon wala):
-
 export const completeFunnel = () => {
   const token = getStoredToken();
   if (!token) return;
@@ -96,7 +58,6 @@ export const completeFunnel = () => {
     clearStoredToken();
   }
 };
-============================================================ */
 
 // download-page ka internal link banate waqt token forward karo
 export const appendTokenToPath = (path: string): string => {
