@@ -1,4 +1,5 @@
- import { Hono } from 'hono'
+ // src/routes/shortenerRoutes.ts - UPDATED VERSION
+import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { getDb } from '../services/mongoService'
 import { adminAuth, requirePermission } from '../middleware/auth'
@@ -6,6 +7,7 @@ import { ObjectId } from 'mongodb'
 import { checkAndUnlockReferral, creditCommissionToReferrer } from './referralRoutes'
 import {
   getClickSettings, updateClickSettings,
+  getEffectiveClickSettings, updateUsersFullCycleOverride,
   createClickSession, advanceClickSession, completeClickSession,
   isFunnelBot
 } from '../services/clickVerificationService'
@@ -475,7 +477,8 @@ shortenerRoutes.get('/:code', async (c) => {
     }
 
     // ============ REAL USER ============
-    const settings = await getClickSettings(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    // 🆕 ab per-user override check hota hai, link.userId ke through
+    const settings = await getEffectiveClickSettings(link.userId || null, c.env.MONGODB_URI, c.env.MONGODB_DB)
 
     if (settings.requireFullCycle) {
       const ip = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || 'unknown'
@@ -495,7 +498,7 @@ shortenerRoutes.get('/:code', async (c) => {
       return c.redirect(redirectUrl.toString(), 302)
     }
 
-    // OLD MODE (setting OFF)
+    // OLD MODE (setting OFF — chahe global ho ya user-specific)
     await creditClickForLink(link, c, db)
     return c.redirect(link.url, 302)
   } catch (err: any) {
@@ -572,6 +575,37 @@ shortenerRoutes.put('/admin/click-settings', adminAuth, requirePermission('short
   }
 })
 
+// ============ ADMIN — PER-USER FULL-CYCLE OVERRIDE (single ya multiple) ============
+shortenerRoutes.put('/admin/users/click-verification', adminAuth, requirePermission('shortener'), async (c) => {
+  try {
+    const { userIds, value } = await c.req.json()
+    // value: true | false | null (null = reset to global default)
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return c.json({ error: 'userIds array required' }, 400)
+    }
+    if (value !== true && value !== false && value !== null) {
+      return c.json({ error: 'value must be true, false, or null' }, 400)
+    }
+    const result = await updateUsersFullCycleOverride(userIds, value, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    return c.json({ success: true, modifiedCount: result.modifiedCount })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============ GET EFFECTIVE SETTING FOR A SINGLE USER (UI ke liye) ============
+shortenerRoutes.get('/admin/users/:userId/click-verification', adminAuth, requirePermission('shortener'), async (c) => {
+  try {
+    const userId = c.req.param('userId')
+    // 🆕 pehle undefined check, phir ObjectId.isValid — taaki TypeScript ko pata chale userId ab string hai
+    if (!userId || !ObjectId.isValid(userId)) return c.json({ error: 'Invalid userId' }, 400)
+
+    const effective = await getEffectiveClickSettings(new ObjectId(userId), c.env.MONGODB_URI, c.env.MONGODB_DB)
+    return c.json({ success: true, data: effective })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
 // ============ ADMIN — FUNNEL ANALYTICS (7-day conversion) ============
 shortenerRoutes.get('/admin/click-funnel-stats', adminAuth, requirePermission('shortener'), async (c) => {
   try {

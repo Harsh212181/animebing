@@ -1,4 +1,4 @@
- // src/components/admin/ShortenerManager.tsx – UPDATED (monthly click view + sender badge + ClickVerificationSettings integration)
+ // src/components/admin/ShortenerManager.tsx – UPDATED (monthly click view + sender badge + ClickVerificationSettings + per-user verification overrides)
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
@@ -64,6 +64,7 @@ interface ShortUser {
   createdBy?: 'admin' | 'self';
   createdByAdminId?: string;
   createdByAdminUsername?: string;
+  requireFullCycle?: boolean | null;   // 🆕 per-user override
   profile?: {
     mobile?: string;
     gmail?: string;
@@ -205,7 +206,7 @@ const css = `
   --mono: 'DM Mono', 'SF Mono', monospace;
 }
 
-.sm * { box-sizing: border-box; margin: 0; padding: 0; }
+.sm * { box-sizing: border-box; }  /* ✅ FIX: removed margin:0; padding:0 to allow Tailwind spacing */
 .sm { font-family: var(--font); font-size: 13px; color: var(--t1); }
 
 /* ── stats bar ── */
@@ -658,6 +659,10 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
   const [monthlyUserData, setMonthlyUserData] = useState<Record<string, { clicks: number; earnings: number }>>({});
   const [userMonthlyLoading, setUserMonthlyLoading] = useState(false);
 
+  // ✅ NEW: per-user click verification bulk selection
+  const [selectedUserIdsForCV, setSelectedUserIdsForCV] = useState<string[]>([]);
+  const [cvUpdating, setCvUpdating] = useState(false);
+
   const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
   const fetchMonthlyClicks = async (month: number, year: number) => {
@@ -1050,6 +1055,33 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
     ? Object.values(monthlyUserData).reduce((s, v) => s + (v.earnings || 0), 0)
     : totalEarned;
 
+  // ✅ NEW: per-user click verification handlers
+  const toggleUserSelectionForCV = (userId: string) => {
+    setSelectedUserIdsForCV(prev =>
+      prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
+    );
+  };
+
+  const applyClickVerification = async (value: boolean | null, userIds?: string[]) => {
+    const targetIds = userIds || selectedUserIdsForCV;
+    if (targetIds.length === 0) { toast.error('Pehle user(s) select karo'); return; }
+    setCvUpdating(true);
+    try {
+      await axios.put(`${SHORTENER_BASE}/admin/users/click-verification`,
+        { userIds: targetIds, value },
+        { headers: { Authorization: `Bearer ${getToken()}` } }
+      );
+      const label = value === true ? 'ON' : value === false ? 'OFF' : 'Global Default';
+      toast.success(`${targetIds.length} user(s) ke liye Click Verification: ${label}`);
+      setSelectedUserIdsForCV([]);
+      fetchUsers();
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'Update failed');
+    } finally {
+      setCvUpdating(false);
+    }
+  };
+
   return (
     <>
       <style>{css}</style>
@@ -1381,7 +1413,7 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
           </>
         )}
 
-        {/* USERS TAB – now with monthly-aware columns and headers */}
+        {/* USERS TAB – now with per-user click verification controls */}
         {activeTab === 'users' && (
           <>
             <div className="sm-toolbar">
@@ -1403,6 +1435,27 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
                 <i className="ti ti-plus" style={{ fontSize: 13 }} /> New User
               </button>
             </div>
+
+            {/* ✅ NEW: Bulk Click-Verification control bar */}
+            {selectedUserIdsForCV.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '8px 12px', background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', borderRadius: 8 }}>
+                <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600 }}>
+                  {selectedUserIdsForCV.length} user(s) selected
+                </span>
+                <button className="sm-btn sm-btn-success" style={{ padding: '5px 12px', fontSize: 11 }} disabled={cvUpdating} onClick={() => applyClickVerification(true)}>
+                  Turn ON
+                </button>
+                <button className="sm-btn sm-btn-danger" style={{ padding: '5px 12px', fontSize: 11 }} disabled={cvUpdating} onClick={() => applyClickVerification(false)}>
+                  Turn OFF
+                </button>
+                <button className="sm-btn sm-btn-ghost" style={{ padding: '5px 12px', fontSize: 11 }} disabled={cvUpdating} onClick={() => applyClickVerification(null)}>
+                  Reset to Global
+                </button>
+                <button className="sm-btn sm-btn-ghost" style={{ padding: '5px 12px', fontSize: 11, marginLeft: 'auto' }} onClick={() => setSelectedUserIdsForCV([])}>
+                  Clear
+                </button>
+              </div>
+            )}
 
             {showAddUser && (
               <div className="sm-create-panel">
@@ -1456,21 +1509,41 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
                   <table className="sm-table">
                     <thead>
                       <tr>
-                        <th style={{ width: '13%' }}>User</th>
-                        <th style={{ width: '10%' }}>Password</th>
-                        <th style={{ width: '7%' }}>Rate/1k</th>
-                        <th style={{ width: '8%' }}>{linkViewMode === 'monthly' ? `${MONTH_NAMES[selectedMonth - 1]} Clicks` : 'Clicks'}</th>
-                        <th style={{ width: '9%' }}>{linkViewMode === 'monthly' ? `${MONTH_NAMES[selectedMonth - 1]} Earned` : 'Earned'}</th>
-                        <th style={{ width: '9%' }}>Pending</th>
-                        <th style={{ width: '8%' }}>Status</th>
-                        <th style={{ width: '10%' }}>Source</th>
-                        <th style={{ width: '26%' }}>Actions</th>
+                        <th style={{ width: '3%' }}>
+                          <input
+                            type="checkbox"
+                            checked={filteredUsers.length > 0 && selectedUserIdsForCV.length === filteredUsers.length}
+                            onChange={() => {
+                              if (selectedUserIdsForCV.length === filteredUsers.length) setSelectedUserIdsForCV([]);
+                              else setSelectedUserIdsForCV(filteredUsers.map(u => u._id));
+                            }}
+                            style={{ accentColor: 'var(--accent)' }}
+                          />
+                        </th>
+                        <th style={{ width: '10%' }}>User</th>
+                        <th style={{ width: '9%' }}>Password</th>
+                        <th style={{ width: '6%' }}>Rate/1k</th>
+                        <th style={{ width: '7%' }}>{linkViewMode === 'monthly' ? `${MONTH_NAMES[selectedMonth - 1]} Clicks` : 'Clicks'}</th>
+                        <th style={{ width: '8%' }}>{linkViewMode === 'monthly' ? `${MONTH_NAMES[selectedMonth - 1]} Earned` : 'Earned'}</th>
+                        <th style={{ width: '8%' }}>Pending</th>
+                        <th style={{ width: '7%' }}>Status</th>
+                        <th style={{ width: '9%' }}>Source</th>
+                        <th style={{ width: '9%' }}>Click Verify</th>   {/* 🆕 new column */}
+                        <th style={{ width: '24%' }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredUsers.map(user => (
                         <React.Fragment key={user._id}>
                           <tr className="sm-data-row">
+                            <td>
+                              <input
+                                type="checkbox"
+                                checked={selectedUserIdsForCV.includes(user._id)}
+                                onChange={() => toggleUserSelectionForCV(user._id)}
+                                style={{ accentColor: 'var(--accent)' }}
+                              />
+                            </td>
                             <td>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                 {renderUserAvatar(user, 24, 0)}
@@ -1517,6 +1590,37 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
                                 </span>
                               )}
                             </td>
+                            {/* 🆕 individual per-user quick toggle */}
+                            <td>
+                              {user.requireFullCycle === true ? (
+                                <button
+                                  className="sm-badge sm-badge-active"
+                                  style={{ cursor: 'pointer', border: 'none' }}
+                                  onClick={() => applyClickVerification(false, [user._id])}
+                                  title="Click to turn OFF for this user"
+                                >
+                                  <span className="sm-dot" /> ON (override)
+                                </button>
+                              ) : user.requireFullCycle === false ? (
+                                <button
+                                  className="sm-badge sm-badge-inactive"
+                                  style={{ cursor: 'pointer', border: 'none' }}
+                                  onClick={() => applyClickVerification(null, [user._id])}
+                                  title="Click to reset to global default"
+                                >
+                                  <span className="sm-dot" /> OFF (override)
+                                </button>
+                              ) : (
+                                <button
+                                  className="sm-badge"
+                                  style={{ cursor: 'pointer', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--t3)' }}
+                                  onClick={() => applyClickVerification(true, [user._id])}
+                                  title="Click to force ON for this user"
+                                >
+                                  <span className="sm-dot" /> Global Default
+                                </button>
+                              )}
+                            </td>
                             <td>
                               <div className="sm-act-group">
                                 <button
@@ -1546,7 +1650,7 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
                           </tr>
                           {editingUserId === user._id && (
                             <tr className="sm-edit-expand">
-                              <td colSpan={9}>
+                              <td colSpan={11}>
                                 <div className="sm-edit-inner">
                                   <div className="sm-edit-header">
                                     <span className="sm-edit-bar" />

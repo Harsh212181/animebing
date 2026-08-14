@@ -292,6 +292,8 @@ export interface IShortUser {
   createdBy?: 'admin' | 'self'
   createdByAdminId?: string
   createdByAdminUsername?: string
+  // 🆕 Per-user click verification override — null/undefined = use global default
+  requireFullCycle?: boolean | null
 }
 
 // ============ SHORT LINK ============

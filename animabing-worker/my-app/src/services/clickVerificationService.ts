@@ -1,4 +1,4 @@
-import { ObjectId } from 'mongodb'
+ import { ObjectId } from 'mongodb'
 import { getDb } from './mongoService'
 import { IClickSession, IShortenerClickSettings } from '../models/types'
 
@@ -20,6 +20,43 @@ export async function getClickSettings(mongoUri: string, dbName: string): Promis
     minDwellSeconds: doc.minDwellSeconds ?? 3,
     updatedAt: doc.updatedAt
   }
+}
+
+// ============ USER-AWARE SETTINGS RESOLVER ============
+// Agar user ka apna override hai to wahi use hoga, warna global default
+export async function getEffectiveClickSettings(
+  userId: ObjectId | null,
+  mongoUri: string, dbName: string
+): Promise<IShortenerClickSettings & { source: 'user' | 'global' }> {
+  const globalSettings = await getClickSettings(mongoUri, dbName)
+
+  if (!userId) return { ...globalSettings, source: 'global' }
+
+  const db = await getDb(mongoUri, dbName)
+  const user = await db.collection('shortusers').findOne({ _id: userId }, { projection: { requireFullCycle: 1 } })
+
+  if (user && (user.requireFullCycle === true || user.requireFullCycle === false)) {
+    return { ...globalSettings, requireFullCycle: user.requireFullCycle, source: 'user' }
+  }
+
+  return { ...globalSettings, source: 'global' }
+}
+
+// ============ BULK UPDATE — single ya multiple users ============
+export async function updateUsersFullCycleOverride(
+  userIds: string[],
+  value: boolean | null, // null = reset to global default
+  mongoUri: string, dbName: string
+): Promise<{ modifiedCount: number }> {
+  const db = await getDb(mongoUri, dbName)
+  const objectIds = userIds.filter(id => ObjectId.isValid(id)).map(id => new ObjectId(id))
+  if (objectIds.length === 0) return { modifiedCount: 0 }
+
+  const result = await db.collection('shortusers').updateMany(
+    { _id: { $in: objectIds } },
+    { $set: { requireFullCycle: value } }
+  )
+  return { modifiedCount: result.modifiedCount }
 }
 
 export async function updateClickSettings(
