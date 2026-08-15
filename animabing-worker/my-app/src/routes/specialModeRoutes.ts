@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+ import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
 import { findMany, insertOne, updateOne, deleteOne, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
@@ -34,6 +34,17 @@ export async function getTodaysActiveMode(mongoUri: string, dbName: string): Pro
     }
   }
   return null
+}
+
+// ============ NEW: check if any active mode has forceLink5Only ============
+export async function isForceLink5ModeActive(mongoUri: string, dbName: string): Promise<boolean> {
+  const db = await getDb(mongoUri, dbName)
+  const settings: any = (await db.collection('linksettings').findOne({})) || {}
+  const masterEnabled = settings.autoModeEnabled !== false
+  if (!masterEnabled) return false
+
+  const active = await getTodaysActiveMode(mongoUri, dbName)
+  return !!(active && (active as any).forceLink5Only)
 }
 
 // ============ 👇 NEW: link settings ko active mode ke hisaab se sync karo ============

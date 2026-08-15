@@ -1,4 +1,4 @@
- // src/components/admin/ShortenerManager.tsx – UPDATED (monthly click view + sender badge + ClickVerificationSettings + per-user verification overrides)
+ // src/components/admin/ShortenerManager.tsx – UPDATED (no popups for payment/link, inline forms instead)
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
@@ -64,7 +64,7 @@ interface ShortUser {
   createdBy?: 'admin' | 'self';
   createdByAdminId?: string;
   createdByAdminUsername?: string;
-  requireFullCycle?: boolean | null;   // 🆕 per-user override
+  requireFullCycle?: boolean | null;
   profile?: {
     mobile?: string;
     gmail?: string;
@@ -89,7 +89,6 @@ interface ShortRequest {
   createdAt: string;
 }
 
-// ✅ Updated ShortMessage interface with senderRole and senderName
 interface ShortMessage {
   _id: string;
   userId: string;
@@ -100,11 +99,11 @@ interface ShortMessage {
   readByAdmin: boolean;
   readByUser: boolean;
   createdAt: string;
-  senderRole?: string;   // 'subadmin' | 'admin'
-  senderName?: string;   // e.g. "Harsh" or "Main Admin"
+  senderRole?: string;
+  senderName?: string;
 }
 
-// ── Helper: render user avatar (with unread badge) ──────────────
+// ── Helper: render user avatar ──────────────────────────────
 const renderUserAvatar = (user: ShortUser, size = 28, unreadCount = 0) => {
   const av = AVATARS.find(a => a.id === user.avatarId);
   const hasUnread = unreadCount > 0;
@@ -151,7 +150,7 @@ const renderUserAvatar = (user: ShortUser, size = 28, unreadCount = 0) => {
   return avatarEl;
 };
 
-// ✅ New AdminSenderBadge component
+// ✅ AdminSenderBadge component
 const AdminSenderBadge: React.FC<{ senderRole?: string; senderName?: string }> = ({ senderRole, senderName }) => {
   const isSubAdmin = senderRole === 'subadmin';
   return (
@@ -168,7 +167,7 @@ const AdminSenderBadge: React.FC<{ senderRole?: string; senderName?: string }> =
   );
 };
 
-/* ─────────────────────────────────────────── css (darker chat bg) ─── */
+/* ─────────────────────────────────────────── CSS ─────────────────── */
 const css = `
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
 @import url('https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css');
@@ -206,7 +205,7 @@ const css = `
   --mono: 'DM Mono', 'SF Mono', monospace;
 }
 
-.sm * { box-sizing: border-box; }  /* ✅ FIX: removed margin:0; padding:0 to allow Tailwind spacing */
+.sm * { box-sizing: border-box; }
 .sm { font-family: var(--font); font-size: 13px; color: var(--t1); }
 
 /* ── stats bar ── */
@@ -385,7 +384,6 @@ const css = `
 .sm-badge-rejected { background: var(--red-dim); color: var(--red); border: 1px solid var(--red-border); }
 .sm-badge-payment { background: var(--green-dim); color: var(--green); border: 1px solid var(--green-border); }
 .sm-badge-link { background: var(--teal-dim); color: var(--teal); border: 1px solid var(--teal-border); }
-/* source badges */
 .sm-badge-admin { background: var(--blue-dim); color: var(--blue); border: 1px solid var(--blue-border); }
 .sm-badge-self { background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent-border); }
 .sm-badge-subadmin { background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent-border); }
@@ -437,7 +435,7 @@ const css = `
 .sm-edit-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--accent); }
 .sm-edit-sub { font-family: var(--mono); font-size: 11px; color: var(--t3); background: var(--bg2); border: 1px solid var(--border); padding: 3px 10px; border-radius: 5px; margin-left: auto; }
 
-/* ── modal overlay ── */
+/* ── modal overlay (only for delete confirmations) ── */
 .sm-modal-backdrop {
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.72); z-index: 50;
@@ -464,7 +462,7 @@ const css = `
 .sm-upi-row { font-size: 11px; color: var(--green); margin-bottom: 3px; font-family: var(--mono); }
 .sm-upi-row:last-child { margin-bottom: 0; }
 
-/* ── messages layout (darker chat bg) ── */
+/* ── messages layout ── */
 .sm-msg-layout { display: grid; grid-template-columns: 220px 1fr; gap: 12px; min-height: 500px; }
 .sm-msg-sidebar { background: var(--bg1); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
 .sm-msg-sidebar-header {
@@ -499,7 +497,6 @@ const css = `
   font-size: 11px; font-weight: 700; flex-shrink: 0;
 }
 
-/* ── CHAT WINDOW – darker background (no light pattern) ── */
 .sm-msg-window {
   background: #0b0b10;
   border: 1px solid var(--border);
@@ -594,11 +591,173 @@ const css = `
 /* ── empty ── */
 .sm-empty { padding: 48px 24px; text-align: center; color: var(--t3); font-size: 13px; }
 
-/* responsive */
-@media (max-width: 1000px) { .sm-stats { grid-template-columns: repeat(3, 1fr); } }
-@media (max-width: 700px) {
-  .sm-stats { grid-template-columns: repeat(2, 1fr); }
-  .sm-msg-layout { grid-template-columns: 1fr; }
+/* ── USER CARD – 2 rows layout ── */
+.sm-user-card {
+  background: var(--bg1);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 18px;
+  transition: background 0.1s;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sm-user-card:last-child { border-bottom: none; }
+.sm-user-card:hover { background: rgba(255,255,255,0.015); }
+
+.sm-user-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.sm-user-card-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 180px;
+}
+
+/* Custom checkbox */
+.sm-user-card-checkbox {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--border2);
+  border-radius: 4px;
+  background: var(--bg0);
+  transition: all 0.15s;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+}
+.sm-user-card-checkbox:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.sm-user-card-checkbox:checked::after {
+  content: "✓";
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+.sm-user-card-checkbox:hover {
+  border-color: var(--accent-border);
+}
+
+.sm-user-card-creds {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.sm-user-card-cred-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.sm-user-card-cred-label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--t3);
+}
+.sm-user-card-cred-value {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.sm-user-card-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.sm-user-card-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.sm-user-card-stats {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.sm-user-card-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sm-user-card-stat-label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--t3);
+}
+.sm-user-card-stat-value {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.sm-user-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Inline expand panels (for edit/payment/link) */
+.sm-inline-panel {
+  background: #0d0d12;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 8px;
+  animation: smExpand 0.16s ease;
+}
+.sm-inline-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.sm-inline-panel-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--accent);
+}
+.sm-inline-panel-bar {
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+.sm-inline-panel-sub {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--t3);
+  margin-left: auto;
 }
 `;
 
@@ -609,7 +768,6 @@ interface ShortenerManagerProps {
 }
 
 const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, subAdminMode = false }) => {
-  // token helper
   const getToken = () => propToken || localStorage.getItem('adminToken') || '';
 
   const [activeTab, setActiveTab] = useState<'links' | 'users' | 'requests' | 'messages'>('links');
@@ -633,67 +791,36 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
   const [addingUser, setAddingUser] = useState(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editUserForm, setEditUserForm] = useState({ password: '', realName: '', ratePerThousand: 100, isActive: true });
-  const [paymentModal, setPaymentModal] = useState<ShortUser | null>(null);
+
+  // Inline payment & link creation states (no modals)
+  const [paymentUserId, setPaymentUserId] = useState<string | null>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentNote, setPaymentNote] = useState('');
   const [payingId, setPayingId] = useState<string | null>(null);
-  const [createLinkModal, setCreateLinkModal] = useState<ShortUser | null>(null);
-  const [createLinkForm, setCreateLinkForm] = useState({ code: '', url: '', label: '' });
+
+  const [linkUserId, setLinkUserId] = useState<string | null>(null);
+  const [linkForm, setLinkForm] = useState({ code: '', url: '', label: '' });
   const [creatingLink, setCreatingLink] = useState(false);
-  const [profileModal, setProfileModal] = useState<ShortUser | null>(null);
+
   const [showAddUser, setShowAddUser] = useState(false);
   const [deleteUserConfirm, setDeleteUserConfirm] = useState<ShortUser | null>(null);
   const [deletingUser, setDeletingUser] = useState(false);
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [sourceFilter, setSourceFilter] = useState<'all' | 'admin' | 'self'>('all');
 
-  // ✅ NEW: monthly click view
+  // Monthly view
   const [linkViewMode, setLinkViewMode] = useState<'alltime' | 'monthly'>('alltime');
   const now = new Date();
-  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1); // 1-12
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [monthlyClicks, setMonthlyClicks] = useState<Record<string, number>>({});
   const [monthlyLoading, setMonthlyLoading] = useState(false);
-
-  // ✅ NEW: monthly data for Users tab
   const [monthlyUserData, setMonthlyUserData] = useState<Record<string, { clicks: number; earnings: number }>>({});
   const [userMonthlyLoading, setUserMonthlyLoading] = useState(false);
 
-  // ✅ NEW: per-user click verification bulk selection
+  // Per-user click verification
   const [selectedUserIdsForCV, setSelectedUserIdsForCV] = useState<string[]>([]);
   const [cvUpdating, setCvUpdating] = useState(false);
-
-  const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-
-  const fetchMonthlyClicks = async (month: number, year: number) => {
-    setMonthlyLoading(true);
-    try {
-      const { data } = await axios.get(`${SHORTENER_BASE}/admin/links/monthly-clicks`, {
-        params: { month, year },
-        headers: { Authorization: `Bearer ${getToken()}` }
-      });
-      setMonthlyClicks(data.data || {});
-    } catch (err: any) {
-      toast.error('Monthly clicks load failed');
-    } finally {
-      setMonthlyLoading(false);
-    }
-  };
-
-  const fetchMonthlyUserClicks = async (month: number, year: number) => {
-    setUserMonthlyLoading(true);
-    try {
-      const { data } = await axios.get(`${API_BASE}/short-users/admin/users/monthly-clicks`, {
-        params: { month, year },
-        headers: { Authorization: `Bearer ${getToken()}` }
-      });
-      setMonthlyUserData(data.data || {});
-    } catch (err: any) {
-      toast.error('Monthly user data load failed');
-    } finally {
-      setUserMonthlyLoading(false);
-    }
-  };
 
   // requests
   const [requests, setRequests] = useState<ShortRequest[]>([]);
@@ -713,6 +840,8 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
   // broadcast
   const [broadcastMode, setBroadcastMode] = useState(false);
   const [selectedBroadcastUsers, setSelectedBroadcastUsers] = useState<string[]>([]);
+
+  const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
   // ─── helper: fetch per‑user unread counts ───────────────────
   const fetchUserUnreadCounts = async () => {
@@ -749,7 +878,6 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
   useEffect(() => { if (activeTab === 'requests') fetchRequests(); }, [activeTab]);
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  // ✅ UPDATED useEffect: fetch monthly data when view mode or month/year changes (both tabs)
   useEffect(() => {
     if (linkViewMode !== 'monthly') return;
     if (activeTab === 'links') fetchMonthlyClicks(selectedMonth, selectedYear);
@@ -762,6 +890,36 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
       return () => clearInterval(interval);
     }
   }, [activeTab]);
+
+  const fetchMonthlyClicks = async (month: number, year: number) => {
+    setMonthlyLoading(true);
+    try {
+      const { data } = await axios.get(`${SHORTENER_BASE}/admin/links/monthly-clicks`, {
+        params: { month, year },
+        headers: { Authorization: `Bearer ${getToken()}` }
+      });
+      setMonthlyClicks(data.data || {});
+    } catch (err: any) {
+      toast.error('Monthly clicks load failed');
+    } finally {
+      setMonthlyLoading(false);
+    }
+  };
+
+  const fetchMonthlyUserClicks = async (month: number, year: number) => {
+    setUserMonthlyLoading(true);
+    try {
+      const { data } = await axios.get(`${API_BASE}/short-users/admin/users/monthly-clicks`, {
+        params: { month, year },
+        headers: { Authorization: `Bearer ${getToken()}` }
+      });
+      setMonthlyUserData(data.data || {});
+    } catch (err: any) {
+      toast.error('Monthly user data load failed');
+    } finally {
+      setUserMonthlyLoading(false);
+    }
+  };
 
   const fetchLinks = async () => {
     setLinksLoading(true);
@@ -892,32 +1050,34 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
     } finally { setDeletingUser(false); }
   };
 
+  // ─── Inline Payment Handler ───────────────────────────────
   const handlePayment = async () => {
-    if (!paymentModal || !paymentAmount) return;
+    if (!paymentUserId || !paymentAmount) return;
     const amount = parseFloat(paymentAmount);
     if (isNaN(amount) || amount <= 0) { toast.error('Enter valid amount'); return; }
-    setPayingId(paymentModal._id);
+    setPayingId(paymentUserId);
     try {
-      await axios.post(`${API_BASE}/short-users/admin/users/${paymentModal._id}/pay`, { amount, note: paymentNote }, { headers: { Authorization: `Bearer ${getToken()}` } });
+      await axios.post(`${API_BASE}/short-users/admin/users/${paymentUserId}/pay`, { amount, note: paymentNote }, { headers: { Authorization: `Bearer ${getToken()}` } });
       toast.success(`Rs.${amount} payment marked`);
-      setPaymentModal(null); setPaymentAmount(''); setPaymentNote('');
+      setPaymentUserId(null); setPaymentAmount(''); setPaymentNote('');
       fetchUsers(); fetchRequests();
     } catch (err: any) { toast.error(err.response?.data?.error || 'Payment failed'); }
     finally { setPayingId(null); }
   };
 
+  // ─── Inline Link Creation Handler ──────────────────────────
   const handleCreateLinkForUser = async () => {
-    if (!createLinkModal) return;
-    if (!createLinkForm.code || !createLinkForm.url) { toast.error('Code and URL required'); return; }
+    if (!linkUserId) return;
+    if (!linkForm.code || !linkForm.url) { toast.error('Code and URL required'); return; }
     setCreatingLink(true);
     try {
       await axios.post(
-        `${API_BASE}/short-users/admin/users/${createLinkModal._id}/create-link`,
-        { code: createLinkForm.code.trim().toLowerCase(), url: createLinkForm.url.trim(), label: createLinkForm.label.trim() || createLinkForm.code.trim() },
+        `${API_BASE}/short-users/admin/users/${linkUserId}/create-link`,
+        { code: linkForm.code.trim().toLowerCase(), url: linkForm.url.trim(), label: linkForm.label.trim() || linkForm.code.trim() },
         { headers: { Authorization: `Bearer ${getToken()}` } }
       );
-      toast.success(`Link created for ${createLinkModal.realName}`);
-      setCreateLinkModal(null); setCreateLinkForm({ code: '', url: '', label: '' });
+      toast.success(`Link created for user`);
+      setLinkUserId(null); setLinkForm({ code: '', url: '', label: '' });
       fetchLinks(); fetchRequests();
     } catch (err: any) { toast.error(err.response?.data?.error || 'Create failed'); }
     finally { setCreatingLink(false); }
@@ -1046,7 +1206,6 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
   const totalUnpaid = users.reduce((s, u) => s + (u.unpaidEarnings || 0), 0);
   const totalEarned = users.reduce((s, u) => s + (u.totalEarnings || 0), 0);
 
-  // ✅ NEW: monthly-aware display values for the stats bar
   const isMonthly = linkViewMode === 'monthly';
   const displayedClicks = isMonthly
     ? Object.values(monthlyClicks).reduce((s, v) => s + v, 0)
@@ -1055,7 +1214,6 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
     ? Object.values(monthlyUserData).reduce((s, v) => s + (v.earnings || 0), 0)
     : totalEarned;
 
-  // ✅ NEW: per-user click verification handlers
   const toggleUserSelectionForCV = (userId: string) => {
     setSelectedUserIdsForCV(prev =>
       prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
@@ -1086,8 +1244,7 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
     <>
       <style>{css}</style>
       <div className="sm">
-        {/* ✅ Click Verification Settings added at top */}
-        <ClickVerificationSettings token={getToken()} />
+        {!subAdminMode && <ClickVerificationSettings token={getToken()} />}
 
         {/* Stats */}
         <div className="sm-stats">
@@ -1139,7 +1296,7 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
           </button>
         </div>
 
-        {/* ✅ Month-wise view selector — shared between Links & Users tabs */}
+        {/* Month-wise view selector */}
         {(activeTab === 'links' || activeTab === 'users') && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
             <button
@@ -1264,7 +1421,6 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
                         <th style={{ width: '13%' }}>Label</th>
                         <th style={{ width: '22%' }}>Target URL</th>
                         <th style={{ width: '16%' }}>Assigned User</th>
-                        {/* ✅ Dynamic clicks column header */}
                         <th style={{ width: '9%' }}>
                           {linkViewMode === 'monthly' ? `${MONTH_NAMES[selectedMonth - 1]} Clicks` : 'Clicks'}
                         </th>
@@ -1320,7 +1476,6 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
                                 ) : <span style={{ color: 'var(--t3)' }}>—</span>}
                               </td>
                               <td><span style={{ fontSize: 11, color: 'var(--accent)', fontFamily: 'var(--mono)' }}>{getUserName(link.userId?.toString())}</span></td>
-                              {/* ✅ Dynamic clicks cell */}
                               <td>
                                 {(() => {
                                   const clickValue = linkViewMode === 'monthly'
@@ -1413,7 +1568,7 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
           </>
         )}
 
-        {/* USERS TAB – now with per-user click verification controls */}
+        {/* USERS TAB – inline forms, no modals */}
         {activeTab === 'users' && (
           <>
             <div className="sm-toolbar">
@@ -1436,7 +1591,7 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
               </button>
             </div>
 
-            {/* ✅ NEW: Bulk Click-Verification control bar */}
+            {/* Bulk Click-Verification control */}
             {selectedUserIdsForCV.length > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '8px 12px', background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', borderRadius: 8 }}>
                 <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600 }}>
@@ -1506,204 +1661,252 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
                 ) : filteredUsers.length === 0 ? (
                   <div className="sm-empty">{users.length === 0 ? 'No users yet. Create one to get started.' : 'No users match your search.'}</div>
                 ) : (
-                  <table className="sm-table">
-                    <thead>
-                      <tr>
-                        <th style={{ width: '3%' }}>
-                          <input
-                            type="checkbox"
-                            checked={filteredUsers.length > 0 && selectedUserIdsForCV.length === filteredUsers.length}
-                            onChange={() => {
-                              if (selectedUserIdsForCV.length === filteredUsers.length) setSelectedUserIdsForCV([]);
-                              else setSelectedUserIdsForCV(filteredUsers.map(u => u._id));
-                            }}
-                            style={{ accentColor: 'var(--accent)' }}
-                          />
-                        </th>
-                        <th style={{ width: '10%' }}>User</th>
-                        <th style={{ width: '9%' }}>Password</th>
-                        <th style={{ width: '6%' }}>Rate/1k</th>
-                        <th style={{ width: '7%' }}>{linkViewMode === 'monthly' ? `${MONTH_NAMES[selectedMonth - 1]} Clicks` : 'Clicks'}</th>
-                        <th style={{ width: '8%' }}>{linkViewMode === 'monthly' ? `${MONTH_NAMES[selectedMonth - 1]} Earned` : 'Earned'}</th>
-                        <th style={{ width: '8%' }}>Pending</th>
-                        <th style={{ width: '7%' }}>Status</th>
-                        <th style={{ width: '9%' }}>Source</th>
-                        <th style={{ width: '9%' }}>Click Verify</th>   {/* 🆕 new column */}
-                        <th style={{ width: '24%' }}>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredUsers.map(user => (
-                        <React.Fragment key={user._id}>
-                          <tr className="sm-data-row">
-                            <td>
+                  <>
+                    {/* select-all bar */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)' }}>
+                      <input
+                        type="checkbox"
+                        checked={filteredUsers.length > 0 && selectedUserIdsForCV.length === filteredUsers.length}
+                        onChange={() => {
+                          if (selectedUserIdsForCV.length === filteredUsers.length) setSelectedUserIdsForCV([]);
+                          else setSelectedUserIdsForCV(filteredUsers.map(u => u._id));
+                        }}
+                        style={{ accentColor: 'var(--accent)' }}
+                      />
+                      <span style={{ fontSize: 11, color: 'var(--t3)' }}>Select all</span>
+                    </div>
+
+                    {filteredUsers.map(user => (
+                      <React.Fragment key={user._id}>
+                        <div className="sm-user-card">
+                          {/* Row 1: checkbox + avatar + name+username + badges + password + rate */}
+                          <div className="sm-user-card-top">
+                            <div className="sm-user-card-identity">
                               <input
                                 type="checkbox"
+                                className="sm-user-card-checkbox"
                                 checked={selectedUserIdsForCV.includes(user._id)}
                                 onChange={() => toggleUserSelectionForCV(user._id)}
-                                style={{ accentColor: 'var(--accent)' }}
                               />
-                            </td>
-                            <td>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                {renderUserAvatar(user, 24, 0)}
-                                <div>
-                                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--t1)' }}>{user.realName}</div>
-                                  <div style={{ fontSize: 11, color: 'var(--t3)', fontFamily: 'var(--mono)', marginTop: 2 }}>@{user.username}</div>
-                                </div>
+                              {renderUserAvatar(user, 32, 0)}
+                              <div>
+                                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--t1)' }}>{user.realName}</div>
+                                <div style={{ fontSize: 11, color: 'var(--t3)', fontFamily: 'var(--mono)' }}>@{user.username}</div>
                               </div>
-                            </td>
-                            <td>
-                              <span className="sm-mono" style={{ color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-border)', borderRadius: 5, padding: '2px 8px', fontSize: 11 }}>
-                                {user.password}
-                              </span>
-                            </td>
-                            <td><span className="sm-mono" style={{ color: 'var(--teal)' }}>Rs.{user.ratePerThousand}</span></td>
-                            <td>
-                              <span className="sm-mono" style={{ color: 'var(--t2)' }}>
-                                {(linkViewMode === 'monthly' ? (monthlyUserData[user._id]?.clicks || 0) : (user.totalClicks || 0)).toLocaleString()}
-                              </span>
-                            </td>
-                            <td>
-                              <span className="sm-mono" style={{ color: 'var(--green)' }}>
-                                Rs.{(linkViewMode === 'monthly' ? (monthlyUserData[user._id]?.earnings || 0) : (user.totalEarnings || 0)).toFixed(2)}
-                              </span>
-                            </td>
-                            <td><span className="sm-mono" style={{ color: 'var(--red)' }}>Rs.{(user.unpaidEarnings || 0).toFixed(2)}</span></td>
-                            <td>
+                            </div>
+
+                            <div className="sm-user-card-badges">
                               <span className={user.isActive ? 'sm-badge sm-badge-active' : 'sm-badge sm-badge-inactive'}>
                                 <span className="sm-dot" />{user.isActive ? 'Active' : 'Inactive'}
                               </span>
-                            </td>
-                            <td>
+
                               {user.createdBy === 'self' ? (
-                                <span className="sm-badge sm-badge-self">
-                                  <span className="sm-dot" /> Self-Created
-                                </span>
+                                <span className="sm-badge sm-badge-self"><span className="sm-dot" /> Self-Created</span>
                               ) : (!user.createdByAdminId || user.createdByAdminId === 'admin') ? (
-                                <span className="sm-badge sm-badge-admin">
-                                  <span className="sm-dot" /> Main Admin
-                                </span>
+                                <span className="sm-badge sm-badge-admin"><span className="sm-dot" /> Main Admin</span>
                               ) : (
                                 <span className="sm-badge sm-badge-subadmin" title={`Created by sub-admin: ${user.createdByAdminUsername}`}>
                                   <span className="sm-dot" /> {user.createdByAdminUsername || 'Sub-Admin'}
                                 </span>
                               )}
-                            </td>
-                            {/* 🆕 individual per-user quick toggle */}
-                            <td>
+
                               {user.requireFullCycle === true ? (
-                                <button
-                                  className="sm-badge sm-badge-active"
-                                  style={{ cursor: 'pointer', border: 'none' }}
-                                  onClick={() => applyClickVerification(false, [user._id])}
-                                  title="Click to turn OFF for this user"
-                                >
+                                <button className="sm-badge sm-badge-active" style={{ cursor: 'pointer', border: 'none' }}
+                                  onClick={() => applyClickVerification(false, [user._id])} title="Click to turn OFF for this user">
                                   <span className="sm-dot" /> ON (override)
                                 </button>
                               ) : user.requireFullCycle === false ? (
-                                <button
-                                  className="sm-badge sm-badge-inactive"
-                                  style={{ cursor: 'pointer', border: 'none' }}
-                                  onClick={() => applyClickVerification(null, [user._id])}
-                                  title="Click to reset to global default"
-                                >
+                                <button className="sm-badge sm-badge-inactive" style={{ cursor: 'pointer', border: 'none' }}
+                                  onClick={() => applyClickVerification(null, [user._id])} title="Click to reset to global default">
                                   <span className="sm-dot" /> OFF (override)
                                 </button>
                               ) : (
-                                <button
-                                  className="sm-badge"
-                                  style={{ cursor: 'pointer', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--t3)' }}
-                                  onClick={() => applyClickVerification(true, [user._id])}
-                                  title="Click to force ON for this user"
-                                >
+                                <button className="sm-badge" style={{ cursor: 'pointer', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--t3)' }}
+                                  onClick={() => applyClickVerification(true, [user._id])} title="Click to force ON for this user">
                                   <span className="sm-dot" /> Global Default
                                 </button>
                               )}
-                            </td>
-                            <td>
-                              <div className="sm-act-group">
-                                <button
-                                  className={`sm-act-btn${editingUserId === user._id ? ' sm-act-btn-on' : ''}`}
-                                  onClick={() => { if (editingUserId === user._id) setEditingUserId(null); else { setEditingUserId(user._id); setEditUserForm({ password: user.password, realName: user.realName, ratePerThousand: user.ratePerThousand, isActive: user.isActive }); } }}
-                                  title="Edit"
-                                ><i className="ti ti-edit" /></button>
-                                <span className="sm-act-sep" />
-                                <button className="sm-act-btn sm-act-btn-amber" onClick={() => { setPaymentModal(user); setPaymentAmount(''); setPaymentNote(''); }} title="Mark payment">
-                                  <i className="ti ti-currency-rupee" />
-                                </button>
-                                <button className="sm-act-btn sm-act-btn-teal" onClick={() => { setCreateLinkModal(user); setCreateLinkForm({ code: '', url: '', label: '' }); }} title="Create link">
-                                  <i className="ti ti-link" />
-                                </button>
-                                <button className="sm-act-btn" onClick={() => setProfileModal(user)} title="View profile">
-                                  <i className="ti ti-user" />
-                                </button>
-                                <button className="sm-act-btn" onClick={() => { setActiveTab('messages'); loadMessages(user); }} title="Messages">
-                                  <i className="ti ti-message-circle" />
-                                </button>
-                                <span className="sm-act-sep" />
-                                <button className="sm-act-btn sm-act-btn-danger" onClick={() => setDeleteUserConfirm(user)} title="Delete user">
-                                  <i className="ti ti-trash" />
+                            </div>
+
+                            <div className="sm-user-card-creds">
+                              <div className="sm-user-card-cred-item">
+                                <span className="sm-user-card-cred-label">Password</span>
+                                <span className="sm-user-card-cred-value" style={{ color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-border)' }}>
+                                  {user.password}
+                                </span>
+                              </div>
+                              <div className="sm-user-card-cred-item">
+                                <span className="sm-user-card-cred-label">Rate/1k</span>
+                                <span className="sm-user-card-cred-value" style={{ color: 'var(--teal)', background: 'var(--teal-dim)', border: '1px solid var(--teal-border)' }}>
+                                  Rs.{user.ratePerThousand}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Row 2: Stats + Actions combined */}
+                          <div className="sm-user-card-bottom">
+                            <div className="sm-user-card-stats">
+                              <div className="sm-user-card-stat">
+                                <span className="sm-user-card-stat-label">{linkViewMode === 'monthly' ? `${MONTH_NAMES[selectedMonth - 1]} Clicks` : 'Clicks'}</span>
+                                <span className="sm-user-card-stat-value" style={{ color: 'var(--t2)' }}>
+                                  {(linkViewMode === 'monthly' ? (monthlyUserData[user._id]?.clicks || 0) : (user.totalClicks || 0)).toLocaleString()}
+                                </span>
+                              </div>
+                              <div className="sm-user-card-stat">
+                                <span className="sm-user-card-stat-label">{linkViewMode === 'monthly' ? `${MONTH_NAMES[selectedMonth - 1]} Earned` : 'Earned'}</span>
+                                <span className="sm-user-card-stat-value" style={{ color: 'var(--green)' }}>
+                                  Rs.{(linkViewMode === 'monthly' ? (monthlyUserData[user._id]?.earnings || 0) : (user.totalEarnings || 0)).toFixed(2)}
+                                </span>
+                              </div>
+                              <div className="sm-user-card-stat">
+                                <span className="sm-user-card-stat-label">Pending</span>
+                                <span className="sm-user-card-stat-value" style={{ color: 'var(--red)' }}>Rs.{(user.unpaidEarnings || 0).toFixed(2)}</span>
+                              </div>
+                            </div>
+
+                            <div className="sm-user-card-actions">
+                              <button
+                                className={`sm-act-btn${editingUserId === user._id ? ' sm-act-btn-on' : ''}`}
+                                onClick={() => { if (editingUserId === user._id) setEditingUserId(null); else { setEditingUserId(user._id); setEditUserForm({ password: user.password, realName: user.realName, ratePerThousand: user.ratePerThousand, isActive: user.isActive }); } }}
+                                title="Edit"
+                              ><i className="ti ti-edit" /></button>
+                              <span className="sm-act-sep" />
+                              <button className="sm-act-btn sm-act-btn-amber" onClick={() => { setPaymentUserId(user._id); setPaymentAmount(''); setPaymentNote(''); }} title="Mark payment">
+                                <i className="ti ti-currency-rupee" />
+                              </button>
+                              <button className="sm-act-btn sm-act-btn-teal" onClick={() => { setLinkUserId(user._id); setLinkForm({ code: '', url: '', label: '' }); }} title="Create link">
+                                <i className="ti ti-link" />
+                              </button>
+                              {/* ❌ Removed profile button */}
+                              <button className="sm-act-btn" onClick={() => { setActiveTab('messages'); loadMessages(user); }} title="Messages">
+                                <i className="ti ti-message-circle" />
+                              </button>
+                              <span className="sm-act-sep" />
+                              <button className="sm-act-btn sm-act-btn-danger" onClick={() => setDeleteUserConfirm(user)} title="Delete user">
+                                <i className="ti ti-trash" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Inline Edit Panel */}
+                          {editingUserId === user._id && (
+                            <div className="sm-inline-panel">
+                              <div className="sm-inline-panel-header">
+                                <span className="sm-inline-panel-bar" />
+                                <span className="sm-inline-panel-title">Edit User</span>
+                                <span className="sm-inline-panel-sub">{user.realName}</span>
+                              </div>
+                              <div className="sm-form-grid">
+                                <div className="sm-field">
+                                  <span>Real Name</span>
+                                  <input className="sm-input" type="text" value={editUserForm.realName} onChange={e => setEditUserForm({ ...editUserForm, realName: e.target.value })} />
+                                </div>
+                                <div className="sm-field">
+                                  <span>New Password</span>
+                                  <input className="sm-input" type="text" placeholder="Leave blank to keep current" value={editUserForm.password} onChange={e => setEditUserForm({ ...editUserForm, password: e.target.value })} />
+                                </div>
+                                <div className="sm-field">
+                                  <span>Rate / 1,000 (Rs.)</span>
+                                  <input className="sm-input" type="number" min="1" value={editUserForm.ratePerThousand} onChange={e => setEditUserForm({ ...editUserForm, ratePerThousand: Number(e.target.value) })} />
+                                </div>
+                                <div className="sm-field">
+                                  <span>Status</span>
+                                  <select className="sm-select" value={editUserForm.isActive ? 'true' : 'false'} onChange={e => setEditUserForm({ ...editUserForm, isActive: e.target.value === 'true' })}>
+                                    <option value="true">Active</option>
+                                    <option value="false">Inactive</option>
+                                  </select>
+                                </div>
+                              </div>
+                              <div className="sm-form-actions">
+                                <button className="sm-btn sm-btn-ghost" onClick={() => setEditingUserId(null)}>Cancel</button>
+                                <button className="sm-btn sm-btn-success" onClick={() => handleUpdateUser(user._id)}>
+                                  <i className="ti ti-check" /> Save Changes
                                 </button>
                               </div>
-                            </td>
-                          </tr>
-                          {editingUserId === user._id && (
-                            <tr className="sm-edit-expand">
-                              <td colSpan={11}>
-                                <div className="sm-edit-inner">
-                                  <div className="sm-edit-header">
-                                    <span className="sm-edit-bar" />
-                                    <span className="sm-edit-title">Edit User</span>
-                                    <span className="sm-edit-sub">{user.realName}</span>
-                                  </div>
-                                  <div className="sm-form-grid">
-                                    <div className="sm-field">
-                                      <span>Real Name</span>
-                                      <input className="sm-input" type="text" value={editUserForm.realName} onChange={e => setEditUserForm({ ...editUserForm, realName: e.target.value })} />
-                                    </div>
-                                    <div className="sm-field">
-                                      <span>New Password</span>
-                                      <input className="sm-input" type="text" placeholder="Leave blank to keep current" value={editUserForm.password} onChange={e => setEditUserForm({ ...editUserForm, password: e.target.value })} />
-                                    </div>
-                                    <div className="sm-field">
-                                      <span>Rate / 1,000 (Rs.)</span>
-                                      <input className="sm-input" type="number" min="1" value={editUserForm.ratePerThousand} onChange={e => setEditUserForm({ ...editUserForm, ratePerThousand: Number(e.target.value) })} />
-                                    </div>
-                                    <div className="sm-field">
-                                      <span>Status</span>
-                                      <select className="sm-select" value={editUserForm.isActive ? 'true' : 'false'} onChange={e => setEditUserForm({ ...editUserForm, isActive: e.target.value === 'true' })}>
-                                        <option value="true">Active</option>
-                                        <option value="false">Inactive</option>
-                                      </select>
-                                    </div>
-                                  </div>
-                                  <div className="sm-form-actions">
-                                    <button className="sm-btn sm-btn-ghost" onClick={() => setEditingUserId(null)}>Cancel</button>
-                                    <button className="sm-btn sm-btn-success" onClick={() => handleUpdateUser(user._id)}>
-                                      <i className="ti ti-check" /> Save Changes
-                                    </button>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
+                            </div>
                           )}
-                        </React.Fragment>
-                      ))}
-                    </tbody>
-                  </table>
+
+                          {/* Inline Payment Panel */}
+                          {paymentUserId === user._id && (
+                            <div className="sm-inline-panel">
+                              <div className="sm-inline-panel-header">
+                                <span className="sm-inline-panel-bar" style={{ background: 'var(--amber)' }} />
+                                <span className="sm-inline-panel-title" style={{ color: 'var(--amber)' }}>Mark Payment</span>
+                                <span className="sm-inline-panel-sub">{user.realName}</span>
+                              </div>
+                              {user.profile && (user.profile.upiId || user.profile.upiPhone) && (
+                                <div className="sm-upi-box">
+                                  {user.profile.upiId && <div className="sm-upi-row"><i className="ti ti-credit-card" style={{ marginRight: 6 }} />UPI ID: {user.profile.upiId}</div>}
+                                  {user.profile.upiPhone && <div className="sm-upi-row"><i className="ti ti-phone" style={{ marginRight: 6 }} />Phone: {user.profile.upiPhone}</div>}
+                                </div>
+                              )}
+                              <div className="sm-form-grid">
+                                <div className="sm-field">
+                                  <span>Amount (Rs.)</span>
+                                  <input className="sm-input" type="number" step="0.01" placeholder="0.00" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} />
+                                </div>
+                                <div className="sm-field">
+                                  <span>Note (optional)</span>
+                                  <input className="sm-input" type="text" placeholder="Payment reference..." value={paymentNote} onChange={e => setPaymentNote(e.target.value)} />
+                                </div>
+                              </div>
+                              <p style={{ fontSize: 11, color: 'var(--t3)', marginTop: 6 }}>
+                                Unpaid: <strong style={{ color: 'var(--red)' }}>Rs.{user.unpaidEarnings.toFixed(2)}</strong>
+                              </p>
+                              <div className="sm-form-actions">
+                                <button className="sm-btn sm-btn-ghost" onClick={() => setPaymentUserId(null)}>Cancel</button>
+                                <button className="sm-btn sm-btn-success" onClick={handlePayment} disabled={!!payingId}>
+                                  <i className="ti ti-check" />{payingId ? 'Processing...' : 'Confirm Payment'}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Inline Link Creation Panel */}
+                          {linkUserId === user._id && (
+                            <div className="sm-inline-panel">
+                              <div className="sm-inline-panel-header">
+                                <span className="sm-inline-panel-bar" style={{ background: 'var(--teal)' }} />
+                                <span className="sm-inline-panel-title" style={{ color: 'var(--teal)' }}>Create Link for User</span>
+                                <span className="sm-inline-panel-sub">{user.realName}</span>
+                              </div>
+                              <div className="sm-form-grid">
+                                <div className="sm-field">
+                                  <span>Short Code</span>
+                                  <input className="sm-input" type="text" placeholder="e.g. myanime"
+                                    value={linkForm.code}
+                                    onChange={e => setLinkForm({ ...linkForm, code: e.target.value.toLowerCase().replace(/[^a-z0-9-_]/g, '') })} />
+                                  {linkForm.code && <span className="sm-preview-url">go.animebing.in/{linkForm.code}</span>}
+                                </div>
+                                <div className="sm-field">
+                                  <span>Destination URL</span>
+                                  <input className="sm-input" type="url" placeholder="https://..." value={linkForm.url} onChange={e => setLinkForm({ ...linkForm, url: e.target.value })} />
+                                </div>
+                                <div className="sm-field">
+                                  <span>Label (optional)</span>
+                                  <input className="sm-input" type="text" placeholder="Display name" value={linkForm.label} onChange={e => setLinkForm({ ...linkForm, label: e.target.value })} />
+                                </div>
+                              </div>
+                              <div className="sm-form-actions">
+                                <button className="sm-btn sm-btn-ghost" onClick={() => setLinkUserId(null)}>Cancel</button>
+                                <button className="sm-btn sm-btn-teal" onClick={handleCreateLinkForUser} disabled={creatingLink}>
+                                  <i className="ti ti-link" />{creatingLink ? 'Creating...' : 'Create & Assign'}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </React.Fragment>
+                    ))}
+                  </>
                 )}
               </div>
-              {filteredUsers.length > 0 && (
-                <div className="sm-table-footer">
-                  <span className="sm-footer-count">{filteredUsers.length} of {users.length} users &bull; {filteredUsers.filter(u => u.isActive).length} active</span>
-                </div>
-              )}
             </div>
           </>
         )}
 
-        {/* REQUESTS TAB – unchanged */}
+        {/* REQUESTS TAB – buttons now set inline states */}
         {activeTab === 'requests' && (
           <div className="sm-table-shell">
             {requestsLoading ? (
@@ -1753,13 +1956,13 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
                         <div className="sm-req-actions">
                           {req.type === 'payment' && (
                             <button className="sm-btn sm-btn-success"
-                              onClick={() => { const u = users.find(u => u._id === req.userId); if (u) { setPaymentModal(u); setPaymentAmount(String(req.amount || '')); } }}>
+                              onClick={() => { setPaymentUserId(req.userId); setPaymentAmount(String(req.amount || '')); setActiveTab('users'); }}>
                               <i className="ti ti-currency-rupee" /> Process
                             </button>
                           )}
                           {req.type === 'link' && (
                             <button className="sm-btn sm-btn-teal"
-                              onClick={() => { const u = users.find(u => u._id === req.userId); if (u) { setCreateLinkModal(u); setCreateLinkForm({ code: '', url: '', label: '' }); } }}>
+                              onClick={() => { setLinkUserId(req.userId); setLinkForm({ code: '', url: '', label: '' }); setActiveTab('users'); }}>
                               <i className="ti ti-link" /> Create Link
                             </button>
                           )}
@@ -1774,7 +1977,7 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
           </div>
         )}
 
-        {/* MESSAGES TAB – updated with AdminSenderBadge */}
+        {/* MESSAGES TAB – unchanged */}
         {activeTab === 'messages' && (
           <div className="sm-msg-layout">
             <div className="sm-msg-sidebar">
@@ -1920,7 +2123,7 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
           </div>
         )}
 
-        {/* MODALS (unchanged) */}
+        {/* Delete Link Modal */}
         {deleteConfirm && (
           <div className="sm-modal-backdrop" onClick={() => setDeleteConfirm(null)}>
             <div className="sm-modal" onClick={e => e.stopPropagation()}>
@@ -1951,6 +2154,7 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
           </div>
         )}
 
+        {/* Delete User Modal */}
         {deleteUserConfirm && (
           <div className="sm-modal-backdrop" onClick={() => setDeleteUserConfirm(null)}>
             <div className="sm-modal" onClick={e => e.stopPropagation()}>
@@ -1980,124 +2184,7 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
           </div>
         )}
 
-        {paymentModal && (
-          <div className="sm-modal-backdrop" onClick={() => setPaymentModal(null)}>
-            <div className="sm-modal" onClick={e => e.stopPropagation()}>
-              <div className="sm-modal-header">
-                <div>
-                  <div className="sm-modal-title">Mark Payment</div>
-                  <div className="sm-modal-sub">{paymentModal.realName} &bull; @{paymentModal.username}</div>
-                </div>
-                <button className="sm-modal-close" onClick={() => setPaymentModal(null)}><i className="ti ti-x" /></button>
-              </div>
-              {paymentModal.profile && (paymentModal.profile.upiId || paymentModal.profile.upiPhone) && (
-                <div className="sm-upi-box">
-                  {paymentModal.profile.upiId && <div className="sm-upi-row"><i className="ti ti-credit-card" style={{ marginRight: 6 }} />UPI ID: {paymentModal.profile.upiId}</div>}
-                  {paymentModal.profile.upiPhone && <div className="sm-upi-row"><i className="ti ti-phone" style={{ marginRight: 6 }} />Phone: {paymentModal.profile.upiPhone}</div>}
-                </div>
-              )}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div className="sm-field">
-                  <span>Amount (Rs.)</span>
-                  <input className="sm-input" type="number" step="0.01" placeholder="0.00" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} />
-                </div>
-                <div className="sm-field">
-                  <span>Note (optional)</span>
-                  <input className="sm-input" type="text" placeholder="Payment reference..." value={paymentNote} onChange={e => setPaymentNote(e.target.value)} />
-                </div>
-              </div>
-              <p style={{ fontSize: 11, color: 'var(--t3)', marginTop: 10 }}>
-                Unpaid: <strong style={{ color: 'var(--red)' }}>Rs.{paymentModal.unpaidEarnings.toFixed(2)}</strong>
-              </p>
-              <div className="sm-modal-footer">
-                <button className="sm-btn sm-btn-ghost" onClick={() => setPaymentModal(null)}>Cancel</button>
-                <button className="sm-btn sm-btn-success" onClick={handlePayment} disabled={!!payingId}>
-                  <i className="ti ti-check" />{payingId ? 'Processing...' : 'Confirm Payment'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {createLinkModal && (
-          <div className="sm-modal-backdrop" onClick={() => setCreateLinkModal(null)}>
-            <div className="sm-modal" style={{ maxWidth: 460 }} onClick={e => e.stopPropagation()}>
-              <div className="sm-modal-header">
-                <div>
-                  <div className="sm-modal-title">Create Link for User</div>
-                  <div className="sm-modal-sub">{createLinkModal.realName} &bull; @{createLinkModal.username}</div>
-                </div>
-                <button className="sm-modal-close" onClick={() => setCreateLinkModal(null)}><i className="ti ti-x" /></button>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div className="sm-field">
-                  <span>Short Code</span>
-                  <input className="sm-input" type="text" placeholder="e.g. myanime"
-                    value={createLinkForm.code}
-                    onChange={e => setCreateLinkForm({ ...createLinkForm, code: e.target.value.toLowerCase().replace(/[^a-z0-9-_]/g, '') })} />
-                  {createLinkForm.code && <span className="sm-preview-url">go.animebing.in/{createLinkForm.code}</span>}
-                </div>
-                <div className="sm-field">
-                  <span>Destination URL</span>
-                  <input className="sm-input" type="url" placeholder="https://..." value={createLinkForm.url} onChange={e => setCreateLinkForm({ ...createLinkForm, url: e.target.value })} />
-                </div>
-                <div className="sm-field">
-                  <span>Label (optional)</span>
-                  <input className="sm-input" type="text" placeholder="Display name" value={createLinkForm.label} onChange={e => setCreateLinkForm({ ...createLinkForm, label: e.target.value })} />
-                </div>
-              </div>
-              <div className="sm-modal-footer">
-                <button className="sm-btn sm-btn-ghost" onClick={() => setCreateLinkModal(null)}>Cancel</button>
-                <button className="sm-btn sm-btn-teal" onClick={handleCreateLinkForUser} disabled={creatingLink}>
-                  <i className="ti ti-link" />{creatingLink ? 'Creating...' : 'Create & Assign'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {profileModal && (
-          <div className="sm-modal-backdrop" onClick={() => setProfileModal(null)}>
-            <div className="sm-modal" onClick={e => e.stopPropagation()}>
-              <div className="sm-modal-header">
-                <div>
-                  <div className="sm-modal-title">Profile Details</div>
-                  <div className="sm-modal-sub">{profileModal.realName} &bull; @{profileModal.username}</div>
-                </div>
-                <button className="sm-modal-close" onClick={() => setProfileModal(null)}><i className="ti ti-x" /></button>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                {[
-                  { icon: 'ti-device-mobile', label: 'Mobile', value: profileModal.profile?.mobile },
-                  { icon: 'ti-mail', label: 'Gmail', value: profileModal.profile?.gmail },
-                  { icon: 'ti-credit-card', label: 'UPI ID', value: profileModal.profile?.upiId },
-                  { icon: 'ti-phone', label: 'UPI Phone', value: profileModal.profile?.upiPhone },
-                  { icon: 'ti-calendar', label: 'Age', value: profileModal.profile?.age?.toString() },
-                  { icon: 'ti-users', label: 'Gender', value: profileModal.profile?.gender },
-                ].map(({ icon, label, value }) => (
-                  <div key={label} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 28, height: 28, borderRadius: 7, background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <i className={`ti ${icon}`} style={{ fontSize: 13, color: 'var(--t3)' }} />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.4px', color: 'var(--t3)', marginBottom: 2 }}>{label}</div>
-                      {value ? <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--t1)' }}>{value}</div> : <div style={{ fontSize: 11, color: 'var(--t3)', fontStyle: 'italic' }}>Not provided</div>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {profileModal.gmailLinked && (
-                <div style={{ marginTop: 10, padding: '8px 12px', background: 'var(--blue-dim)', border: '1px solid var(--blue-border)', borderRadius: 7, fontSize: 11, color: 'var(--blue)', fontFamily: 'var(--mono)' }}>
-                  <i className="ti ti-brand-google" style={{ marginRight: 6 }} />Gmail linked: {profileModal.gmailLinked}
-                </div>
-              )}
-              <div className="sm-modal-footer">
-                <button className="sm-btn sm-btn-ghost" onClick={() => setProfileModal(null)}>Close</button>
-              </div>
-            </div>
-          </div>
-        )}
-
+        {/* No payment or link creation modals – they are now inline */}
       </div>
     </>
   );

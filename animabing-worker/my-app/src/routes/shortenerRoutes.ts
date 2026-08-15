@@ -11,6 +11,7 @@ import {
   createClickSession, advanceClickSession, completeClickSession,
   isFunnelBot
 } from '../services/clickVerificationService'
+import { isForceLink5ModeActive } from './specialModeRoutes' // ✅ NEW IMPORT
 
 const shortenerRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
@@ -477,7 +478,14 @@ shortenerRoutes.get('/:code', async (c) => {
     }
 
     // ============ REAL USER ============
-    // 🆕 ab per-user override check hota hai, link.userId ke through
+    // 🆕 Special mode (forceLink5Only) active hai — is din Link5 hi chalta hai (ad-free),
+    // isliye koi click count/credit nahi hona chahiye, seedha redirect kar do
+    const specialModeActive = await isForceLink5ModeActive(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    if (specialModeActive) {
+      return c.redirect(link.url, 302) // ✅ koi tracking nahi, bas redirect
+    }
+
+    // Normal din — settings ke hisaab se (jo aapne OFF kar diya hai, isliye turant credit)
     const settings = await getEffectiveClickSettings(link.userId || null, c.env.MONGODB_URI, c.env.MONGODB_DB)
 
     if (settings.requireFullCycle) {
