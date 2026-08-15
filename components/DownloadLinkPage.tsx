@@ -211,8 +211,9 @@ const DownloadLinkPage: React.FC = () => {
     }
   };
 
+  // ✅ UPDATED: Pass animeDetails?._id to completeFunnel
   const togglePlayer = (idx: number) => {
-    if (selectedIndex !== idx) completeFunnel();
+    if (selectedIndex !== idx) completeFunnel(animeDetails?._id);
     setSelectedIndex(selectedIndex === idx ? null : idx);
   };
 
@@ -609,7 +610,18 @@ const DownloadLinkPage: React.FC = () => {
         {activeTab === 'download' && downloadLinks.length > 0 && (
           <div className="space-y-3">
             {downloadLinks.map((link, idx) => (
-              <LinkCard key={idx} link={link} isMovie={isMovie} onAction={() => { completeFunnel(); window.open(link.url, '_blank'); }} actionIcon={<FaDownload />} actionLabel="Download" />
+              <LinkCard
+                key={idx}
+                link={link}
+                isMovie={isMovie}
+                onAction={() => {
+                  // ✅ UPDATED: Pass animeDetails?._id to completeFunnel
+                  completeFunnel(animeDetails?._id);
+                  window.open(link.url, '_blank');
+                }}
+                actionIcon={<FaDownload />}
+                actionLabel="Download"
+              />
             ))}
           </div>
         )}

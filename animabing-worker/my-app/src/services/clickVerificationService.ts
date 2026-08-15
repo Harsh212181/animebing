@@ -177,7 +177,7 @@ export async function advanceClickSession(
 
 // ============ STEP 3: final watch/download click = funnel complete ============
 export async function completeClickSession(
-  token: string, secret: string, mongoUri: string, dbName: string
+  token: string, animeId: string | undefined, secret: string, mongoUri: string, dbName: string
 ): Promise<{ success: boolean; error?: string; linkId?: ObjectId }> {
   const resolved = await resolveSession(token, secret, mongoUri, dbName)
   if (!resolved) return { success: false, error: 'Invalid or expired session' }
@@ -186,7 +186,11 @@ export async function completeClickSession(
   if (session.stage === 'completed') return { success: false, error: 'Session already used' }
   if (session.stage !== 'anime_viewed') return { success: false, error: 'Invalid funnel order' }
 
-  // 🆕 Minimum dwell-time check (bot/script protection)
+  // ✅ NEW — sirf usi anime ka completion accept karo jiske liye ye session bana tha
+  if (session.animeId && animeId && String(session.animeId) !== String(animeId)) {
+    return { success: false, error: 'Anime mismatch — not the shortlink-linked anime' }
+  }
+
   const settings = await getClickSettings(mongoUri, dbName)
   if (session.animeViewedAt) {
     const dwellMs = Date.now() - new Date(session.animeViewedAt).getTime()

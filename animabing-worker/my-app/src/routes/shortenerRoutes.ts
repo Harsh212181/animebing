@@ -534,10 +534,10 @@ shortenerRoutes.post('/click/complete', async (c) => {
     const ua = c.req.header('User-Agent') || ''
     if (isFunnelBot(ua)) return c.json({ success: false }, 200)
 
-    const { token } = await c.req.json()
+    const { token, animeId } = await c.req.json() // ✅ animeId nikala
     if (!token) return c.json({ error: 'token required' }, 400)
 
-    const result = await completeClickSession(token, c.env.JWT_SECRET, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const result = await completeClickSession(token, animeId, c.env.JWT_SECRET, c.env.MONGODB_URI, c.env.MONGODB_DB) // ✅ pass kiya
     if (!result.success) return c.json({ success: false, error: result.error }, 400)
 
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)

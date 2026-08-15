@@ -489,8 +489,17 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
     }
     setDownloadingItem(itemData._id);
     const randomLink = activeLinks[Math.floor(Math.random() * activeLinks.length)].url;
+
     if (randomLink) {
-      completeFunnel(); // ✅ Funnel: mark as completed
+      // ✅ Yahan funnel COMPLETE nahi karte — chahe link cuty.io/shrinkme/
+      // gplinks/linkjust ho ya seedha Link 5 — sab eventually usi
+      // animebing.in/download/:slug page par le jaate hain (short-link
+      // services bhi apne ad-gate ke baad wahin redirect karte hain).
+      // Naye tab ka sessionStorage automatically clone hota hai (window.open
+      // ke through), isliye token us tab me apne aap available rahega —
+      // URL me alag se jodne ki zaroorat nahi.
+      // Funnel sirf tab complete hoga jab user us page par (DownloadLinkPage)
+      // asal Watch/Download button dabayega — sab links ke liye same tareeka.
       window.open(randomLink, '_blank');
     } else {
       alert('⚠️ No valid download link found!');
@@ -806,7 +815,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                               {import.meta.env.DEV && episodeToPageMap.has(contentNumber) && (
                                 <>
                                   {episodeToPageMap.get(contentNumber)!.map((page, idx) => (
-                                    <Link key={page._id || idx} to={appendTokenToPath(`/download/${page.slug}`)} className="bg-purple-600 hover:bg-purple-700 text-white p-2 rounded-lg text-xs font-medium ml-1 flex items-center justify-center" title={page.title}>
+                                    <Link key={page._id || idx} to={appendTokenToPath(`/download/${page.slug}`, anime.id || anime._id)} className="bg-purple-600 hover:bg-purple-700 text-white p-2 rounded-lg text-xs font-medium ml-1 flex items-center justify-center" title={page.title}>
                                       <span className="text-xs">☠️</span>
                                       {page.buttonTitle && <span className="ml-1 hidden sm:inline">{page.buttonTitle}</span>}
                                     </Link>
