@@ -116,6 +116,15 @@ const DownloadLinkPage: React.FC = () => {
     captureTokenFromUrl();
   }, []);
 
+  // ✅ NEW: Auto-complete funnel after 5s once animeDetails is available
+  useEffect(() => {
+    if (!animeDetails?._id) return;
+    const timer = setTimeout(() => {
+      completeFunnel(animeDetails._id);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [animeDetails?._id]);
+
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
@@ -211,9 +220,8 @@ const DownloadLinkPage: React.FC = () => {
     }
   };
 
-  // ✅ UPDATED: Pass animeDetails?._id to completeFunnel
+  // ✅ UPDATED: removed completeFunnel call from togglePlayer
   const togglePlayer = (idx: number) => {
-    if (selectedIndex !== idx) completeFunnel(animeDetails?._id);
     setSelectedIndex(selectedIndex === idx ? null : idx);
   };
 
@@ -614,11 +622,7 @@ const DownloadLinkPage: React.FC = () => {
                 key={idx}
                 link={link}
                 isMovie={isMovie}
-                onAction={() => {
-                  // ✅ UPDATED: Pass animeDetails?._id to completeFunnel
-                  completeFunnel(animeDetails?._id);
-                  window.open(link.url, '_blank');
-                }}
+                onAction={() => window.open(link.url, '_blank')}
                 actionIcon={<FaDownload />}
                 actionLabel="Download"
               />
