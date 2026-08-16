@@ -7,6 +7,7 @@ import YouTubeEmbed from './YouTubeEmbed';
 import { isYouTubeUrl } from './utils/videoHelpers';
 import { DownloadPage, Anime } from '../src/types';
 import { captureTokenFromUrl, completeFunnel } from '../utils/clickFunnel';
+import { getContentGroup } from '../src/utils/contentGroup';
 
 const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
 
@@ -261,8 +262,11 @@ const DownloadLinkPage: React.FC = () => {
     );
   }
 
-  const isMovie = animeDetails?.contentType === 'Movie';
-  const isManga = animeDetails?.contentType === 'Manga';
+  // ✅ Updated: Use content group to determine type
+  const group = getContentGroup(animeDetails?.contentType);
+  const isMovie = group === 'single';
+  const isManga = group === 'chapter';
+
   const downloadLinks = page.links.filter(link => link.type !== 'watch');
   const watchLinks = page.links.filter(link => link.type === 'watch');
 

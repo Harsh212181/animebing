@@ -1,5 +1,6 @@
  // src/components/SEO.tsx - FINAL FIXED VERSION (with all updates)
 import { Helmet } from 'react-helmet-async';
+import { getContentGroup } from '../utils/contentGroup';
 
 interface SEOProps {
   // Core props
@@ -168,10 +169,13 @@ export default SEO;
 // ✅ Enhanced Structured Data Functions (same as before)
 export const generateAnimeStructuredData = (anime: any) => {
   const animeUrl = `https://animebing.in/detail/${anime.slug || anime.id}`;
+  const group = getContentGroup(anime.contentType);
+  const isMovie = group === 'single';
+  const isManga = group === 'chapter';
   
   return {
     "@context": "https://schema.org",
-    "@type": anime.contentType === 'Movie' ? "Movie" : "TVSeries",
+    "@type": isMovie ? "Movie" : isManga ? "Book" : "TVSeries",
     "name": anime.title,
     "description": anime.description || `Watch ${anime.title} online in high quality`,
     "image": anime.thumbnail || anime.poster,
@@ -203,11 +207,11 @@ export const generateAnimeStructuredData = (anime: any) => {
       "@type": "WatchAction",
       "target": animeUrl
     },
-    ...(anime.contentType !== 'Movie' && {
+    ...(!isMovie && !isManga && {
       "numberOfEpisodes": anime.episodeCount || 12,
       "numberOfSeasons": anime.seasonCount || 1
     }),
-    ...(anime.contentType === 'Movie' && {
+    ...(isMovie && {
       "duration": "PT2H30M",
       "countryOfOrigin": "JP"
     })

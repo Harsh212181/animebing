@@ -7,11 +7,11 @@ const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev';
 
 type SectionType = 'banner' | 'anime' | 'manga' | 'movie';
 
-const SECTIONS: { key: SectionType; label: string; contentType: string | null }[] = [
+const SECTIONS: { key: SectionType; label: string; contentType: string[] | null }[] = [
   { key: 'banner', label: 'Banner Slider', contentType: null },
-  { key: 'anime',  label: 'Latest Anime',  contentType: 'Anime' },
-  { key: 'manga',  label: 'Latest Manga',  contentType: 'Manga' },
-  { key: 'movie',  label: 'Latest Movie',  contentType: 'Movie' },
+  { key: 'anime',  label: 'Latest Anime',  contentType: ['Anime', 'Ai Anime', 'Web Series'] },
+  { key: 'manga',  label: 'Latest Manga',  contentType: ['Manga', 'Ai Manhwa'] },
+  { key: 'movie',  label: 'Latest Movie',  contentType: ['Movie', 'Hollywood Movie', 'Bollywood Movie'] },
 ];
 
 interface FeaturedAnimeManagerProps {}
@@ -450,7 +450,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
   const filteredAnimes = allAnimes.filter(anime => {
     if (!anime.title) return false;
     const sectionMeta = SECTIONS.find(s => s.key === activeSection);
-    if (sectionMeta?.contentType && anime.contentType !== sectionMeta.contentType) return false;
+    if (sectionMeta?.contentType && !sectionMeta.contentType.includes(anime.contentType)) return false;
     const animeId = getAnimeId(anime);
     const isFeatured = featuredAnimes.some(featured => getAnimeId(featured) === animeId);
     if (isFeatured) return false;
@@ -585,7 +585,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
             <p className="text-2xl font-bold text-white">
               {activeSection === 'banner'
                 ? allAnimes.length
-                : allAnimes.filter(a => a.contentType === SECTIONS.find(s => s.key === activeSection)?.contentType).length
+                : allAnimes.filter(a => (SECTIONS.find(s => s.key === activeSection)?.contentType || []).includes(a.contentType)).length
               }
             </p>
           </div>
@@ -846,7 +846,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
             <span className="text-white font-semibold">
               {activeSection === 'banner'
                 ? allAnimes.length
-                : allAnimes.filter(a => a.contentType === SECTIONS.find(s => s.key === activeSection)?.contentType).length
+                : allAnimes.filter(a => (SECTIONS.find(s => s.key === activeSection)?.contentType || []).includes(a.contentType)).length
               }
             </span>
           </div>

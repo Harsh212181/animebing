@@ -8,7 +8,8 @@ import FeaturedAnimeCarousel from '../src/components/FeaturedAnimeCarousel';
 import SEO from '../src/components/SEO';
 import PollCard from './PollCard';
 import { useAnimeContext } from '../src/context/AnimeContext';
-import AppDownloadPopup from './AppDownloadPopup'; // ← added
+import AppDownloadPopup from './AppDownloadPopup';
+import { matchesContentTypeFilter } from '../src/utils/contentGroup';
 
 interface Props {
   onAnimeSelect: (anime: Anime) => void;
@@ -73,33 +74,37 @@ const HomePage: React.FC<Props> = ({
     setSearchQuery
   } = useAnimeContext();
 
-  // ✅ useRef mein rakho — render ke beech stable rahe, re-render par reset na ho
   const isComingBackRef = useRef(!!sessionStorage.getItem('homeScrollPosition'));
 
   const [currentBorderColorIndex, setCurrentBorderColorIndex] = useState(0);
   const [isPollActive, setIsPollActive] = useState(false);
   const [pollChecked, setPollChecked] = useState(false);
 
-  // ✅ STEP 7 (a) – Special mode state
   const [specialMode, setSpecialMode] = useState<{
     active: boolean;
     name?: string;
     bannerText?: string;
   }>({ active: false });
 
-  // ✅ URL search params se filter aur contentType sync karo
-  const [searchParams] = useSearchParams();
+  // URL is the single source of truth for filter / contentType.
+  // Header.tsx (and this page's own mobile buttons) only ever change the URL —
+  // never call setFilter/setContentType directly — so this effect is the ONLY
+  // place that writes those values into context state.
+  const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
     const urlFilter = searchParams.get('filter') as FilterType | null;
     const urlContentType = searchParams.get('contentType') as ContentTypeFilter | null;
 
-    setFilter(urlFilter ?? 'All');
-    if (urlContentType) setContentType(urlContentType);
-    else setContentType('All');
-  }, [searchParams, setFilter, setContentType]);
+    const newFilter = urlFilter ?? 'All';
+    const newContentType = urlContentType ?? 'All';
 
-  // ✅ SCROLL RESTORATION — double rAF use karo, setTimeout nahi
+    if (filter !== newFilter) setFilter(newFilter);
+    if (contentType !== newContentType) setContentType(newContentType);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  // SCROLL RESTORATION
   useEffect(() => {
     if (animeList.length === 0) return;
 
@@ -108,14 +113,11 @@ const HomePage: React.FC<Props> = ({
 
     const position = parseInt(savedPosition, 10);
 
-    // ✅ Pehle sessionStorage clear karo
     sessionStorage.removeItem('homeScrollPosition');
     isComingBackRef.current = false;
 
-    // ✅ Animations skip karo — back aane par cards animate na hon
     document.body.classList.add('skip-card-animations');
 
-    // ✅ Double requestAnimationFrame — guaranteed DOM paint ke baad scroll
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         window.scrollTo({ top: position, behavior: 'instant' });
@@ -130,15 +132,15 @@ const HomePage: React.FC<Props> = ({
     setSearchQuery(searchQuery);
   }, [searchQuery, setSearchQuery]);
 
-  // Border color animation (reduced to 60s interval)
+  // Border color animation
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentBorderColorIndex(prev => (prev + 1) % BORDER_COLORS.length);
-    }, 60000); // was 20000
+    }, 60000);
     return () => clearInterval(interval);
   }, []);
 
-  // ✅ STEP 7 (b) – Fetch special mode on mount
+  // Fetch special mode
   useEffect(() => {
     const fetchSpecialMode = async () => {
       try {
@@ -254,22 +256,25 @@ const HomePage: React.FC<Props> = ({
     { key: 'English Sub' as FilterType, label: 'English Sub' }
   ];
 
-  const handleFilterChange = (f: FilterType) => setFilter(f);
+  // Mobile filter buttons: also go through the URL, same as Header,
+  // so there is exactly one place (the effect above) that ever sets state.
+  const handleFilterChange = (f: FilterType) => {
+    const params = new URLSearchParams(searchParams);
+    if (f === 'All') {
+      params.delete('filter');
+    } else {
+      params.set('filter', f);
+    }
+    setSearchParams(params);
+  };
 
   // Filtered list with case-insensitive contentType check
   const filteredAnime = useMemo(() => {
     if (!animeList.length) return [];
     let list = [...animeList];
 
-    // ✅ DEBUG — hata dena baad mein
-    console.log('contentType:', contentType);
-    console.log('Sample anime contentType values:', animeList.slice(0, 5).map(a => a.contentType));
-
-    // ✅ Case-insensitive comparison to handle "Movie" vs "movie" etc.
     if (contentType !== 'All') {
-      list = list.filter(a =>
-        a.contentType?.toLowerCase() === contentType.toLowerCase()
-      );
+      list = list.filter(a => matchesContentTypeFilter(a.contentType, contentType));
     }
 
     if (filter !== 'All') list = list.filter(a => a.subDubStatus === filter);
@@ -277,6 +282,17 @@ const HomePage: React.FC<Props> = ({
     list.forEach(a => uniqueMap.set(getAnimeId(a), a));
     return Array.from(uniqueMap.values());
   }, [animeList, filter, contentType]);
+
+  // ✅ Mobile browsers (especially with a transformed fixed header) sometimes skip
+  // repainting this section after a filter change until a scroll event fires.
+  // This forces a repaint immediately after the filtered list updates.
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      window.scrollBy(0, 1);
+      window.scrollBy(0, -1);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [filter, contentType, filteredAnime.length]);
 
   // Infinite scroll
   useEffect(() => {
@@ -291,7 +307,6 @@ const HomePage: React.FC<Props> = ({
     return () => window.removeEventListener('scroll', handleScroll);
   }, [isLoadingMore, hasMore, isSearching, loadMoreAnime]);
 
-  // ✅ Fresh open — skeleton dikho (cache empty, back nahi aa raha)
   if (isLoading && animeList.length === 0 && !isComingBackRef.current) {
     return (
       <>
@@ -305,7 +320,6 @@ const HomePage: React.FC<Props> = ({
     );
   }
 
-  // ✅ Back aane par — cache se data aa raha hai, plain background dikho
   if (isLoading && animeList.length === 0 && isComingBackRef.current) {
     return (
       <>
@@ -337,7 +351,7 @@ const HomePage: React.FC<Props> = ({
   return (
     <>
       <SEO {...seoData} />
-      <AppDownloadPopup />  {/* ← added */}
+      <AppDownloadPopup />
       <div className="min-h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-purple-900">
         <style>{`
           body.skip-card-animations .card-load-animate {
@@ -361,7 +375,6 @@ const HomePage: React.FC<Props> = ({
 
         <div className="homepage-content-container mx-auto px-2 sm:px-3 py-2 lg:py-4">
 
-          {/* ✅ STEP 7 (c) – Special Mode Banner (replaces hardcoded Sunday Special) */}
           {!searchQuery && !isSearching && specialMode.active && (
             <div className="mb-6 transform hover:scale-[1.02] transition-transform duration-300">
               <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-purple-600 via-pink-500 to-orange-500 p-1 shadow-2xl">
@@ -383,7 +396,6 @@ const HomePage: React.FC<Props> = ({
             </div>
           )}
 
-          {/* Featured Carousel */}
           {!searchQuery && !isSearching && featuredAnimes.length > 0 && (
             <div className="mb-6">
               <h2 className="text-2xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mb-4 text-left">
@@ -393,7 +405,6 @@ const HomePage: React.FC<Props> = ({
             </div>
           )}
 
-          {/* Poll */}
           {!searchQuery && !isSearching && isPollActive && pollChecked && (
             <div className="mb-6">
               <h2 className="text-2xl font-bold mb-4 text-left">
@@ -405,7 +416,6 @@ const HomePage: React.FC<Props> = ({
             </div>
           )}
 
-          {/* Mobile filter buttons */}
           {!isSearching && (
             <div className="mb-2 lg:hidden">
               <div className="flex flex-nowrap gap-1 overflow-x-auto pb-1.5 scrollbar-hide px-1">
@@ -429,7 +439,6 @@ const HomePage: React.FC<Props> = ({
             </div>
           )}
 
-          {/* Anime Grid */}
           {filteredAnime.length === 0 ? (
             <div className="text-center py-16">
               <div className="bg-purple-800/60 backdrop-blur rounded-2xl p-8 max-w-md mx-auto border border-purple-700">
@@ -448,7 +457,7 @@ const HomePage: React.FC<Props> = ({
               </div>
             </div>
           ) : (
-            <>
+            <React.Fragment key={`${filter}-${contentType}-${searchQuery}`}>
               <h2 className="text-2xl lg:text-3xl font-bold mb-4 text-left">
                 <span className="bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent">
                   {getHeading()}
@@ -458,7 +467,6 @@ const HomePage: React.FC<Props> = ({
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-6 gap-2">
                 {filteredAnime.map((anime, i) => (
                   <div key={`${getAnimeId(anime)}-${i}`} className="group relative">
-                    {/* Static border gradient – no pulse animation */}
                     <div
                       className={`absolute -inset-[1px] rounded-xl border-transition`}
                       style={{
@@ -477,7 +485,6 @@ const HomePage: React.FC<Props> = ({
                 ))}
               </div>
 
-              {/* Load More Button */}
               {hasMore && !isSearching && !searchQuery && (
                 <div className="text-center mt-8">
                   <button
@@ -495,7 +502,6 @@ const HomePage: React.FC<Props> = ({
                 </div>
               )}
 
-              {/* Loading More Skeletons */}
               {isLoadingMore && (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-6 gap-2 mt-4">
                   {Array.from({ length: 12 }).map((_, i) => (
@@ -509,7 +515,7 @@ const HomePage: React.FC<Props> = ({
                   ))}
                 </div>
               )}
-            </>
+            </React.Fragment>
           )}
         </div>
       </div>

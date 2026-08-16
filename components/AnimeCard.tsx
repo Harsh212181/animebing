@@ -1,7 +1,7 @@
-// components/AnimeCard.tsx
-import React from 'react';
+ import React from 'react';
 import type { Anime } from '../src/types';
 import { PlayIcon } from './icons/PlayIcon';
+import { getContentGroup } from '../src/utils/contentGroup'; // ✅ new import
 
 interface AnimeCardProps {
   anime: Anime;
@@ -72,6 +72,9 @@ const AnimeCard: React.FC<AnimeCardProps> = ({
 
   const showNewBadge = isRecentlyAdded(anime);
 
+  // ✅ determine content group for episode/chapter label
+  const group = getContentGroup(anime.contentType);
+
   const handleClick = () => {
     onClick(anime);
   };
@@ -123,11 +126,11 @@ const AnimeCard: React.FC<AnimeCardProps> = ({
           </div>
         )}
 
-        {/* Episode badge — Movie ke liye hide, Manga ke liye "Ch", Anime ke liye "Ep" */}
-        {anime.contentType !== 'Movie' && (anime.currentEpisode ?? 0) > 0 && (
+        {/* Episode badge — hides for "single" (Movie), shows "Ch" for Manga (chapter), "Ep" for Anime */}
+        {group !== 'single' && (anime.currentEpisode ?? 0) > 0 && (
           <div className="absolute top-0.5 right-1 z-10">
             <span className="bg-gradient-to-r from-red-600 to-orange-600 text-white text-[11px] font-medium px-2 py-0.5 rounded-md shadow-md">
-              {anime.contentType === 'Manga' ? 'Ch' : 'Ep'} {anime.currentEpisode}
+              {group === 'chapter' ? 'Ch' : 'Ep'} {anime.currentEpisode}
             </span>
           </div>
         )}

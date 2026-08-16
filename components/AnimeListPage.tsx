@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import type { Anime, FilterType } from '../src/types';
 import { getAllAnime } from '../services/animeService';
+import { matchesContentTypeFilter } from '../src/utils/contentGroup';
 import Spinner from './Spinner';
 import SEO from '../src/components/SEO';
 
@@ -50,13 +51,8 @@ const AnimeListPage: React.FC<AnimeListPageProps> = ({ onAnimeSelect }) => {
     }
 
     if (contentTypeFilter !== 'All') {
-      if (contentTypeFilter === 'Manhwa') {
-        result = result.filter(anime =>
-          anime.contentType === 'Manga'   // matches your existing logic
-        );
-      } else {
-        result = result.filter(anime => anime.contentType === contentTypeFilter);
-      }
+      const key = contentTypeFilter === 'Manhwa' ? 'Manga' : contentTypeFilter;
+      result = result.filter(anime => matchesContentTypeFilter(anime.contentType, key));
     }
 
     return result.sort((a, b) => a.title.localeCompare(b.title));
@@ -94,7 +90,7 @@ const AnimeListPage: React.FC<AnimeListPageProps> = ({ onAnimeSelect }) => {
   };
 
   const subDubOptions: FilterType[] = ['All', 'Hindi Dub', 'Hindi Sub', 'English Sub'];
-  const contentTypeOptions = ['All', 'Anime', 'Movie', 'Manhwa'];
+  const contentTypeOptions = ['All', 'Anime', 'Movie', 'Manhwa', 'Web Series'];
 
   const getSEOData = () => {
     let title = 'Anime List | AnimeBing';

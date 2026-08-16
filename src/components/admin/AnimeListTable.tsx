@@ -1,12 +1,98 @@
- // src/components/admin/AnimeListTable.tsx – FULL CODE WITH MAIN ADMIN SUB-ADMIN FILTER
-import React, { useState, useEffect, useMemo } from 'react';
+ // src/components/admin/AnimeListTable.tsx – FULL CODE WITH MAIN ADMIN SUB-ADMIN FILTER + CUSTOM DROPDOWNS
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { Anime } from '../../types';
 import axios from 'axios';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 import { clearAnimeCache } from '../../../services/animeService';
 import { getAdminToken } from '../../../utils/authToken';
+import { getContentGroup, CONTENT_TYPE_OPTIONS } from '../../utils/contentGroup';
 
 const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
+
+// ============ CUSTOM STYLED DROPDOWN ============
+interface SelectOption {
+  value: string;
+  label: string;
+  hint?: string;
+  color?: string;
+}
+
+const CustomSelect: React.FC<{
+  value: string;
+  onChange: (value: string) => void;
+  options: SelectOption[];
+  icon?: React.ReactNode;
+  label: string;
+  required?: boolean;
+}> = ({ value, onChange, options, icon, label, required }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const selected = options.find(o => o.value === value);
+
+  return (
+    <div ref={ref} className="relative">
+      <label className="block text-xs font-medium text-slate-300 mb-1 flexl items-center gap-1.5">
+        {icon}
+        {label} {required && <span className="text-red-400">*</span>}
+      </label>
+      <button
+        type="button"
+        onClick={() => setIsOpen(v => !v)}
+        className={`w-full bg-gray-800/60 border text-white rounded-lg px-3 py-2 text-sm text-left transition-all flex items-center justify-between gap-2 ${
+          isOpen ? 'border-purple-500/60 ring-1 ring-purple-500/30' : 'border-gray-700 hover:border-gray-600'
+        }`}
+      >
+        <span className="flex items-center gap-2 truncate">
+          {selected?.color && <span className={`w-2 h-2 rounded-full bg-gradient-to-r ${selected.color} flex-shrink-0`} />}
+          <span className="truncate">{selected?.label || 'Select...'}</span>
+        </span>
+        <svg className={`w-4 h-4 text-slate-400 flex-shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-30 mt-2 w-full bg-gray-800 border border-gray-700 rounded-lg shadow-2xl shadow-black/50 py-1.5 max-h-72 overflow-y-auto animate-fadeIn">
+          {options.map(opt => {
+            const isSelected = opt.value === value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => { onChange(opt.value); setIsOpen(false); }}
+                className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2 transition-colors ${
+                  isSelected ? 'bg-purple-600/20 text-purple-200' : 'text-slate-300 hover:bg-gray-700'
+                }`}
+              >
+                <span className="flex items-center gap-2 min-w-0">
+                  {opt.color && <span className={`w-2 h-2 rounded-full bg-gradient-to-r ${opt.color} flex-shrink-0`} />}
+                  <span className="flex flex-col min-w-0">
+                    <span className="truncate font-medium">{opt.label}</span>
+                    {opt.hint && <span className="text-[11px] text-slate-500 truncate">{opt.hint}</span>}
+                  </span>
+                </span>
+                {isSelected && (
+                  <svg className="w-4 h-4 text-purple-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface AnimeListTableProps {
   animeList?: Anime[];
@@ -33,7 +119,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
 
   const [downloadPageCounts, setDownloadPageCounts] = useState<Record<string, number>>({});
 
-  const [contentTypeFilter, setContentTypeFilter] = useState<'all' | 'Anime' | 'Movie' | 'Manga'>('all');
+  const [contentTypeFilter, setContentTypeFilter] = useState<'all' | typeof CONTENT_TYPE_OPTIONS[number] | 'Movie'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'Ongoing' | 'Complete'>('all');
   const [subDubFilter, setSubDubFilter] = useState<'all' | 'Hindi Sub' | 'Hindi Dub' | 'English Sub'>('all');
   const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'visible' | 'hidden'>('all');
@@ -50,7 +136,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
     subDubStatus: 'Hindi Sub' as Anime['subDubStatus'],
     genreList: [''],
     status: 'Ongoing',
-    contentType: 'Anime' as 'Anime' | 'Movie' | 'Manga',
+    contentType: 'Anime' as typeof CONTENT_TYPE_OPTIONS[number] | 'Movie',
     seoTitle: '',
     seoDescription: '',
     seoKeywords: '',
@@ -284,12 +370,13 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
     return title.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').trim();
   };
 
-  const handleSubDubStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newStatus = e.target.value as Anime['subDubStatus'];
-    setEditForm({ ...editForm, subDubStatus: newStatus });
-    if (editForm.title.trim()) {
-      setEditForm(prev => ({ ...prev, seoTitle: `Watch ${prev.title} Online in ${newStatus} | AnimeBing` }));
-    }
+  // ✅ Updated to accept string directly (for CustomSelect)
+  const handleSubDubStatusChange = (newStatus: string) => {
+    setEditForm(prev => ({
+      ...prev,
+      subDubStatus: newStatus as Anime['subDubStatus'],
+      seoTitle: prev.title.trim() ? `Watch ${prev.title} Online in ${newStatus} | AnimeBing` : prev.seoTitle,
+    }));
   };
 
   const generateFullSEO = (): string => {
@@ -307,8 +394,9 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
     if (statuses.includes('hindi dub')) keywords.push('hindi dubbed anime', 'anime in hindi', 'hindi dub');
     if (statuses.includes('hindi sub')) keywords.push('hindi subbed anime', 'hindi sub');
     if (statuses.includes('english sub')) keywords.push('english subbed anime', 'english sub');
-    if (editForm.contentType === 'Movie') keywords.push(`${editForm.title} movie`, 'anime movies');
-    else if (editForm.contentType === 'Manga') keywords.push(`${editForm.title} manga`, 'read manga online');
+    const group = getContentGroup(editForm.contentType);
+    if (group === 'single') keywords.push(`${editForm.title} movie`, `${editForm.title} full movie`);
+    else if (group === 'chapter') keywords.push(`${editForm.title} manga`, 'read manga online');
     else keywords.push(`${editForm.title} episodes`, `${editForm.title} all episodes`);
     keywords.push('animebing', 'animebing.in', 'free anime downloads');
     return [...new Set(keywords)].join(', ');
@@ -330,7 +418,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
   const getSEOStatus = (anime: AnimeWithId) => {
     if (!anime.seoTitle && !anime.seoDescription && !anime.slug) return { text: 'No SEO', color: 'text-red-400', bgColor: 'bg-red-600/20' };
     if (!anime.slug) return { text: 'No Slug', color: 'text-orange-400', bgColor: 'bg-orange-600/20' };
-    if (anime.seoTitle && anime.seoDescription && anime.slug) return { text: 'SEO ✓', color: 'text-green-400', bgColor: 'bg-green-600/20' };
+    if (anime.seoTitle && anime.seoDescription && anime.slug) return { text: '✓', color: 'text-green-400', bgColor: 'bg-green-600/20' };
     return { text: 'Partial', color: 'text-yellow-400', bgColor: 'bg-yellow-600/20' };
   };
 
@@ -348,40 +436,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
   return (
     <div className="py-4 px-0 space-y-6 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 min-h-screen">
       
-      {/* ✅ Toaster with fixed position */}
-      <Toaster
-        position="top-center"
-        toastOptions={{
-          duration: 4000,
-          style: {
-            background: '#1e293b',
-            color: '#fff',
-            border: '1px solid #334155',
-            borderRadius: '12px',
-            padding: '12px 16px',
-            fontSize: '14px',
-            maxWidth: '400px',
-          },
-          success: {
-            style: {
-              background: '#065f46',
-              border: '1px solid #10b981',
-            },
-          },
-          error: {
-            style: {
-              background: '#7f1d1d',
-              border: '1px solid #ef4444',
-            },
-          },
-          loading: {
-            style: {
-              background: '#1e293b',
-              border: '1px solid #f59e0b',
-            },
-          },
-        }}
-      />
+      {/* ✅ Toaster REMOVED from here – render once at app root */}
 
       {/* Header */}
       <div className="flex items-center gap-3 px-3">
@@ -438,8 +493,8 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
         <div className="flex flex-wrap items-center gap-3 px-3">
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium text-white/60">Type:</span>
-            <div className="flex gap-1">
-              {(['all', 'Anime', 'Movie', 'Manga'] as const).map(t => (
+            <div className="flex gap-1 flex-wrap">
+              {(['all', 'Movie', ...CONTENT_TYPE_OPTIONS] as const).map(t => (
                 <button key={t} onClick={() => setContentTypeFilter(t)}
                   className={`px-2 py-1 rounded-full text-xs font-medium transition-all ${contentTypeFilter === t ? 'bg-purple-600 text-white' : 'bg-white/10 text-white/70 hover:bg-white/20'}`}>
                   {t === 'all' ? 'All' : t}
@@ -499,7 +554,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
                   subAdminFilter ? 'bg-purple-600 text-white' : 'bg-white/10 text-white/70 hover:bg-white/20'
                 }`}
               >
-                {subAdminFilter ? ' On' : 'Off'}
+                {subAdminFilter ? 'SubAdmin' : 'Admin'}
               </button>
             </div>
           )}
@@ -722,42 +777,50 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
                                     <input type="text" value={editForm.title} onChange={handleTitleChange}
                                       className="w-full bg-gray-800/60 border border-gray-700 rounded-lg text-white px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500" required />
                                   </div>
-                                  <div>
-                                    <label className="block text-xs font-medium text-slate-300 mb-1">Content Type</label>
-                                    <select value={editForm.contentType} onChange={e => setEditForm({ ...editForm, contentType: e.target.value as 'Anime' | 'Movie' | 'Manga' })}
-                                      className="w-full bg-gray-800/60 border border-gray-700 rounded-lg text-white px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500">
-                                      <option value="Anime">Anime</option>
-                                      <option value="Movie">Movie</option>
-                                      <option value="Manga">Manga</option>
-                                    </select>
-                                  </div>
+                                  <CustomSelect
+                                    label="Content Type"
+                                    value={editForm.contentType}
+                                    onChange={(v) => setEditForm({ ...editForm, contentType: v as any })}
+                                    options={[
+                                      { value: 'Anime', label: 'Anime', color: 'from-blue-500 to-cyan-500' },
+                                      { value: 'Ai Anime', label: 'Ai Anime', color: 'from-violet-500 to-fuchsia-500' },
+                                      { value: 'Manga', label: 'Manga', color: 'from-emerald-500 to-teal-500' },
+                                      { value: 'Ai Manhwa', label: 'Ai Manhwa', color: 'from-fuchsia-500 to-purple-500' },
+                                      { value: 'Movie', label: 'Movie (Legacy)', color: 'from-purple-500 to-pink-500' },
+                                      { value: 'Hollywood Movie', label: 'Hollywood Movie', color: 'from-amber-500 to-orange-500' },
+                                      { value: 'Bollywood Movie', label: 'Bollywood Movie', color: 'from-red-500 to-rose-500' },
+                                      { value: 'Web Series', label: 'Web Series', color: 'from-indigo-500 to-blue-500' },
+                                    ]}
+                                  />
                                   <div>
                                     <label className="block text-xs font-medium text-slate-300 mb-1">Release Year</label>
                                     <input type="number" value={editForm.releaseYear} onChange={e => setEditForm({ ...editForm, releaseYear: Number(e.target.value) })}
                                       className="w-full bg-gray-800/60 border border-gray-700 rounded-lg text-white px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500" min="1900" max="2030" />
                                   </div>
-                                  <div>
-                                    <label className="block text-xs font-medium text-slate-300 mb-1">Sub/Dub</label>
-                                    <select value={editForm.subDubStatus} onChange={handleSubDubStatusChange}
-                                      className="w-full bg-gray-800/60 border border-gray-700 rounded-lg text-white px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500">
-                                      <option value="Hindi Dub">Hindi Dub</option>
-                                      <option value="Hindi Sub">Hindi Sub</option>
-                                      <option value="English Sub">English Sub</option>
-                                      <option value="Both">Both</option>
-                                      <option value="Subbed">Subbed</option>
-                                      <option value="Dubbed">Dubbed</option>
-                                      <option value="Sub & Dub">Sub & Dub</option>
-                                      <option value="Dual Audio">Dual Audio</option>
-                                    </select>
-                                  </div>
-                                  <div>
-                                    <label className="block text-xs font-medium text-slate-300 mb-1">Status</label>
-                                    <select value={editForm.status} onChange={e => setEditForm({ ...editForm, status: e.target.value })}
-                                      className="w-full bg-gray-800/60 border border-gray-700 rounded-lg text-white px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500">
-                                      <option value="Ongoing">Ongoing</option>
-                                      <option value="Complete">Complete</option>
-                                    </select>
-                                  </div>
+                                  <CustomSelect
+                                    label="Sub/Dub"
+                                    value={editForm.subDubStatus}
+                                    onChange={(v) => handleSubDubStatusChange(v)}
+                                    options={[
+                                      { value: 'Hindi Dub', label: 'Hindi Dub', color: 'from-red-500 to-orange-500' },
+                                      { value: 'Hindi Sub', label: 'Hindi Sub', color: 'from-orange-500 to-amber-500' },
+                                      { value: 'English Sub', label: 'English Sub', color: 'from-blue-500 to-cyan-500' },
+                                      { value: 'Both', label: 'Both', color: 'from-purple-500 to-pink-500' },
+                                      { value: 'Subbed', label: 'Subbed', color: 'from-green-500 to-emerald-500' },
+                                      { value: 'Dubbed', label: 'Dubbed', color: 'from-yellow-500 to-orange-500' },
+                                      { value: 'Sub & Dub', label: 'Sub & Dub', color: 'from-violet-500 to-purple-500' },
+                                      { value: 'Dual Audio', label: 'Dual Audio', color: 'from-indigo-500 to-blue-500' },
+                                    ]}
+                                  />
+                                  <CustomSelect
+                                    label="Status"
+                                    value={editForm.status}
+                                    onChange={(v) => setEditForm({ ...editForm, status: v })}
+                                    options={[
+                                      { value: 'Ongoing', label: 'Ongoing', color: 'from-yellow-500 to-orange-500' },
+                                      { value: 'Complete', label: 'Complete', color: 'from-green-500 to-emerald-500' },
+                                    ]}
+                                  />
                                   <div>
                                     <label className="block text-xs font-medium text-slate-300 mb-1">Thumbnail URL</label>
                                     <input type="url" value={editForm.thumbnail} onChange={e => setEditForm({ ...editForm, thumbnail: e.target.value })}
@@ -845,6 +908,15 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
           Showing {filteredAnimes.length} of {animes.length} anime
         </div>
       )}
+
+      {/* ✅ Required CSS for CustomSelect animation */}
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(-4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fadeIn { animation: fadeIn 0.15s ease-out; }
+      `}</style>
     </div>
   );
 };

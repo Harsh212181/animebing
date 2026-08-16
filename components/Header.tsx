@@ -1,19 +1,16 @@
- // components/Header.tsx - HOME RESET + SAFE CONTEXT + MUTUAL FILTER RESET
+ // components/Header.tsx - HOME RESET + SAFE CONTEXT + MUTUAL FILTER RESET (FIXED: no full reload, URL is single source of truth)
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import type { FilterType, ContentType } from '../src/types';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import type { FilterType, ContentTypeFilter } from '../src/types';
 import { SearchIcon } from './icons/SearchIcon';
 import { MenuIcon } from './icons/MenuIcon';
 import { CloseIcon } from './icons/CloseIcon';
 import axios from 'axios';
-import { useAnimeContext } from '../src/context/AnimeContext';
 
 interface HeaderProps {
   onSearchChange: (query: string) => void;
   searchQuery: string;
   onNavigate: (destination: 'home' | 'list' | 'top100') => void;
-  onFilterAndNavigateHome?: (filter: 'Hindi Dub' | 'Hindi Sub' | 'English Sub') => void;
-  onContentTypeNavigate?: (contentType: ContentType) => void;
 }
 
 interface SocialMedia {
@@ -48,26 +45,17 @@ const FALLBACK_SOCIAL_LINKS: SocialMedia[] = [
   }
 ];
 
-const Header: React.FC<HeaderProps> = ({ 
-  onSearchChange, 
-  searchQuery, 
+const Header: React.FC<HeaderProps> = ({
+  onSearchChange,
+  searchQuery,
   onNavigate,
-  onFilterAndNavigateHome,
-  onContentTypeNavigate
 }) => {
-  // Safe access to AnimeContext (may be undefined if rendered outside provider)
-  const animeContext = (() => {
-    try {
-      return useAnimeContext();
-    } catch (e) {
-      return null;
-    }
-  })();
-  
-  const setFilter = animeContext?.setFilter;
-  const setContentType = animeContext?.setContentType;
-  
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  // ✅ current filter/contentType from URL
+  const activeFilter = (searchParams.get('filter') as FilterType) || 'All';
+  const activeContentType = (searchParams.get('contentType') as ContentTypeFilter) || 'All';
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
@@ -75,13 +63,19 @@ const Header: React.FC<HeaderProps> = ({
   const [isScrolled, setIsScrolled] = useState(false);
   const [localSearchQuery, setLocalSearchQuery] = useState('');
   const [socialLinks, setSocialLinks] = useState<SocialMedia[]>(FALLBACK_SOCIAL_LINKS);
-  
+
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
-  
+
+  // ✅ Categories dropdown state
+  const [isCategoryOpen, setIsCategoryOpen] = useState(false);
+
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const lastScrollY = useRef(0);
+
+  // ✅ Categories dropdown ref for click outside
+  const categoryRef = useRef<HTMLDivElement>(null);
 
   const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev';
 
@@ -108,6 +102,17 @@ const Header: React.FC<HeaderProps> = ({
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, [isHeaderVisible, isMenuOpen, isMobileSearchOpen]);
+
+  // ✅ Click outside close for Categories dropdown
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (categoryRef.current && !categoryRef.current.contains(e.target as Node)) {
+        setIsCategoryOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     setLocalSearchQuery(searchQuery || '');
@@ -165,72 +170,52 @@ const Header: React.FC<HeaderProps> = ({
     }
   };
 
-  // ✅ Home button: reset filters + navigate
+  // ✅ Home button: navigate to '/' with no filter/contentType params (SPA nav, no reload)
   const handleNavClick = (destination: 'home' | 'list' | 'top100') => {
     if (isNavigating) return;
     setIsNavigating(true);
-    
+
     if (destination === 'home') {
-      // Reset filters to 'All'
-      if (setFilter) setFilter('All');
-      if (setContentType) setContentType('All');
+      navigate('/'); // no query params => HomePage's URL-sync effect resets filter/contentType to 'All'
+    } else if (destination === 'list') {
+      onNavigate('list');
+    } else if (destination === 'top100') {
+      onNavigate('top100');
     }
-    
-    onNavigate(destination);
+
     setIsMenuOpen(false);
     setIsMobileSearchOpen(false);
-    setTimeout(() => setIsNavigating(false), 800);
+    setTimeout(() => setIsNavigating(false), 300);
   };
 
-  // ✅ Filter button: set filter + RESET content type
+  // ✅ Filter button: URL is the single source of truth.
   const handleFilterClick = (filter: FilterType) => {
-    if (isNavigating) return;
-    setIsNavigating(true);
-    
-    // Mutual reset: language filter always resets content type
-    if (setFilter) {
-      setFilter(filter);
-      if (setContentType) setContentType('All');
-    } else if (
-      onFilterAndNavigateHome &&
-      (filter === 'Hindi Dub' || filter === 'Hindi Sub' || filter === 'English Sub')
-    ) {
-      onFilterAndNavigateHome(filter);
-      // also reset content type via navigation query
-      window.location.href = `/?filter=${encodeURIComponent(filter)}&contentType=All`;
+    const params = new URLSearchParams(searchParams);
+    if (filter === 'All') {
+      params.delete('filter');
     } else {
-      // ultimate fallback
-      window.location.href = `/?filter=${encodeURIComponent(filter)}&contentType=All`;
+      params.set('filter', filter);
     }
-    
+    // ✅ contentType is preserved — both filters can now be active together
+
+    navigate(`/?${params.toString()}`);
+
     setIsMenuOpen(false);
-    if (window.location.pathname !== '/') {
-      navigate('/');
-    }
-    setTimeout(() => setIsNavigating(false), 300);
   };
 
-  // ✅ Content type button: set contentType + RESET filter
-  const handleContentTypeClick = (contentType: ContentType) => {
-    if (isNavigating) return;
-    setIsNavigating(true);
-    
-    // Mutual reset: content type always resets language filter
-    if (setContentType) {
-      setContentType(contentType);
-      if (setFilter) setFilter('All');
-    } else if (onContentTypeNavigate) {
-      onContentTypeNavigate(contentType);
-      window.location.href = `/?contentType=${encodeURIComponent(contentType)}&filter=All`;
+  // ✅ Content type button: same pattern — URL only
+  const handleContentTypeClick = (contentType: ContentTypeFilter) => {
+    const params = new URLSearchParams(searchParams);
+    if (contentType === 'All') {
+      params.delete('contentType');
     } else {
-      window.location.href = `/?contentType=${encodeURIComponent(contentType)}&filter=All`;
+      params.set('contentType', contentType);
     }
-    
+    // ✅ filter (Hindi Dub/Sub) is preserved — both filters can now be active together
+
+    navigate(`/?${params.toString()}`);
+
     setIsMenuOpen(false);
-    if (window.location.pathname !== '/') {
-      navigate('/');
-    }
-    setTimeout(() => setIsNavigating(false), 300);
   };
 
   const toggleMobileSearch = () => {
@@ -293,7 +278,7 @@ const Header: React.FC<HeaderProps> = ({
   return (
     <>
       <NavigationLoader />
-      
+
       <style>{`
         @keyframes loadingBar { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
         .animate-loadingBar { animation: loadingBar 1.5s ease-in-out infinite; }
@@ -335,15 +320,15 @@ const Header: React.FC<HeaderProps> = ({
         .social-button-mobile { border: 1px solid rgba(115, 245, 138, 0.3); transition: all 0.3s ease; }
         .social-button-mobile:hover { border: 1px solid #73F58A; box-shadow: 0 0 10px rgba(115, 245, 138, 0.4); }
       `}</style>
-      
-      <header 
+
+      <header
         ref={headerRef}
         className={`fixed top-0 left-0 right-0 z-40 transition-all duration-300 glow-green transform ${isHeaderVisible ? 'translate-y-0' : '-translate-y-full'} ${isScrolled ? 'bg-purple-900/95 backdrop-blur-xl shadow-lg shadow-black/20 py-2' : 'bg-gradient-to-br from-purple-900 via-purple-800 to-purple-900 backdrop-blur-xl py-1'}`}
         style={{ borderBottom: '3px solid #73F58A', boxShadow: '0 4px 20px rgba(115, 245, 138, 0.2)' }}
       >
         <div className="w-full px-2 md:px-4 relative">
           <div className="flex justify-between items-center h-12 md:h-16">
-            
+
             {/* Logo */}
             <button onClick={() => handleNavClick('home')} className="flex items-center space-x-2 group relative anime-button hover-glow-green"
               style={{ border: '2px solid rgba(115, 245, 138, 0.5)', borderRadius: '0.75rem', padding: '0.5rem 1rem', background: 'rgba(30, 41, 59, 0.7)', backdropFilter: 'blur(10px)' }}
@@ -362,11 +347,58 @@ const Header: React.FC<HeaderProps> = ({
             <nav className="hidden md:flex items-center space-x-4">
               <div className="flex items-center space-x-4 bg-purple-800/50 backdrop-blur-sm rounded-lg px-3 py-2 search-container hover-glow-green">
                 <button onClick={() => handleNavClick('home')} className="px-3 py-1.5 rounded-md text-purple-300 hover:text-white hover:bg-green-500/20 transition-all duration-300 font-medium text-sm disabled:opacity-50 anime-button" disabled={isNavigating}>Home</button>
-                <button onClick={() => handleFilterClick('Hindi Dub')} className="px-3 py-1.5 rounded-md text-purple-300 hover:text-white hover:bg-green-500/20 transition-all duration-300 font-medium text-sm disabled:opacity-50 anime-button" disabled={isNavigating}>Hindi Dub</button>
-                <button onClick={() => handleFilterClick('Hindi Sub')} className="px-3 py-1.5 rounded-md text-purple-300 hover:text-white hover:bg-green-500/20 transition-all duration-300 font-medium text-sm disabled:opacity-50 anime-button" disabled={isNavigating}>Hindi Sub</button>
-                <button onClick={() => handleFilterClick('English Sub')} className="px-3 py-1.5 rounded-md text-purple-300 hover:text-white hover:bg-green-500/20 transition-all duration-300 font-medium text-sm disabled:opacity-50 anime-button" disabled={isNavigating}>English Sub</button>
-                <button onClick={() => handleContentTypeClick('Movie')} className="px-3 py-1.5 rounded-md text-purple-300 hover:text-white hover:bg-green-500/20 transition-all duration-300 font-medium text-sm disabled:opacity-50 anime-button" disabled={isNavigating}>Movies</button>
-                <button onClick={() => handleContentTypeClick('Manga')} className="px-3 py-1.5 rounded-md text-purple-300 hover:text-white hover:bg-green-500/20 transition-all duration-300 font-medium text-sm disabled:opacity-50 anime-button" disabled={isNavigating}>Manga</button>
+                
+                {/* Language filters with active state */}
+                <button onClick={() => handleFilterClick('Hindi Dub')} className={`px-3 py-1.5 rounded-md transition-all duration-300 font-medium text-sm disabled:opacity-50 anime-button ${activeFilter === 'Hindi Dub' ? 'bg-green-500/25 text-white border border-green-400/50' : 'text-purple-300 hover:text-white hover:bg-green-500/20'}`} disabled={isNavigating}>Hindi Dub</button>
+                <button onClick={() => handleFilterClick('Hindi Sub')} className={`px-3 py-1.5 rounded-md transition-all duration-300 font-medium text-sm disabled:opacity-50 anime-button ${activeFilter === 'Hindi Sub' ? 'bg-green-500/25 text-white border border-green-400/50' : 'text-purple-300 hover:text-white hover:bg-green-500/20'}`} disabled={isNavigating}>Hindi Sub</button>
+                <button onClick={() => handleFilterClick('English Sub')} className={`px-3 py-1.5 rounded-md transition-all duration-300 font-medium text-sm disabled:opacity-50 anime-button ${activeFilter === 'English Sub' ? 'bg-green-500/25 text-white border border-green-400/50' : 'text-purple-300 hover:text-white hover:bg-green-500/20'}`} disabled={isNavigating}>English Sub</button>
+
+                {/* Categories dropdown with active state */}
+                <div className="relative" ref={categoryRef}>
+                  <button
+                    onClick={() => setIsCategoryOpen(v => !v)}
+                    className={`px-3 py-1.5 rounded-md transition-all duration-300 font-medium text-sm disabled:opacity-50 anime-button flex items-center gap-1.5 ${
+                      activeContentType !== 'All'
+                        ? 'bg-green-500/25 text-white border border-green-400/50'
+                        : 'text-purple-300 hover:text-white hover:bg-green-500/20'
+                    }`}
+                    disabled={isNavigating}
+                  >
+                    {activeContentType !== 'All' ? activeContentType : 'Categories'}
+                    <svg className={`w-3.5 h-3.5 transition-transform ${isCategoryOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                  </button>
+                  {isCategoryOpen && (
+                    <div className="absolute top-full mt-2 left-0 bg-gradient-to-br from-purple-900 to-purple-950 border border-green-500/30 rounded-xl shadow-2xl shadow-black/60 py-2 min-w-[180px] z-50 animate-fadeIn overflow-hidden">
+                      {[
+                        { label: 'All Categories', value: 'All' },
+                        { label: 'Anime', value: 'Anime' },
+                        { label: 'Movies', value: 'Movie' },
+                        { label: 'Manga', value: 'Manga' },
+                        { label: 'Web Series', value: 'Web Series' },
+                      ].map(item => {
+                        const isActive = activeContentType === item.value;
+                        return (
+                          <button
+                            key={item.value}
+                            onClick={() => { handleContentTypeClick(item.value as ContentTypeFilter); setIsCategoryOpen(false); }}
+                            className={`w-full text-left px-4 py-2.5 text-sm transition-colors flex items-center justify-between ${
+                              isActive
+                                ? 'bg-green-500/20 text-green-300 font-semibold'
+                                : 'text-purple-300 hover:text-white hover:bg-white/5'
+                            }`}
+                            disabled={isNavigating}
+                          >
+                            {item.label}
+                            {isActive && (
+                              <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
                 <button onClick={() => handleNavClick('top100')} className="px-4 py-1.5 rounded-md top100-btn transition-all duration-300 font-bold text-sm disabled:opacity-50" disabled={isNavigating}>Top 100</button>
                 <button onClick={() => handleNavClick('list')} className="px-4 py-1.5 rounded-md anime-list-btn text-white transition-all duration-300 font-semibold text-sm disabled:opacity-50" disabled={isNavigating}>Anime List</button>
               </div>
@@ -453,8 +485,10 @@ const Header: React.FC<HeaderProps> = ({
                 <div className="pt-2">
                   <h4 className="text-xs text-green-400 font-semibold uppercase tracking-wider mb-3 px-1">Categories</h4>
                   <div className="space-y-2">
+                    <button onClick={() => handleContentTypeClick('Anime')} className="w-full px-4 py-3 rounded-lg bg-purple-800/50 text-purple-300 hover:bg-green-500/20 hover:text-white transition-all duration-300 font-medium disabled:opacity-50 anime-button hover-glow-green flex items-center justify-between" disabled={isNavigating}><span>Anime</span><span className="text-green-400">→</span></button>
                     <button onClick={() => handleContentTypeClick('Movie')} className="w-full px-4 py-3 rounded-lg bg-purple-800/50 text-purple-300 hover:bg-green-500/20 hover:text-white transition-all duration-300 font-medium disabled:opacity-50 anime-button hover-glow-green flex items-center justify-between" disabled={isNavigating}><span>Movies</span><span className="text-green-400">→</span></button>
                     <button onClick={() => handleContentTypeClick('Manga')} className="w-full px-4 py-3 rounded-lg bg-purple-800/50 text-purple-300 hover:bg-green-500/20 hover:text-white transition-all duration-300 font-medium disabled:opacity-50 anime-button hover-glow-green flex items-center justify-between" disabled={isNavigating}><span>Manga</span><span className="text-green-400">→</span></button>
+                    <button onClick={() => handleContentTypeClick('Web Series')} className="w-full px-4 py-3 rounded-lg bg-purple-800/50 text-purple-300 hover:bg-green-500/20 hover:text-white transition-all duration-300 font-medium disabled:opacity-50 anime-button hover-glow-green flex items-center justify-between" disabled={isNavigating}><span>Web Series</span><span className="text-green-400">→</span></button>
                   </div>
                 </div>
                 <div className="pt-2">

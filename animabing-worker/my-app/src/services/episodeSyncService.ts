@@ -1,4 +1,5 @@
- import { getDb, toObjectId } from './mongoService'
+ import { getContentGroup } from '../utils/contentGroup'
+import { getDb, toObjectId } from './mongoService'
 
 // ============ Download Page ke links se anime.currentEpisode sync (page ID se) ============
 export async function syncAnimeEpisodeCountFromPage(
@@ -90,7 +91,7 @@ export async function syncEpisodeTitleFromDownloadPage(
     { _id: page.animeId },
     { projection: { contentType: 1 } }
   )
-  const isManga = anime?.contentType === 'Manga'
+  const isManga = getContentGroup(anime?.contentType) === 'chapter'
   const collectionName = isManga ? 'chapters' : 'episodes'
   const numberField = isManga ? 'chapterNumber' : 'episodeNumber'
   const label: 'Episode' | 'Chapter' = isManga ? 'Chapter' : 'Episode'

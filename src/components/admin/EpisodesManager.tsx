@@ -5,6 +5,7 @@ import axios from 'axios';
 import Spinner from '../Spinner';
 import SearchableDropdown from './SearchableDropdown';
 import toast from 'react-hot-toast';
+import { getContentGroup } from '../../utils/contentGroup';
 
 interface DownloadLink {
   name: string;
@@ -117,7 +118,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
   const [downloadPages, setDownloadPages] = useState<any[]>([]);
   const [loadingDownloadPages, setLoadingDownloadPages] = useState(false);
 
-  const isManga = selectedAnime?.contentType === 'Manga';
+  const isManga = getContentGroup(selectedAnime?.contentType) === 'chapter';
 
   const getAvailableSessions = () => {
     const items = isManga ? chapters : episodes;

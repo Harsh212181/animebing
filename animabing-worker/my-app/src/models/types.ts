@@ -16,7 +16,7 @@ export interface IAnime {
   releaseYear?: number
   thumbnail?: string
   bannerImage?: string
-  contentType: 'Anime' | 'Movie' | 'Manga'
+  contentType: 'Anime' | 'Ai Anime' | 'Movie' | 'Hollywood Movie' | 'Bollywood Movie' | 'Manga' | 'Ai Manhwa' | 'Web Series'
   subDubStatus: 'Hindi Dub' | 'Hindi Sub' | 'English Sub' | 'Both' | 'Subbed' | 'Dubbed' | 'Sub & Dub' | 'Dual Audio'
   status: 'Ongoing' | 'Complete'
   reportCount?: number

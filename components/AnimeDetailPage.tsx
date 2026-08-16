@@ -16,6 +16,7 @@ import {
 import SEO from '../src/components/SEO';
 import ShareIcon from './icons/ShareIcon';
 import { captureTokenFromUrl, advanceFunnel, completeFunnel, appendTokenToPath } from '../utils/clickFunnel';
+import { getContentGroup } from '../src/utils/contentGroup';
 
 // Simple SVG Icons for Like/Dislike
 const HeartIcon = ({ className = "w-5 h-5", filled = false }: { className?: string, filled?: boolean }) => (
@@ -173,8 +174,9 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
   // ✅ Show More/Less for description
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
 
-  const isManga = anime?.contentType === 'Manga';
-  const isMovie = anime?.contentType === 'Movie';
+  const group = getContentGroup(anime?.contentType);
+  const isManga = group === 'chapter';
+  const isMovie = group === 'single';
 
   // ✅ Funnel: Capture token from URL on mount
   useEffect(() => {

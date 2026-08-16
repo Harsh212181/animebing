@@ -218,11 +218,114 @@ const getGenreGradient = (genre: string): string => {
   return colors[genre] || 'from-purple-500 to-pink-500';
 };
 
+// New helper: group content types into SEO categories
+const getContentGroup = (contentType: string): 'single' | 'chapter' | 'episode' => {
+  switch (contentType) {
+    case 'Movie':
+    case 'Hollywood Movie':
+    case 'Bollywood Movie':
+      return 'single';
+    case 'Manga':
+    case 'Ai Manhwa':
+      return 'chapter';
+    default: // Anime, Ai Anime, Web Series
+      return 'episode';
+  }
+};
+
+// ============ CUSTOM STYLED DROPDOWN ============
+interface SelectOption {
+  value: string;
+  label: string;
+  hint?: string;
+  color?: string; // tailwind gradient classes for the dot/badge
+}
+
+const CustomSelect: React.FC<{
+  value: string;
+  onChange: (value: string) => void;
+  options: SelectOption[];
+  icon?: React.ReactNode;
+  label: string;
+  required?: boolean;
+}> = ({ value, onChange, options, icon, label, required }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const selected = options.find(o => o.value === value);
+
+  return (
+    <div ref={ref} className="relative">
+      <label className="block text-sm font-medium text-slate-300 mb-1.5 flexl items-center gap-2">
+        {icon}
+        {label} {required && <span className="text-red-400">*</span>}
+      </label>
+      <button
+        type="button"
+        onClick={() => setIsOpen(v => !v)}
+        className={`w-full bg-slate-900/80 border text-white rounded-xl px-4 py-3 text-sm text-left transition-all flex items-center justify-between gap-2 ${
+          isOpen ? 'border-purple-500/60 ring-2 ring-purple-500/30' : 'border-slate-700 hover:border-slate-600'
+        }`}
+      >
+        <span className="flex items-center gap-2 truncate">
+          {selected?.color && <span className={`w-2 h-2 rounded-full bg-gradient-to-r ${selected.color} flex-shrink-0`} />}
+          <span className="truncate">{selected?.label || 'Select...'}</span>
+        </span>
+        <svg className={`w-4 h-4 text-slate-400 flex-shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-30 mt-2 w-full bg-slate-900 border border-slate-700 rounded-xl shadow-2xl shadow-black/50 py-1.5 max-h-72 overflow-y-auto animate-fadeIn">
+          {options.map(opt => {
+            const isSelected = opt.value === value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => { onChange(opt.value); setIsOpen(false); }}
+                className={`w-full text-left px-4 py-2.5 text-sm flex items-center justify-between gap-2 transition-colors ${
+                  isSelected ? 'bg-purple-600/20 text-purple-200' : 'text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                <span className="flex items-center gap-2.5 min-w-0">
+                  {opt.color && <span className={`w-2 h-2 rounded-full bg-gradient-to-r ${opt.color} flex-shrink-0`} />}
+                  <span className="flex flex-col min-w-0">
+                    <span className="truncate font-medium">{opt.label}</span>
+                    {opt.hint && <span className="text-[11px] text-slate-500 truncate">{opt.hint}</span>}
+                  </span>
+                </span>
+                {isSelected && (
+                  <svg className="w-4 h-4 text-purple-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
 interface AddAnimeFormProps {
   token?: string;   // ✅ ADD
 }
 
 const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
+  // Updated contentType type union
+  type ContentType = 'Anime' | 'Ai Anime' | 'Movie' | 'Hollywood Movie' | 'Bollywood Movie' | 'Manga' | 'Ai Manhwa' | 'Web Series';
+
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -231,7 +334,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
     subDubStatus: 'Hindi Sub' as SubDubStatus,
     genreList: [] as string[],
     status: 'Ongoing',
-    contentType: 'Anime' as 'Anime' | 'Movie' | 'Manga',
+    contentType: 'Anime' as ContentType,
     seoTitle: '',
     seoDescription: '',
     seoKeywords: '',
@@ -344,8 +447,12 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
   };
 
   const generateSEODescription = (title: string, subDubStatus: string, contentType: string): string => {
-    const contentText = contentType === 'Movie' ? 'Full movie available' : contentType === 'Manga' ? 'Read manga online' : 'All episodes available';
-    return `Watch ${title} online in ${subDubStatus}. ${contentText} in HD quality. Free streaming and downloads on AnimeBing.`;
+    const group = getContentGroup(contentType);
+    let contentText;
+    if (group === 'single') contentText = 'Full movie available';
+    else if (group === 'chapter') contentText = 'Read online in HD quality';
+    else contentText = 'All episodes available';
+    return `Watch ${title} online in ${subDubStatus}. ${contentText} on AnimeBing. Free streaming and downloads.`;
   };
 
   const generateSEOKeywords = (title: string, genres: string[], subDubStatus: string, contentType: string): string => {
@@ -356,9 +463,16 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
     if (statuses.includes('hindi dub')) keywords.push('hindi dubbed anime', 'anime in hindi', 'hindi dub', `${title} hindi dubbed`, 'watch anime in hindi');
     if (statuses.includes('hindi sub')) keywords.push('hindi subbed anime', 'anime with hindi subtitles', 'hindi sub', `${title} hindi subbed`, 'hindi subtitles anime');
     if (statuses.includes('english sub')) keywords.push('english subbed anime', 'anime in english', 'english sub', `${title} english sub`, 'english subtitles anime');
-    if (contentType === 'Movie') keywords.push(`${title} movie`, `watch ${title} movie online`, `${title} anime movie`, 'anime movies', 'full anime movie');
-    else if (contentType === 'Manga') keywords.push(`${title} manga`, `read ${title} manga online`, `${title} manga chapters`, 'read manga online', 'manga in hindi');
-    else keywords.push(`${title} episodes`, `watch ${title} episodes`, `${title} all episodes`, 'anime episodes', 'hindi dubbed episodes');
+    
+    const group = getContentGroup(contentType);
+    if (group === 'single') {
+      keywords.push(`${title} movie`, `watch ${title} movie online`, `${title} full movie`, 'movies online', 'full movie download');
+    } else if (group === 'chapter') {
+      keywords.push(`${title} manga`, `read ${title} online`, `${title} chapters`, 'read manga online', 'manga chapters');
+    } else {
+      keywords.push(`${title} episodes`, `watch ${title} episodes`, `${title} all episodes`, 'anime episodes', 'hindi dubbed episodes');
+    }
+    
     keywords.push('animebing', 'animebing.in', 'anime streaming site', 'free anime downloads');
     return [...new Set(keywords)].join(', ');
   };
@@ -401,7 +515,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
   };
 
   const handleContentTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newContentType = e.target.value as 'Anime' | 'Movie' | 'Manga';
+    const newContentType = e.target.value as ContentType;
     setForm(prev => ({
       ...prev,
       contentType: newContentType,
@@ -537,21 +651,22 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
 
               {/* Content Type & Year & Status */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1.5 flexl items-center gap-2">
-                    <Icons.Type className="w-4 h-4 text-slate-400" />
-                    Type
-                  </label>
-                  <select
-                    value={form.contentType}
-                    onChange={handleContentTypeChange}
-                    className="w-full bg-slate-900/80 border border-slate-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all appearance-none cursor-pointer"
-                  >
-                    <option value="Anime">Anime Series</option>
-                    <option value="Movie">Movie</option>
-                    <option value="Manga">Manga</option>
-                  </select>
-                </div>
+                <CustomSelect
+                  label="Type"
+                  icon={<Icons.Type className="w-4 h-4 text-slate-400" />}
+                  value={form.contentType}
+                  onChange={(v) => handleContentTypeChange({ target: { value: v } } as React.ChangeEvent<HTMLSelectElement>)}
+                  options={[
+                    { value: 'Anime', label: 'Anime Series', color: 'from-blue-500 to-cyan-500' },
+                    { value: 'Ai Anime', label: 'Ai Anime',color: 'from-violet-500 to-fuchsia-500' },
+                    { value: 'Movie', label: 'Movie',color: 'from-purple-500 to-pink-500' },
+                    { value: 'Hollywood Movie', label: 'Hollywood Movie', color: 'from-amber-500 to-orange-500' },
+                    { value: 'Bollywood Movie', label: 'Bollywood Movie', color: 'from-red-500 to-rose-500' },
+                    { value: 'Manga', label: 'Manga', color: 'from-emerald-500 to-teal-500' },
+                    { value: 'Ai Manhwa', label: 'Ai Manhwa', color: 'from-fuchsia-500 to-purple-500' },
+                    { value: 'Web Series', label: 'Web Series', color: 'from-indigo-500 to-blue-500' },
+                  ]}
+                />
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-1.5 flexl items-center gap-2">
                     <Icons.Calendar className="w-4 h-4 text-slate-400" />
@@ -567,41 +682,33 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                     required
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1.5 flexl items-center gap-2">
-                    <Icons.Status className="w-4 h-4 text-slate-400" />
-                    Status
-                  </label>
-                  <select
-                    value={form.status}
-                    onChange={(e) => setForm({ ...form, status: e.target.value })}
-                    className="w-full bg-slate-900/80 border border-slate-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all appearance-none cursor-pointer"
-                  >
-                    <option value="Ongoing">Ongoing</option>
-                    <option value="Complete">Complete</option>
-                  </select>
-                </div>
+                <CustomSelect
+                  label="Status"
+                  icon={<Icons.Status className="w-4 h-4 text-slate-400" />}
+                  value={form.status}
+                  onChange={(v) => setForm({ ...form, status: v })}
+                  options={[
+                    { value: 'Ongoing', label: 'Ongoing', color: 'from-yellow-500 to-orange-500' },
+                    { value: 'Complete', label: 'Complete', color: 'from-green-500 to-emerald-500' },
+                  ]}
+                />
               </div>
 
               {/* Sub/Dub */}
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1.5 flexl items-center gap-2">
-                  <Icons.Info className="w-4 h-4 text-slate-400" />
-                  Sub / Dub Status
-                </label>
-                <select
-                  value={form.subDubStatus}
-                  onChange={handleSubDubStatusChange}
-                  className="w-full bg-slate-900/80 border border-slate-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all appearance-none cursor-pointer"
-                >
-                  <option value="Hindi Dub">Hindi Dub</option>
-                  <option value="Hindi Sub">Hindi Sub</option>
-                  <option value="English Sub">English Sub</option>
-                  <option value="Both">Both (Hindi Dub & Sub)</option>
-                  <option value="Sub & Dub">Sub & Dub Available</option>
-                  <option value="Dual Audio">Dual Audio</option>
-                </select>
-              </div>
+              <CustomSelect
+                label="Sub / Dub Status"
+                icon={<Icons.Info className="w-4 h-4 text-slate-400" />}
+                value={form.subDubStatus}
+                onChange={(v) => handleSubDubStatusChange({ target: { value: v } } as React.ChangeEvent<HTMLSelectElement>)}
+                options={[
+                  { value: 'Hindi Dub', label: 'Hindi Dub', color: 'from-red-500 to-orange-500' },
+                  { value: 'Hindi Sub', label: 'Hindi Sub', color: 'from-orange-500 to-amber-500' },
+                  { value: 'English Sub', label: 'English Sub', color: 'from-blue-500 to-cyan-500' },
+                  { value: 'Both', label: 'Both (Hindi Dub & Sub)', color: 'from-purple-500 to-pink-500' },
+                  { value: 'Sub & Dub', label: 'Sub & Dub Available', color: 'from-violet-500 to-purple-500' },
+                  { value: 'Dual Audio', label: 'Dual Audio', color: 'from-indigo-500 to-blue-500' },
+                ]}
+              />
 
               {/* Thumbnail Preview (LEFT) + Description (RIGHT) — side by side, both fixed size */}
               <div>
@@ -646,8 +753,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                       )}
                     </div>
                   </div>
-                  {/* Description — fixed-height box: height NEVER changes no matter how short or long the text is.
-                      resize-none stops manual dragging, overflow-y-auto scrolls internally instead of growing. */}
+                  {/* Description — fixed-height box */}
                   <textarea
                     value={form.description}
                     onChange={(e) => setForm({ ...form, description: e.target.value })}
@@ -657,7 +763,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                 </div>
               </div>
 
-              {/* Thumbnail URL input (full width, on its own) */}
+              {/* Thumbnail URL input */}
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-1.5 flexl items-center gap-2">
                   <Icons.Image className="w-4 h-4 text-slate-400" />
@@ -973,7 +1079,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
             </div>
           </div>
 
-          {/* FORM STATUS — compact status bar */}
+          {/* FORM STATUS */}
           <div className="bg-slate-800/40 backdrop-blur-sm rounded-xl border border-slate-700/50 px-4 py-3 transition-all duration-300">
             <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
               <span className="text-slate-300 text-xs font-semibold uppercase tracking-wider">Status</span>
@@ -1112,6 +1218,11 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
       </div>
 
       <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(-4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fadeIn { animation: fadeIn 0.15s ease-out; }
         @keyframes slideUp {
           from { opacity: 0; transform: translateY(20px) scale(0.96); }
           to { opacity: 1; transform: translateY(0) scale(1); }

@@ -1,18 +1,8 @@
- // App.tsx - COMBINED FINAL VERSION
-// ✅ Merged from both versions:
-//    - Sub-Admin login/dashboard flow (kept)
-//    - Google OAuth AuthCallback (kept)
-//    - Elaborate "Anime Portal Style" LoadingScreen -> ONLY used for MainApp's
-//      initial app boot (home/site first load). NOWHERE ELSE.
-//    - Everywhere else (Admin login/dashboard, Sub-Admin login/dashboard,
-//      Admin login transition, Auth callback fallback) uses the simple
-//      deep-purple SimpleLoadingScreen.
-//    - User Dashboard keeps its own dedicated white DashboardLoadingScreen.
-
+ // App.tsx -  
 import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
-import { Toaster } from 'react-hot-toast'; // ✅ ADDED for toast notifications
+import { Toaster } from 'react-hot-toast'; 
 
 import type { Anime, FilterType, ContentType, ContentTypeFilter } from './src/types';
 import Header from './components/Header';
@@ -113,7 +103,8 @@ const ScrollToTop: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     if (isComingBack) return;
 
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
-  }, [location.pathname, location.search]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);  // ✅ sirf route (path) change pe top scroll — filter/contentType query change pe nahi
 
   return <>{children}</>;
 };
@@ -875,8 +866,6 @@ const MainApp: React.FC = () => {
           onSearchChange={handleSearchChange}
           searchQuery={searchQuery}
           onNavigate={handleNavigate}
-          onFilterAndNavigateHome={dummyFilterFunction}
-          onContentTypeNavigate={dummyContentTypeFunction}
         />
 
         <main className="w-full px-0 sm:px-2 py-2">

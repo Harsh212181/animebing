@@ -1,4 +1,5 @@
  // src/types.ts – COMPLETE UPDATED VERSION WITH DEVICE-BASED POLL VOTING & isHidden
+import { getContentGroup, contentBadgeLabel } from './utils/contentGroup';
 
 /* =========================
    DOWNLOAD / EPISODE / CHAPTER
@@ -58,7 +59,15 @@ export type SubDubStatus =
   | 'Dual Audio';
 
 export type FilterType = 'All' | SubDubStatus;
-export type ContentType = 'Anime' | 'Movie' | 'Manga';
+export type ContentType =
+  | 'Anime'
+  | 'Ai Anime'
+  | 'Manga'
+  | 'Ai Manhwa'
+  | 'Movie'
+  | 'Hollywood Movie'
+  | 'Bollywood Movie'
+  | 'Web Series';
 export type ContentTypeFilter = 'All' | ContentType;
 
 export interface Anime {

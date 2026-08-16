@@ -1,7 +1,8 @@
-// src/components/admin/EpisodeStatusManager.tsx – Redesigned with pill‑button filters + Sub/Dub badge + Creator badge
+ // src/components/admin/EpisodeStatusManager.tsx – Redesigned with pill‑button filters + Sub/Dub badge + Creator badge
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
+import { CONTENT_TYPE_OPTIONS } from '../../utils/contentGroup';
 
 const API_BASE =
   import.meta.env.VITE_API_BASE ||
@@ -51,9 +52,7 @@ const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: toke
   const [animeList, setAnimeList] = useState<Anime[]>([]);
   const [filteredList, setFilteredList] = useState<Anime[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [contentTypeFilter, setContentTypeFilter] = useState<
-    'all' | 'Anime' | 'Movie' | 'Manga'
-  >('all');
+  const [contentTypeFilter, setContentTypeFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<
     'all' | 'Ongoing' | 'Complete'
   >('all');
@@ -301,8 +300,8 @@ const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: toke
           {/* Content Type */}
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium text-white/60">Type:</span>
-            <div className="flex gap-1">
-              {(['all', 'Anime', 'Movie', 'Manga'] as const).map(t => (
+            <div className="flex gap-1 flex-wrap">
+              {(['all', 'Movie', ...CONTENT_TYPE_OPTIONS] as const).map(t => (
                 <button
                   key={t}
                   onClick={() => setContentTypeFilter(t)}

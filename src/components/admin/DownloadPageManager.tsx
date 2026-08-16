@@ -1,7 +1,9 @@
- import React, { useState, useEffect, useMemo, useRef } from 'react';
+ // src/components/admin/DownloadPageManager.tsx – FULL CODE WITH COMPACT FILTER/SINGLE ROW + Z-INDEX FIX + SEARCH BAR LONGER + GAP ABOVE PAGE COUNT
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { DownloadPage, DownloadPageLink, ContentType, SubDubStatus } from '../../types';
 import SearchableDropdown from './SearchableDropdown';
 import Spinner from '../Spinner';
+import { CONTENT_TYPE_OPTIONS } from '../../utils/contentGroup';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 
   'https://animabing-backend.animabingwatch.workers.dev/api';
@@ -9,6 +11,92 @@ const API_BASE = import.meta.env.VITE_API_BASE ||
 const getFrontendBase = () => {
   if (typeof window === 'undefined') return 'https://animebing.in';
   return window.location.origin;
+};
+
+// ============ CUSTOM STYLED DROPDOWN ============
+interface SelectOption {
+  value: string;
+  label: string;
+  hint?: string;
+  color?: string;
+}
+
+const CustomSelect: React.FC<{
+  value: string;
+  onChange: (value: string) => void;
+  options: SelectOption[];
+  icon?: React.ReactNode;
+  label: string;
+  required?: boolean;
+  className?: string;
+}> = ({ value, onChange, options, icon, label, required, className }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const selected = options.find(o => o.value === value);
+
+  return (
+    <div ref={ref} className={`relative ${className || ''}`}>
+      <label className="block text-[10px] font-medium text-slate-300 mb-0.5 flex items-center gap-1.5">
+        {icon}
+        {label} {required && <span className="text-red-400">*</span>}
+      </label>
+      <button
+        type="button"
+        onClick={() => setIsOpen(v => !v)}
+        className={`w-full bg-gray-800/60 border text-white rounded-lg px-2 py-1.5 text-sm text-left transition-all flex items-center justify-between gap-1.5 ${
+          isOpen ? 'border-purple-500/60 ring-1 ring-purple-500/30' : 'border-gray-700 hover:border-gray-600'
+        }`}
+      >
+        <span className="flex items-center gap-1.5 truncate">
+          {selected?.color && <span className={`w-2 h-2 rounded-full bg-gradient-to-r ${selected.color} flex-shrink-0`} />}
+          <span className="truncate">{selected?.label || 'Select...'}</span>
+        </span>
+        <svg className={`w-3.5 h-3.5 text-slate-400 flex-shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-[999] mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg shadow-2xl shadow-black/50 py-1 max-h-72 overflow-y-auto animate-fadeIn">
+          {options.map(opt => {
+            const isSelected = opt.value === value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => { onChange(opt.value); setIsOpen(false); }}
+                className={`w-full text-left px-3 py-1.5 text-sm flex items-center justify-between gap-2 transition-colors ${
+                  isSelected ? 'bg-purple-600/20 text-purple-200' : 'text-slate-300 hover:bg-gray-700'
+                }`}
+              >
+                <span className="flex items-center gap-2 min-w-0">
+                  {opt.color && <span className={`w-2 h-2 rounded-full bg-gradient-to-r ${opt.color} flex-shrink-0`} />}
+                  <span className="flex flex-col min-w-0">
+                    <span className="truncate font-medium">{opt.label}</span>
+                    {opt.hint && <span className="text-[10px] text-slate-500 truncate">{opt.hint}</span>}
+                  </span>
+                </span>
+                {isSelected && (
+                  <svg className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 };
 
 interface DownloadPageManagerProps {
@@ -87,7 +175,7 @@ const Toast: React.FC<{ toast: ToastState; onClose: () => void }> = ({ toast, on
   }[toast.type];
 
   return (
-    <div className="fixed top-4 right-4 z-50 animate-in slide-in-from-top-2 fade-in duration-300">
+    <div className="fixed top-4 right-4 z-[999] animate-in slide-in-from-top-2 fade-in duration-300">
       <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border backdrop-blur-md shadow-2xl ${bgColor}`}>
         {icon}
         <span className="text-sm font-medium">{toast.message}</span>
@@ -114,7 +202,7 @@ const ConfirmModal: React.FC<ConfirmModalProps> = ({ open, title, message, onCon
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-gray-900 border border-white/20 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl animate-in zoom-in-95 duration-200">
         <h3 className="text-xl font-bold text-white mb-2">{title}</h3>
         <p className="text-white/70 mb-6">{message}</p>
@@ -179,6 +267,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
   const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; id: string | null }>({ show: false, id: null });
   const [settingPrimaryId, setSettingPrimaryId] = useState<string | null>(null);
 
+  // ✅ Filters – now using CustomSelect
   const [contentTypeFilter, setContentTypeFilter] = useState<'all' | ContentType>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'ongoing' | 'complete'>('all');
   const [subDubFilter, setSubDubFilter] = useState<'all' | string>('all');
@@ -725,152 +814,88 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
         )}
       </div>
 
-      {/* Filters Section */}
-      <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-4 space-y-3">
-        <div className="flex flex-nowrap items-center gap-x-5 gap-y-0 overflow-x-auto pb-1">
-          <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
-            <span className="text-xs font-medium text-white/60">Type:</span>
-            <div className="flex gap-1">
-              {(['all', 'Anime', 'Movie', 'Manga'] as const).map(val => (
-                <button
-                  key={val}
-                  onClick={() => setContentTypeFilter(val)}
-                  className={`px-2 py-0.5 rounded-full text-xs font-medium transition-all ${
-                    contentTypeFilter === val
-                      ? 'bg-purple-600 text-white shadow shadow-purple-600/20'
-                      : 'bg-white/10 text-white/70 hover:bg-white/20'
-                  }`}
-                >
-                  {val === 'all' ? 'All' : val === 'Movie' ? 'Movies' : val}
-                </button>
-              ))}
-            </div>
-          </div>
+      {/* Filters Section – compact single row with search */}
+      <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-2 space-y-2 relative z-20">
+        <div className="flex flex-wrap items-center gap-2">
+          <CustomSelect
+            label="Type"
+            value={contentTypeFilter}
+            onChange={(v) => setContentTypeFilter(v as 'all' | ContentType)}
+            options={[
+              { value: 'all', label: 'All', color: 'from-gray-500 to-gray-400' },
+              { value: 'Movie', label: 'Movie', color: 'from-purple-500 to-pink-500' },
+              ...CONTENT_TYPE_OPTIONS.map(ct => ({
+                value: ct,
+                label: ct,
+                color:
+                  ct === 'Anime' ? 'from-blue-500 to-cyan-500' :
+                  ct === 'Ai Anime' ? 'from-violet-500 to-fuchsia-500' :
+                  ct === 'Manga' ? 'from-emerald-500 to-teal-500' :
+                  ct === 'Ai Manhwa' ? 'from-fuchsia-500 to-purple-500' :
+                  ct === 'Hollywood Movie' ? 'from-amber-500 to-orange-500' :
+                  ct === 'Bollywood Movie' ? 'from-red-500 to-rose-500' :
+                  ct === 'Web Series' ? 'from-indigo-500 to-blue-500' :
+                  'from-gray-500 to-gray-400'
+              }))
+            ]}
+            className="w-32 shrink-0"
+          />
 
-          <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
-            <span className="text-xs font-medium text-white/60">Status:</span>
-            <div className="flex gap-1">
-              {(['all', 'ongoing', 'complete'] as const).map(val => (
-                <button
-                  key={val}
-                  onClick={() => setStatusFilter(val)}
-                  className={`px-2 py-0.5 rounded-full text-xs font-medium transition-all capitalize ${
-                    statusFilter === val
-                      ? 'bg-purple-600 text-white shadow shadow-purple-600/20'
-                      : 'bg-white/10 text-white/70 hover:bg-white/20'
-                  }`}
-                >
-                  {val === 'all' ? 'All' : val}
-                </button>
-              ))}
-            </div>
-          </div>
+          <CustomSelect
+            label="Status"
+            value={statusFilter}
+            onChange={(v) => setStatusFilter(v as 'all' | 'ongoing' | 'complete')}
+            options={[
+              { value: 'all', label: 'All', color: 'from-gray-500 to-gray-400' },
+              { value: 'ongoing', label: 'Ongoing', color: 'from-yellow-500 to-orange-500' },
+              { value: 'complete', label: 'Complete', color: 'from-green-500 to-emerald-500' },
+            ]}
+            className="w-28 shrink-0"
+          />
 
-          <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
-            <span className="text-xs font-medium text-white/60">Sub/Dub:</span>
-            <div className="flex gap-1">
-              {(['all', 'Hindi Sub', 'Hindi Dub', 'English Sub'] as const).map(val => (
-                <button
-                  key={val}
-                  onClick={() => setSubDubFilter(val)}
-                  className={`px-2 py-0.5 rounded-full text-xs font-medium transition-all ${
-                    subDubFilter === val
-                      ? 'bg-purple-600 text-white shadow shadow-purple-600/20'
-                      : 'bg-white/10 text-white/70 hover:bg-white/20'
-                  }`}
-                >
-                  {val === 'all' ? 'All' : val}
-                </button>
-              ))}
-            </div>
-          </div>
+          <CustomSelect
+            label="Sub/Dub"
+            value={subDubFilter}
+            onChange={(v) => setSubDubFilter(v)}
+            options={[
+              { value: 'all', label: 'All', color: 'from-gray-500 to-gray-400' },
+              { value: 'Hindi Sub', label: 'Hindi Sub', color: 'from-orange-500 to-amber-500' },
+              { value: 'Hindi Dub', label: 'Hindi Dub', color: 'from-red-500 to-orange-500' },
+              { value: 'English Sub', label: 'English Sub', color: 'from-blue-500 to-cyan-500' },
+            ]}
+            className="w-32 shrink-0"
+          />
 
-          <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
-            <span className="text-xs font-medium text-white/60">Visibility:</span>
-            <div className="flex gap-1">
-              <button
-                onClick={() => setVisibilityFilter('all')}
-                className={`px-2 py-0.5 rounded-full text-xs font-medium transition-all ${
-                  visibilityFilter === 'all'
-                    ? 'bg-purple-600 text-white shadow shadow-purple-600/20'
-                    : 'bg-white/10 text-white/70 hover:bg-white/20'
-                }`}
-              >
-                All
-              </button>
-              <button
-                onClick={() => setVisibilityFilter('visible')}
-                className={`px-2 py-0.5 rounded-full text-xs font-medium transition-all ${
-                  visibilityFilter === 'visible'
-                    ? 'bg-green-600 text-white shadow shadow-green-600/20'
-                    : 'bg-white/10 text-white/70 hover:bg-white/20'
-                }`}
-              >
-                Visible
-              </button>
-              <button
-                onClick={() => setVisibilityFilter('hidden')}
-                className={`px-2 py-0.5 rounded-full text-xs font-medium transition-all ${
-                  visibilityFilter === 'hidden'
-                    ? 'bg-red-600 text-white shadow shadow-red-600/20'
-                    : 'bg-white/10 text-white/70 hover:bg-white/20'
-                }`}
-              >
-                Hidden
-              </button>
-            </div>
-          </div>
-        </div>
+          <CustomSelect
+            label="Visibility"
+            value={visibilityFilter}
+            onChange={(v) => setVisibilityFilter(v as 'all' | 'visible' | 'hidden')}
+            options={[
+              { value: 'all', label: 'All', color: 'from-gray-500 to-gray-400' },
+              { value: 'visible', label: 'Visible', color: 'from-green-500 to-emerald-500' },
+              { value: 'hidden', label: 'Hidden', color: 'from-red-500 to-rose-500' },
+            ]}
+            className="w-28 shrink-0"
+          />
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          {!subAdminMode && hasSubAdminPages ? (
-            <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
-              <span className="text-xs font-medium text-white/60">Creator:</span>
-              <div className="flex gap-1">
-                <button
-                  onClick={() => setSubAdminFilter('all')}
-                  className={`px-2 py-0.5 rounded-full text-xs font-medium transition-all ${
-                    subAdminFilter === 'all'
-                      ? 'bg-purple-600 text-white shadow shadow-purple-600/20'
-                      : 'bg-white/10 text-white/70 hover:bg-white/20'
-                  }`}
-                >
-                  All
-                </button>
-                <button
-                  onClick={() => setSubAdminFilter('admin')}
-                  className={`px-2 py-0.5 rounded-full text-xs font-medium transition-all ${
-                    subAdminFilter === 'admin'
-                      ? 'bg-blue-600 text-white shadow shadow-blue-600/20'
-                      : 'bg-white/10 text-white/70 hover:bg-white/20'
-                  }`}
-                >
-                  Admin
-                </button>
-                <button
-                  onClick={() => setSubAdminFilter('subadmin')}
-                  className={`px-2 py-0.5 rounded-full text-xs font-medium transition-all ${
-                    subAdminFilter === 'subadmin'
-                      ? 'bg-amber-600 text-white shadow shadow-amber-600/20'
-                      : 'bg-white/10 text-white/70 hover:bg-white/20'
-                  }`}
-                >
-                  Sub Admin
-                </button>
-              </div>
-            </div>
-          ) : subAdminMode ? (
-            <div className="text-xs text-white/40 shrink-0 whitespace-nowrap">
-              {filteredPages.length} / {pages.length} pages shown
-            </div>
-          ) : (
-            <div />
+          {!subAdminMode && hasSubAdminPages && (
+            <CustomSelect
+              label="Creator"
+              value={subAdminFilter}
+              onChange={(v) => setSubAdminFilter(v as 'all' | 'admin' | 'subadmin')}
+              options={[
+                { value: 'all', label: 'All', color: 'from-gray-500 to-gray-400' },
+                { value: 'admin', label: 'Admin', color: 'from-blue-500 to-cyan-500' },
+                { value: 'subadmin', label: 'Sub Admin', color: 'from-amber-500 to-orange-500' },
+              ]}
+              className="w-28 shrink-0"
+            />
           )}
 
-          <div className="relative w-full sm:w-72 ml-auto">
+          <div className="relative ml-auto w-full sm:w-64">
             <input
               type="text"
-              placeholder="Search by anime title..."
+              placeholder="Search..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full px-3 py-1.5 bg-gray-800/60 border border-gray-700/80 rounded-xl text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition pl-9"
@@ -891,8 +916,8 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
           </div>
         </div>
 
-        <div className="text-xs text-white/40">
-          {!subAdminMode && `${filteredPages.length} / ${pages.length} pages shown`}
+        <div className="flex items-center justify-between text-xs text-white/40 px-1 mt-1">
+          <span>{filteredPages.length} / {pages.length} pages shown</span>
           {(contentTypeFilter !== 'all' || statusFilter !== 'all' || subDubFilter !== 'all' || visibilityFilter !== 'all' || subAdminFilter !== 'all') && (
             <button
               onClick={() => {
@@ -902,7 +927,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
                 setVisibilityFilter('all');
                 setSubAdminFilter('all');
               }}
-              className="ml-2 text-purple-400 hover:text-purple-300 underline"
+              className="text-purple-400 hover:text-purple-300 underline"
             >
               Clear filters
             </button>
@@ -1179,6 +1204,15 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
           })
         )}
       </div>
+
+      {/* Required CSS for CustomSelect animation */}
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(-4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fadeIn { animation: fadeIn 0.15s ease-out; }
+      `}</style>
     </div>
   );
 };
