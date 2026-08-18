@@ -13,6 +13,10 @@ interface SubAdmin {
   isBlocked?: boolean;
   lastLogin?: string;
   createdAt?: string;
+  phone?: string;
+  upi?: string;
+  gmail?: string;
+  youtubeChannel?: string;
 }
 
 interface SubAdminStat {
@@ -167,6 +171,78 @@ const ICONS = {
   info: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
 };
 
+// ── Custom styled checkbox component ─────────────────────────────────
+const StyledCheckbox: React.FC<{
+  checked: boolean;
+  onChange: () => void;
+  label?: React.ReactNode;
+  icon?: React.ReactNode;
+  className?: string;
+}> = ({ checked, onChange, label, icon, className = '' }) => {
+  return (
+    <label className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-xs transition-all select-none ${className} ${
+      checked
+        ? 'border-purple-500/50 bg-purple-500/10 text-purple-200'
+        : 'border-white/5 bg-white/5 text-white/50 hover:border-white/10 hover:text-white/70'
+    }`}>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onChange}
+        className="peer sr-only"
+      />
+      <span className={`flex h-4 w-4 items-center justify-center rounded-md border transition-all ${
+        checked
+          ? 'border-purple-500 bg-purple-500'
+          : 'border-white/30 bg-white/5'
+      }`}>
+        <svg
+          className={`h-3 w-3 text-white transition-all ${checked ? 'opacity-100 scale-100' : 'opacity-0 scale-0'}`}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={3}
+          viewBox="0 0 24 24"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M5 13l4 4L19 7" />
+        </svg>
+      </span>
+      {icon && <span className="shrink-0">{icon}</span>}
+      {label}
+    </label>
+  );
+};
+
+// ── Custom styled select component ───────────────────────────────────
+const StyledSelect: React.FC<{
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  className?: string;
+}> = ({ value, onChange, options, className = '' }) => {
+  return (
+    <div className={`relative ${className}`}>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full appearance-none rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 pr-10 text-sm text-white outline-none transition-all focus:border-purple-500/50 focus:bg-white/10"
+      >
+        {options.map(opt => (
+          <option key={opt.value} value={opt.value} className="bg-slate-900 text-white">
+            {opt.label}
+          </option>
+        ))}
+      </select>
+      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-white/50">
+        <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M19 9l-7 7-7-7" />
+        </svg>
+      </div>
+    </div>
+  );
+};
+
 // ── Main Component ───────────────────────────────────────────────────
 
 const SubAdminManager: React.FC = () => {
@@ -184,7 +260,6 @@ const SubAdminManager: React.FC = () => {
   const [shortUsersData, setShortUsersData] = useState<Record<string, SubShortUser[]>>({});
   const [detailLoading, setDetailLoading] = useState<Record<string, boolean>>({});
 
-  // ✅ NEW — Assign Anime modal state
   const [assignModalFor, setAssignModalFor] = useState<SubAdmin | null>(null);
   const [allAnime, setAllAnime] = useState<SubAnime[]>([]);
   const [assignedAnimeIds, setAssignedAnimeIds] = useState<Set<string>>(new Set());
@@ -198,9 +273,12 @@ const SubAdminManager: React.FC = () => {
     fullName: '',
     permissions: [] as string[],
     animeAccess: 'own' as 'own' | 'all',
+    phone: '',
+    upi: '',
+    gmail: '',
+    youtubeChannel: '',
   });
 
-  // Password visibility toggles
   const [showPassCreate, setShowPassCreate] = useState(false);
   const [showPassEdit, setShowPassEdit] = useState(false);
 
@@ -251,7 +329,17 @@ const SubAdminManager: React.FC = () => {
   }, []);
 
   const resetForm = () => {
-    setForm({ username: '', password: '', fullName: '', permissions: [], animeAccess: 'own' });
+    setForm({
+      username: '',
+      password: '',
+      fullName: '',
+      permissions: [],
+      animeAccess: 'own',
+      phone: '',
+      upi: '',
+      gmail: '',
+      youtubeChannel: '',
+    });
     setEditingId(null);
     setShowForm(false);
     setShowPassCreate(false);
@@ -276,6 +364,10 @@ const SubAdminManager: React.FC = () => {
       fullName: sa.fullName || '',
       permissions: sa.permissions || [],
       animeAccess: sa.animeAccess || 'own',
+      phone: sa.phone || '',
+      upi: sa.upi || '',
+      gmail: sa.gmail || '',
+      youtubeChannel: sa.youtubeChannel || '',
     });
     setShowPassEdit(false);
   };
@@ -289,6 +381,10 @@ const SubAdminManager: React.FC = () => {
           fullName: form.fullName,
           permissions: form.permissions,
           animeAccess: form.animeAccess,
+          phone: form.phone,
+          upi: form.upi,
+          gmail: form.gmail,
+          youtubeChannel: form.youtubeChannel,
         };
         if (form.password.trim()) payload.password = form.password;
         await axios.put(`${API_BASE}/sub-admin/${editingId}`, payload, authHeaders);
@@ -366,7 +462,6 @@ const SubAdminManager: React.FC = () => {
     if (tab === 'users' && !shortUsersData[id]) fetchShortUsersForSubAdmin(id);
   };
 
-  // ✅ NEW — Assign Anime functions
   const openAssignModal = async (sa: SubAdmin) => {
     setAssignModalFor(sa);
     setAssignLoading(true);
@@ -404,7 +499,6 @@ const SubAdminManager: React.FC = () => {
         authHeaders
       );
 
-      // ✅ explicit Set<string> — ab id: string properly infer hoga, red line hat jayegi
       const currentIds: Set<string> = new Set(
         (currentRes.data || []).map((a: SubAnime) => a._id)
       );
@@ -439,7 +533,6 @@ const SubAdminManager: React.FC = () => {
     );
   };
 
-  // Totals for top stats bar
   const totals = Object.values(stats).reduce(
     (acc, s) => ({
       animeCount: acc.animeCount + s.animeCount,
@@ -498,7 +591,7 @@ const SubAdminManager: React.FC = () => {
         </div>
       )}
 
-      {/* ── Create form (top, only when adding new) ───── */}
+      {/* ── Create form ───────────────────────────────── */}
       {showForm && !editingId && (
         <form
           onSubmit={handleSubmit}
@@ -558,14 +651,55 @@ const SubAdminManager: React.FC = () => {
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-white/60">Anime Access</label>
-              <select
+              <StyledSelect
                 value={form.animeAccess}
-                onChange={e => setForm({ ...form, animeAccess: e.target.value as 'own' | 'all' })}
-                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white outline-none transition-all focus:border-purple-500/50 focus:bg-white/10"
-              >
-                <option value="own">Only own anime</option>
-                <option value="all">All anime</option>
-              </select>
+                onChange={(value) => setForm({ ...form, animeAccess: value as 'own' | 'all' })}
+                options={[
+                  { value: 'own', label: 'Only own anime' },
+                  { value: 'all', label: 'All anime' },
+                ]}
+              />
+            </div>
+            {/* NEW: Optional contact fields */}
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-white/60">Phone Number</label>
+              <input
+                type="tel"
+                value={form.phone}
+                onChange={e => setForm({ ...form, phone: e.target.value })}
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none transition-all focus:border-purple-500/50 focus:bg-white/10"
+                placeholder="Optional"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-white/60">UPI ID</label>
+              <input
+                type="text"
+                value={form.upi}
+                onChange={e => setForm({ ...form, upi: e.target.value })}
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none transition-all focus:border-purple-500/50 focus:bg-white/10"
+                placeholder="Optional"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-white/60">Gmail</label>
+              <input
+                type="email"
+                value={form.gmail}
+                onChange={e => setForm({ ...form, gmail: e.target.value })}
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none transition-all focus:border-purple-500/50 focus:bg-white/10"
+                placeholder="Optional"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-white/60">YouTube Channel Name</label>
+              <input
+                type="text"
+                value={form.youtubeChannel}
+                onChange={e => setForm({ ...form, youtubeChannel: e.target.value })}
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none transition-all focus:border-purple-500/50 focus:bg-white/10"
+                placeholder="Optional"
+              />
             </div>
           </div>
 
@@ -573,23 +707,13 @@ const SubAdminManager: React.FC = () => {
             <label className="mb-3 block text-xs font-medium text-white/60">Permissions</label>
             <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-4">
               {AVAILABLE_PERMISSIONS.map(p => (
-                <label
+                <StyledCheckbox
                   key={p.key}
-                  className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-xs transition-all ${
-                    form.permissions.includes(p.key)
-                      ? 'border-purple-500/50 bg-purple-500/10 text-purple-200'
-                      : 'border-white/5 bg-white/5 text-white/50 hover:border-white/10 hover:text-white/70'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={form.permissions.includes(p.key)}
-                    onChange={() => togglePermission(p.key)}
-                    className="rounded accent-purple-500"
-                  />
-                  <SvgIcon d={p.icon} className="h-3.5 w-3.5 shrink-0" />
-                  {p.label}
-                </label>
+                  checked={form.permissions.includes(p.key)}
+                  onChange={() => togglePermission(p.key)}
+                  icon={<SvgIcon d={p.icon} className="h-3.5 w-3.5 shrink-0" />}
+                  label={p.label}
+                />
               ))}
             </div>
           </div>
@@ -635,6 +759,19 @@ const SubAdminManager: React.FC = () => {
                       </button>
                     </div>
                     <p className="text-xs text-white/40">{sa.fullName || '—'}</p>
+                    {/* YouTube channel display (if exists) */}
+                    {sa.youtubeChannel && (
+                      <p className="mt-0.5 flex items-center gap-1 text-xs text-red-400">
+                        <svg
+                          className="h-3.5 w-3.5 shrink-0"
+                          fill="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+                        </svg>
+                        {sa.youtubeChannel}
+                      </p>
+                    )}
                   </div>
 
                   <span className="rounded-full bg-blue-500/10 px-2.5 py-0.5 text-[10px] font-medium text-blue-300 border border-blue-500/20">
@@ -681,7 +818,7 @@ const SubAdminManager: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Inline edit form (appears under the card header when editing) */}
+                {/* Inline edit form */}
                 {editingId === sa._id && (
                   <form
                     onSubmit={handleSubmit}
@@ -751,14 +888,55 @@ const SubAdminManager: React.FC = () => {
                       </div>
                       <div>
                         <label className="mb-1.5 block text-xs font-medium text-white/60">Anime Access</label>
-                        <select
+                        <StyledSelect
                           value={form.animeAccess}
-                          onChange={e => setForm({ ...form, animeAccess: e.target.value as 'own' | 'all' })}
+                          onChange={(value) => setForm({ ...form, animeAccess: value as 'own' | 'all' })}
+                          options={[
+                            { value: 'own', label: 'Only own anime' },
+                            { value: 'all', label: 'All anime' },
+                          ]}
+                        />
+                      </div>
+                      {/* NEW: Optional contact fields for edit */}
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-white/60">Phone Number</label>
+                        <input
+                          type="tel"
+                          value={form.phone}
+                          onChange={e => setForm({ ...form, phone: e.target.value })}
                           className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white outline-none focus:border-purple-500/50"
-                        >
-                          <option value="own">Only own anime</option>
-                          <option value="all">All anime</option>
-                        </select>
+                          placeholder="Optional"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-white/60">UPI ID</label>
+                        <input
+                          type="text"
+                          value={form.upi}
+                          onChange={e => setForm({ ...form, upi: e.target.value })}
+                          className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white outline-none focus:border-purple-500/50"
+                          placeholder="Optional"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-white/60">Gmail</label>
+                        <input
+                          type="email"
+                          value={form.gmail}
+                          onChange={e => setForm({ ...form, gmail: e.target.value })}
+                          className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white outline-none focus:border-purple-500/50"
+                          placeholder="Optional"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-white/60">YouTube Channel Name</label>
+                        <input
+                          type="text"
+                          value={form.youtubeChannel}
+                          onChange={e => setForm({ ...form, youtubeChannel: e.target.value })}
+                          className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white outline-none focus:border-purple-500/50"
+                          placeholder="Optional"
+                        />
                       </div>
                     </div>
 
@@ -766,23 +944,13 @@ const SubAdminManager: React.FC = () => {
                       <label className="mb-3 block text-xs font-medium text-white/60">Permissions</label>
                       <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-4">
                         {AVAILABLE_PERMISSIONS.map(p => (
-                          <label
+                          <StyledCheckbox
                             key={p.key}
-                            className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-xs transition-all ${
-                              form.permissions.includes(p.key)
-                                ? 'border-purple-500/50 bg-purple-500/10 text-purple-200'
-                                : 'border-white/5 bg-white/5 text-white/50 hover:border-white/10 hover:text-white/70'
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={form.permissions.includes(p.key)}
-                              onChange={() => togglePermission(p.key)}
-                              className="rounded accent-purple-500"
-                            />
-                            <SvgIcon d={p.icon} className="h-3.5 w-3.5 shrink-0" />
-                            {p.label}
-                          </label>
+                            checked={form.permissions.includes(p.key)}
+                            onChange={() => togglePermission(p.key)}
+                            icon={<SvgIcon d={p.icon} className="h-3.5 w-3.5 shrink-0" />}
+                            label={p.label}
+                          />
                         ))}
                       </div>
                     </div>
@@ -1009,7 +1177,7 @@ const SubAdminManager: React.FC = () => {
         )}
       </div>
 
-      {/* ✅ NEW — Assign Anime Modal */}
+      {/* Assign Anime Modal */}
       {assignModalFor && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
           <div className="w-full max-w-2xl max-h-[85vh] overflow-hidden rounded-3xl border border-white/10 bg-slate-900 flex flex-col">
@@ -1039,25 +1207,27 @@ const SubAdminManager: React.FC = () => {
                   .map(a => {
                     const isChecked = assignedAnimeIds.has(a._id);
                     return (
-                      <label
+                      <StyledCheckbox
                         key={a._id}
-                        className={`flex items-center gap-3 rounded-xl border px-3 py-2 cursor-pointer transition ${
-                          isChecked ? 'border-purple-500/50 bg-purple-500/10' : 'border-white/5 bg-white/[0.02] hover:border-white/10'
-                        }`}
-                      >
-                        <input type="checkbox" checked={isChecked} onChange={() => toggleAssignAnime(a._id)} className="accent-purple-500" />
-                        <img
-                          src={a.thumbnail || 'https://via.placeholder.com/40x56/1e293b/64748b?text=NA'}
-                          className="w-8 h-11 object-cover rounded"
-                          onError={e => {
-                            (e.currentTarget as HTMLImageElement).src = 'https://via.placeholder.com/40x56/1e293b/64748b?text=NA';
-                          }}
-                        />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm text-white truncate">{a.title}</p>
-                          <p className="text-[10px] text-white/40">{a.contentType} · {a.createdByUsername || 'admin'}</p>
-                        </div>
-                      </label>
+                        checked={isChecked}
+                        onChange={() => toggleAssignAnime(a._id)}
+                        className="!justify-start !gap-3 !px-3 !py-2"
+                        label={
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm text-white truncate">{a.title}</p>
+                            <p className="text-[10px] text-white/40">{a.contentType} · {a.createdByUsername || 'admin'}</p>
+                          </div>
+                        }
+                        icon={
+                          <img
+                            src={a.thumbnail || 'https://via.placeholder.com/40x56/1e293b/64748b?text=NA'}
+                            className="w-8 h-11 object-cover rounded"
+                            onError={e => {
+                              (e.currentTarget as HTMLImageElement).src = 'https://via.placeholder.com/40x56/1e293b/64748b?text=NA';
+                            }}
+                          />
+                        }
+                      />
                     );
                   })
               )}

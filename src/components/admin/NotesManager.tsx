@@ -12,8 +12,8 @@ interface Note {
   _id: string;
   title: string;
   content: string;
-  color: string;          // background color
-  textColor?: string;     // text color
+  color: string;
+  textColor?: string;
   pinned: boolean;
   archived: boolean;
   trashed: boolean;
@@ -278,6 +278,41 @@ const ICONS = {
   textColorIcon: 'M4 6h16M4 12h12M4 18h8',
 };
 
+// ── Custom Checklist Checkbox (compact, styled) ─────────────────────
+const ChecklistCheckbox: React.FC<{
+  checked: boolean;
+  onChange: () => void;
+  className?: string;
+}> = ({ checked, onChange, className = '' }) => (
+  <label className={`inline-flex items-center justify-center cursor-pointer ${className}`}>
+    <input
+      type="checkbox"
+      checked={checked}
+      onChange={onChange}
+      className="peer sr-only"
+    />
+    <span
+      className={`flex h-4 w-4 items-center justify-center rounded-md border transition-all ${
+        checked
+          ? 'border-purple-500 bg-purple-500'
+          : 'border-white/30 bg-white/5'
+      }`}
+    >
+      <svg
+        className={`h-3 w-3 text-white transition-all ${checked ? 'opacity-100 scale-100' : 'opacity-0 scale-0'}`}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={3}
+        viewBox="0 0 24 24"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M5 13l4 4L19 7" />
+      </svg>
+    </span>
+  </label>
+);
+
 const StickyNoteIcon: React.FC<{ className?: string }> = ({ className = 'w-10 h-10' }) => (
   <svg className={className} fill="none" stroke="currentColor" strokeWidth={1.3} viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -494,12 +529,13 @@ interface NoteCardProps {
   editColor: string; setEditColor: (v: string) => void;
   editTextColor: string; setEditTextColor: (v: string) => void;
   editChecklist: ChecklistItem[];
+  setEditChecklist: React.Dispatch<React.SetStateAction<ChecklistItem[]>>; // ✅ added
   editLabels: string[];
   editLabelInput: string; setEditLabelInput: (v: string) => void;
   editChecklistInput: string; setEditChecklistInput: (v: string) => void;
   editLabelFocused: boolean; setEditLabelFocused: (v: boolean) => void;
   editReminder: string; setEditReminder: (v: string) => void;
-  editTextareaRef: React.RefObject<HTMLTextAreaElement | null>; // ✅ React 19 compatible
+  editTextareaRef: React.RefObject<HTMLTextAreaElement | null>;
   labelSuggestions: string[];
   apiBase: string; token: string;
   showColorPicker: string | null; setShowColorPicker: (v: string | null) => void;
@@ -531,6 +567,7 @@ const NoteCard: React.FC<NoteCardProps> = ({
   editColor, setEditColor,
   editTextColor, setEditTextColor,
   editChecklist,
+  setEditChecklist, // ✅ added
   editLabels,
   editLabelInput, setEditLabelInput,
   editChecklistInput, setEditChecklistInput,
@@ -606,15 +643,25 @@ const NoteCard: React.FC<NoteCardProps> = ({
         <div className="space-y-1.5">
           {editChecklist.map((item, idx) => (
             <div key={idx} className="flex items-center gap-2 text-xs group/edit">
-              <input
-                type="checkbox"
+              <ChecklistCheckbox
                 checked={item.checked}
                 onChange={() => toggleEditChecklistItem(idx)}
-                className="rounded accent-purple-500"
               />
-              <span className={`flex-1 ${item.checked ? 'line-through' : ''}`} style={{ color: editTextColor, opacity: item.checked ? 0.3 : 0.8 }}>
-                {item.text}
-              </span>
+              <input
+                type="text"
+                value={item.text}
+                onChange={(e) => {
+                  const updated = [...editChecklist];
+                  updated[idx] = { ...updated[idx], text: e.target.value };
+                  setEditChecklist(updated);
+                }}
+                className="flex-1 bg-transparent outline-none text-xs"
+                style={{
+                  color: editTextColor,
+                  opacity: item.checked ? 0.3 : 0.8,
+                  textDecoration: item.checked ? 'line-through' : 'none',
+                }}
+              />
               <button onClick={() => removeEditChecklistItem(idx)} className="text-white/20 group-hover/edit:text-white/50 hover:!text-red-400">
                 <SvgIcon d={ICONS.close} className="w-3 h-3" />
               </button>
@@ -678,7 +725,7 @@ const NoteCard: React.FC<NoteCardProps> = ({
           </div>
         </div>
 
-        {/* Reminder — no input shown until user opts in, so no dd-mm-yyyy placeholder */}
+        {/* Reminder */}
         <div className="flex items-center gap-2 flex-wrap pt-1" onClick={(e) => e.stopPropagation()}>
           <SvgIcon d={ICONS.clock} className="w-4 h-4 text-white/50" />
           {editReminder ? (
@@ -708,7 +755,7 @@ const NoteCard: React.FC<NoteCardProps> = ({
           )}
         </div>
 
-        {/* Color picker: presets + custom hex/canvas picker for both bg and text — inline, not a popup */}
+        {/* Color picker */}
         <div className="pt-2 border-t border-white/10" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[9px] text-white/30 w-8">Bg:</span>
@@ -828,11 +875,9 @@ const NoteCard: React.FC<NoteCardProps> = ({
               onClick={(e) => e.stopPropagation()}
               className="flex items-center gap-2 text-xs cursor-pointer group/item"
             >
-              <input
-                type="checkbox"
+              <ChecklistCheckbox
                 checked={item.checked}
                 onChange={() => toggleChecklistItem(note, idx)}
-                className="rounded accent-purple-500 w-3.5 h-3.5"
               />
               <span className={`transition-colors ${item.checked ? 'line-through' : ''}`} style={{ color: textColor, opacity: item.checked ? 0.3 : 0.8 }}>
                 {item.text}
@@ -1351,6 +1396,7 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
       editColor={editColor} setEditColor={setEditColor}
       editTextColor={editTextColor} setEditTextColor={setEditTextColor}
       editChecklist={editChecklist}
+      setEditChecklist={setEditChecklist} // ✅ pass setter
       editLabels={editLabels}
       editLabelInput={editLabelInput} setEditLabelInput={setEditLabelInput}
       editChecklistInput={editChecklistInput} setEditChecklistInput={setEditChecklistInput}
@@ -1539,9 +1585,22 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
               {composerShowChecklist && (
                 <div className="space-y-1.5">
                   {composerChecklist.map((item, idx) => (
-                    <div key={idx} className="flex items-center gap-2 text-xs" style={{ color: composerTextColor }}>
-                      <SvgIcon d={ICONS.check} className="w-3 h-3 text-emerald-400" />
-                      <span className="flex-1">{item.text}</span>
+                    <div key={idx} className="flex items-center gap-2 text-xs">
+                      <ChecklistCheckbox
+                        checked={item.checked}
+                        onChange={() => setComposerChecklist(prev => prev.map((it, i) => i === idx ? { ...it, checked: !it.checked } : it))}
+                      />
+                      <input
+                        type="text"
+                        value={item.text}
+                        onChange={(e) => {
+                          const updated = [...composerChecklist];
+                          updated[idx] = { ...updated[idx], text: e.target.value };
+                          setComposerChecklist(updated);
+                        }}
+                        className="flex-1 bg-transparent outline-none"
+                        style={{ color: composerTextColor }}
+                      />
                       <button onClick={() => setComposerChecklist(prev => prev.filter((_, i) => i !== idx))} className="text-white/30 hover:text-red-400">
                         <SvgIcon d={ICONS.close} className="w-3 h-3" />
                       </button>
@@ -1605,7 +1664,7 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
                 )}
               </div>
 
-              {/* Reminder — no input shown until user opts in, so no dd-mm-yyyy placeholder */}
+              {/* Reminder */}
               <div className="flex items-center gap-2 flex-wrap pt-1" onClick={(e) => e.stopPropagation()}>
                 <SvgIcon d={ICONS.clock} className="w-4 h-4 text-white/50" />
                 {composerReminder ? (

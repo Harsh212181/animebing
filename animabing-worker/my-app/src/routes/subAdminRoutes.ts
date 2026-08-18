@@ -97,7 +97,10 @@ subAdminRoutes.get('/me', adminAuth, async (c) => {
 // ============ CREATE SUB-ADMIN (super admin only) ============
 subAdminRoutes.post('/', adminAuth, superAdminOnly, async (c) => {
   try {
-    const { username, password, fullName, permissions, animeAccess } = await c.req.json()
+    const {
+      username, password, fullName, permissions, animeAccess,
+      phone, upi, gmail, youtubeChannel // <-- naye fields
+    } = await c.req.json()
 
     if (!username || !password) {
       return c.json({ success: false, error: 'Username and password are required' }, 400)
@@ -122,7 +125,12 @@ subAdminRoutes.post('/', adminAuth, superAdminOnly, async (c) => {
       permissions: Array.isArray(permissions) ? permissions : [],
       animeAccess: animeAccess === 'all' ? 'all' : 'own',
       isBlocked: false,
-      createdBy: admin.username
+      createdBy: admin.username,
+      // optional fields (agar provided hain to set karo)
+      ...(phone !== undefined && { phone }),
+      ...(upi !== undefined && { upi }),
+      ...(gmail !== undefined && { gmail }),
+      ...(youtubeChannel !== undefined && { youtubeChannel }),
     }
 
     const result = await insertOne('subadmins', newSubAdmin, c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -151,17 +159,27 @@ subAdminRoutes.get('/', adminAuth, superAdminOnly, async (c) => {
   }
 })
 
-// ============ UPDATE SUB-ADMIN (permissions, animeAccess, fullName) ============
+// ============ UPDATE SUB-ADMIN (permissions, animeAccess, fullName, new fields) ============
 subAdminRoutes.put('/:id', adminAuth, superAdminOnly, async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ success: false, error: 'Invalid ID' }, 400)
 
-    const { fullName, permissions, animeAccess, password } = await c.req.json()
+    const {
+      fullName, permissions, animeAccess, password,
+      phone, upi, gmail, youtubeChannel // <-- new fields
+    } = await c.req.json()
+
     const updateData: any = {}
     if (fullName !== undefined) updateData.fullName = fullName
     if (Array.isArray(permissions)) updateData.permissions = permissions
     if (animeAccess === 'all' || animeAccess === 'own') updateData.animeAccess = animeAccess
+
+    // optional fields update (sirf agar diye gaye hon)
+    if (phone !== undefined) updateData.phone = phone
+    if (upi !== undefined) updateData.upi = upi
+    if (gmail !== undefined) updateData.gmail = gmail
+    if (youtubeChannel !== undefined) updateData.youtubeChannel = youtubeChannel
 
     // Optional password reset by super admin
     if (password && password.trim()) {

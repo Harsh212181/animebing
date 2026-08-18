@@ -409,6 +409,10 @@ export interface ISubAdmin {
   lastLogin?: Date
   createdAt?: Date
   updatedAt?: Date
+  phone?: string;          // optional phone number
+  upi?: string;            // optional UPI ID
+  gmail?: string;          // optional Gmail address
+  youtubeChannel?: string; // optional YouTube channel name
 }
 
 // ============ ACTIVITY LOG ============
