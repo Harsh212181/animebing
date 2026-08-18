@@ -224,10 +224,11 @@ const css = `
   flex-direction: column;
   gap: 6px;
   transition: border-color 0.15s;
+  min-width: 0;
 }
 .sm-stat-card:hover { border-color: var(--border2); }
 .sm-stat-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.7px; color: var(--t3); }
-.sm-stat-value { font-family: var(--mono); font-size: 20px; font-weight: 500; letter-spacing: -0.5px; }
+.sm-stat-value { font-family: var(--mono); font-size: 20px; font-weight: 500; letter-spacing: -0.5px; overflow-wrap: anywhere; }
 .sm-stat-sub { font-size: 11px; color: var(--t3); margin-top: 2px; }
 .sm-v-accent { color: var(--accent); }
 .sm-v-green  { color: var(--green); }
@@ -245,7 +246,11 @@ const css = `
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 5px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
 }
+.sm-tabs::-webkit-scrollbar { display: none; }
 .sm-tab {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 8px 16px;
@@ -254,6 +259,8 @@ const css = `
   background: transparent; color: var(--t2);
   cursor: pointer; transition: all 0.14s;
   position: relative;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .sm-tab:hover { color: var(--t1); background: var(--bg3); }
 .sm-tab-active { background: var(--bg3) !important; color: var(--t1) !important; }
@@ -274,8 +281,8 @@ const css = `
   display: flex; align-items: center; gap: 10px;
   margin-bottom: 14px; flex-wrap: wrap;
 }
-.sm-toolbar-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
-.sm-search-wrap { position: relative; flex: 1; max-width: 280px; }
+.sm-toolbar-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; flex-wrap: wrap; }
+.sm-search-wrap { position: relative; flex: 1; max-width: 280px; min-width: 160px; }
 .sm-search-wrap i { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--t3); font-size: 14px; pointer-events: none; }
 .sm-search {
   width: 100%;
@@ -320,7 +327,7 @@ const css = `
 @keyframes smSlide { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
 .sm-panel-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--t3); margin-bottom: 14px; }
 .sm-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 10px; margin-bottom: 14px; }
-.sm-field { display: flex; flex-direction: column; gap: 5px; }
+.sm-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .sm-field > span { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--t3); }
 .sm-input {
   width: 100%; background: var(--bg0); border: 1px solid var(--border2);
@@ -338,14 +345,15 @@ const css = `
 }
 .sm-select:focus { outline: none; border-color: rgba(124,106,247,0.5); }
 .sm-form-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.sm-preview-url { font-family: var(--mono); font-size: 11px; color: var(--teal); margin-top: 4px; }
+.sm-preview-url { font-family: var(--mono); font-size: 11px; color: var(--teal); margin-top: 4px; word-break: break-all; }
 
 /* ── table ── */
 .sm-table-shell {
   background: var(--bg1); border: 1px solid var(--border);
   border-radius: var(--radius); overflow: hidden;
 }
-.sm-table-wrap { overflow-x: auto; }
+.sm-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.sm-users-wrap { overflow-x: visible; }
 .sm-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .sm-table thead tr { background: var(--bg2); border-bottom: 1px solid var(--border); }
 .sm-table th {
@@ -407,7 +415,7 @@ const css = `
 .sm-inline-input:focus { outline: none; border-color: rgba(124,106,247,0.45); }
 
 /* ── action buttons ── */
-.sm-act-group { display: flex; align-items: center; gap: 3px; }
+.sm-act-group { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
 .sm-act-sep { width: 1px; height: 16px; background: var(--border); margin: 0 2px; flex-shrink: 0; }
 .sm-act-btn {
   width: 28px; height: 28px;
@@ -415,6 +423,7 @@ const css = `
   border-radius: 7px; border: 1px solid var(--border);
   background: transparent; color: var(--t3);
   cursor: pointer; font-size: 14px; transition: all 0.12s;
+  flex-shrink: 0;
 }
 .sm-act-btn:hover { background: var(--bg3); color: var(--t2); border-color: var(--border2); }
 .sm-act-btn:disabled { opacity: 0.3; cursor: not-allowed; }
@@ -430,10 +439,10 @@ const css = `
 .sm-edit-inner { padding: 18px 20px; background: #0d0d12; border-top: 1px solid var(--border); animation: smExpand 0.16s ease; }
 @keyframes smExpand { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:translateY(0); } }
 
-.sm-edit-header { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.sm-edit-header { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
 .sm-edit-bar { width: 3px; height: 14px; border-radius: 2px; background: var(--accent); flex-shrink: 0; }
 .sm-edit-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--accent); }
-.sm-edit-sub { font-family: var(--mono); font-size: 11px; color: var(--t3); background: var(--bg2); border: 1px solid var(--border); padding: 3px 10px; border-radius: 5px; margin-left: auto; }
+.sm-edit-sub { font-family: var(--mono); font-size: 11px; color: var(--t3); background: var(--bg2); border: 1px solid var(--border); padding: 3px 10px; border-radius: 5px; margin-left: auto; word-break: break-all; }
 
 /* ── modal overlay (only for delete confirmations) ── */
 .sm-modal-backdrop {
@@ -449,22 +458,24 @@ const css = `
   border-radius: 14px; padding: 22px 24px;
   width: 100%; max-width: 420px;
   animation: smModalIn 0.16s ease;
+  max-height: 90vh;
+  overflow-y: auto;
 }
 @keyframes smModalIn { from { opacity:0; transform:scale(0.96) translateY(-8px); } to { opacity:1; transform:scale(1) translateY(0); } }
-.sm-modal-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; }
+.sm-modal-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; gap: 10px; }
 .sm-modal-title { font-size: 15px; font-weight: 600; color: var(--t1); }
-.sm-modal-sub { font-size: 12px; color: var(--t3); margin-top: 3px; }
+.sm-modal-sub { font-size: 12px; color: var(--t3); margin-top: 3px; word-break: break-all; }
 .sm-modal-close { width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--t3); cursor: pointer; font-size: 14px; transition: all 0.12s; flex-shrink: 0; }
 .sm-modal-close:hover { background: var(--bg3); color: var(--t2); }
-.sm-modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.sm-modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
 
 .sm-upi-box { background: var(--green-dim); border: 1px solid var(--green-border); border-radius: 7px; padding: 10px 14px; margin-bottom: 12px; }
-.sm-upi-row { font-size: 11px; color: var(--green); margin-bottom: 3px; font-family: var(--mono); }
+.sm-upi-row { font-size: 11px; color: var(--green); margin-bottom: 3px; font-family: var(--mono); word-break: break-all; }
 .sm-upi-row:last-child { margin-bottom: 0; }
 
 /* ── messages layout ── */
 .sm-msg-layout { display: grid; grid-template-columns: 220px 1fr; gap: 12px; min-height: 500px; }
-.sm-msg-sidebar { background: var(--bg1); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.sm-msg-sidebar { background: var(--bg1); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; }
 .sm-msg-sidebar-header {
   padding: 12px 14px;
   border-bottom: 1px solid var(--border);
@@ -503,6 +514,7 @@ const css = `
   border-radius: var(--radius);
   display: flex;
   flex-direction: column;
+  min-height: 0;
   background-image: repeating-linear-gradient(
     45deg,
     rgba(255,255,255,0.01) 0px,
@@ -514,6 +526,7 @@ const css = `
 .sm-msg-win-header {
   padding: 12px 16px; border-bottom: 1px solid var(--border);
   display: flex; align-items: center; gap: 10px; background: var(--bg1);
+  flex-wrap: wrap;
 }
 .sm-msg-win-name { font-size: 13px; font-weight: 500; color: var(--t1); }
 .sm-msg-win-handle { font-size: 11px; color: var(--t3); font-family: var(--mono); }
@@ -548,12 +561,13 @@ const css = `
   flex: 1; background: var(--bg0); border: 1px solid var(--border2);
   border-radius: 9999px; padding: 10px 18px; font-size: 13px;
   font-family: var(--font); color: var(--t1); outline: none; transition: border-color 0.2s;
+  min-width: 0;
 }
 .sm-msg-input:focus { border-color: var(--accent-border); }
 .sm-msg-send-btn {
   width: 40px; height: 40px; border-radius: 50%; background: var(--accent); color: #fff;
   border: none; display: flex; align-items: center; justify-content: center;
-  cursor: pointer; transition: background 0.15s; font-size: 18px;
+  cursor: pointer; transition: background 0.15s; font-size: 18px; flex-shrink: 0;
 }
 .sm-msg-send-btn:hover { background: #6a5acd; }
 .sm-msg-send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -575,17 +589,17 @@ const css = `
 .sm-req-item:last-child { border-bottom: none; }
 .sm-req-item:hover { background: rgba(255,255,255,0.015); }
 .sm-req-left { flex: 1; min-width: 200px; }
-.sm-req-meta { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
+.sm-req-meta { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; flex-wrap: wrap; }
 .sm-req-name { font-size: 13px; font-weight: 500; color: var(--t1); }
 .sm-req-handle { font-size: 11px; color: var(--t3); font-family: var(--mono); margin-top: 1px; }
 .sm-req-amount { font-family: var(--mono); font-size: 13px; font-weight: 500; color: var(--amber); margin-top: 4px; }
-.sm-req-upi { font-size: 11px; color: var(--t3); margin-top: 3px; font-family: var(--mono); }
-.sm-req-msg { font-size: 11px; color: var(--t3); margin-top: 3px; font-style: italic; }
+.sm-req-upi { font-size: 11px; color: var(--t3); margin-top: 3px; font-family: var(--mono); word-break: break-all; }
+.sm-req-msg { font-size: 11px; color: var(--t3); margin-top: 3px; font-style: italic; word-break: break-word; }
 .sm-req-time { font-size: 10px; color: var(--t3); margin-top: 6px; font-family: var(--mono); }
-.sm-req-actions { display: flex; gap: 6px; align-items: flex-start; flex-wrap: wrap; }
+.sm-req-actions { display: flex; gap: 6px; align-items: flex-start; flex-wrap: wrap; width: 100%; }
 
 /* ── table footer ── */
-.sm-table-footer { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-top: 1px solid var(--border); background: var(--bg2); }
+.sm-table-footer { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-top: 1px solid var(--border); background: var(--bg2); flex-wrap: wrap; gap: 8px; }
 .sm-footer-count { font-size: 11px; color: var(--t3); font-family: var(--mono); }
 
 /* ── empty ── */
@@ -660,6 +674,7 @@ const css = `
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-wrap: wrap;
 }
 .sm-user-card-cred-label {
   font-size: 9px;
@@ -673,6 +688,7 @@ const css = `
   font-size: 12px;
   padding: 2px 8px;
   border-radius: 4px;
+  word-break: break-all;
 }
 
 .sm-user-card-badges {
@@ -738,6 +754,7 @@ const css = `
   align-items: center;
   gap: 8px;
   margin-bottom: 14px;
+  flex-wrap: wrap;
 }
 .sm-inline-panel-title {
   font-size: 11px;
@@ -758,6 +775,124 @@ const css = `
   font-size: 11px;
   color: var(--t3);
   margin-left: auto;
+}
+
+/* ── LINK CARD (mobile list, replaces table on small screens) ── */
+.sm-mobile-link-list { display: none; }
+.sm-link-card {
+  background: var(--bg1);
+  border-bottom: 1px solid var(--border);
+  padding: 13px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sm-link-card:last-child { border-bottom: none; }
+.sm-link-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.sm-link-card-code-wrap { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.sm-link-card-label { font-size: 12px; color: var(--t2); font-weight: 500; display: block; }
+.sm-link-card-url {
+  font-size: 11.5px; color: var(--blue); text-decoration: none;
+  word-break: break-all; line-height: 1.4;
+}
+.sm-link-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--t3);
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+.sm-link-card-meta-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.sm-link-card-meta-item span:last-child { word-break: break-word; }
+.sm-link-card-meta-item:last-child { align-items: flex-end; text-align: right; }
+.sm-link-card-meta-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--t3); }
+.sm-link-card-actions { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+
+/* ══════════════════════════ MOBILE RESPONSIVE ══════════════════════════ */
+@media (max-width: 860px) {
+  .sm-msg-layout { grid-template-columns: 1fr; min-height: 0; }
+  .sm-msg-sidebar { max-height: 220px; }
+  .sm-msg-user-list { max-height: 170px; }
+  .sm-msg-window { min-height: 460px; }
+}
+
+@media (max-width: 640px) {
+  .sm { font-size: 12.5px; }
+
+  /* stats */
+  .sm-stats { grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 14px; }
+  .sm-stat-card { padding: 11px 12px; }
+  .sm-stat-value { font-size: 16px; }
+  .sm-stat-label { font-size: 9px; }
+  .sm-stat-sub { font-size: 10px; }
+
+  /* tabs */
+  .sm-tab { padding: 7px 12px; font-size: 11.5px; }
+
+  /* toolbar */
+  .sm-toolbar { flex-direction: column; align-items: stretch; gap: 8px; }
+  .sm-toolbar-left { width: 100%; }
+  .sm-search-wrap { max-width: none; flex: 1 1 100%; }
+  .sm-btn-new { width: 100%; justify-content: center; }
+  .sm-toolbar > .sm-btn-new { order: -1; }
+
+  /* month/year picker row */
+  .sm-toolbar-left > .sm-btn { flex: 1 1 auto; }
+
+  /* create / edit forms */
+  .sm-create-panel, .sm-inline-panel, .sm-edit-inner { padding: 14px; }
+  .sm-form-grid { grid-template-columns: 1fr; gap: 10px; }
+  .sm-form-actions { flex-direction: column-reverse; }
+  .sm-form-actions .sm-btn { width: 100%; justify-content: center; }
+  .sm-edit-sub { margin-left: 0; width: 100%; }
+
+  /* table: hide the horizontal-scrolling table, show stacked cards instead */
+  .sm-table-wrap { display: none; }
+  .sm-mobile-link-list { display: block; }
+
+  /* user cards */
+  .sm-user-card { padding: 12px 14px; }
+  .sm-user-card-top { align-items: flex-start; }
+  .sm-user-card-identity { min-width: 100%; }
+  .sm-user-card-creds { width: 100%; }
+  .sm-user-card-bottom { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .sm-user-card-stats { width: 100%; justify-content: space-between; gap: 10px; }
+  .sm-user-card-actions { width: 100%; }
+  .sm-user-card-actions .sm-act-btn { flex: 0 0 auto; }
+
+  /* link cards */
+  .sm-link-card { padding: 12px 14px; }
+  .sm-link-card-actions { width: 100%; justify-content: flex-start; }
+
+  /* requests */
+  .sm-req-item { padding: 14px; }
+  .sm-req-actions .sm-btn { flex: 1 1 auto; justify-content: center; }
+
+  /* modal */
+  .sm-modal { padding: 18px; border-radius: 12px; }
+  .sm-modal-footer { flex-direction: column-reverse; }
+  .sm-modal-footer .sm-btn { width: 100%; justify-content: center; }
+
+  /* messages */
+  .sm-msg-win-header { padding: 10px 12px; }
+  .sm-msg-body { max-height: 340px; padding: 10px; }
+  .sm-msg-input-row { padding: 10px; }
+  .sm-bubble, div[style*="max-width: 75%"] { max-width: 88% !important; }
+}
+
+@media (max-width: 400px) {
+  .sm-stats { grid-template-columns: repeat(2, 1fr); }
+  .sm-stat-value { font-size: 14px; }
 }
 `;
 
@@ -1328,7 +1463,7 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
                   </button>
                 </div>
 
-                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', overflowX: 'auto' }}>
                   {MONTH_NAMES.map((m, idx) => (
                     <button
                       key={m}
@@ -1552,6 +1687,122 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
                   </table>
                 )}
               </div>
+
+              {/* MOBILE: stacked link cards (no side-scrolling) */}
+              <div className="sm-mobile-link-list">
+                {linksLoading ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '48px 0', gap: 12 }}>
+                    <Spinner /><p style={{ color: 'var(--t3)', fontSize: 12, fontFamily: 'var(--mono)' }}>Loading links...</p>
+                  </div>
+                ) : filteredLinks.length === 0 ? (
+                  <div className="sm-empty">{links.length === 0 ? 'No links yet. Create one to get started.' : 'No links match your search.'}</div>
+                ) : (
+                  filteredLinks.map(link => {
+                    const hasCode = !!(link.code && link.code.trim());
+                    const isEditingThis = editingLinkId === link._id;
+                    const clickValue = linkViewMode === 'monthly'
+                      ? (monthlyClicks[link.code] || 0)
+                      : (link.clicks || 0);
+                    return (
+                      <div className="sm-link-card" key={link._id}>
+                        <div className="sm-link-card-code-wrap">
+                          {hasCode ? (
+                            <>
+                              <span className="sm-code-chip">{link.code}</span>
+                              <button
+                                className="sm-act-btn"
+                                style={copiedCode === link.code ? { background: 'var(--green-dim)', color: 'var(--green)', borderColor: 'var(--green-border)' } : {}}
+                                onClick={() => copyToClipboard(link.code)}
+                                title="Copy link"
+                              >
+                                <i className={copiedCode === link.code ? 'ti ti-check' : 'ti ti-copy'} />
+                              </button>
+                            </>
+                          ) : (
+                            <span className="sm-code-chip-missing">no code</span>
+                          )}
+                        </div>
+
+                        {link.label && <span className="sm-link-card-label">{link.label}</span>}
+
+                        <span className={`sm-clicks-badge ${clickValue > 100 ? 'sm-clicks-high' : clickValue > 10 ? 'sm-clicks-mid' : 'sm-clicks-low'}`} style={{ alignSelf: 'flex-start' }}>
+                          {clickValue.toLocaleString()} clicks
+                        </span>
+
+                        {link.url ? (
+                          <a href={link.url} target="_blank" rel="noopener noreferrer" className="sm-link-card-url">
+                            {link.url}
+                          </a>
+                        ) : (
+                          <span style={{ color: 'var(--t3)', fontSize: 11.5 }}>No target URL</span>
+                        )}
+
+                        <div className="sm-link-card-meta">
+                          <div className="sm-link-card-meta-item">
+                            <span className="sm-link-card-meta-label">Assigned</span>
+                            <span style={{ color: 'var(--accent)', fontFamily: 'var(--mono)' }}>{getUserName(link.userId?.toString())}</span>
+                          </div>
+                          <div className="sm-link-card-meta-item" style={{ alignItems: 'flex-end' }}>
+                            <span className="sm-link-card-meta-label">Last Click</span>
+                            <span>{link.lastClicked ? new Date(link.lastClicked).toLocaleDateString('en-IN') : 'Never'}</span>
+                          </div>
+                        </div>
+
+                        <div className="sm-link-card-actions">
+                          <button
+                            className={`sm-act-btn${isEditingThis ? ' sm-act-btn-on' : ''}`}
+                            onClick={() => {
+                              if (!hasCode) { toast.error('Cannot edit — link has no short code'); return; }
+                              if (isEditingThis) { setEditingLinkId(null); }
+                              else { setEditingLinkId(link._id); setEditForm({ url: link.url || '', label: link.label || '', userId: link.userId?.toString() || '' }); }
+                            }}
+                            title={hasCode ? 'Edit' : 'No code — edit disabled'}
+                          >
+                            <i className="ti ti-edit" />
+                          </button>
+                          <button className="sm-act-btn sm-act-btn-danger" onClick={() => setDeleteConfirm(link)} title="Delete">
+                            <i className="ti ti-trash" />
+                          </button>
+                        </div>
+
+                        {isEditingThis && (
+                          <div className="sm-inline-panel">
+                            <div className="sm-inline-panel-header">
+                              <span className="sm-inline-panel-bar" />
+                              <span className="sm-inline-panel-title">Edit Link</span>
+                              <span className="sm-inline-panel-sub">go.animebing.in/{link.code}</span>
+                            </div>
+                            <div className="sm-form-grid">
+                              <div className="sm-field">
+                                <span>Target URL</span>
+                                <input className="sm-input" type="url" value={editForm.url} onChange={e => setEditForm({ ...editForm, url: e.target.value })} />
+                              </div>
+                              <div className="sm-field">
+                                <span>Label</span>
+                                <input className="sm-input" type="text" value={editForm.label} onChange={e => setEditForm({ ...editForm, label: e.target.value })} />
+                              </div>
+                              <div className="sm-field">
+                                <span>Assign to User</span>
+                                <select className="sm-select" value={editForm.userId} onChange={e => setEditForm({ ...editForm, userId: e.target.value })}>
+                                  <option value="">— No assignment —</option>
+                                  {users.map(u => <option key={u._id} value={u._id}>{u.realName} ({u.username})</option>)}
+                                </select>
+                              </div>
+                            </div>
+                            <div className="sm-form-actions">
+                              <button className="sm-btn sm-btn-ghost" onClick={() => setEditingLinkId(null)}>Cancel</button>
+                              <button className="sm-btn sm-btn-success" onClick={() => handleUpdate(link)}>
+                                <i className="ti ti-check" /> Save Changes
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
               {filteredLinks.length > 0 && (
                 <div className="sm-table-footer">
                   <span className="sm-footer-count">
@@ -1593,7 +1844,7 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
 
             {/* Bulk Click-Verification control */}
             {selectedUserIdsForCV.length > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '8px 12px', background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', borderRadius: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '8px 12px', background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', borderRadius: 8, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600 }}>
                   {selectedUserIdsForCV.length} user(s) selected
                 </span>
@@ -1638,7 +1889,7 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
                     </div>
                   </div>
                   {addUserForm.username && addUserForm.password && (
-                    <div style={{ background: 'var(--green-dim)', border: '1px solid var(--green-border)', borderRadius: 7, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: 'var(--green)', fontFamily: 'var(--mono)' }}>
+                    <div style={{ background: 'var(--green-dim)', border: '1px solid var(--green-border)', borderRadius: 7, padding: '8px 12px', marginBottom: 10, fontSize: 11, color: 'var(--green)', fontFamily: 'var(--mono)', wordBreak: 'break-word' }}>
                       ✅ Login credentials: username="{addUserForm.username}" password="{addUserForm.password}"
                     </div>
                   )}
@@ -1653,7 +1904,7 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
             )}
 
             <div className="sm-table-shell">
-              <div className="sm-table-wrap">
+              <div className="sm-users-wrap">
                 {usersLoading ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '48px 0', gap: 12 }}>
                     <Spinner /><p style={{ color: 'var(--t3)', fontSize: 12, fontFamily: 'var(--mono)' }}>Loading users...</p>
@@ -1772,10 +2023,24 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
                                 title="Edit"
                               ><i className="ti ti-edit" /></button>
                               <span className="sm-act-sep" />
-                              <button className="sm-act-btn sm-act-btn-amber" onClick={() => { setPaymentUserId(user._id); setPaymentAmount(''); setPaymentNote(''); }} title="Mark payment">
+                              <button
+                                className={`sm-act-btn sm-act-btn-amber${paymentUserId === user._id ? ' sm-act-btn-on' : ''}`}
+                                onClick={() => {
+                                  if (paymentUserId === user._id) { setPaymentUserId(null); }
+                                  else { setPaymentUserId(user._id); setPaymentAmount(''); setPaymentNote(''); }
+                                }}
+                                title="Mark payment"
+                              >
                                 <i className="ti ti-currency-rupee" />
                               </button>
-                              <button className="sm-act-btn sm-act-btn-teal" onClick={() => { setLinkUserId(user._id); setLinkForm({ code: '', url: '', label: '' }); }} title="Create link">
+                              <button
+                                className={`sm-act-btn sm-act-btn-teal${linkUserId === user._id ? ' sm-act-btn-on' : ''}`}
+                                onClick={() => {
+                                  if (linkUserId === user._id) { setLinkUserId(null); }
+                                  else { setLinkUserId(user._id); setLinkForm({ code: '', url: '', label: '' }); }
+                                }}
+                                title="Create link"
+                              >
                                 <i className="ti ti-link" />
                               </button>
                               {/* ❌ Removed profile button */}
@@ -1917,7 +2182,7 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
               <div className="sm-empty">No requests yet.</div>
             ) : (
               <>
-                <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 11, color: 'var(--t3)', fontFamily: 'var(--mono)' }}>{requests.length} requests</span>
                   {pendingCount > 0 && (
                     <span className="sm-badge sm-badge-pending" style={{ fontSize: 10 }}>
@@ -2042,7 +2307,7 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
             <div className="sm-msg-window">
               {broadcastMode ? (
                 <div className="sm-msg-empty" style={{ justifyContent: 'flex-start', alignItems: 'stretch', padding: 16, gap: 12, flex: 1 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                     <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--t1)' }}>Compose Broadcast</span>
                     <button className="sm-broadcast-toggle active" onClick={toggleBroadcastMode}>
                       <i className="ti ti-arrow-back" style={{ fontSize: 13 }} /> Chat mode
@@ -2051,7 +2316,7 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
                   <textarea className="sm-input" style={{ flex: 1, minHeight: 150, resize: 'vertical', borderRadius: 8, background: 'var(--bg0)' }}
                     placeholder={`Write a message to ${selectedBroadcastUsers.length} selected user(s)...`}
                     value={msgText} onChange={e => setMsgText(e.target.value)} />
-                  <button className="sm-btn sm-btn-primary" style={{ alignSelf: 'flex-end' }}
+                  <button className="sm-btn sm-btn-primary" style={{ alignSelf: 'flex-end', width: '100%', justifyContent: 'center' }}
                     disabled={selectedBroadcastUsers.length === 0 || !msgText.trim()} onClick={sendBroadcast}>
                     <i className="ti ti-send" /> Send to {selectedBroadcastUsers.length} user{selectedBroadcastUsers.length !== 1 ? 's' : ''}
                   </button>
@@ -2072,7 +2337,7 @@ const ShortenerManager: React.FC<ShortenerManagerProps> = ({ token: propToken, s
                       <div className="sm-msg-win-name">{selectedUserMsg.realName}</div>
                       <div className="sm-msg-win-handle">@{selectedUserMsg.username}</div>
                     </div>
-                    <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                       <button className="sm-broadcast-toggle" onClick={toggleBroadcastMode}>
                         <i className="ti ti-antenna-bars-5" style={{ fontSize: 13 }} /> Broadcast
                       </button>

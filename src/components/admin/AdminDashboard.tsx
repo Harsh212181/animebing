@@ -83,6 +83,9 @@ const ICONS: Record<string, string> = {
   specialModes:    'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z',
   notes:           'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
   trackList:       'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z',
+  // 🆕 Mobile icons
+  menu:            'M4 6h16M4 12h16M4 18h16',
+  close:           'M6 18L18 6M6 6l12 12',
 };
 
 const TAB_LABELS: Record<string, string> = {
@@ -261,6 +264,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState('list');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [sidebarPinned, setSidebarPinned] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false); // 📱 mobile drawer state
   const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -273,6 +277,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     if (sidebarPinned) return;
     hoverTimeout.current = setTimeout(() => setSidebarCollapsed(true), 300);
   };
+
+  // 📱 Close mobile drawer when a tab is picked
+  const handleMobileNavClick = (tabId: string) => {
+    handleTabChange(tabId);
+    setMobileMenuOpen(false);
+  };
+
+  // 📱 Lock body scroll while the mobile drawer is open
+  useEffect(() => {
+    document.body.style.overflow = mobileMenuOpen ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [mobileMenuOpen]);
 
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -495,11 +511,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         }}
       />
 
-      {/* Icon Strip */}
+      {/* Icon Strip (desktop/tablet only) */}
       <div
         onMouseEnter={handleSidebarMouseEnter}
         onMouseLeave={handleSidebarMouseLeave}
-        className="fixed top-0 left-0 h-full w-[52px] z-50 flex flex-col bg-[#13121e] border-r border-white/[0.06]"
+        className="hidden sm:flex fixed top-0 left-0 h-full w-[52px] z-50 flex-col bg-[#13121e] border-r border-white/[0.06]"
       >
         <div className="h-14 flex items-center justify-center border-b border-white/[0.06] flex-shrink-0">
           <BrandLogo />
@@ -508,7 +524,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           {Object.keys(TAB_LABELS).map(tabId => (
             <button
               key={tabId}
-              onClick={() => handleTabChange(tabId)}  // 📌 use handler
+              onClick={() => handleTabChange(tabId)}
               title={TAB_LABELS[tabId]}
               className={`relative w-9 h-9 rounded-lg flex items-center justify-center transition-colors ${
                 activeTab === tabId ? 'bg-purple-900/60' : 'hover:bg-white/5'
@@ -534,12 +550,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         </div>
       </div>
 
-      {/* Expanded Sidebar */}
+      {/* Expanded Sidebar (desktop/tablet hover-out) */}
       <aside
         onMouseEnter={handleSidebarMouseEnter}
         onMouseLeave={handleSidebarMouseLeave}
         style={{ transition: 'transform 0.25s cubic-bezier(0.4,0,0.2,1), opacity 0.2s ease' }}
-        className={`fixed top-0 left-0 h-full z-50 flex flex-col w-[220px] bg-[#13121e] border-r border-white/[0.08] overflow-hidden shadow-2xl
+        className={`hidden sm:flex fixed top-0 left-0 h-full z-50 flex-col w-[220px] bg-[#13121e] border-r border-white/[0.08] overflow-hidden shadow-2xl
           ${sidebarCollapsed ? '-translate-x-full opacity-0 pointer-events-none' : 'translate-x-0 opacity-100'}
         `}
       >
@@ -613,10 +629,101 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         </div>
       </aside>
 
+      {/* ─── 📱 Mobile Drawer (phones only) ─── */}
+      {/* Backdrop */}
+      <div
+        onClick={() => setMobileMenuOpen(false)}
+        className={`sm:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] transition-opacity duration-200 ${
+          mobileMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        }`}
+      />
+      {/* Drawer panel */}
+      <aside
+        style={{ transition: 'transform 0.25s cubic-bezier(0.4,0,0.2,1)' }}
+        className={`sm:hidden fixed top-0 left-0 h-full z-[70] flex flex-col w-[260px] max-w-[80vw] bg-[#13121e] border-r border-white/[0.08] shadow-2xl
+          ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}
+      >
+        <div className="flex items-center gap-3 h-14 px-3 border-b border-white/[0.06] flex-shrink-0">
+          <BrandLogo />
+          <div className="overflow-hidden flex-1">
+            <p className="text-sm font-semibold text-white leading-tight truncate">AnimaBing</p>
+            <p className="text-[10px] text-gray-500 truncate">Admin Panel</p>
+          </div>
+          <button
+            onClick={() => setMobileMenuOpen(false)}
+            className="flex-shrink-0 w-8 h-8 rounded-md flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
+            aria-label="Close menu"
+          >
+            <SvgIcon d={ICONS.close} className="w-5 h-5" />
+          </button>
+        </div>
+
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-4">
+          <SidebarSection label="Content">
+            <NavItem tabId="list"            activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+            <NavItem tabId="add"             activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+            <NavItem tabId="episodes"        activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+            <NavItem tabId="episode-status"  activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+          </SidebarSection>
+          <SidebarSection label="Manage">
+            <NavItem tabId="featured"        activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+            <NavItem tabId="reports"         activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} badge={pendingReportsCount} />
+            <NavItem tabId="polls"           activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+            <NavItem tabId="social"          activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+            <NavItem tabId="notes"           activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+            <NavItem tabId="trackList"       activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} badge={trackUnreadCount} />
+          </SidebarSection>
+          <SidebarSection label="Downloads">
+            <NavItem tabId="downloadPages"   activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+            <NavItem tabId="linkControl"     activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+            <NavItem tabId="specialModes"    activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+            <NavItem tabId="shortener"       activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} badge={unreadShortMessagesCount} />
+            <NavItem tabId="shortusers"      activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+            <NavItem tabId="partners"        activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+          </SidebarSection>
+          <SidebarSection label="Analytics">
+            <NavItem tabId="pageviews" activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+          </SidebarSection>
+          <SidebarSection label="Administration">
+            <NavItem tabId="subadmins" activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+          </SidebarSection>
+        </nav>
+
+        <div className="flex-shrink-0 border-t border-white/[0.06] p-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-full bg-purple-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
+              {(user.username || 'A').charAt(0).toUpperCase()}
+            </div>
+            <div className="overflow-hidden flex-1">
+              <p className="text-xs font-medium text-white truncate">{user.username || 'Admin'}</p>
+              <p className="text-[10px] text-gray-500">{window.location.hostname === 'localhost' ? 'Development' : 'Production'}</p>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="flex-shrink-0 p-1.5 rounded-md text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+              title="Logout"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </aside>
+
       {/* Main Content */}
-      <div id="main-scroll" className="h-full flex flex-col overflow-y-auto pl-[52px]">
-        <header className="sticky top-0 z-40 h-14 flex-shrink-0 flex items-center px-5 gap-3 bg-[#13121e]/80 backdrop-blur border-b border-white/[0.06]">
-          <span className="w-5 h-5">
+      <div id="main-scroll" className="h-full flex flex-col overflow-y-auto sm:pl-[52px]">
+        <header className="sticky top-0 z-40 h-14 flex-shrink-0 flex items-center px-3 sm:px-5 gap-3 bg-[#13121e]/80 backdrop-blur border-b border-white/[0.06]">
+          {/* 📱 Hamburger – phones only */}
+          <button
+            onClick={() => setMobileMenuOpen(true)}
+            className="sm:hidden flex-shrink-0 w-9 h-9 -ml-1 rounded-lg flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/5 transition-colors"
+            aria-label="Open menu"
+          >
+            <SvgIcon d={ICONS.menu} className="w-5 h-5" />
+          </button>
+
+          <span className="hidden sm:inline-flex w-5 h-5">
             <SvgIcon d={ICONS[activeTab] || ICONS.list} className="w-5 h-5" />
           </span>
           <h1 className="text-sm font-semibold text-white">{TAB_LABELS[activeTab]}</h1>
@@ -637,9 +744,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           </div>
         </header>
 
-        <main className="flex-1 p-4 sm:p-6 space-y-4">
+        {/* Main content area – edge-to-edge on all screens */}
+        <main className="flex-1 py-4 sm:py-6 px-0 space-y-4">
           {/* Analytics Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 px-3 sm:px-0">
             {[
               { label: 'Total Content', value: analytics.totalAnimes + analytics.totalMovies + analytics.totalManga, sub: 'Anime · Movies · Manga', color: 'text-purple-400' },
               { label: 'Anime',         value: analytics.totalAnimes,   sub: 'Series',      color: 'text-cyan-400' },
@@ -657,9 +765,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           </div>
 
           {/* Download Link Control – without Auto Sunday toggle */}
-          <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4">
+          <div className="bg-white/[0.04] border-y sm:border border-white/[0.06] rounded-none sm:rounded-xl p-4">
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <h2 className="text-sm font-semibold text-white">Download Link Control</h2>
                 <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-medium">
                   {activeLinkCount}/5 active
@@ -758,8 +866,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             </p>
           </div>
 
-          {/* Active Tab Content */}
-          <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4 sm:p-6 min-h-[300px]">
+          {/* Active Tab Content – flush edges on all screens */}
+          <div className="bg-white/[0.04] border-y sm:border border-white/[0.06] rounded-none sm:rounded-xl p-0 min-h-[300px]">
             <TabContent key={`${activeTab}-${refreshKey}`} activeTab={activeTab} token={token || ''} />
           </div>
         </main>

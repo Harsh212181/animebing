@@ -62,6 +62,8 @@ const ICONS: Record<string, string> = {
   chevron:         'M9 18l6-6-6-6',
   notes:           'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', // 👈 Notes icon
   tracklist:       'M4 6h16M4 10h16M4 14h10 M18 15l2 2 4-4', // 🆕 Track List icon
+  menu:            'M4 6h16M4 12h16M4 18h16', // 📱 Hamburger icon
+  close:           'M6 18L18 6M6 6l12 12', // 📱 Close icon
 };
 
 const TAB_LABELS: Record<string, string> = {
@@ -296,6 +298,7 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState(visibleTabs[0] || 'list');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [sidebarPinned, setSidebarPinned] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false); // 📱 mobile drawer state
   const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleSidebarMouseEnter = () => {
@@ -307,6 +310,18 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
     if (sidebarPinned) return;
     hoverTimeout.current = setTimeout(() => setSidebarCollapsed(true), 300);
   };
+
+  // 📱 Close the mobile drawer whenever a tab is picked
+  const handleMobileNavClick = (tabId: string) => {
+    setActiveTab(tabId);
+    setMobileMenuOpen(false);
+  };
+
+  // 📱 Lock body scroll while the mobile drawer is open
+  useEffect(() => {
+    document.body.style.overflow = mobileMenuOpen ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [mobileMenuOpen]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -426,11 +441,11 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
         <div className="absolute -bottom-40 -right-20 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl" />
       </div>
 
-      {/* ─── Icon Strip ────────────────────────────────────────────────── */}
+      {/* ─── Icon Strip (desktop/tablet only — hidden on phones) ───────── */}
       <div
         onMouseEnter={handleSidebarMouseEnter}
         onMouseLeave={handleSidebarMouseLeave}
-        className="fixed top-0 left-0 h-full w-[52px] z-50 flex flex-col bg-[#13121e] border-r border-white/[0.06]"
+        className="hidden sm:flex fixed top-0 left-0 h-full w-[52px] z-50 flex-col bg-[#13121e] border-r border-white/[0.06]"
       >
         <div className="h-14 flex items-center justify-center border-b border-white/[0.06] flex-shrink-0">
           <BrandLogo />
@@ -460,12 +475,12 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
         </div>
       </div>
 
-      {/* ─── Expanded Sidebar with sections ──────────────────────────── */}
+      {/* ─── Expanded Sidebar with sections (desktop/tablet hover-out panel) ── */}
       <aside
         onMouseEnter={handleSidebarMouseEnter}
         onMouseLeave={handleSidebarMouseLeave}
         style={{ transition: 'transform 0.25s cubic-bezier(0.4,0,0.2,1), opacity 0.2s ease' }}
-        className={`fixed top-0 left-0 h-full z-50 flex flex-col w-[220px] bg-[#13121e] border-r border-white/[0.08] overflow-hidden shadow-2xl
+        className={`hidden sm:flex fixed top-0 left-0 h-full z-50 flex-col w-[220px] bg-[#13121e] border-r border-white/[0.08] overflow-hidden shadow-2xl
           ${sidebarCollapsed ? '-translate-x-full opacity-0 pointer-events-none' : 'translate-x-0 opacity-100'}`}
       >
         <div className="flex items-center gap-3 h-14 px-3 border-b border-white/[0.06] flex-shrink-0">
@@ -522,32 +537,105 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
         </div>
       </aside>
 
+      {/* ─── 📱 Mobile Drawer (phones only — opened via hamburger in header) ─── */}
+      {/* Backdrop */}
+      <div
+        onClick={() => setMobileMenuOpen(false)}
+        className={`sm:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] transition-opacity duration-200 ${
+          mobileMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        }`}
+      />
+      {/* Drawer panel */}
+      <aside
+        style={{ transition: 'transform 0.25s cubic-bezier(0.4,0,0.2,1)' }}
+        className={`sm:hidden fixed top-0 left-0 h-full z-[70] flex flex-col w-[260px] max-w-[80vw] bg-[#13121e] border-r border-white/[0.08] shadow-2xl
+          ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}
+      >
+        <div className="flex items-center gap-3 h-14 px-3 border-b border-white/[0.06] flex-shrink-0">
+          <BrandLogo />
+          <div className="overflow-hidden flex-1">
+            <p className="text-sm font-semibold text-white leading-tight truncate">AnimaBing</p>
+            <p className="text-[10px] text-gray-500 truncate">Sub-Admin Panel</p>
+          </div>
+          <button
+            onClick={() => setMobileMenuOpen(false)}
+            className="flex-shrink-0 w-8 h-8 rounded-md flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
+            aria-label="Close menu"
+          >
+            <SvgIcon d={ICONS.close} className="w-5 h-5" />
+          </button>
+        </div>
+
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-4">
+          {visibleSections.map(section => (
+            <SidebarSection key={section.id} label={section.label}>
+              {section.tabs.map(tabId => (
+                <NavItem
+                  key={tabId}
+                  tabId={tabId}
+                  activeTab={activeTab}
+                  onClick={handleMobileNavClick}
+                  badgeCount={
+                    tabId === 'reports' ? pendingReportsCount :
+                    tabId === 'shortenerLinks' ? unreadMessagesCount : 0
+                  }
+                />
+              ))}
+            </SidebarSection>
+          ))}
+        </nav>
+
+        <div className="flex-shrink-0 border-t border-white/[0.06] p-3">
+          <div className="flex items-center gap-2.5">
+            <UserAvatar username={user.username} size={32} />
+            <div className="overflow-hidden flex-1">
+              <p className="text-xs font-medium text-white truncate">{user.username || 'Sub-Admin'}</p>
+              <p className="text-[10px] text-gray-500">Sub-Admin</p>
+            </div>
+            <button onClick={handleLogout} className="flex-shrink-0 p-1.5 rounded-md text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors" title="Logout">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </aside>
+
       {/* ─── Main content area ────────────────────────────────────────── */}
-      <div id="main-scroll" className="relative z-10 h-full flex flex-col overflow-y-auto pl-[52px]">
-        <header className="sticky top-0 z-40 h-14 flex-shrink-0 flex items-center px-5 gap-3 bg-[#13121e]/80 backdrop-blur border-b border-white/[0.06]">
-          <span className="w-5 h-5">
+      <div id="main-scroll" className="relative z-10 h-full flex flex-col overflow-y-auto sm:pl-[52px]">
+        <header className="sticky top-0 z-40 h-14 flex-shrink-0 flex items-center px-3 sm:px-5 gap-3 bg-[#13121e]/80 backdrop-blur border-b border-white/[0.06]">
+          {/* 📱 Hamburger — phones only */}
+          <button
+            onClick={() => setMobileMenuOpen(true)}
+            className="sm:hidden flex-shrink-0 w-9 h-9 -ml-1 rounded-lg flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/5 transition-colors"
+            aria-label="Open menu"
+          >
+            <SvgIcon d={ICONS.menu} className="w-5 h-5" />
+          </button>
+
+          <span className="hidden sm:inline-flex w-5 h-5">
             <SvgIcon d={ICONS[activeTab] || ICONS.list} className="w-5 h-5" />
           </span>
-          <h1 className="text-sm font-semibold text-white">{TAB_LABELS[activeTab]}</h1>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/25">Sub-Admin</span>
-          <div className="ml-auto flex items-center gap-3">
+          <h1 className="text-sm font-semibold text-white truncate">{TAB_LABELS[activeTab]}</h1>
+          <span className="hidden xs:inline-flex text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/25 flex-shrink-0">Sub-Admin</span>
+          <div className="ml-auto flex items-center gap-2 sm:gap-3">
             <button
               onClick={loadInitialData}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition border border-white/[0.06]"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-medium text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition border border-white/[0.06]"
             >
               <SvgIcon d={ICONS.refresh} className="w-3.5 h-3.5" />
-              Refresh
+              <span className="hidden sm:inline">Refresh</span>
             </button>
             <UserAvatar username={user.username} size={30} />
           </div>
         </header>
 
-        <main className="flex-1 p-4 sm:p-6 space-y-4">
-          <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4 sm:p-6 min-h-[300px]">
+        <main className="flex-1 py-3 sm:py-6 px-0 space-y-4">
+          <div className="bg-white/[0.04] border-y sm:border border-white/[0.06] rounded-none sm:rounded-xl p-0 min-h-[300px]">
             {canAccessTab(activeTab) ? (
               <TabContent activeTab={activeTab} token={token} />
             ) : (
-              <div className="text-center py-12 text-gray-500">
+              <div className="text-center py-12 text-gray-500 px-4">
                 You don't have permission to access this section.
               </div>
             )}

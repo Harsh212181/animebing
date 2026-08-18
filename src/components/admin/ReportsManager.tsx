@@ -1,4 +1,4 @@
- // src/components/admin/ReportsManager.tsx - REDESIGNED v2 (fully clickable cards, no popups)
+ // src/components/admin/ReportsManager.tsx - REDESIGNED v2 (fully clickable cards, no popups, mobile-friendly)
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Spinner from '../Spinner';
@@ -37,6 +37,7 @@ const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
 
 interface ReportsManagerProps {
   token?: string;
+  isMainAdmin?: boolean;
 }
 
 // ── design tokens ────────────────────────────────────────────────────────
@@ -175,12 +176,12 @@ const InfoRow: React.FC<{ icon: React.ReactNode; label: string; value: React.Rea
 const SegmentedControl = <T extends string>({ options, value, onChange, labels }: {
   options: readonly T[]; value: T; onChange: (v: T) => void; labels?: Partial<Record<T, string>>;
 }) => (
-  <div className="flex items-center gap-0.5 bg-white/[0.03] border border-white/[0.07] p-1 rounded-lg">
+  <div className="flex items-center gap-0.5 bg-white/[0.03] border border-white/[0.07] p-1 rounded-lg overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
     {options.map(opt => (
       <button
         key={opt}
         onClick={() => onChange(opt)}
-        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-150 ${
+        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-150 whitespace-nowrap flex-shrink-0 ${
           value === opt ? 'bg-purple-600 text-white shadow-[0_1px_8px_rgba(147,51,234,0.4)]' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
         }`}
       >
@@ -190,7 +191,7 @@ const SegmentedControl = <T extends string>({ options, value, onChange, labels }
   </div>
 );
 
-const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp }) => {
+const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp, isMainAdmin = false }) => {
   const getToken = () => tokenProp || localStorage.getItem('adminToken') || '';
 
   const [reports, setReports] = useState<Report[]>([]);
@@ -207,6 +208,12 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp }) => 
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   useEffect(() => { fetchReports(); }, []);
+
+  useEffect(() => {
+    if (!isMainAdmin && typeFilter === 'contact') {
+      setTypeFilter('All');
+    }
+  }, [isMainAdmin, typeFilter]);
 
   const copyToClipboard = (text: string, key: string) => {
     navigator.clipboard?.writeText(text).then(() => {
@@ -325,7 +332,9 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp }) => 
     }
   };
 
-  const filteredReports = reports.filter(report =>
+  const accessibleReports = isMainAdmin ? reports : reports.filter(r => r.type !== 'contact');
+
+  const filteredReports = accessibleReports.filter(report =>
     (statusFilter === 'All' || report.status === statusFilter) &&
     (typeFilter === 'All' || report.type === typeFilter)
   );
@@ -335,17 +344,21 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp }) => 
   });
 
   const counts = {
-    total: reports.length,
-    episode: reports.filter(r => r.type === 'episode').length,
-    contact: reports.filter(r => r.type === 'contact').length,
-    pending: reports.filter(r => r.status === 'Pending').length,
-    fixed: reports.filter(r => r.status === 'Fixed').length,
-    invalid: reports.filter(r => r.status === 'Invalid').length,
+    total: accessibleReports.length,
+    episode: accessibleReports.filter(r => r.type === 'episode').length,
+    contact: isMainAdmin ? accessibleReports.filter(r => r.type === 'contact').length : 0,
+    pending: accessibleReports.filter(r => r.status === 'Pending').length,
+    fixed: accessibleReports.filter(r => r.status === 'Fixed').length,
+    invalid: accessibleReports.filter(r => r.status === 'Invalid').length,
   };
+
+  const typeFilterOptions: Array<'All' | 'episode' | 'contact'> = isMainAdmin
+    ? ['All', 'episode', 'contact']
+    : ['All', 'episode'];
 
   if (loading) return <div className="flex justify-center py-16"><Spinner size="lg" /></div>;
   if (error) return (
-    <div className="text-center py-12">
+    <div className="text-center py-12 px-4">
       <p className="text-rose-400 text-sm mb-3">{error}</p>
       <button onClick={fetchReports} className="px-4 py-2 text-xs font-medium bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-gray-300 transition">
         Try again
@@ -356,53 +369,57 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp }) => 
   return (
     <div className="space-y-5">
       {/* Header / toolbar */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+      <div className="flex flex-col gap-3">
         <div>
           <h3 className="text-base font-semibold text-white tracking-tight">Report Queue</h3>
           <p className="text-xs text-gray-500 mt-0.5">
-            {filteredReports.length} of {reports.length} report{reports.length !== 1 ? 's' : ''}
+            {filteredReports.length} of {accessibleReports.length} report{accessibleReports.length !== 1 ? 's' : ''}
             {statusFilter !== 'All' && <> &middot; {statusFilter}</>}
             {typeFilter !== 'All' && <> &middot; {typeFilter === 'episode' ? 'Episode' : 'Contact'}</>}
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <SegmentedControl
-            options={['All', 'episode', 'contact'] as const}
-            value={typeFilter}
-            onChange={setTypeFilter}
-            labels={{ episode: 'Episode', contact: 'Contact' }}
-          />
-          <SegmentedControl
-            options={['All', 'Pending', 'In Progress', 'Fixed', 'Invalid'] as const}
-            value={statusFilter}
-            onChange={setStatusFilter}
-          />
-          {filteredReports.length > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <SegmentedControl
+              options={typeFilterOptions}
+              value={typeFilter}
+              onChange={setTypeFilter}
+              labels={{ episode: 'Episode', contact: 'Contact' }}
+            />
+            <SegmentedControl
+              options={['All', 'Pending', 'In Progress', 'Fixed', 'Invalid'] as const}
+              value={statusFilter}
+              onChange={setStatusFilter}
+            />
+          </div>
+          <div className="flex items-center gap-2 sm:ml-auto">
+            {filteredReports.length > 0 && (
+              <button
+                onClick={() => { setBulkDeleteMode(v => !v); setSelectedReports([]); setExpandedReports([]); }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-150 whitespace-nowrap ${
+                  bulkDeleteMode
+                    ? 'bg-rose-500/15 border-rose-500/30 text-rose-300 hover:bg-rose-500/25'
+                    : 'bg-white/[0.03] border-white/[0.07] text-gray-400 hover:text-gray-200 hover:bg-white/5'
+                }`}
+              >
+                {bulkDeleteMode ? 'Cancel select' : 'Select'}
+              </button>
+            )}
             <button
-              onClick={() => { setBulkDeleteMode(v => !v); setSelectedReports([]); setExpandedReports([]); }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-150 ${
-                bulkDeleteMode
-                  ? 'bg-rose-500/15 border-rose-500/30 text-rose-300 hover:bg-rose-500/25'
-                  : 'bg-white/[0.03] border-white/[0.07] text-gray-400 hover:text-gray-200 hover:bg-white/5'
-              }`}
+              onClick={fetchReports}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-600 hover:bg-purple-500 text-white transition-all duration-150 shadow-[0_1px_10px_rgba(147,51,234,0.35)] whitespace-nowrap"
             >
-              {bulkDeleteMode ? 'Cancel select' : 'Select'}
+              <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+              Refresh
             </button>
-          )}
-          <button
-            onClick={fetchReports}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-600 hover:bg-purple-500 text-white transition-all duration-150 shadow-[0_1px_10px_rgba(147,51,234,0.35)]"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-            Refresh
-          </button>
+          </div>
         </div>
       </div>
 
       {/* Bulk action bar */}
       {bulkDeleteMode && filteredReports.length > 0 && (
-        <div className="flex items-center justify-between gap-3 bg-rose-500/[0.06] border border-rose-500/20 rounded-xl px-4 py-2.5 animate-[fadeIn_0.2s_ease]">
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-rose-500/[0.06] border border-rose-500/20 rounded-xl px-4 py-2.5 animate-[fadeIn_0.2s_ease]">
           <div className="flex items-center gap-3">
             <button onClick={toggleSelectAll} className="text-xs font-medium text-rose-300 hover:text-rose-200 transition">
               {selectedReports.length === filteredReports.length ? 'Deselect all' : 'Select all'}
@@ -422,7 +439,7 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp }) => 
 
       {/* Empty state */}
       {filteredReports.length === 0 ? (
-        <div className="text-center py-16 bg-white/[0.02] border border-white/[0.06] rounded-xl">
+        <div className="text-center py-16 bg-white/[0.02] border border-white/[0.06] rounded-xl px-4">
           <div className="w-10 h-10 mx-auto mb-3 rounded-full bg-white/5 flex items-center justify-center text-gray-500">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
           </div>
@@ -454,10 +471,10 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp }) => 
                 <div className={`w-1 flex-shrink-0 ${tokens.spine}`} />
 
                 <div className="flex-1 min-w-0">
-                  {/* Row header — whole area is clickable */}
+                  {/* Row header — whole area is clickable. Wraps to 2 lines on mobile. */}
                   <div
                     onClick={() => toggleReportExpansion(report._id)}
-                    className={`flex items-center gap-3 px-4 py-3.5 select-none ${bulkDeleteMode ? '' : 'cursor-pointer'}`}
+                    className={`flex flex-wrap items-center gap-x-3 gap-y-2 px-3 sm:px-4 py-3 sm:py-3.5 select-none ${bulkDeleteMode ? '' : 'cursor-pointer'}`}
                   >
                     {bulkDeleteMode && (
                       <input
@@ -476,12 +493,12 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp }) => 
                     </span>
 
                     {report.type === 'episode' && report.animeId?.thumbnail && (
-                      <img src={report.animeId.thumbnail} alt="" className="w-8 h-11 object-cover rounded-md flex-shrink-0 ring-1 ring-white/10" />
+                      <img src={report.animeId.thumbnail} alt="" className="hidden xs:block w-8 h-11 object-cover rounded-md flex-shrink-0 ring-1 ring-white/10" />
                     )}
 
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium text-white truncate">
+                    <div className="min-w-0 flex-1 basis-40">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-medium text-white truncate max-w-[200px] sm:max-w-none">
                           {report.type === 'episode'
                             ? (report.animeId?.title || 'Unknown Anime')
                             : (report.subject || 'No subject')}
@@ -498,43 +515,45 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp }) => 
                       </p>
                     </div>
 
-                    <span className="hidden sm:block flex-shrink-0 text-[11px] text-gray-600 tabular-nums" title={formatDate(report.createdAt)}>
-                      {timeAgo(report.createdAt)}
-                    </span>
-
-                    <span className={`flex-shrink-0 flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full border ${tokens.bg} ${tokens.border} ${tokens.text}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${tokens.dot}`} />
-                      {report.status}
-                    </span>
-
-                    {!bulkDeleteMode && report.status === 'Pending' && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); quickUpdateStatus(report._id, 'In Progress'); }}
-                        disabled={isBusy}
-                        title="Start progress"
-                        className="flex-shrink-0 w-7 h-7 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 flex items-center justify-center transition disabled:opacity-40"
-                      >
-                        <PlayIcon />
-                      </button>
-                    )}
-                    {!bulkDeleteMode && report.status === 'In Progress' && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); quickUpdateStatus(report._id, 'Fixed'); }}
-                        disabled={isBusy}
-                        title="Mark fixed"
-                        className="flex-shrink-0 w-7 h-7 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 flex items-center justify-center transition disabled:opacity-40"
-                      >
-                        <CheckIcon />
-                      </button>
-                    )}
-
-                    {!bulkDeleteMode && (
-                      <span className={`flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
-                        isOpen ? 'bg-white/10 text-white' : 'text-gray-500 group-hover:text-gray-300'
-                      }`}>
-                        <ChevronIcon open={isOpen} />
+                    <div className="flex items-center gap-2 ml-auto sm:ml-0 flex-shrink-0">
+                      <span className="hidden sm:block text-[11px] text-gray-600 tabular-nums" title={formatDate(report.createdAt)}>
+                        {timeAgo(report.createdAt)}
                       </span>
-                    )}
+
+                      <span className={`flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full border whitespace-nowrap ${tokens.bg} ${tokens.border} ${tokens.text}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${tokens.dot}`} />
+                        {report.status}
+                      </span>
+
+                      {!bulkDeleteMode && report.status === 'Pending' && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); quickUpdateStatus(report._id, 'In Progress'); }}
+                          disabled={isBusy}
+                          title="Start progress"
+                          className="w-7 h-7 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 flex items-center justify-center transition disabled:opacity-40"
+                        >
+                          <PlayIcon />
+                        </button>
+                      )}
+                      {!bulkDeleteMode && report.status === 'In Progress' && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); quickUpdateStatus(report._id, 'Fixed'); }}
+                          disabled={isBusy}
+                          title="Mark fixed"
+                          className="w-7 h-7 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 flex items-center justify-center transition disabled:opacity-40"
+                        >
+                          <CheckIcon />
+                        </button>
+                      )}
+
+                      {!bulkDeleteMode && (
+                        <span className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
+                          isOpen ? 'bg-white/10 text-white' : 'text-gray-500 group-hover:text-gray-300'
+                        }`}>
+                          <ChevronIcon open={isOpen} />
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   {/* Inline expanded panel — no modal, smooth reveal */}
@@ -545,19 +564,19 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp }) => 
                     <div className="overflow-hidden">
                       <div
                         onClick={(e) => e.stopPropagation()}
-                        className="border-t border-white/[0.07] bg-gradient-to-b from-black/30 to-black/10 px-4 sm:px-5 py-5 space-y-5 cursor-default"
+                        className="border-t border-white/[0.07] bg-gradient-to-b from-black/30 to-black/10 px-3 sm:px-5 py-5 space-y-5 cursor-default"
                       >
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
                           {/* ── main column ── */}
                           <div className="lg:col-span-7 space-y-4">
                             {report.type === 'episode' ? (
                               <Panel title="Issue report" icon={<TagIcon />}>
-                                <div className="flex items-center gap-2 mb-3">
+                                <div className="flex items-center gap-2 mb-3 flex-wrap">
                                   <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium border ${ISSUE_TOKENS[report.issueType || ''] || 'text-gray-300 bg-white/5 border-white/10'}`}>
                                     {report.issueType || 'N/A'}
                                   </span>
                                   {report.episodeId && (
-                                    <span className="text-[11px] font-mono text-gray-600">ID {report.episodeId}</span>
+                                    <span className="text-[11px] font-mono text-gray-600 break-all">ID {report.episodeId}</span>
                                   )}
                                 </div>
                                 <p className="whitespace-pre-wrap text-gray-300 text-sm leading-relaxed">
@@ -646,26 +665,26 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp }) => 
                         </div>
 
                         {/* Action bar */}
-                        <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-white/[0.07]">
+                        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center justify-between gap-3 pt-4 border-t border-white/[0.07]">
                           <div className="flex flex-wrap items-center gap-2">
                             <button
                               onClick={() => updateReportStatus(report._id, 'Fixed')}
                               disabled={isBusy}
-                              className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition disabled:opacity-40"
+                              className="flex-1 sm:flex-none justify-center flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition disabled:opacity-40"
                             >
                               <CheckIcon className="w-3.5 h-3.5" /> Mark fixed
                             </button>
                             <button
                               onClick={() => updateReportStatus(report._id, 'In Progress')}
                               disabled={isBusy}
-                              className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition disabled:opacity-40"
+                              className="flex-1 sm:flex-none justify-center flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition disabled:opacity-40"
                             >
                               <PlayIcon /> In progress
                             </button>
                             <button
                               onClick={() => updateReportStatus(report._id, 'Invalid')}
                               disabled={isBusy}
-                              className="text-xs font-semibold px-3.5 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 transition disabled:opacity-40"
+                              className="flex-1 sm:flex-none justify-center text-xs font-semibold px-3.5 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 transition disabled:opacity-40"
                             >
                               Mark invalid
                             </button>
@@ -673,7 +692,7 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp }) => 
 
                           {/* Inline delete — no popup */}
                           {deleteArmed === report._id ? (
-                            <div className="flex items-center gap-2 bg-rose-500/[0.08] border border-rose-500/25 rounded-lg px-2.5 py-1.5">
+                            <div className="flex items-center gap-2 bg-rose-500/[0.08] border border-rose-500/25 rounded-lg px-2.5 py-1.5 flex-wrap">
                               <p className="text-xs text-rose-300 pr-1">Delete permanently?</p>
                               <button
                                 onClick={() => setDeleteArmed(null)}
@@ -713,7 +732,7 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp }) => 
         {[
           { label: 'Total', value: counts.total, color: 'text-white' },
           { label: 'Episode', value: counts.episode, color: 'text-sky-400' },
-          { label: 'Contact', value: counts.contact, color: 'text-purple-400' },
+          ...(isMainAdmin ? [{ label: 'Contact', value: counts.contact, color: 'text-purple-400' }] : []),
           { label: 'Pending', value: counts.pending, color: 'text-amber-400' },
           { label: 'Fixed', value: counts.fixed, color: 'text-emerald-400' },
           { label: 'Invalid', value: counts.invalid, color: 'text-rose-400' },

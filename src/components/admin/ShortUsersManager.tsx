@@ -134,7 +134,7 @@ const renderUserAvatar = (user: ShortUser, size = 28, unreadCount = 0) => {
   );
 };
 
-/* ─────────────────────────────────────────── css (unchanged) ─── */
+/* ─────────────────────────────────────────── css ─── */
 const css = `
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
 @import url('https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css');
@@ -177,10 +177,11 @@ const css = `
   background: var(--bg1); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 14px 16px; display: flex; flex-direction: column; gap: 6px;
   transition: border-color 0.15s;
+  min-width: 0;
 }
 .sum-stat-card:hover { border-color: var(--border2); }
 .sum-stat-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.7px; color: var(--t3); }
-.sum-stat-value { font-family: var(--mono); font-size: 20px; font-weight: 500; color: var(--t1); letter-spacing: -0.5px; }
+.sum-stat-value { font-family: var(--mono); font-size: 20px; font-weight: 500; color: var(--t1); letter-spacing: -0.5px; overflow-wrap: anywhere; }
 .sum-stat-sub { font-size: 11px; color: var(--t3); margin-top: 2px; }
 .sum-stat-accent { color: var(--accent); }
 .sum-stat-green  { color: var(--green); }
@@ -189,8 +190,8 @@ const css = `
 
 /* ── toolbar ── */
 .sum-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
-.sum-toolbar-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
-.sum-search-wrap { position: relative; flex: 1; max-width: 280px; }
+.sum-toolbar-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; flex-wrap: wrap; }
+.sum-search-wrap { position: relative; flex: 1; max-width: 280px; min-width: 160px; }
 .sum-search-wrap i { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--t3); font-size: 14px; pointer-events: none; }
 .sum-search {
   width: 100%; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
@@ -199,12 +200,14 @@ const css = `
 }
 .sum-search:focus { outline: none; border-color: var(--border2); background: var(--bg3); }
 .sum-search::placeholder { color: var(--t3); }
-.sum-filter-group { display: flex; gap: 6px; }
+.sum-filter-group { display: flex; gap: 6px; flex-wrap: wrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.sum-filter-group::-webkit-scrollbar { display: none; }
 .sum-filter-btn {
   display: inline-flex; align-items: center; gap: 5px; padding: 7px 12px;
   font-size: 11px; font-weight: 600; font-family: var(--font);
   border-radius: 8px; border: 1px solid var(--border); background: var(--bg2); color: var(--t2);
   cursor: pointer; transition: all 0.13s; white-space: nowrap;
+  flex-shrink: 0;
 }
 .sum-filter-btn:hover { background: var(--bg3); color: var(--t1); border-color: var(--border2); }
 .sum-filter-btn-on { background: var(--accent-dim) !important; color: var(--accent) !important; border-color: var(--accent-border) !important; }
@@ -212,6 +215,7 @@ const css = `
   background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
   padding: 7px 10px; font-size: 12px; font-family: var(--font); color: var(--t2);
   cursor: pointer; outline: none; transition: border-color 0.15s;
+  max-width: 100%;
 }
 .sum-sort-select:focus { border-color: var(--border2); }
 .sum-btn {
@@ -237,7 +241,7 @@ const css = `
 @keyframes sumSlide { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
 .sum-panel-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--t3); margin-bottom: 14px; }
 .sum-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 10px; margin-bottom: 14px; }
-.sum-field { display: flex; flex-direction: column; gap: 5px; }
+.sum-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .sum-field > span { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--t3); }
 .sum-input {
   width: 100%; background: var(--bg0); border: 1px solid var(--border2); border-radius: 7px;
@@ -257,7 +261,7 @@ const css = `
 
 /* ── table ── */
 .sum-table-shell { background: var(--bg1); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
-.sum-table-wrap { overflow-x: auto; }
+.sum-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .sum-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .sum-table thead tr { background: var(--bg2); border-bottom: 1px solid var(--border); }
 .sum-table th {
@@ -315,12 +319,13 @@ const css = `
 .sum-inline-input:focus { outline: none; border-color: rgba(124,106,247,0.45); }
 
 /* ── action buttons ── */
-.sum-act-group { display: flex; align-items: center; gap: 3px; }
+.sum-act-group { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
 .sum-act-sep { width: 1px; height: 16px; background: var(--border); margin: 0 2px; flex-shrink: 0; }
 .sum-act-btn {
   width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
   border-radius: 7px; border: 1px solid var(--border); background: transparent; color: var(--t3);
   cursor: pointer; font-size: 14px; transition: all 0.12s;
+  flex-shrink: 0;
 }
 .sum-act-btn:hover { background: var(--bg3); color: var(--t2); border-color: var(--border2); }
 .sum-act-btn-on { background: var(--accent-dim) !important; color: var(--accent) !important; border-color: var(--accent-border) !important; }
@@ -332,7 +337,7 @@ const css = `
 .sum-expand-inner { padding: 20px 22px; background: #0d0d12; border-top: 1px solid var(--border); animation: sumExpand 0.16s ease; }
 @keyframes sumExpand { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:translateY(0); } }
 
-.sum-panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.sum-panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; flex-wrap: wrap; gap: 8px; }
 .sum-panel-title {
   display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px;
 }
@@ -349,7 +354,7 @@ const css = `
 .sum-pay-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
 .sum-pay-hint { font-size: 11px; color: var(--t3); margin-top: 10px; }
 .sum-pay-hint strong { color: var(--red); }
-.sum-panel-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.sum-panel-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
 
 /* link */
 .sum-link-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 4px; }
@@ -405,17 +410,19 @@ const css = `
 }
 
 /* Input row */
-.sum-chat-input-row { display: flex; gap: 8px; align-items: center; }
+.sum-chat-input-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .sum-chat-input {
   flex: 1; background: var(--bg0); border: 1px solid var(--border2); border-radius: 9999px;
   padding: 10px 18px; font-size: 13px; font-family: var(--font); color: var(--t1);
   outline: none; transition: border-color 0.2s;
+  min-width: 0;
 }
 .sum-chat-input:focus { border-color: var(--accent-border); }
 .sum-chat-send-btn {
   width: 40px; height: 40px; border-radius: 50%; background: var(--accent); color: #fff;
   border: none; display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: background 0.15s; font-size: 18px;
+  flex-shrink: 0;
 }
 .sum-chat-send-btn:hover { background: #6a5acd; }
 .sum-chat-send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -429,11 +436,11 @@ const css = `
 }
 .sum-profile-icon { width: 30px; height: 30px; border-radius: 7px; background: var(--bg3); display: flex; align-items: center; justify-content: center; font-size: 14px; color: var(--t3); flex-shrink: 0; }
 .sum-profile-lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--t3); margin-bottom: 3px; }
-.sum-profile-val { font-size: 13px; font-weight: 500; color: var(--t1); }
+.sum-profile-val { font-size: 13px; font-weight: 500; color: var(--t1); word-break: break-word; }
 .sum-profile-empty { font-size: 12px; color: var(--t3); font-style: italic; }
 
 /* ── activity panel ── */
-.sum-day-filter { display: flex; gap: 6px; margin-bottom: 14px; }
+.sum-day-filter { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
 .sum-day-btn {
   padding: 5px 14px; border-radius: 6px; border: 1px solid var(--border);
   background: var(--bg2); color: var(--t3); font-size: 11px; font-weight: 600;
@@ -443,7 +450,7 @@ const css = `
 .sum-day-btn-on { background: var(--accent-dim) !important; color: var(--accent) !important; border-color: var(--accent-border) !important; }
 
 .sum-activity-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
-.sum-act-stat { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; }
+.sum-act-stat { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; min-width: 0; }
 .sum-act-stat-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--t3); font-weight: 700; margin-bottom: 4px; }
 .sum-act-stat-val { font-family: var(--mono); font-size: 18px; font-weight: 500; }
 
@@ -480,18 +487,171 @@ const css = `
 .sum-table-footer {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 16px; border-top: 1px solid var(--border); background: var(--bg2);
+  flex-wrap: wrap; gap: 8px;
 }
 .sum-footer-count { font-size: 11px; color: var(--t3); font-family: var(--mono); }
 
-/* responsive */
+/* ══════════════════════════ MOBILE RESPONSIVE ══════════════════════════ */
 @media (max-width: 900px) {
   .sum-stats { grid-template-columns: repeat(2, 1fr); }
   .col-gmail { display: none; }
+  .sum-activity-stats { grid-template-columns: repeat(2, 1fr); }
 }
+
 @media (max-width: 640px) {
-  .sum-stats { grid-template-columns: 1fr 1fr; }
-  .col-earned { display: none; }
+  .sum { font-size: 12.5px; }
+
+  /* stats */
+  .sum-stats { grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 14px; }
+  .sum-stat-card { padding: 11px 12px; }
+  .sum-stat-value { font-size: 16px; }
+  .sum-stat-label { font-size: 9px; }
+  .sum-stat-sub { font-size: 10px; }
+
+  /* toolbar */
   .sum-toolbar { flex-direction: column; align-items: stretch; }
+  .sum-toolbar-left { flex-direction: column; align-items: stretch; }
+  .sum-search-wrap { max-width: none; }
+  .sum-sort-select { width: 100%; }
+  .sum-btn-new { width: 100%; justify-content: center; }
+  .sum-toolbar > .sum-btn-new { order: -1; }
+
+  /* create form */
+  .sum-create-panel { padding: 14px; }
+  .sum-form-grid { grid-template-columns: 1fr; gap: 10px; }
+  .sum-form-actions { flex-direction: column-reverse; }
+  .sum-form-actions .sum-btn { width: 100%; justify-content: center; }
+
+  /* table -> organized stacked cards on mobile, no side-scroll needed */
+  .sum-table-wrap { overflow-x: visible; }
+  .sum-table { min-width: 0; width: 100%; border-collapse: separate; border-spacing: 0 10px; table-layout: auto; }
+  .sum-table thead { display: none; }
+
+  .sum-table tbody tr.sum-data-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-areas:
+      "user   user   status"
+      "earned earned pending"
+      "rate   clicks links"
+      "actions actions actions";
+    gap: 10px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+  }
+  .sum-table tbody tr.sum-data-row.sum-row-open { border-color: var(--accent-border); }
+
+  .sum-table td { display: block; padding: 0 !important; border: none !important; white-space: normal; overflow: visible; text-overflow: clip; min-width: 0; }
+
+  /* placement */
+  .sum-table td.col-user    { grid-area: user; min-width: 0; }
+  .sum-table td.col-status  { grid-area: status; text-align: center; display: flex; align-items: flex-start; justify-content: center; }
+  .sum-table td.col-earned  { grid-area: earned; }
+  .sum-table td.col-pending { grid-area: pending; }
+  .sum-table td.col-rate    { grid-area: rate; }
+  .sum-table td.col-clicks  { grid-area: clicks; }
+  .sum-table td.col-links   { grid-area: links; }
+  .sum-table td.col-actions { grid-area: actions; }
+  .sum-table td.col-gmail   { display: none; }
+
+  /* section divider under the name/status header — spans the whole row, not just one cell */
+  .sum-table td.col-user,
+  .sum-table td.col-status {
+    padding-bottom: 10px !important;
+    border-bottom: 1px solid var(--border) !important;
+  }
+
+  /* earned / pending — prominent money row */
+  .sum-table td.col-earned, .sum-table td.col-pending {
+    background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px !important;
+  }
+  .sum-table td.col-earned .sum-earned, .sum-table td.col-pending .sum-pending { font-size: 14px; font-weight: 600; }
+
+  /* rate / clicks / links — small centered chips */
+  .sum-table td.col-rate, .sum-table td.col-clicks, .sum-table td.col-links {
+    background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 7px 6px !important; text-align: center;
+  }
+
+  /* labels above every value */
+  .sum-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--t3);
+    margin-bottom: 3px;
+  }
+  .sum-table td.col-status[data-label]::before,
+  .sum-table td.col-rate[data-label]::before,
+  .sum-table td.col-clicks[data-label]::before,
+  .sum-table td.col-links[data-label]::before { text-align: center; }
+
+  /* inline-edit inputs inside narrow mobile cells should use the full cell width,
+     not the fixed pixel widths used for the desktop table columns */
+  .sum-table td.col-rate .sum-inline-input { width: 100%; }
+  .sum-table td.col-status .sum-chk-label,
+  .sum-table td.col-links .sum-chk-label {
+    padding: 6px 8px; font-size: 11px; white-space: normal; justify-content: center; width: 100%;
+  }
+
+  /* actions footer — force every action button onto a single line, evenly spaced */
+  .sum-table td.col-actions { padding-top: 10px !important; border-top: 1px solid var(--border) !important; }
+  .sum-table td.col-actions .sum-act-group {
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    width: 100%;
+  }
+  .sum-table td.col-actions .sum-act-sep { display: none; }
+  .sum-table td.col-actions .sum-act-btn {
+    flex: 0 0 auto;
+    width: 30px;
+    height: 30px;
+  }
+  .sum-table td.col-actions .sum-act-btn-save,
+  .sum-table td.col-actions .sum-act-btn-cancel {
+    flex: 1 1 0;
+    width: auto;
+    padding: 0 4px;
+    font-size: 11px;
+    margin: 0 3px;
+  }
+
+  /* expand panel rows should not get the card-grid treatment */
+  .sum-table tbody tr.sum-expand-row { display: block; }
+  .sum-table tbody tr.sum-expand-row td { display: block; }
+  .sum-link-stats-table { min-width: 480px; }
+
+  /* expand panels */
+  .sum-expand-inner { padding: 14px; }
+  .sum-panel-user { width: 100%; }
+  .sum-pay-row { flex-direction: column; align-items: stretch; }
+  .sum-pay-row .sum-field { width: 100% !important; }
+  .sum-pay-row .sum-input { width: 100% !important; }
+  .sum-pay-row .sum-btn { flex: 1; justify-content: center; }
+  .sum-link-grid { grid-template-columns: 1fr; }
+  .sum-panel-footer { flex-direction: column-reverse; }
+  .sum-panel-footer .sum-btn { width: 100%; justify-content: center; }
+
+  /* messages */
+  .sum-chat-list { max-height: 320px; padding: 10px; }
+  .sum-bubble, div[style*="max-width: 75%"] { max-width: 88% !important; }
+  .sum-chat-input-row { gap: 6px; }
+  .sum-chat-input-row .sum-btn-ghost { width: 100%; order: 3; justify-content: center; }
+
+  /* activity */
+  .sum-activity-stats { grid-template-columns: repeat(2, 1fr); }
+  .sum-cal-day { width: 24px; height: 24px; font-size: 8px; }
+  .sum-link-stats-table { min-width: 480px; }
+  .sum-day-filter .sum-day-btn { flex: 1 1 auto; text-align: center; }
+}
+
+@media (max-width: 400px) {
+  .sum-stats { grid-template-columns: repeat(2, 1fr); }
+  .sum-stat-value { font-size: 14px; }
 }
 `;
 
@@ -882,7 +1042,7 @@ const ShortUsersManager: React.FC<ShortUsersManagerProps> = ({ token: propToken,
 
                         {/* ── data row ── */}
                         <tr className={`sum-data-row${isOpen ? ' sum-row-open' : ''}`}>
-                          <td>
+                          <td className="col-user">
                             {isEditing ? (
                               <input className="sum-inline-input" value={editForm.realName || ''} onChange={e => setEditForm({ ...editForm, realName: e.target.value })} />
                             ) : (
@@ -905,31 +1065,31 @@ const ShortUsersManager: React.FC<ShortUsersManagerProps> = ({ token: propToken,
                               </div>
                             )}
                           </td>
-                          <td>
+                          <td className="col-rate" data-label="Rate/1k">
                             {isEditing
                               ? <input className="sum-inline-input" type="number" style={{ width: 70 }} value={editForm.ratePerThousand ?? ''} onChange={e => setEditForm({ ...editForm, ratePerThousand: parseInt(e.target.value) || 0 })} />
                               : <span className="sum-mono sum-rate">Rs.{user.ratePerThousand}</span>
                             }
                           </td>
-                          <td><span className="sum-mono" style={{ color:'var(--t2)' }}>{user.totalClicks.toLocaleString()}</span></td>
-                          <td><span className="sum-mono sum-earned">Rs.{user.totalEarnings.toFixed(2)}</span></td>
-                          <td><span className="sum-mono sum-pending">Rs.{user.unpaidEarnings.toFixed(2)}</span></td>
-                          <td>
+                          <td className="col-clicks" data-label="Clicks"><span className="sum-mono" style={{ color:'var(--t2)' }}>{user.totalClicks.toLocaleString()}</span></td>
+                          <td className="col-earned" data-label="Earned"><span className="sum-mono sum-earned">Rs.{user.totalEarnings.toFixed(2)}</span></td>
+                          <td className="col-pending" data-label="Pending"><span className="sum-mono sum-pending">Rs.{user.unpaidEarnings.toFixed(2)}</span></td>
+                          <td className="col-status" data-label="Status">
                             {isEditing
                               ? <label className="sum-chk-label" style={{ display:'inline-flex', padding:'4px 9px' }}><input type="checkbox" checked={editForm.isActive ?? false} onChange={e => setEditForm({ ...editForm, isActive: e.target.checked })} /> Active</label>
                               : <span className={user.isActive ? 'sum-badge sum-badge-active' : 'sum-badge sum-badge-inactive'}><span className="sum-dot" />{user.isActive ? 'Active' : 'Inactive'}</span>
                             }
                           </td>
-                          <td>
+                          <td className="col-gmail" data-label="Gmail">
                             {user.gmailLinked ? <span className="sum-gmail-chip" title={user.gmailLinked}>{user.gmailLinked}</span> : <span style={{ color:'var(--t3)' }}>—</span>}
                           </td>
-                          <td>
+                          <td className="col-links" data-label="Links">
                             {isEditing
                               ? <label className="sum-chk-label" style={{ display:'inline-flex', padding:'4px 9px' }}><input type="checkbox" checked={editForm.canCreateLinks ?? false} onChange={e => setEditForm({ ...editForm, canCreateLinks: e.target.checked })} /> Yes</label>
                               : <span className={user.canCreateLinks ? 'sum-badge sum-badge-yes' : 'sum-badge sum-badge-no'}><i className={user.canCreateLinks ? 'ti ti-check' : 'ti ti-x'} style={{ fontSize:11 }} />{user.canCreateLinks ? 'Yes' : 'No'}</span>
                             }
                           </td>
-                          <td>
+                          <td className="col-actions">
                             <div className="sum-act-group">
                               {isEditing ? (
                                 <>
@@ -1181,7 +1341,7 @@ const ShortUsersManager: React.FC<ShortUsersManagerProps> = ({ token: propToken,
                                         <div style={{ marginBottom: 8, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: 'var(--t3)' }}>
                                           Links Performance
                                         </div>
-                                        <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+                                        <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', overflowX: 'auto' }}>
                                           <table className="sum-link-stats-table">
                                             <thead>
                                               <tr>

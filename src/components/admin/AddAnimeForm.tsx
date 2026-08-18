@@ -17,6 +17,17 @@ const GENRE_OPTIONS = [
   'Racing', 'Workplace', 'Iyashikei', 'Murim', 'Reincarnation', 'Trap','Vr Game',
 ] as const;
 
+// ─── 📱🖥️ Auto-resize helper: grows a textarea to fit its content so text
+// is never hidden/clipped behind a fixed-height scroll box, on phone or PC.
+const useAutoResizeTextArea = (ref: React.RefObject<HTMLTextAreaElement | null>, value: string) => {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value, ref]);
+};
+
 // =============== CUSTOM SVG ICONS ===============
 const Icons = {
   Plus: (props: React.SVGProps<SVGSVGElement>) => (
@@ -359,6 +370,15 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
   const successTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const errorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // 📱🖥️ Refs for the fields that must auto-grow to show their FULL text
+  // (no more clipped 1-2 line boxes that need scrolling — on phone or PC)
+  const descriptionRef = useRef<HTMLTextAreaElement>(null);
+  const seoDescriptionRef = useRef<HTMLTextAreaElement>(null);
+  const seoKeywordsRef = useRef<HTMLTextAreaElement>(null);
+  useAutoResizeTextArea(descriptionRef, form.description);
+  useAutoResizeTextArea(seoDescriptionRef, form.seoDescription);
+  useAutoResizeTextArea(seoKeywordsRef, form.seoKeywords);
+
   // Auto-dismiss messages
   useEffect(() => {
     if (success) {
@@ -626,7 +646,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
             </div>
 
             <div className="space-y-4">
-              {/* Title */}
+              {/* Title — counter no longer overlaps the text (extra right padding) */}
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-1.5 flexl items-center gap-2">
                   <Icons.Title className="w-4 h-4 text-slate-400" />
@@ -639,11 +659,11 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                     onChange={handleTitleChange}
                     onFocus={() => setFocusedField('title')}
                     onBlur={() => setFocusedField(null)}
-                    className="w-full bg-slate-900/80 border border-slate-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none transition-all placeholder:text-slate-500"
+                    className="w-full bg-slate-900/80 border border-slate-700 text-white rounded-xl pl-4 pr-14 py-3 text-sm focus:outline-none transition-all placeholder:text-slate-500"
                     placeholder='e.g., "Naruto Shippuden"'
                     required
                   />
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500 pointer-events-none">
                     {form.title.length > 0 && <span className="text-slate-400">{form.title.length}</span>}
                   </div>
                 </div>
@@ -710,16 +730,17 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                 ]}
               />
 
-              {/* Thumbnail Preview (LEFT) + Description (RIGHT) — side by side, both fixed size */}
+              {/* Thumbnail Preview + Description — stacked on phone, side-by-side on larger screens.
+                  Description box now auto-grows to fit ALL the text, no more hidden/clipped lines. */}
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-1.5 flexl items-center gap-2">
                   <Icons.Description className="w-4 h-4 text-slate-400" />
                   Description <span className="text-slate-500 text-xs font-normal">(optional)</span>
-                  <span className="ml-auto text-[10px] text-slate-500 font-normal">Box size is fixed — text scrolls inside</span>
+                  <span className="ml-auto text-[10px] text-slate-500 font-normal hidden sm:inline">Box grows to show full text</span>
                 </label>
-                <div className="flex flex-row gap-4 items-start">
-                  {/* Thumbnail Preview — fixed size, matches poster ratio (193x289), always on the left, never resizes */}
-                  <div className="flex-shrink-0">
+                <div className="flex flex-col sm:flex-row gap-4 items-start">
+                  {/* Thumbnail Preview — fixed size, matches poster ratio, centered on phone */}
+                  <div className="flex-shrink-0 self-center sm:self-start">
                     <div className="relative bg-slate-900/50 rounded-xl overflow-hidden border border-slate-700/30 w-[100px] h-[150px]">
                       {form.thumbnail ? (
                         <img
@@ -753,17 +774,19 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                       )}
                     </div>
                   </div>
-                  {/* Description — fixed-height box */}
+                  {/* Description — auto-resizing textarea, full width on phone */}
                   <textarea
+                    ref={descriptionRef}
                     value={form.description}
                     onChange={(e) => setForm({ ...form, description: e.target.value })}
-                    className="flex-1 bg-slate-900/80 border border-slate-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all resize-none overflow-y-auto placeholder:text-slate-500 h-[150px]"
+                    className="w-full sm:flex-1 bg-slate-900/80 border border-slate-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all resize-none overflow-hidden placeholder:text-slate-500 min-h-[150px]"
                     placeholder="Write a brief description of the anime..."
+                    rows={5}
                   />
                 </div>
               </div>
 
-              {/* Thumbnail URL input */}
+              {/* Thumbnail URL input — icon padding fixed so text/checkmark never overlaps */}
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-1.5 flexl items-center gap-2">
                   <Icons.Image className="w-4 h-4 text-slate-400" />
@@ -774,22 +797,23 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                     type="url"
                     value={form.thumbnail}
                     onChange={(e) => setForm({ ...form, thumbnail: e.target.value })}
-                    className={`w-full bg-slate-900/80 border ${form.thumbnail ? 'border-emerald-500/50' : 'border-slate-700'} text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all placeholder:text-slate-500 pl-11`}
+                    className={`w-full bg-slate-900/80 border ${form.thumbnail ? 'border-emerald-500/50' : 'border-slate-700'} text-white rounded-xl pl-11 pr-10 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all placeholder:text-slate-500`}
                     placeholder="https://res.cloudinary.com/.../thumbnail.jpg"
+                    title={form.thumbnail}
                     required
                   />
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
                     <Icons.Image className="w-4 h-4" />
                   </div>
                   {form.thumbnail && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
                       <Icons.CheckCircle className="w-4 h-4 text-emerald-400" />
                     </div>
                   )}
                 </div>
                 <p className="text-slate-400 text-xs mt-1.5 flex items-center gap-1">
                   <Icons.Info className="w-3 h-3 text-yellow-400" />
-                  Recommended: Cloudinary URL (WebP, 193×289px)
+                  Recommended: Cloudinary URL (WebP, 193×289px) — tap/hover the field to see the full link
                 </p>
               </div>
             </div>
@@ -820,7 +844,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
               </div>
             </div>
 
-            {/* Selected Genres Preview */}
+            {/* Selected Genres Preview — wraps freely, every chip shows its full label */}
             {form.genreList.length > 0 && (
               <div className="mb-5 p-4 bg-slate-900/50 rounded-xl border border-slate-700/30">
                 <p className="text-slate-400 text-xs font-medium mb-2.5 flex items-center gap-2">
@@ -831,13 +855,13 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                   {form.genreList.map(genre => (
                     <span
                       key={genre}
-                      className={`inline-flex items-center gap-1.5 text-white px-3.5 py-1.5 rounded-lg text-xs font-medium shadow-lg bg-gradient-to-r ${getGenreGradient(genre)} transition-all hover:scale-105 hover:shadow-xl`}
+                      className={`inline-flex items-center gap-1.5 text-white px-3.5 py-1.5 rounded-lg text-xs font-medium shadow-lg bg-gradient-to-r ${getGenreGradient(genre)} transition-all hover:scale-105 hover:shadow-xl max-w-full`}
                     >
-                      {genre}
+                      <span className="break-words">{genre}</span>
                       <button
                         type="button"
                         onClick={() => toggleGenre(genre)}
-                        className="hover:text-white/70 ml-0.5 text-sm font-bold transition-transform hover:scale-125"
+                        className="hover:text-white/70 ml-0.5 text-sm font-bold transition-transform hover:scale-125 flex-shrink-0"
                         title="Remove genre"
                       >
                         <Icons.X className="w-3 h-3" />
@@ -854,7 +878,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                 <Icons.AddCircle className="w-3 h-3" />
                 Add Custom Genre
               </label>
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="text"
                   value={customGenre}
@@ -867,7 +891,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                   type="button"
                   onClick={addCustomGenre}
                   disabled={!customGenre.trim()}
-                  className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-xl transition-all text-sm font-medium shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40 flex items-center gap-1"
+                  className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-xl transition-all text-sm font-medium shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40 flex items-center justify-center gap-1"
                 >
                   <Icons.AddCircle className="w-4 h-4" />
                   Add
@@ -875,7 +899,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
               </div>
             </div>
 
-            {/* Genre Search & Grid */}
+            {/* Genre Search & Grid — 1 column on very small phones so long names never get cramped */}
             <div>
               <div className="relative mb-3">
                 <input
@@ -893,7 +917,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
 
               <div
                 ref={genreDropdownRef}
-                className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-[300px] overflow-y-auto p-3 bg-slate-900/30 rounded-xl border border-slate-700/30 transition-all duration-300 ${isGenreDropdownOpen || searchGenre ? 'opacity-100' : 'opacity-90'}`}
+                className={`grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-[300px] overflow-y-auto p-3 bg-slate-900/30 rounded-xl border border-slate-700/30 transition-all duration-300 ${isGenreDropdownOpen || searchGenre ? 'opacity-100' : 'opacity-90'}`}
               >
                 {filteredGenres.length > 0 ? (
                   filteredGenres.map(genre => {
@@ -914,7 +938,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                           }`}>
                           {isSelected && <Icons.Check className="w-3 h-3 text-white" />}
                         </div>
-                        <span className={`text-xs font-medium leading-tight ${isSelected ? 'text-white' : 'text-slate-300'}`}>
+                        <span className={`text-xs font-medium leading-tight break-words ${isSelected ? 'text-white' : 'text-slate-300'}`}>
                           {genre}
                         </span>
                       </div>
@@ -962,7 +986,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5 flexl items-center gap-2">
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5 flex flex-wrap items-center gap-2">
                     <Icons.Title className="w-3 h-3" />
                     SEO Title
                     {seoTitleTouched && (
@@ -982,7 +1006,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5 flexl items-center gap-2">
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5 flex flex-wrap items-center gap-2">
                     <Icons.Description className="w-3 h-3" />
                     SEO Description
                     {seoDescriptionTouched && (
@@ -992,18 +1016,20 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                       {form.seoDescription.length}/160
                     </span>
                   </label>
-                  <input
-                    type="text"
+                  {/* Auto-resizing textarea — full description always visible, no scroll needed */}
+                  <textarea
+                    ref={seoDescriptionRef}
                     value={form.seoDescription}
                     onChange={(e) => { setForm({ ...form, seoDescription: e.target.value }); setSeoDescriptionTouched(true); }}
-                    className={`w-full bg-slate-900/80 border ${form.seoDescription.length <= 160 ? 'border-slate-700' : 'border-red-500/50'} text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-500`}
+                    className={`w-full bg-slate-900/80 border ${form.seoDescription.length <= 160 ? 'border-slate-700' : 'border-red-500/50'} text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-500 resize-none overflow-hidden min-h-[44px]`}
                     placeholder="Watch Naruto Shippuden online in Hindi Dub..."
                     maxLength={160}
+                    rows={1}
                   />
                 </div>
               </div>
 
-              {/* SEO Keywords with Regenerate button */}
+              {/* SEO Keywords — auto-resizing textarea with Regenerate button */}
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1.5 flexl items-center gap-2">
                   <Icons.Keyword className="w-3 h-3" />
@@ -1012,13 +1038,14 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                     <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-900/30 text-blue-400">Manual</span>
                   )}
                 </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
+                <div className="flex flex-col sm:flex-row gap-2 sm:items-start">
+                  <textarea
+                    ref={seoKeywordsRef}
                     value={form.seoKeywords}
                     onChange={(e) => { setForm({ ...form, seoKeywords: e.target.value }); setSeoKeywordsTouched(true); }}
-                    className="flex-1 bg-slate-900/80 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-500"
+                    className="flex-1 bg-slate-900/80 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-500 resize-none overflow-hidden min-h-[44px]"
                     placeholder="naruto shippuden hindi dub, watch naruto online..."
+                    rows={1}
                   />
                   <button
                     type="button"
@@ -1028,7 +1055,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                       setSeoKeywordsTouched(false);
                     }}
                     disabled={!form.title.trim()}
-                    className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-xl transition-all text-sm font-medium shadow-lg shadow-amber-500/20 flex items-center gap-1 whitespace-nowrap"
+                    className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-xl transition-all text-sm font-medium shadow-lg shadow-amber-500/20 flex items-center justify-center gap-1 whitespace-nowrap"
                   >
                     <Icons.Generate className="w-4 h-4" />
                     Regenerate
@@ -1043,7 +1070,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                   URL Slug
                   <span className="text-red-400 text-xs">*</span>
                 </label>
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <input
                     type="text"
                     value={form.slug}
@@ -1060,14 +1087,14 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                         setForm(prev => ({ ...prev, slug: newSlug }));
                       }
                     }}
-                    className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-5 py-2.5 rounded-xl transition-all text-sm font-medium shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40 flex items-center gap-1"
+                    className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-5 py-2.5 rounded-xl transition-all text-sm font-medium shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40 flex items-center justify-center gap-1"
                   >
                     <Icons.Generate className="w-4 h-4" />
                     Generate
                   </button>
                 </div>
                 <div className="mt-2 p-3 bg-slate-900/60 rounded-xl border border-slate-700/30">
-                  <p className="text-slate-400 text-xs flex items-center gap-2">
+                  <p className="text-slate-400 text-xs flex flex-wrap items-center gap-2">
                     <Icons.Slug className="w-3 h-3" />
                     <span>Preview:</span>
                     <span className="text-purple-300 font-mono text-xs break-all">

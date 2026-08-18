@@ -1,4 +1,4 @@
- // src/components/admin/EpisodesManager.tsx - No emojis, custom SVG icons
+ // src/components/admin/EpisodesManager.tsx - No emojis, custom SVG icons, mobile-friendly
 import React, { useState, useEffect } from 'react';
 import type { Anime, Episode, Chapter } from '../../types';
 import axios from 'axios';
@@ -554,12 +554,94 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
     toast.success(message);
   };
 
+  // ✅ Shared edit form for an item — used in both desktop table row and mobile card
+  const renderEditForm = (item: any) => (
+    <div className="border-l-4 border-yellow-500 pl-4 py-3">
+      <h4 className="text-base sm:text-lg font-semibold text-white mb-3 flex items-center gap-2">
+        <EditIcon />
+        Edit {isManga ? 'Chapter' : 'Episode'} #{editForm.number}
+      </h4>
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4">
+          <div>
+            <label className="text-sm text-slate-300">Number *</label>
+            <input type="number" value={editForm.number} onChange={(e) => setEditForm({...editForm, number: Math.max(1, parseInt(e.target.value)||1)})} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-3 py-2.5 text-sm" />
+          </div>
+          <div>
+            <label className="text-sm text-slate-300">Session *</label>
+            <input type="number" value={editForm.session} onChange={(e) => setEditForm({...editForm, session: Math.max(1, parseInt(e.target.value)||1)})} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-3 py-2.5 text-sm" />
+          </div>
+        </div>
+        <div className="bg-slate-800/70 p-3 sm:p-4 rounded-lg border-l-4 border-yellow-500">
+          <label className="block text-sm font-medium text-yellow-300">Main Link (Admin)</label>
+          <input type="text" value={editForm.mainLink} onChange={(e) => setEditForm({...editForm, mainLink: e.target.value})} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-3 py-2.5 text-sm mt-2" />
+          {isMainAdmin && (
+            <button
+              type="button"
+              onClick={() => handleAutoGenerateLinks(true)}
+              disabled={!editForm.mainLink || generatingLinks}
+              className="mt-2 w-full sm:w-auto justify-center bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-3 py-2 rounded text-sm flex items-center gap-1"
+            >
+              {generatingLinks ? <Spinner size="sm" /> : <BoltIcon />} Auto-Generate 5 Links
+            </button>
+          )}
+        </div>
+        <div>
+          <div className="flex justify-between items-center">
+            <label className="text-sm text-slate-300">User Download Links</label>
+            <button type="button" onClick={handleEditAddDownloadLink} disabled={editForm.downloadLinks.length>=5} className="text-xs bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-2 py-1.5 rounded">+ Add</button>
+          </div>
+          <div className="space-y-3 mt-2">
+            {editForm.downloadLinks.map((link, idx) => (
+              <div key={idx} className="bg-slate-900/70 p-3 rounded border border-slate-600">
+                <div className="flex justify-between mb-2">
+                  <span className="text-slate-300">{link.name}</span>
+                  {editForm.downloadLinks.length>1 && <button type="button" onClick={() => handleEditRemoveDownloadLink(idx)} className="text-xs bg-red-600 hover:bg-red-500 text-white px-2 py-1 rounded">Remove</button>}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-slate-400">Name</label>
+                    <input type="text" value={link.name} onChange={(e) => handleEditUpdateDownloadLink(idx, 'name', e.target.value)} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-2 py-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400">Quality</label>
+                    <input type="text" value={link.quality||''} onChange={(e) => handleEditUpdateDownloadLink(idx, 'quality', e.target.value)} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-2 py-2 text-sm" />
+                  </div>
+                </div>
+                <div className="mt-2">
+                  <label className="text-xs text-slate-400">URL</label>
+                  <input type="url" value={link.url} onChange={(e) => handleEditUpdateDownloadLink(idx, 'url', e.target.value)} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-2 py-2 text-sm" />
+                </div>
+                <div className="mt-2">
+                  <label className="text-xs text-slate-400">Type</label>
+                  <select value={link.type||'direct'} onChange={(e) => handleEditUpdateDownloadLink(idx, 'type', e.target.value)} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-2 py-2 text-sm">
+                    <option>direct</option><option>server</option><option>google_drive</option><option>mega</option><option>other</option>
+                  </select>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label className="text-sm text-slate-300">Title</label>
+          <input type="text" value={editForm.title} onChange={(e) => setEditForm({...editForm, title: e.target.value})} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-3 py-2.5 text-sm" />
+        </div>
+        <div className="flex gap-3">
+          <button type="button" onClick={handleUpdateItem} className="flex-1 sm:flex-none bg-green-600 hover:bg-green-500 text-white font-medium py-2.5 px-4 rounded text-sm">Save Changes</button>
+          <button type="button" onClick={handleCancelEdit} className="flex-1 sm:flex-none bg-slate-600 hover:bg-slate-500 text-white font-medium py-2.5 px-4 rounded text-sm flex items-center justify-center gap-1">
+            <CancelIcon /> Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="space-y-6">
       {/* Delete Confirmation Modal */}
       {deleteConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4 shadow-xl border border-slate-700">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-4">
+          <div className="bg-slate-800 rounded-lg p-6 max-w-md w-full shadow-xl border border-slate-700">
             <h3 className="text-xl font-semibold text-white mb-4">Confirm Deletion</h3>
             <p className="text-slate-300 mb-6">
               Are you sure you want to delete {isManga ? 'chapter' : 'episode'} {deleteConfirm.itemNumber}?
@@ -582,8 +664,8 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
         </div>
       )}
 
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-white">Manage {isManga ? 'Chapters' : 'Episodes'}</h2>
+      <div className="flex flex-wrap justify-between items-center gap-3">
+        <h2 className="text-xl sm:text-2xl font-bold text-white">Manage {isManga ? 'Chapters' : 'Episodes'}</h2>
         <button
           onClick={handleRefresh}
           disabled={animesLoading}
@@ -594,7 +676,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
       </div>
 
       {/* Content Selection */}
-      <div className="bg-slate-800/50 rounded-lg p-6">
+      <div className="bg-slate-800/50 rounded-lg p-4 sm:p-6">
         <label className="block text-sm font-medium text-slate-300 mb-3">
           Select {isManga ? 'Manga' : 'Anime/Movie'} *
         </label>
@@ -609,19 +691,19 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
       {/* Selected Content Info with Creator Badge */}
       {selectedAnime && (
         <div className="bg-slate-800/30 rounded-lg p-4 border border-slate-700">
-          <div className="flex items-center gap-4">
+          <div className="flex items-start sm:items-center gap-4">
             {(selectedAnime.thumbnail || selectedAnime.posterImage || selectedAnime.coverImage) && (
               <img
                 src={selectedAnime.thumbnail || selectedAnime.posterImage || selectedAnime.coverImage}
                 alt={selectedAnime.title}
-                className="w-16 h-22 object-cover rounded-lg flex-shrink-0"
+                className="w-14 h-20 sm:w-16 sm:h-22 object-cover rounded-lg flex-shrink-0"
                 style={{ height: '88px' }}
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
               />
             )}
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center flex-wrap gap-2 mb-2">
-                <h3 className="text-lg font-semibold text-white">
+                <h3 className="text-base sm:text-lg font-semibold text-white break-words">
                   Selected: {selectedAnime.title}
                 </h3>
                 {isMainAdmin && (
@@ -639,7 +721,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                   )
                 )}
               </div>
-              <div className="flex flex-wrap gap-4 text-sm text-slate-300">
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-300">
                 <span>Type: {selectedAnime.contentType}</span>
                 <span>Status: {selectedAnime.status}</span>
                 <span>Total {isManga ? 'Chapters' : 'Episodes'}: {isManga ? chapters.length : episodes.length}</span>
@@ -652,14 +734,14 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
       {/* Download Page(s) card */}
       {selectedAnime && (
         <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-white/90 flex items-center gap-2">
+          <h3 className="text-lg font-semibold text-white/90 flex items-center gap-2 flex-wrap">
             <span className="w-1.5 h-6 bg-purple-400 rounded-full"></span>
             <DownloadIcon /> Download Page(s) for this Anime
             {loadingDownloadPages && <Spinner size="sm" />}
           </h3>
 
           {!loadingDownloadPages && downloadPages.length === 0 && (
-            <div className="text-center py-8 bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl">
+            <div className="text-center py-8 bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl px-4">
               <DownloadIcon />
               <p className="mt-3 text-white/60">Is anime ka koi download page nahi bana hai abhi tak.</p>
             </div>
@@ -682,12 +764,12 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                 className="group bg-white/5 backdrop-blur-sm border border-white/10 hover:border-white/20 rounded-2xl overflow-hidden shadow-xl transition-all hover:shadow-2xl transform-gpu"
                 style={{ willChange: 'transform' }}
               >
-                <div className="relative p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="relative p-4 sm:p-5 flex flex-col gap-4">
                   <div className="absolute left-0 top-0 bottom-0 w-1.5 rounded-l-2xl bg-gradient-to-b from-purple-400 to-pink-400"></div>
 
                   <div className="flex-1 pl-3">
-                    <div className="flex items-start gap-4">
-                      <div className="flex-shrink-0 w-16 h-20 sm:w-20 sm:h-24 rounded-lg overflow-hidden bg-gray-800/80 shadow-lg border border-white/10">
+                    <div className="flex items-start gap-3 sm:gap-4">
+                      <div className="flex-shrink-0 w-14 h-18 sm:w-20 sm:h-24 rounded-lg overflow-hidden bg-gray-800/80 shadow-lg border border-white/10">
                         {(selectedAnime.thumbnail || selectedAnime.posterImage || selectedAnime.coverImage) ? (
                           <img
                             src={selectedAnime.thumbnail || selectedAnime.posterImage || selectedAnime.coverImage}
@@ -705,9 +787,9 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                         )}
                       </div>
 
-                      <div className="flex-1">
+                      <div className="flex-1 min-w-0">
                         <div className="flex items-center flex-wrap gap-2">
-                          <h3 className="text-xl font-bold text-white">{selectedAnime.title}</h3>
+                          <h3 className="text-lg sm:text-xl font-bold text-white break-words">{selectedAnime.title}</h3>
                         </div>
 
                         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
@@ -725,7 +807,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                           </span>
                         </div>
 
-                        <div className="mt-2 text-sm text-white/50 flex items-center gap-3">
+                        <div className="mt-2 text-sm text-white/50 flex flex-wrap items-center gap-3">
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l5 5a2 2 0 01.586 1.414V19a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z" />
                           </svg>
@@ -736,7 +818,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                     </div>
                   </div>
 
-                  <div className="flex gap-2 items-center">
+                  <div className="flex gap-2 items-center flex-wrap pl-3 sm:pl-0">
                     {/* View / Test button */}
                     <button
                       onClick={() => window.open(publicUrl, '_blank', 'noopener,noreferrer')}
@@ -794,7 +876,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                   setNewItem(prev => ({ ...prev, session }));
                   setEditingItemId(null);
                 }}
-                className={`px-4 py-2 rounded-lg transition-colors ${
+                className={`px-4 py-2 rounded-lg transition-colors text-sm ${
                   selectedSession === session
                     ? 'bg-blue-600 text-white'
                     : 'bg-slate-600 text-slate-300 hover:bg-slate-500'
@@ -810,7 +892,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                 setNewItem(prev => ({ ...prev, session: newSession, number: 1 }));
                 setEditingItemId(null);
               }}
-              className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg transition-colors"
+              className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg transition-colors text-sm"
             >
               + New Session
             </button>
@@ -820,12 +902,12 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
 
       {/* Add New Item Form */}
       {selectedAnime && (
-        <form onSubmit={handleAddItem} className="bg-slate-700/50 rounded-lg p-6 space-y-4">
+        <form onSubmit={handleAddItem} className="bg-slate-700/50 rounded-lg p-4 sm:p-6 space-y-4">
           <h3 className="text-lg font-semibold text-white">
             Add New {isManga ? 'Chapter' : 'Episode'} {getAvailableSessions().length > 1 && `(Session ${selectedSession})`}
           </h3>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
                 {isManga ? 'Chapter' : 'Episode'} Number *
@@ -834,7 +916,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                 type="number"
                 value={newItem.number}
                 onChange={(e) => setNewItem({ ...newItem, number: Math.max(1, parseInt(e.target.value) || 1) })}
-                className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
+                className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
                 min="1"
                 required
               />
@@ -847,7 +929,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                 type="number"
                 value={newItem.session}
                 onChange={(e) => setNewItem({ ...newItem, session: Math.max(1, parseInt(e.target.value) || 1) })}
-                className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
+                className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
                 min="1"
                 required
               />
@@ -856,55 +938,57 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
 
           {/* Main Link (Admin only) */}
           <div className="bg-slate-800/70 p-4 rounded-lg border-l-4 border-yellow-500">
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
               <label className="block text-sm font-medium text-yellow-300"><LinkIcon /> Main Link (Admin Only - Optional)</label>
               <span className="text-xs text-yellow-400 bg-yellow-900/30 px-2 py-1 rounded">Internal Use</span>
             </div>
             <p className="text-slate-400 text-xs mb-3">This is for admin reference only. It won't be shown to users.</p>
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <input
                 type="text"
                 value={newItem.mainLink}
                 onChange={(e) => setNewItem({ ...newItem, mainLink: e.target.value })}
                 placeholder="https://example.com/original-source.mp4"
-                className="flex-1 bg-slate-900 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm"
+                className="flex-1 bg-slate-900 border border-slate-600 text-white rounded-lg px-3 py-2.5 text-sm"
               />
-              <button
-                type="button"
-                onClick={() => openMainLink(newItem.mainLink)}
-                disabled={!newItem.mainLink}
-                className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-3 py-2 rounded text-sm flex items-center gap-1"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                Open
-              </button>
-              <button
-                type="button"
-                onClick={() => newItem.mainLink && copyToClipboard(newItem.mainLink)}
-                disabled={!newItem.mainLink}
-                className="bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 text-white px-3 py-2 rounded text-sm flex items-center gap-1"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-                Copy
-              </button>
-              {isMainAdmin && (
+              <div className="flex gap-2 flex-wrap">
                 <button
                   type="button"
-                  onClick={() => handleAutoGenerateLinks(false)}
-                  disabled={!newItem.mainLink || generatingLinks}
-                  className="bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-3 py-2 rounded text-sm flex items-center gap-1"
+                  onClick={() => openMainLink(newItem.mainLink)}
+                  disabled={!newItem.mainLink}
+                  className="flex-1 sm:flex-none justify-center bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-3 py-2 rounded text-sm flex items-center gap-1"
                 >
-                  {generatingLinks ? <Spinner size="sm" /> : <BoltIcon />} Auto-Generate 5 Links
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                  Open
                 </button>
-              )}
+                <button
+                  type="button"
+                  onClick={() => newItem.mainLink && copyToClipboard(newItem.mainLink)}
+                  disabled={!newItem.mainLink}
+                  className="flex-1 sm:flex-none justify-center bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 text-white px-3 py-2 rounded text-sm flex items-center gap-1"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                  Copy
+                </button>
+                {isMainAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => handleAutoGenerateLinks(false)}
+                    disabled={!newItem.mainLink || generatingLinks}
+                    className="w-full sm:w-auto justify-center bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-3 py-2 rounded text-sm flex items-center gap-1"
+                  >
+                    {generatingLinks ? <Spinner size="sm" /> : <BoltIcon />} Auto-Generate 5 Links
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
           {/* Download Links */}
           <div>
-            <div className="flex justify-between items-center mb-2">
+            <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
               <label className="block text-sm font-medium text-slate-300">User Download Links (Required) *</label>
-              <button type="button" onClick={handleAddDownloadLink} disabled={newItem.downloadLinks.length >= 5} className="text-xs bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-2 py-1 rounded">
+              <button type="button" onClick={handleAddDownloadLink} disabled={newItem.downloadLinks.length >= 5} className="text-xs bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-2 py-1.5 rounded">
                 + Add Link (Max 5)
               </button>
             </div>
@@ -922,20 +1006,20 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs text-slate-400">Link Name *</label>
-                      <input type="text" value={link.name} onChange={(e) => handleUpdateDownloadLink(idx, 'name', e.target.value)} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-2 py-1 text-sm" required />
+                      <input type="text" value={link.name} onChange={(e) => handleUpdateDownloadLink(idx, 'name', e.target.value)} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-2 py-2 text-sm" required />
                     </div>
                     <div>
                       <label className="text-xs text-slate-400">Quality</label>
-                      <input type="text" value={link.quality || ''} onChange={(e) => handleUpdateDownloadLink(idx, 'quality', e.target.value)} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-2 py-1 text-sm" />
+                      <input type="text" value={link.quality || ''} onChange={(e) => handleUpdateDownloadLink(idx, 'quality', e.target.value)} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-2 py-2 text-sm" />
                     </div>
                   </div>
                   <div className="mt-3">
                     <label className="text-xs text-slate-400">Download URL *</label>
-                    <input type="url" value={link.url} onChange={(e) => handleUpdateDownloadLink(idx, 'url', e.target.value)} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-2 py-1 text-sm" required />
+                    <input type="url" value={link.url} onChange={(e) => handleUpdateDownloadLink(idx, 'url', e.target.value)} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-2 py-2 text-sm" required />
                   </div>
                   <div className="mt-3">
                     <label className="text-xs text-slate-400">Type</label>
-                    <select value={link.type || 'direct'} onChange={(e) => handleUpdateDownloadLink(idx, 'type', e.target.value)} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-2 py-1 text-sm">
+                    <select value={link.type || 'direct'} onChange={(e) => handleUpdateDownloadLink(idx, 'type', e.target.value)} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-2 py-2 text-sm">
                       <option value="direct">Direct Download</option>
                       <option value="server">Server Download</option>
                       <option value="google_drive">Google Drive</option>
@@ -955,7 +1039,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
               value={newItem.title}
               onChange={(e) => setNewItem({ ...newItem, title: e.target.value })}
               placeholder={`Defaults to '${isManga ? 'Chapter' : 'Episode'} X'`}
-              className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2"
+              className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2.5"
             />
           </div>
 
@@ -963,7 +1047,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
             <button
               type="submit"
               disabled={addingItem}
-              className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-semibold py-2 px-6 rounded-lg transition-colors flex items-center gap-2"
+              className="w-full sm:w-auto justify-center bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-semibold py-2.5 px-6 rounded-lg transition-colors flex items-center gap-2"
             >
               {addingItem ? <><Spinner size="sm" /> Adding...</> : `Add ${isManga ? 'Chapter' : 'Episode'}`}
             </button>
@@ -973,8 +1057,8 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
 
       {/* Items List */}
       {selectedAnime && (
-        <div className="bg-slate-800/50 rounded-lg p-6">
-          <div className="flex justify-between items-center mb-4">
+        <div className="bg-slate-800/50 rounded-lg p-4 sm:p-6">
+          <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
             <h3 className="text-lg font-semibold text-white">
               {isManga ? 'Chapters' : 'Episodes'} List {getAvailableSessions().length > 1 && `(Session ${selectedSession})`}
               ({filteredItems.length})
@@ -987,160 +1071,161 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
           ) : filteredItems.length === 0 ? (
             <div className="text-center py-8 text-slate-400">No {isManga ? 'chapters' : 'episodes'} added yet for Session {selectedSession}.</div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full bg-slate-700/30 rounded-lg overflow-hidden">
-                <thead className="bg-slate-600/50">
-                  <tr>
-                    <th className="p-3 text-left text-slate-300 font-medium">#</th>
-                    <th className="p-3 text-left text-slate-300 font-medium">Session</th>
-                    <th className="p-3 text-left text-slate-300 font-medium">Title</th>
-                    <th className="p-3 text-left text-slate-300 font-medium">Main Link (Admin)</th>
-                    <th className="p-3 text-left text-slate-300 font-medium">User Links</th>
-                    <th className="p-3 text-left text-slate-300 font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-700">
-                  {filteredItems.map((item: any, idx) => {
-                    const isEditing = editingItemId === item._id;
-                    return (
-                      <React.Fragment key={item._id}>
-                        <tr className={`hover:bg-slate-600/30 transition-colors ${isEditing ? 'bg-slate-700/50' : ''}`}>
-                          <td className="p-3 font-mono">{isManga ? item.chapterNumber : item.episodeNumber}</td>
-                          <td className="p-3"><span className="text-blue-400 bg-blue-600/20 px-2 py-1 rounded text-xs">S{item.session || 1}</span></td>
-                          <td className="p-3 text-white">{item.title}</td>
-                          <td className="p-3">
-                            {item.mainLink ? (
-                              <div className="space-y-2">
-                                <div className="text-xs text-yellow-300 truncate max-w-xs cursor-pointer" title={item.mainLink} onClick={() => copyToClipboard(item.mainLink)}>
-                                  {item.mainLink.substring(0, 30)}...
-                                </div>
-                                <div className="flex gap-1">
-                                  <button onClick={() => openMainLink(item.mainLink)} className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded">Open</button>
-                                  <button onClick={() => copyToClipboard(item.mainLink)} className="text-xs bg-yellow-600 hover:bg-yellow-500 text-white px-2 py-1 rounded">Copy</button>
-                                </div>
-                              </div>
-                            ) : <span className="text-slate-500 text-xs italic">None</span>}
-                          </td>
-                          <td className="p-3">
-                            {item.downloadLinks?.length ? (
-                              <div className="space-y-1">
-                                {item.downloadLinks.slice(0,2).map((l: any, i: number) => (
-                                  <div key={i} className="text-xs"><span className="text-blue-400">{l.name}:</span> <a href={l.url} target="_blank" rel="noopener" className="text-blue-400 hover:text-blue-300 truncate block max-w-xs">{l.url.substring(0,30)}...</a></div>
-                                ))}
-                                {item.downloadLinks.length > 2 && <div className="text-green-400 text-xs">+{item.downloadLinks.length-2} more</div>}
-                              </div>
-                            ) : <span className="text-slate-500 text-sm">None</span>}
-                          </td>
-                          <td className="p-3">
-                            <div className="flex gap-2">
-                              <button onClick={() => handleEditItem(item)} className={`px-3 py-1 rounded text-sm transition-colors ${isEditing ? 'bg-yellow-600 hover:bg-yellow-500' : 'bg-blue-600 hover:bg-blue-500'} text-white flex items-center gap-1`}>
-                                {isEditing ? <><CancelIcon /> Cancel</> : <><EditIcon /> Edit</>}
-                              </button>
-                              {!isEditing && (
-                                <button
-                                  onClick={() => setDeleteConfirm({
-                                    itemId: item._id,
-                                    itemNumber: isManga ? item.chapterNumber : item.episodeNumber,
-                                    session: item.session || 1
-                                  })}
-                                  className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-sm flex items-center gap-1"
-                                >
-                                  <TrashIcon /> Delete
-                                </button>
-                              )}
+            <>
+              {/* ============ MOBILE CARD VIEW (below lg) ============ */}
+              <div className="lg:hidden space-y-3">
+                {filteredItems.map((item: any) => {
+                  const isEditing = editingItemId === item._id;
+                  const number = isManga ? item.chapterNumber : item.episodeNumber;
+                  return (
+                    <div key={item._id} className={`bg-slate-700/30 rounded-lg overflow-hidden border ${isEditing ? 'border-yellow-500/50' : 'border-slate-700'}`}>
+                      <div className="p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono text-white font-semibold">#{number}</span>
+                              <span className="text-blue-400 bg-blue-600/20 px-2 py-0.5 rounded text-xs">S{item.session || 1}</span>
                             </div>
-                          </td>
-                        </tr>
-                        {isEditing && (
-                          <tr className="bg-slate-800/70 border-b border-slate-700">
-                            <td colSpan={6} className="p-4">
-                              <div className="border-l-4 border-yellow-500 pl-4 py-3">
-                                <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                                  <EditIcon />
-                                  Edit {isManga ? 'Chapter' : 'Episode'} #{editForm.number}
-                                </h4>
-                                <div className="space-y-4">
-                                  <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                      <label className="text-sm text-slate-300">Number *</label>
-                                      <input type="number" value={editForm.number} onChange={(e) => setEditForm({...editForm, number: Math.max(1, parseInt(e.target.value)||1)})} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-3 py-2 text-sm" />
-                                    </div>
-                                    <div>
-                                      <label className="text-sm text-slate-300">Session *</label>
-                                      <input type="number" value={editForm.session} onChange={(e) => setEditForm({...editForm, session: Math.max(1, parseInt(e.target.value)||1)})} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-3 py-2 text-sm" />
-                                    </div>
+                            {item.title && <p className="text-white text-sm mt-1 break-words">{item.title}</p>}
+                          </div>
+                        </div>
+
+                        {item.mainLink && (
+                          <div className="mt-3">
+                            <p className="text-xs text-yellow-300/70 mb-1">Main Link (Admin)</p>
+                            <div className="text-xs text-yellow-300 truncate cursor-pointer" title={item.mainLink} onClick={() => copyToClipboard(item.mainLink)}>
+                              {item.mainLink.substring(0, 40)}...
+                            </div>
+                            <div className="flex gap-2 mt-1.5">
+                              <button onClick={() => openMainLink(item.mainLink)} className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded">Open</button>
+                              <button onClick={() => copyToClipboard(item.mainLink)} className="text-xs bg-yellow-600 hover:bg-yellow-500 text-white px-2 py-1 rounded">Copy</button>
+                            </div>
+                          </div>
+                        )}
+
+                        {item.downloadLinks?.length > 0 && (
+                          <div className="mt-3">
+                            <p className="text-xs text-slate-400 mb-1">User Links ({item.downloadLinks.length})</p>
+                            <div className="space-y-1">
+                              {item.downloadLinks.slice(0, 2).map((l: any, i: number) => (
+                                <div key={i} className="text-xs truncate">
+                                  <span className="text-blue-400">{l.name}:</span>{' '}
+                                  <a href={l.url} target="_blank" rel="noopener" className="text-blue-400 hover:text-blue-300">{l.url.substring(0, 30)}...</a>
+                                </div>
+                              ))}
+                              {item.downloadLinks.length > 2 && <div className="text-green-400 text-xs">+{item.downloadLinks.length - 2} more</div>}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex gap-2 mt-3">
+                          <button onClick={() => handleEditItem(item)} className={`flex-1 justify-center px-3 py-2 rounded text-sm transition-colors ${isEditing ? 'bg-yellow-600 hover:bg-yellow-500' : 'bg-blue-600 hover:bg-blue-500'} text-white flex items-center gap-1`}>
+                            {isEditing ? <><CancelIcon /> Cancel</> : <><EditIcon /> Edit</>}
+                          </button>
+                          {!isEditing && (
+                            <button
+                              onClick={() => setDeleteConfirm({
+                                itemId: item._id,
+                                itemNumber: number,
+                                session: item.session || 1
+                              })}
+                              className="flex-1 justify-center bg-red-600 hover:bg-red-500 text-white px-3 py-2 rounded text-sm flex items-center gap-1"
+                            >
+                              <TrashIcon /> Delete
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {isEditing && (
+                        <div className="border-t border-slate-700 p-3 bg-slate-800/70">
+                          {renderEditForm(item)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* ============ DESKTOP TABLE VIEW (lg and up) ============ */}
+              <div className="hidden lg:block overflow-x-auto">
+                <table className="w-full bg-slate-700/30 rounded-lg overflow-hidden">
+                  <thead className="bg-slate-600/50">
+                    <tr>
+                      <th className="p-3 text-left text-slate-300 font-medium">#</th>
+                      <th className="p-3 text-left text-slate-300 font-medium">Session</th>
+                      <th className="p-3 text-left text-slate-300 font-medium">Title</th>
+                      <th className="p-3 text-left text-slate-300 font-medium">Main Link (Admin)</th>
+                      <th className="p-3 text-left text-slate-300 font-medium">User Links</th>
+                      <th className="p-3 text-left text-slate-300 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-700">
+                    {filteredItems.map((item: any) => {
+                      const isEditing = editingItemId === item._id;
+                      return (
+                        <React.Fragment key={item._id}>
+                          <tr className={`hover:bg-slate-600/30 transition-colors ${isEditing ? 'bg-slate-700/50' : ''}`}>
+                            <td className="p-3 font-mono">{isManga ? item.chapterNumber : item.episodeNumber}</td>
+                            <td className="p-3"><span className="text-blue-400 bg-blue-600/20 px-2 py-1 rounded text-xs">S{item.session || 1}</span></td>
+                            <td className="p-3 text-white">{item.title}</td>
+                            <td className="p-3">
+                              {item.mainLink ? (
+                                <div className="space-y-2">
+                                  <div className="text-xs text-yellow-300 truncate max-w-xs cursor-pointer" title={item.mainLink} onClick={() => copyToClipboard(item.mainLink)}>
+                                    {item.mainLink.substring(0, 30)}...
                                   </div>
-                                  <div className="bg-slate-800/70 p-4 rounded-lg border-l-4 border-yellow-500">
-                                    <label className="block text-sm font-medium text-yellow-300">Main Link (Admin)</label>
-                                    <input type="text" value={editForm.mainLink} onChange={(e) => setEditForm({...editForm, mainLink: e.target.value})} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-3 py-2 text-sm mt-2" />
-                                    {isMainAdmin && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleAutoGenerateLinks(true)}
-                                        disabled={!editForm.mainLink || generatingLinks}
-                                        className="mt-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-3 py-2 rounded text-sm flex items-center gap-1"
-                                      >
-                                        {generatingLinks ? <Spinner size="sm" /> : <BoltIcon />} Auto-Generate 5 Links
-                                      </button>
-                                    )}
-                                  </div>
-                                  <div>
-                                    <div className="flex justify-between items-center">
-                                      <label className="text-sm text-slate-300">User Download Links</label>
-                                      <button type="button" onClick={handleEditAddDownloadLink} disabled={editForm.downloadLinks.length>=5} className="text-xs bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-2 py-1 rounded">+ Add</button>
-                                    </div>
-                                    <div className="space-y-3 mt-2">
-                                      {editForm.downloadLinks.map((link, idx) => (
-                                        <div key={idx} className="bg-slate-900/70 p-3 rounded border border-slate-600">
-                                          <div className="flex justify-between mb-2">
-                                            <span className="text-slate-300">{link.name}</span>
-                                            {editForm.downloadLinks.length>1 && <button type="button" onClick={() => handleEditRemoveDownloadLink(idx)} className="text-xs bg-red-600 hover:bg-red-500 text-white px-2 py-1 rounded">Remove</button>}
-                                          </div>
-                                          <div className="grid grid-cols-2 gap-3">
-                                            <div>
-                                              <label className="text-xs text-slate-400">Name</label>
-                                              <input type="text" value={link.name} onChange={(e) => handleEditUpdateDownloadLink(idx, 'name', e.target.value)} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-2 py-1 text-sm" />
-                                            </div>
-                                            <div>
-                                              <label className="text-xs text-slate-400">Quality</label>
-                                              <input type="text" value={link.quality||''} onChange={(e) => handleEditUpdateDownloadLink(idx, 'quality', e.target.value)} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-2 py-1 text-sm" />
-                                            </div>
-                                          </div>
-                                          <div className="mt-2">
-                                            <label className="text-xs text-slate-400">URL</label>
-                                            <input type="url" value={link.url} onChange={(e) => handleEditUpdateDownloadLink(idx, 'url', e.target.value)} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-2 py-1 text-sm" />
-                                          </div>
-                                          <div className="mt-2">
-                                            <label className="text-xs text-slate-400">Type</label>
-                                            <select value={link.type||'direct'} onChange={(e) => handleEditUpdateDownloadLink(idx, 'type', e.target.value)} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-2 py-1 text-sm">
-                                              <option>direct</option><option>server</option><option>google_drive</option><option>mega</option><option>other</option>
-                                            </select>
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <label className="text-sm text-slate-300">Title</label>
-                                    <input type="text" value={editForm.title} onChange={(e) => setEditForm({...editForm, title: e.target.value})} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-3 py-2 text-sm" />
-                                  </div>
-                                  <div className="flex gap-3">
-                                    <button type="button" onClick={handleUpdateItem} className="bg-green-600 hover:bg-green-500 text-white font-medium py-2 px-4 rounded text-sm">Save Changes</button>
-                                    <button type="button" onClick={handleCancelEdit} className="bg-slate-600 hover:bg-slate-500 text-white font-medium py-2 px-4 rounded text-sm flex items-center gap-1">
-                                      <CancelIcon /> Cancel
-                                    </button>
+                                  <div className="flex gap-1">
+                                    <button onClick={() => openMainLink(item.mainLink)} className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded">Open</button>
+                                    <button onClick={() => copyToClipboard(item.mainLink)} className="text-xs bg-yellow-600 hover:bg-yellow-500 text-white px-2 py-1 rounded">Copy</button>
                                   </div>
                                 </div>
+                              ) : <span className="text-slate-500 text-xs italic">None</span>}
+                            </td>
+                            <td className="p-3">
+                              {item.downloadLinks?.length ? (
+                                <div className="space-y-1">
+                                  {item.downloadLinks.slice(0,2).map((l: any, i: number) => (
+                                    <div key={i} className="text-xs"><span className="text-blue-400">{l.name}:</span> <a href={l.url} target="_blank" rel="noopener" className="text-blue-400 hover:text-blue-300 truncate block max-w-xs">{l.url.substring(0,30)}...</a></div>
+                                  ))}
+                                  {item.downloadLinks.length > 2 && <div className="text-green-400 text-xs">+{item.downloadLinks.length-2} more</div>}
+                                </div>
+                              ) : <span className="text-slate-500 text-sm">None</span>}
+                            </td>
+                            <td className="p-3">
+                              <div className="flex gap-2">
+                                <button onClick={() => handleEditItem(item)} className={`px-3 py-1 rounded text-sm transition-colors ${isEditing ? 'bg-yellow-600 hover:bg-yellow-500' : 'bg-blue-600 hover:bg-blue-500'} text-white flex items-center gap-1`}>
+                                  {isEditing ? <><CancelIcon /> Cancel</> : <><EditIcon /> Edit</>}
+                                </button>
+                                {!isEditing && (
+                                  <button
+                                    onClick={() => setDeleteConfirm({
+                                      itemId: item._id,
+                                      itemNumber: isManga ? item.chapterNumber : item.episodeNumber,
+                                      session: item.session || 1
+                                    })}
+                                    className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-sm flex items-center gap-1"
+                                  >
+                                    <TrashIcon /> Delete
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                          {isEditing && (
+                            <tr className="bg-slate-800/70 border-b border-slate-700">
+                              <td colSpan={6} className="p-4">
+                                {renderEditForm(item)}
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
       )}
