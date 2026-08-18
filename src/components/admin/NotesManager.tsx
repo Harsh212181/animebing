@@ -13,7 +13,7 @@ interface Note {
   title: string;
   content: string;
   color: string;          // background color
-  textColor?: string;     // new: text color (optional)
+  textColor?: string;     // text color
   pinned: boolean;
   archived: boolean;
   trashed: boolean;
@@ -60,7 +60,7 @@ const TEXT_COLORS = [
   { name: 'Pink',   value: '#f472b6' },
 ];
 
-// ── Custom Color Picker Graph (compact) ─────────────────────────
+// ── Custom Color Picker Graph (upgraded) ─────────────────────────
 interface ColorPickerGraphProps {
   color: string;
   onChange: (color: string) => void;
@@ -70,6 +70,7 @@ const ColorPickerGraph: React.FC<ColorPickerGraphProps> = ({ color, onChange }) 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [lightness, setLightness] = useState(50);
   const [isDragging, setIsDragging] = useState(false);
+  const [hexInput, setHexInput] = useState(color);
 
   const hslToHex = (h: number, s: number, l: number): string => {
     s /= 100;
@@ -80,6 +81,9 @@ const ColorPickerGraph: React.FC<ColorPickerGraphProps> = ({ color, onChange }) 
     const toHex = (x: number) => Math.round(255 * x).toString(16).padStart(2, '0');
     return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
   };
+
+  const CANVAS_W = 300;
+  const CANVAS_H = 180;
 
   const drawGraph = useCallback(() => {
     const canvas = canvasRef.current;
@@ -95,14 +99,14 @@ const ColorPickerGraph: React.FC<ColorPickerGraphProps> = ({ color, onChange }) 
         const hue = (x / w) * 360;
         const sat = (y / h) * 100;
         const hex = hslToHex(hue, sat, lightness);
-        const r = parseInt(hex.slice(1,3), 16);
-        const g = parseInt(hex.slice(3,5), 16);
-        const b = parseInt(hex.slice(5,7), 16);
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
         const idx = (y * w + x) * 4;
         data[idx] = r;
-        data[idx+1] = g;
-        data[idx+2] = b;
-        data[idx+3] = 255;
+        data[idx + 1] = g;
+        data[idx + 2] = b;
+        data[idx + 3] = 255;
       }
     }
     ctx.putImageData(imageData, 0, 0);
@@ -124,33 +128,29 @@ const ColorPickerGraph: React.FC<ColorPickerGraphProps> = ({ color, onChange }) 
     if (!ctx) return '#1c1b29';
     const pixel = ctx.getImageData(px, py, 1, 1).data;
     const [r, g, b] = pixel;
-    return `#${[r,g,b].map(v => v.toString(16).padStart(2,'0')).join('')}`;
+    return `#${[r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')}`;
+  };
+
+  const applyColor = (c: string) => {
+    onChange(c);
+    setHexInput(c);
   };
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const newColor = getColorAt(x, y);
-    onChange(newColor);
+    applyColor(getColorAt(e.clientX - rect.left, e.clientY - rect.top));
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     setIsDragging(true);
     const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const newColor = getColorAt(x, y);
-    onChange(newColor);
+    applyColor(getColorAt(e.clientX - rect.left, e.clientY - rect.top));
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isDragging) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const newColor = getColorAt(x, y);
-    onChange(newColor);
+    applyColor(getColorAt(e.clientX - rect.left, e.clientY - rect.top));
   };
 
   const handleMouseUp = () => setIsDragging(false);
@@ -163,21 +163,32 @@ const ColorPickerGraph: React.FC<ColorPickerGraphProps> = ({ color, onChange }) 
   }, [isDragging]);
 
   useEffect(() => {
-    const r = parseInt(color.slice(1,3), 16);
-    const g = parseInt(color.slice(3,5), 16);
-    const b = parseInt(color.slice(5,7), 16);
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
     const max = Math.max(r, g, b);
     const min = Math.min(r, g, b);
-    const l = (max + min) / 2 / 255 * 100;
+    const l = ((max + min) / 2 / 255) * 100;
     setLightness(Math.round(l));
+    setHexInput(color);
   }, [color]);
+
+  const handleHexSubmit = (val: string) => {
+    let v = val.trim();
+    if (!v.startsWith('#')) v = '#' + v;
+    if (/^#[0-9a-fA-F]{6}$/.test(v)) {
+      applyColor(v.toLowerCase());
+    } else {
+      setHexInput(color);
+    }
+  };
 
   return (
     <div className="space-y-1.5">
       <canvas
         ref={canvasRef}
-        width={160}
-        height={100}
+        width={CANVAS_W}
+        height={CANVAS_H}
         onClick={handleCanvasClick}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -199,6 +210,29 @@ const ColorPickerGraph: React.FC<ColorPickerGraphProps> = ({ color, onChange }) 
           className="flex-1 h-1 rounded-full bg-white/20 accent-purple-500"
         />
         <span className="text-[9px] text-white/30 w-6">{lightness}%</span>
+      </div>
+
+      {/* Hex input */}
+      <div className="flex items-center gap-1.5">
+        <span
+          className="w-5 h-5 rounded-md border border-white/20 flex-shrink-0"
+          style={{ backgroundColor: /^#[0-9a-fA-F]{6}$/.test(hexInput) ? hexInput : color }}
+        />
+        <input
+          type="text"
+          value={hexInput}
+          onChange={(e) => setHexInput(e.target.value)}
+          onBlur={(e) => handleHexSubmit(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              handleHexSubmit((e.target as HTMLInputElement).value);
+            }
+          }}
+          placeholder="#a3f2c1"
+          maxLength={7}
+          className="flex-1 min-w-0 bg-black/20 border border-white/10 rounded-md px-2 py-1 text-[10px] text-white/80 outline-none focus:border-purple-500/50 font-mono"
+        />
       </div>
     </div>
   );
@@ -382,6 +416,529 @@ const formatReminder = (iso?: string | null): string => {
   return dt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) + ' ' + dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
 };
 
+// ── Utility: checklist progress ──────────────────────────────────
+const checklistProgress = (checklist?: ChecklistItem[]) => {
+  if (!checklist || checklist.length === 0) return null;
+  const done = checklist.filter(c => c.checked).length;
+  return { done, total: checklist.length };
+};
+
+// ── ColorPickerPopover (moved outside, now full-width) ────────────
+interface ColorPickerPopoverProps {
+  targetColor: string;
+  onChange: (color: string) => void;
+  target: 'bg' | 'text';
+  setTarget: (t: 'bg' | 'text') => void;
+}
+
+const ColorPickerPopover: React.FC<ColorPickerPopoverProps> = ({ targetColor, onChange, target, setTarget }) => {
+  const presetList = target === 'bg' ? PRESET_COLORS : TEXT_COLORS;
+  return (
+    <div className="p-3 rounded-xl bg-[#1a1926] border border-white/10 shadow-xl w-full animate-[fadeIn_0.15s_ease]">
+      <div className="flex gap-1 mb-2">
+        <button
+          onClick={() => setTarget('bg')}
+          className={`flex-1 text-[10px] font-medium px-2 py-1 rounded-md transition-all ${
+            target === 'bg'
+              ? 'bg-purple-500/20 text-purple-200'
+              : 'text-white/40 hover:text-white/70'
+          }`}
+        >
+          Bg
+        </button>
+        <button
+          onClick={() => setTarget('text')}
+          className={`flex-1 text-[10px] font-medium px-2 py-1 rounded-md transition-all ${
+            target === 'text'
+              ? 'bg-purple-500/20 text-purple-200'
+              : 'text-white/40 hover:text-white/70'
+          }`}
+        >
+          Text
+        </button>
+      </div>
+      <div className="flex flex-wrap gap-1.5 mb-2">
+        {presetList.map(c => (
+          <button
+            key={c.value}
+            onClick={() => onChange(c.value)}
+            className={`w-6 h-6 rounded-full border border-white/20 transition-transform hover:scale-110 ${
+              targetColor === c.value ? 'ring-2 ring-offset-1 ring-offset-[#1a1926] ring-white/50' : ''
+            }`}
+            style={{ backgroundColor: c.value }}
+            title={c.name}
+          />
+        ))}
+      </div>
+      <ColorPickerGraph color={targetColor} onChange={onChange} />
+    </div>
+  );
+};
+
+// ── SkeletonCard (moved outside) ───────────────────────────────────
+const SkeletonCard: React.FC<{ h?: number }> = ({ h = 140 }) => (
+  <div
+    className="rounded-2xl border border-white/10 bg-white/[0.03] mb-4 break-inside-avoid animate-pulse"
+    style={{ height: h }}
+  />
+);
+
+// ── NoteCard (moved outside) ───────────────────────────────────────
+interface NoteCardProps {
+  note: Note;
+  activeView: ViewTab;
+  isSuperAdmin?: boolean;
+  editingNoteId: string | null;
+  editTitle: string; setEditTitle: (v: string) => void;
+  editContent: string; setEditContent: (v: string) => void;
+  editColor: string; setEditColor: (v: string) => void;
+  editTextColor: string; setEditTextColor: (v: string) => void;
+  editChecklist: ChecklistItem[];
+  editLabels: string[];
+  editLabelInput: string; setEditLabelInput: (v: string) => void;
+  editChecklistInput: string; setEditChecklistInput: (v: string) => void;
+  editLabelFocused: boolean; setEditLabelFocused: (v: boolean) => void;
+  editReminder: string; setEditReminder: (v: string) => void;
+  editTextareaRef: React.RefObject<HTMLTextAreaElement | null>; // ✅ React 19 compatible
+  labelSuggestions: string[];
+  apiBase: string; token: string;
+  showColorPicker: string | null; setShowColorPicker: (v: string | null) => void;
+  colorPickerTarget: 'bg' | 'text'; setColorPickerTarget: (t: 'bg' | 'text') => void;
+  startEdit: (note: Note) => void;
+  cancelEdit: () => void;
+  saveEdit: () => void;
+  togglePin: (note: Note) => void;
+  changeColor: (note: Note, color: string, target: 'bg' | 'text') => void;
+  archiveNote: (note: Note) => void;
+  trashNote: (note: Note) => void;
+  restoreNote: (note: Note) => void;
+  deleteForever: (note: Note) => void;
+  toggleChecklistItem: (note: Note, index: number) => void;
+  toggleEditChecklistItem: (index: number) => void;
+  removeEditChecklistItem: (index: number) => void;
+  addEditChecklistItem: () => void;
+  addEditLabel: (val?: string) => void;
+  removeEditLabel: (label: string) => void;
+}
+
+const NoteCard: React.FC<NoteCardProps> = ({
+  note,
+  activeView,
+  isSuperAdmin,
+  editingNoteId,
+  editTitle, setEditTitle,
+  editContent, setEditContent,
+  editColor, setEditColor,
+  editTextColor, setEditTextColor,
+  editChecklist,
+  editLabels,
+  editLabelInput, setEditLabelInput,
+  editChecklistInput, setEditChecklistInput,
+  editLabelFocused, setEditLabelFocused,
+  editReminder, setEditReminder,
+  editTextareaRef,
+  labelSuggestions,
+  apiBase, token,
+  showColorPicker, setShowColorPicker,
+  colorPickerTarget, setColorPickerTarget,
+  startEdit,
+  cancelEdit,
+  saveEdit,
+  togglePin,
+  changeColor,
+  archiveNote,
+  trashNote,
+  restoreNote,
+  deleteForever,
+  toggleChecklistItem,
+  toggleEditChecklistItem,
+  removeEditChecklistItem,
+  addEditChecklistItem,
+  addEditLabel,
+  removeEditLabel,
+}) => {
+  const progress = checklistProgress(note.checklist);
+  const isEditing = editingNoteId === note._id;
+  const textColor = note.textColor || '#ffffff';
+
+  if (isEditing) {
+    // ── INLINE EDIT MODE ──
+    return (
+      <div
+        className="rounded-2xl border border-purple-500/40 p-5 space-y-3 shadow-2xl shadow-purple-900/20 mb-4 transition-all"
+        style={{ backgroundColor: editColor }}
+      >
+        <input
+          type="text"
+          value={editTitle}
+          onChange={e => setEditTitle(e.target.value)}
+          placeholder="Title"
+          className="w-full bg-transparent text-base font-bold outline-none"
+          style={{ color: editTextColor }}
+        />
+        <div className="flex items-center gap-2 flex-wrap" style={{ color: editTextColor }}>
+          {isSuperAdmin && note.createdByRole === 'subadmin' && (
+            <span className="text-[9px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-200 border border-purple-500/30">
+              by {note.createdByName || 'Sub-Admin'}
+            </span>
+          )}
+          <span className="text-[9px] flex items-center gap-1" style={{ opacity: 0.6 }}>
+            <SvgIcon d={ICONS.clock} className="w-2.5 h-2.5" />
+            Edited {timeAgo(note.updatedAt || note.createdAt)}
+          </span>
+        </div>
+
+        <textarea
+          ref={editTextareaRef}
+          value={editContent}
+          onChange={e => setEditContent(e.target.value)}
+          placeholder="Note content"
+          className="w-full bg-transparent text-sm outline-none resize-none leading-relaxed"
+          style={{ color: editTextColor, minHeight: '60px' }}
+        />
+
+        {(() => {
+          const url = extractFirstUrl(editContent) || extractFirstUrl(editTitle);
+          return url ? <LinkPreviewCard url={url} apiBase={apiBase} token={token} /> : null;
+        })()}
+
+        {/* Checklist */}
+        <div className="space-y-1.5">
+          {editChecklist.map((item, idx) => (
+            <div key={idx} className="flex items-center gap-2 text-xs group/edit">
+              <input
+                type="checkbox"
+                checked={item.checked}
+                onChange={() => toggleEditChecklistItem(idx)}
+                className="rounded accent-purple-500"
+              />
+              <span className={`flex-1 ${item.checked ? 'line-through' : ''}`} style={{ color: editTextColor, opacity: item.checked ? 0.3 : 0.8 }}>
+                {item.text}
+              </span>
+              <button onClick={() => removeEditChecklistItem(idx)} className="text-white/20 group-hover/edit:text-white/50 hover:!text-red-400">
+                <SvgIcon d={ICONS.close} className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+          <div className="flex items-center gap-2">
+            <SvgIcon d={ICONS.plusSmall} className="w-3.5 h-3.5 text-white/30" />
+            <input
+              type="text"
+              value={editChecklistInput}
+              onChange={e => setEditChecklistInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEditChecklistItem())}
+              placeholder="List item"
+              className="flex-1 bg-transparent text-xs outline-none"
+              style={{ color: editTextColor, opacity: 0.6 }}
+            />
+          </div>
+        </div>
+
+        {/* Labels */}
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap gap-1.5 items-center">
+            <SvgIcon d={ICONS.tag} className="w-3.5 h-3.5 text-white/30" />
+            {editLabels.map(l => (
+              <span key={l} className="text-[9px] px-2 py-0.5 rounded-full bg-white/10 flex items-center gap-1" style={{ color: editTextColor, opacity: 0.6 }}>
+                {l}
+                <button onClick={() => removeEditLabel(l)}>
+                  <SvgIcon d={ICONS.close} className="w-2.5 h-2.5" />
+                </button>
+              </span>
+            ))}
+          </div>
+          <div className="relative pl-5">
+            <input
+              type="text"
+              value={editLabelInput}
+              onChange={e => setEditLabelInput(e.target.value)}
+              onFocus={() => setEditLabelFocused(true)}
+              onBlur={() => setTimeout(() => setEditLabelFocused(false), 150)}
+              onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEditLabel())}
+              placeholder="+ Add label"
+              className="bg-transparent text-[10px] outline-none w-32"
+              style={{ color: editTextColor, opacity: 0.6 }}
+            />
+            {editLabelFocused && editLabelInput.trim() && (
+              <div className="absolute z-20 top-5 left-5 w-40 bg-[#1a1926] border border-white/10 rounded-lg shadow-xl overflow-hidden">
+                {labelSuggestions
+                  .filter(l => l.toLowerCase().includes(editLabelInput.toLowerCase()) && !editLabels.includes(l))
+                  .slice(0, 5)
+                  .map(l => (
+                    <button
+                      key={l}
+                      onMouseDown={() => addEditLabel(l)}
+                      className="block w-full text-left px-3 py-1.5 text-[11px] text-white/70 hover:bg-white/10"
+                    >
+                      {l}
+                    </button>
+                  ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Reminder — no input shown until user opts in, so no dd-mm-yyyy placeholder */}
+        <div className="flex items-center gap-2 flex-wrap pt-1" onClick={(e) => e.stopPropagation()}>
+          <SvgIcon d={ICONS.clock} className="w-4 h-4 text-white/50" />
+          {editReminder ? (
+            <>
+              <input
+                type="datetime-local"
+                value={editReminder}
+                onChange={e => setEditReminder(e.target.value)}
+                className="bg-black/20 border border-white/10 rounded-lg px-2 py-1 text-xs outline-none focus:border-purple-500/50"
+                style={{ color: editTextColor }}
+              />
+              <button
+                onClick={() => setEditReminder('')}
+                className="text-white/30 hover:text-red-400 transition-colors"
+                title="Clear reminder"
+              >
+                <SvgIcon d={ICONS.clear} className="w-3.5 h-3.5" />
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setEditReminder(new Date(Date.now() + 3600000).toISOString().slice(0, 16))}
+              className="text-xs text-white/40 hover:text-white/70 transition-colors"
+            >
+              + Add reminder
+            </button>
+          )}
+        </div>
+
+        {/* Color picker: presets + custom hex/canvas picker for both bg and text — inline, not a popup */}
+        <div className="pt-2 border-t border-white/10" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[9px] text-white/30 w-8">Bg:</span>
+            {PRESET_COLORS.map(c => (
+              <button
+                key={c.value}
+                onClick={() => setEditColor(c.value)}
+                className={`w-6 h-6 rounded-full border border-white/20 transition-transform hover:scale-110 ${editColor === c.value ? 'ring-2 ring-offset-1 ' + c.ring : ''}`}
+                style={{ backgroundColor: c.value }}
+                title={c.name}
+              />
+            ))}
+            <button
+              onClick={() => { setShowColorPicker(showColorPicker === 'bgEdit' ? null : 'bgEdit'); setColorPickerTarget('bg'); }}
+              className={`w-6 h-6 rounded-full border flex items-center justify-center text-[11px] transition-colors ${showColorPicker === 'bgEdit' ? 'border-purple-500/60 text-purple-200 bg-purple-500/10' : 'border-white/20 text-white/50 hover:text-white hover:bg-white/10'}`}
+              title="Custom background color"
+            >
+              +
+            </button>
+          </div>
+          {showColorPicker === 'bgEdit' && (
+            <div className="mt-2">
+              <ColorPickerPopover
+                targetColor={editColor}
+                onChange={setEditColor}
+                target="bg"
+                setTarget={setColorPickerTarget}
+              />
+            </div>
+          )}
+
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
+            <span className="text-[9px] text-white/30 w-8">Text:</span>
+            {TEXT_COLORS.map(c => (
+              <button
+                key={c.value}
+                onClick={() => setEditTextColor(c.value)}
+                className={`w-5 h-5 rounded-full border border-white/20 transition-transform hover:scale-110 ${editTextColor === c.value ? 'ring-2 ring-offset-1 ring-offset-[#1a1926] ring-white/50' : ''}`}
+                style={{ backgroundColor: c.value }}
+                title={c.name}
+              />
+            ))}
+            <button
+              onClick={() => { setShowColorPicker(showColorPicker === 'textEdit' ? null : 'textEdit'); setColorPickerTarget('text'); }}
+              className={`w-5 h-5 rounded-full border flex items-center justify-center text-[10px] transition-colors ${showColorPicker === 'textEdit' ? 'border-purple-500/60 text-purple-200 bg-purple-500/10' : 'border-white/20 text-white/50 hover:text-white hover:bg-white/10'}`}
+              title="Custom text color"
+            >
+              +
+            </button>
+          </div>
+          {showColorPicker === 'textEdit' && (
+            <div className="mt-2">
+              <ColorPickerPopover
+                targetColor={editTextColor}
+                onChange={setEditTextColor}
+                target="text"
+                setTarget={setColorPickerTarget}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center justify-between pt-2 border-t border-white/10">
+          <div className="text-[10px] text-white/20 flex items-center gap-3">
+            <span>{editContent.split(/\s+/).filter(Boolean).length} words</span>
+            <span>·</span>
+            <span>{editContent.length} characters</span>
+            <span className="hidden sm:inline">· Esc to close · Ctrl+Enter to save</span>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={cancelEdit} className="px-3 py-1.5 text-xs text-white/60 hover:text-white rounded-lg hover:bg-white/5 transition-all">
+              Cancel
+            </button>
+            <button onClick={saveEdit} className="px-4 py-1.5 text-xs font-semibold text-white rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 hover:shadow-lg hover:shadow-purple-500/25 transition-all">
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── VIEW MODE ──
+  return (
+    <div
+      className="group relative rounded-2xl border border-white/10 p-4 flex flex-col gap-2 break-inside-avoid mb-4 transition-all duration-200 hover:border-white/30 hover:shadow-xl hover:shadow-black/20 hover:-translate-y-0.5 cursor-pointer"
+      style={{ backgroundColor: note.color || '#1c1b29' }}
+      onClick={() => startEdit(note)}
+    >
+      {activeView !== 'trash' && (
+        <button
+          onClick={(e) => { e.stopPropagation(); togglePin(note); }}
+          className={`absolute top-2 right-2 p-1.5 rounded-lg transition-all z-10 ${
+            note.pinned
+              ? 'opacity-100 text-amber-300 bg-black/20'
+              : 'opacity-0 group-hover:opacity-100 text-white/40 hover:text-white hover:bg-black/20'
+          }`}
+          title={note.pinned ? 'Unpin' : 'Pin'}
+        >
+          <SvgIcon d={ICONS.pin} className="w-4 h-4" fill={note.pinned} />
+        </button>
+      )}
+
+      {note.title && <h3 className="text-sm font-semibold pr-6 break-words leading-snug" style={{ color: textColor }}>{note.title}</h3>}
+      {note.content && (
+        <p className="text-xs whitespace-pre-wrap break-words leading-relaxed line-clamp-[10]" style={{ color: textColor, opacity: 0.85 }}>
+          {note.content}
+        </p>
+      )}
+
+      {note.checklist && note.checklist.length > 0 && (
+        <div className="space-y-1 mt-1">
+          {note.checklist.slice(0, 6).map((item, idx) => (
+            <label
+              key={idx}
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center gap-2 text-xs cursor-pointer group/item"
+            >
+              <input
+                type="checkbox"
+                checked={item.checked}
+                onChange={() => toggleChecklistItem(note, idx)}
+                className="rounded accent-purple-500 w-3.5 h-3.5"
+              />
+              <span className={`transition-colors ${item.checked ? 'line-through' : ''}`} style={{ color: textColor, opacity: item.checked ? 0.3 : 0.8 }}>
+                {item.text}
+              </span>
+            </label>
+          ))}
+          {note.checklist.length > 6 && (
+            <p className="text-[10px] pl-5" style={{ color: textColor, opacity: 0.3 }}>+{note.checklist.length - 6} more</p>
+          )}
+          {progress && (
+            <div className="flex items-center gap-1.5 pt-0.5">
+              <div className="flex-1 h-1 rounded-full bg-white/10 overflow-hidden">
+                <div
+                  className="h-full bg-emerald-400/70 transition-all"
+                  style={{ width: `${(progress.done / progress.total) * 100}%` }}
+                />
+              </div>
+              <span className="text-[9px] shrink-0" style={{ color: textColor, opacity: 0.3 }}>{progress.done}/{progress.total}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {note.labels && note.labels.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-1">
+          {note.labels.map(l => (
+            <span key={l} className="text-[9px] px-2 py-0.5 rounded-full bg-white/10 border border-white/10" style={{ color: textColor, opacity: 0.6 }}>
+              {l}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {(() => {
+        const url = extractFirstUrl(note.content) || extractFirstUrl(note.title);
+        return url ? <LinkPreviewCard url={url} apiBase={apiBase} token={token} /> : null;
+      })()}
+
+      {note.reminder && (
+        <div className="mt-1 flex items-center gap-1.5 text-[10px] text-amber-300/80 bg-amber-500/10 border border-amber-500/20 rounded-full px-2.5 py-0.5 self-start">
+          <SvgIcon d={ICONS.clock} className="w-3 h-3" />
+          <span>{formatReminder(note.reminder)}</span>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between gap-2 mt-1">
+        <div className="flex items-center gap-1.5 flex-wrap" style={{ color: textColor, opacity: 0.5 }}>
+          {isSuperAdmin && note.createdByRole === 'subadmin' && (
+            <span className="text-[9px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-200 border border-purple-500/30">
+              by {note.createdByName || 'Sub-Admin'}
+            </span>
+          )}
+          <span className="text-[9px] flex items-center gap-1">
+            <SvgIcon d={ICONS.clock} className="w-2.5 h-2.5" />
+            {timeAgo(note.updatedAt || note.createdAt)}
+          </span>
+        </div>
+      </div>
+
+      <div
+        className="flex items-center gap-1 mt-1 pt-2 border-t border-white/10 opacity-0 group-hover:opacity-100 transition-opacity"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {activeView === 'trash' ? (
+          <>
+            <button onClick={() => restoreNote(note)} className="p-1.5 rounded-lg text-white/50 hover:text-emerald-300 hover:bg-white/10" title="Restore">
+              <SvgIcon d={ICONS.restore} className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={() => deleteForever(note)} className="p-1.5 rounded-lg text-white/50 hover:text-red-400 hover:bg-white/10" title="Delete forever">
+              <SvgIcon d={ICONS.deleteForever} className="w-3.5 h-3.5" />
+            </button>
+            <span className="ml-auto text-[9px] text-white/20">Deletes permanently soon</span>
+          </>
+        ) : (
+          <>
+            <div className="relative">
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowColorPicker(showColorPicker === note._id ? null : note._id); setColorPickerTarget('bg'); }}
+                className="p-1.5 rounded-lg text-white/50 hover:text-white hover:bg-white/10"
+                title="Change color"
+              >
+                <SvgIcon d={ICONS.palette} className="w-3.5 h-3.5" />
+              </button>
+              {showColorPicker === note._id && (
+                <ColorPickerPopover
+                  targetColor={colorPickerTarget === 'bg' ? note.color : (note.textColor || '#ffffff')}
+                  onChange={(col) => changeColor(note, col, colorPickerTarget)}
+                  target={colorPickerTarget}
+                  setTarget={setColorPickerTarget}
+                />
+              )}
+            </div>
+            <button onClick={() => archiveNote(note)} className="p-1.5 rounded-lg text-white/50 hover:text-blue-300 hover:bg-white/10" title={note.archived ? 'Unarchive' : 'Archive'}>
+              <SvgIcon d={ICONS.archive} className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={() => trashNote(note)} className="p-1.5 rounded-lg text-white/50 hover:text-red-400 hover:bg-white/10" title="Delete">
+              <SvgIcon d={ICONS.trash} className="w-3.5 h-3.5" />
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ── NotesManager component ─────────────────────────────────────────
 const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmin }) => {
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
@@ -390,7 +947,7 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
   const [labelFilter, setLabelFilter] = useState<string | null>(null);
   const [creatorFilter, setCreatorFilter] = useState<CreatorFilter>('all');
 
-  // ── Composer state ──────────────────────────────────────────────
+  // Composer state
   const [composerOpen, setComposerOpen] = useState(false);
   const [composerTitle, setComposerTitle] = useState('');
   const [composerContent, setComposerContent] = useState('');
@@ -406,7 +963,7 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
   const [colorPickerTarget, setColorPickerTarget] = useState<'bg' | 'text'>('bg');
   const [composerLabelFocused, setComposerLabelFocused] = useState(false);
 
-  // ── Inline edit state ────────────────────────────────────────────
+  // Inline edit state
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
@@ -423,7 +980,7 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
   const composerRef = useRef<HTMLDivElement>(null);
   const authHeaders = { headers: { Authorization: `Bearer ${token}` } };
 
-  // ── Auto‑grow textarea for inline edit ──────────────────────────
+  // Auto-grow textarea for inline edit
   useEffect(() => {
     if (editTextareaRef.current && editingNoteId) {
       editTextareaRef.current.style.height = 'auto';
@@ -431,7 +988,7 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
     }
   }, [editContent, editingNoteId]);
 
-  // ── Fetch notes ─────────────────────────────────────────────
+  // Fetch notes
   const fetchNotes = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
@@ -471,7 +1028,7 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
 
   const labelSuggestions = useMemo(() => allLabels.map(([l]) => l), [allLabels]);
 
-  // ── Composer save/reset ─────────────────────────────────────
+  // Composer save/reset
   const composerHasContent = () =>
     composerTitle.trim() || composerContent.trim() || composerChecklist.length > 0 || composerLabels.length > 0 || composerReminder;
 
@@ -541,7 +1098,7 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
     setComposerLabelInput('');
   };
 
-  // ── Note actions ─────────────────────────────────────────────────
+  // Note actions
   const togglePin = async (note: Note) => {
     setNotes(prev => prev.map(n => (n._id === note._id ? { ...n, pinned: !n.pinned } : n)));
     try {
@@ -689,7 +1246,7 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
     }
   };
 
-  // ── Inline edit handlers ──────────────────────────────────────
+  // Inline edit handlers
   const startEdit = (note: Note) => {
     if (activeView !== 'notes') return;
     setEditingNoteId(note._id);
@@ -781,424 +1338,47 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
     setEditLabels(prev => prev.filter(l => l !== label));
   };
 
-  // ── Sorting ──────────────────────────────────────────────────
-  const pinnedNotes = notes.filter(n => n.pinned);
-  const otherNotes = notes.filter(n => !n.pinned);
-
-  const checklistProgress = (checklist?: ChecklistItem[]) => {
-    if (!checklist || checklist.length === 0) return null;
-    const done = checklist.filter(c => c.checked).length;
-    return { done, total: checklist.length };
-  };
-
-  // ── Skeleton loader card ────────────────────────────────────
-  const SkeletonCard: React.FC<{ h?: number }> = ({ h = 140 }) => (
-    <div
-      className="rounded-2xl border border-white/10 bg-white/[0.03] mb-4 break-inside-avoid animate-pulse"
-      style={{ height: h }}
+  // Render helper to pass props to NoteCard
+  const renderNoteCard = (note: Note) => (
+    <NoteCard
+      key={note._id}
+      note={note}
+      activeView={activeView}
+      isSuperAdmin={isSuperAdmin}
+      editingNoteId={editingNoteId}
+      editTitle={editTitle} setEditTitle={setEditTitle}
+      editContent={editContent} setEditContent={setEditContent}
+      editColor={editColor} setEditColor={setEditColor}
+      editTextColor={editTextColor} setEditTextColor={setEditTextColor}
+      editChecklist={editChecklist}
+      editLabels={editLabels}
+      editLabelInput={editLabelInput} setEditLabelInput={setEditLabelInput}
+      editChecklistInput={editChecklistInput} setEditChecklistInput={setEditChecklistInput}
+      editLabelFocused={editLabelFocused} setEditLabelFocused={setEditLabelFocused}
+      editReminder={editReminder} setEditReminder={setEditReminder}
+      editTextareaRef={editTextareaRef}
+      labelSuggestions={labelSuggestions}
+      apiBase={apiBase}
+      token={token}
+      showColorPicker={showColorPicker} setShowColorPicker={setShowColorPicker}
+      colorPickerTarget={colorPickerTarget} setColorPickerTarget={setColorPickerTarget}
+      startEdit={startEdit}
+      cancelEdit={cancelEdit}
+      saveEdit={saveEdit}
+      togglePin={togglePin}
+      changeColor={changeColor}
+      archiveNote={archiveNote}
+      trashNote={trashNote}
+      restoreNote={restoreNote}
+      deleteForever={deleteForever}
+      toggleChecklistItem={toggleChecklistItem}
+      toggleEditChecklistItem={toggleEditChecklistItem}
+      removeEditChecklistItem={removeEditChecklistItem}
+      addEditChecklistItem={addEditChecklistItem}
+      addEditLabel={addEditLabel}
+      removeEditLabel={removeEditLabel}
     />
   );
-
-  // ── Color picker popover content (shared) ────────────────────────
-  const ColorPickerPopover: React.FC<{
-    targetColor: string;
-    onChange: (color: string) => void;
-    target: 'bg' | 'text';
-    setTarget: (t: 'bg' | 'text') => void;
-  }> = ({ targetColor, onChange, target, setTarget }) => {
-    const presetList = target === 'bg' ? PRESET_COLORS : TEXT_COLORS;
-    return (
-      <div className="p-2 rounded-xl bg-[#1a1926] border border-white/10 shadow-xl w-44 animate-[fadeIn_0.15s_ease]">
-        <div className="flex gap-1 mb-2">
-          <button
-            onClick={() => setTarget('bg')}
-            className={`flex-1 text-[10px] font-medium px-2 py-1 rounded-md transition-all ${
-              target === 'bg'
-                ? 'bg-purple-500/20 text-purple-200'
-                : 'text-white/40 hover:text-white/70'
-            }`}
-          >
-            Bg
-          </button>
-          <button
-            onClick={() => setTarget('text')}
-            className={`flex-1 text-[10px] font-medium px-2 py-1 rounded-md transition-all ${
-              target === 'text'
-                ? 'bg-purple-500/20 text-purple-200'
-                : 'text-white/40 hover:text-white/70'
-            }`}
-          >
-            Text
-          </button>
-        </div>
-        <div className="flex flex-wrap gap-1.5 mb-2">
-          {presetList.map(c => (
-            <button
-              key={c.value}
-              onClick={() => onChange(c.value)}
-              className={`w-6 h-6 rounded-full border border-white/20 transition-transform hover:scale-110 ${
-                targetColor === c.value ? 'ring-2 ring-offset-1 ring-offset-[#1a1926] ring-white/50' : ''
-              }`}
-              style={{ backgroundColor: c.value }}
-              title={c.name}
-            />
-          ))}
-        </div>
-        <ColorPickerGraph color={targetColor} onChange={onChange} />
-      </div>
-    );
-  };
-
-  // ── Note Card ────────────────────────────────────────────────
-  const NoteCard: React.FC<{ note: Note }> = ({ note }) => {
-    const progress = checklistProgress(note.checklist);
-    const isEditing = editingNoteId === note._id;
-    const textColor = note.textColor || '#ffffff';
-
-    if (isEditing) {
-      // ── INLINE EDIT MODE ──
-      return (
-        <div
-          className="rounded-2xl border border-purple-500/40 p-5 space-y-3 shadow-2xl shadow-purple-900/20 mb-4 transition-all"
-          style={{ backgroundColor: editColor }}
-        >
-          <input
-            type="text"
-            value={editTitle}
-            onChange={e => setEditTitle(e.target.value)}
-            placeholder="Title"
-            className="w-full bg-transparent text-base font-bold outline-none"
-            style={{ color: editTextColor }}
-          />
-          <div className="flex items-center gap-2 flex-wrap" style={{ color: editTextColor }}>
-            {isSuperAdmin && note.createdByRole === 'subadmin' && (
-              <span className="text-[9px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-200 border border-purple-500/30">
-                by {note.createdByName || 'Sub-Admin'}
-              </span>
-            )}
-            <span className="text-[9px] flex items-center gap-1" style={{ opacity: 0.6 }}>
-              <SvgIcon d={ICONS.clock} className="w-2.5 h-2.5" />
-              Edited {timeAgo(note.updatedAt || note.createdAt)}
-            </span>
-          </div>
-
-          <textarea
-            ref={editTextareaRef}
-            value={editContent}
-            onChange={e => setEditContent(e.target.value)}
-            placeholder="Note content"
-            className="w-full bg-transparent text-sm outline-none resize-none leading-relaxed"
-            style={{ color: editTextColor, minHeight: '60px' }}
-          />
-
-          {(() => {
-            const url = extractFirstUrl(editContent) || extractFirstUrl(editTitle);
-            return url ? <LinkPreviewCard url={url} apiBase={apiBase} token={token} /> : null;
-          })()}
-
-          {/* Checklist */}
-          <div className="space-y-1.5">
-            {editChecklist.map((item, idx) => (
-              <div key={idx} className="flex items-center gap-2 text-xs group/edit">
-                <input
-                  type="checkbox"
-                  checked={item.checked}
-                  onChange={() => toggleEditChecklistItem(idx)}
-                  className="rounded accent-purple-500"
-                />
-                <span className={`flex-1 ${item.checked ? 'line-through' : ''}`} style={{ color: editTextColor, opacity: item.checked ? 0.3 : 0.8 }}>
-                  {item.text}
-                </span>
-                <button onClick={() => removeEditChecklistItem(idx)} className="text-white/20 group-hover/edit:text-white/50 hover:!text-red-400">
-                  <SvgIcon d={ICONS.close} className="w-3 h-3" />
-                </button>
-              </div>
-            ))}
-            <div className="flex items-center gap-2">
-              <SvgIcon d={ICONS.plusSmall} className="w-3.5 h-3.5 text-white/30" />
-              <input
-                type="text"
-                value={editChecklistInput}
-                onChange={e => setEditChecklistInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEditChecklistItem())}
-                placeholder="List item"
-                className="flex-1 bg-transparent text-xs outline-none"
-                style={{ color: editTextColor, opacity: 0.6 }}
-              />
-            </div>
-          </div>
-
-          {/* Labels */}
-          <div className="space-y-1.5">
-            <div className="flex flex-wrap gap-1.5 items-center">
-              <SvgIcon d={ICONS.tag} className="w-3.5 h-3.5 text-white/30" />
-              {editLabels.map(l => (
-                <span key={l} className="text-[9px] px-2 py-0.5 rounded-full bg-white/10 flex items-center gap-1" style={{ color: editTextColor, opacity: 0.6 }}>
-                  {l}
-                  <button onClick={() => removeEditLabel(l)}>
-                    <SvgIcon d={ICONS.close} className="w-2.5 h-2.5" />
-                  </button>
-                </span>
-              ))}
-            </div>
-            <div className="relative pl-5">
-              <input
-                type="text"
-                value={editLabelInput}
-                onChange={e => setEditLabelInput(e.target.value)}
-                onFocus={() => setEditLabelFocused(true)}
-                onBlur={() => setTimeout(() => setEditLabelFocused(false), 150)}
-                onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEditLabel())}
-                placeholder="+ Add label"
-                className="bg-transparent text-[10px] outline-none w-32"
-                style={{ color: editTextColor, opacity: 0.6 }}
-              />
-              {editLabelFocused && editLabelInput.trim() && (
-                <div className="absolute z-20 top-5 left-5 w-40 bg-[#1a1926] border border-white/10 rounded-lg shadow-xl overflow-hidden">
-                  {labelSuggestions
-                    .filter(l => l.toLowerCase().includes(editLabelInput.toLowerCase()) && !editLabels.includes(l))
-                    .slice(0, 5)
-                    .map(l => (
-                      <button
-                        key={l}
-                        onMouseDown={() => addEditLabel(l)}
-                        className="block w-full text-left px-3 py-1.5 text-[11px] text-white/70 hover:bg-white/10"
-                      >
-                        {l}
-                      </button>
-                    ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Reminder */}
-          <div className="flex items-center gap-2 flex-wrap pt-1">
-            <SvgIcon d={ICONS.clock} className="w-4 h-4 text-white/50" />
-            <input
-              type="datetime-local"
-              value={editReminder}
-              onChange={e => setEditReminder(e.target.value)}
-              className="bg-black/20 border border-white/10 rounded-lg px-2 py-1 text-xs outline-none focus:border-purple-500/50"
-              style={{ color: editTextColor }}
-            />
-            {editReminder && (
-              <button
-                onClick={() => setEditReminder('')}
-                className="text-white/30 hover:text-red-400 transition-colors"
-                title="Clear reminder"
-              >
-                <SvgIcon d={ICONS.clear} className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-
-          {/* Color picker: presets + custom graph with toggle */}
-          <div className="pt-2 border-t border-white/10">
-            <div className="flex flex-wrap gap-1.5">
-              {PRESET_COLORS.map(c => (
-                <button
-                  key={c.value}
-                  onClick={() => setEditColor(c.value)}
-                  className={`w-6 h-6 rounded-full border border-white/20 transition-transform hover:scale-110 ${editColor === c.value ? 'ring-2 ring-offset-1 ' + c.ring : ''}`}
-                  style={{ backgroundColor: c.value }}
-                  title={c.name}
-                />
-              ))}
-            </div>
-            <div className="mt-2 flex items-center gap-2">
-              <span className="text-[9px] text-white/30">Text:</span>
-              <div className="flex flex-wrap gap-1.5">
-                {TEXT_COLORS.map(c => (
-                  <button
-                    key={c.value}
-                    onClick={() => setEditTextColor(c.value)}
-                    className={`w-5 h-5 rounded-full border border-white/20 transition-transform hover:scale-110 ${editTextColor === c.value ? 'ring-2 ring-offset-1 ring-offset-[#1a1926] ring-white/50' : ''}`}
-                    style={{ backgroundColor: c.value }}
-                    title={c.name}
-                  />
-                ))}
-                <button
-                  onClick={() => {
-                    // open the custom color picker for text
-                    setShowColorPicker('textEdit');
-                    setColorPickerTarget('text');
-                  }}
-                  className="w-5 h-5 rounded-full border border-white/20 flex items-center justify-center text-[10px] text-white/50 hover:text-white hover:bg-white/10 transition-colors"
-                  title="Custom text color"
-                >
-                  +
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="flex items-center justify-between pt-2 border-t border-white/10">
-            <div className="text-[10px] text-white/20 flex items-center gap-3">
-              <span>{editContent.split(/\s+/).filter(Boolean).length} words</span>
-              <span>·</span>
-              <span>{editContent.length} characters</span>
-              <span className="hidden sm:inline">· Esc to close · Ctrl+Enter to save</span>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={cancelEdit} className="px-3 py-1.5 text-xs text-white/60 hover:text-white rounded-lg hover:bg-white/5 transition-all">
-                Cancel
-              </button>
-              <button onClick={saveEdit} className="px-4 py-1.5 text-xs font-semibold text-white rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 hover:shadow-lg hover:shadow-purple-500/25 transition-all">
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    // ── VIEW MODE ──
-    return (
-      <div
-        className="group relative rounded-2xl border border-white/10 p-4 flex flex-col gap-2 break-inside-avoid mb-4 transition-all duration-200 hover:border-white/30 hover:shadow-xl hover:shadow-black/20 hover:-translate-y-0.5 cursor-pointer"
-        style={{ backgroundColor: note.color || '#1c1b29' }}
-        onClick={() => startEdit(note)}
-      >
-        {activeView !== 'trash' && (
-          <button
-            onClick={(e) => { e.stopPropagation(); togglePin(note); }}
-            className={`absolute top-2 right-2 p-1.5 rounded-lg transition-all z-10 ${
-              note.pinned
-                ? 'opacity-100 text-amber-300 bg-black/20'
-                : 'opacity-0 group-hover:opacity-100 text-white/40 hover:text-white hover:bg-black/20'
-            }`}
-            title={note.pinned ? 'Unpin' : 'Pin'}
-          >
-            <SvgIcon d={ICONS.pin} className="w-4 h-4" fill={note.pinned} />
-          </button>
-        )}
-
-        {note.title && <h3 className="text-sm font-semibold pr-6 break-words leading-snug" style={{ color: textColor }}>{note.title}</h3>}
-        {note.content && (
-          <p className="text-xs whitespace-pre-wrap break-words leading-relaxed line-clamp-[10]" style={{ color: textColor, opacity: 0.85 }}>
-            {note.content}
-          </p>
-        )}
-
-        {note.checklist && note.checklist.length > 0 && (
-          <div className="space-y-1 mt-1">
-            {note.checklist.slice(0, 6).map((item, idx) => (
-              <label
-                key={idx}
-                onClick={(e) => e.stopPropagation()}
-                className="flex items-center gap-2 text-xs cursor-pointer group/item"
-              >
-                <input
-                  type="checkbox"
-                  checked={item.checked}
-                  onChange={() => toggleChecklistItem(note, idx)}
-                  className="rounded accent-purple-500 w-3.5 h-3.5"
-                />
-                <span className={`transition-colors ${item.checked ? 'line-through' : ''}`} style={{ color: textColor, opacity: item.checked ? 0.3 : 0.8 }}>
-                  {item.text}
-                </span>
-              </label>
-            ))}
-            {note.checklist.length > 6 && (
-              <p className="text-[10px] pl-5" style={{ color: textColor, opacity: 0.3 }}>+{note.checklist.length - 6} more</p>
-            )}
-            {progress && (
-              <div className="flex items-center gap-1.5 pt-0.5">
-                <div className="flex-1 h-1 rounded-full bg-white/10 overflow-hidden">
-                  <div
-                    className="h-full bg-emerald-400/70 transition-all"
-                    style={{ width: `${(progress.done / progress.total) * 100}%` }}
-                  />
-                </div>
-                <span className="text-[9px] shrink-0" style={{ color: textColor, opacity: 0.3 }}>{progress.done}/{progress.total}</span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {note.labels && note.labels.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-1">
-            {note.labels.map(l => (
-              <span key={l} className="text-[9px] px-2 py-0.5 rounded-full bg-white/10 border border-white/10" style={{ color: textColor, opacity: 0.6 }}>
-                {l}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {(() => {
-          const url = extractFirstUrl(note.content) || extractFirstUrl(note.title);
-          return url ? <LinkPreviewCard url={url} apiBase={apiBase} token={token} /> : null;
-        })()}
-
-        {note.reminder && (
-          <div className="mt-1 flex items-center gap-1.5 text-[10px] text-amber-300/80 bg-amber-500/10 border border-amber-500/20 rounded-full px-2.5 py-0.5 self-start">
-            <SvgIcon d={ICONS.clock} className="w-3 h-3" />
-            <span>{formatReminder(note.reminder)}</span>
-          </div>
-        )}
-
-        <div className="flex items-center justify-between gap-2 mt-1">
-          <div className="flex items-center gap-1.5 flex-wrap" style={{ color: textColor, opacity: 0.5 }}>
-            {isSuperAdmin && note.createdByRole === 'subadmin' && (
-              <span className="text-[9px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-200 border border-purple-500/30">
-                by {note.createdByName || 'Sub-Admin'}
-              </span>
-            )}
-            <span className="text-[9px] flex items-center gap-1">
-              <SvgIcon d={ICONS.clock} className="w-2.5 h-2.5" />
-              {timeAgo(note.updatedAt || note.createdAt)}
-            </span>
-          </div>
-        </div>
-
-        <div
-          className="flex items-center gap-1 mt-1 pt-2 border-t border-white/10 opacity-0 group-hover:opacity-100 transition-opacity"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {activeView === 'trash' ? (
-            <>
-              <button onClick={() => restoreNote(note)} className="p-1.5 rounded-lg text-white/50 hover:text-emerald-300 hover:bg-white/10" title="Restore">
-                <SvgIcon d={ICONS.restore} className="w-3.5 h-3.5" />
-              </button>
-              <button onClick={() => deleteForever(note)} className="p-1.5 rounded-lg text-white/50 hover:text-red-400 hover:bg-white/10" title="Delete forever">
-                <SvgIcon d={ICONS.deleteForever} className="w-3.5 h-3.5" />
-              </button>
-              <span className="ml-auto text-[9px] text-white/20">Deletes permanently soon</span>
-            </>
-          ) : (
-            <>
-              <div className="relative">
-                <button
-                  onClick={(e) => { e.stopPropagation(); setShowColorPicker(showColorPicker === note._id ? null : note._id); setColorPickerTarget('bg'); }}
-                  className="p-1.5 rounded-lg text-white/50 hover:text-white hover:bg-white/10"
-                  title="Change color"
-                >
-                  <SvgIcon d={ICONS.palette} className="w-3.5 h-3.5" />
-                </button>
-                {showColorPicker === note._id && (
-                  <ColorPickerPopover
-                    targetColor={colorPickerTarget === 'bg' ? note.color : (note.textColor || '#ffffff')}
-                    onChange={(col) => changeColor(note, col, colorPickerTarget)}
-                    target={colorPickerTarget}
-                    setTarget={setColorPickerTarget}
-                  />
-                )}
-              </div>
-              <button onClick={() => archiveNote(note)} className="p-1.5 rounded-lg text-white/50 hover:text-blue-300 hover:bg-white/10" title={note.archived ? 'Unarchive' : 'Archive'}>
-                <SvgIcon d={ICONS.archive} className="w-3.5 h-3.5" />
-              </button>
-              <button onClick={() => trashNote(note)} className="p-1.5 rounded-lg text-white/50 hover:text-red-400 hover:bg-white/10" title="Delete">
-                <SvgIcon d={ICONS.trash} className="w-3.5 h-3.5" />
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-    );
-  };
 
   return (
     <div className="space-y-6 px-1" onClick={() => setShowColorPicker(null)}>
@@ -1425,23 +1605,32 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
                 )}
               </div>
 
-              {/* Reminder */}
-              <div className="flex items-center gap-2 flex-wrap pt-1">
+              {/* Reminder — no input shown until user opts in, so no dd-mm-yyyy placeholder */}
+              <div className="flex items-center gap-2 flex-wrap pt-1" onClick={(e) => e.stopPropagation()}>
                 <SvgIcon d={ICONS.clock} className="w-4 h-4 text-white/50" />
-                <input
-                  type="datetime-local"
-                  value={composerReminder}
-                  onChange={e => setComposerReminder(e.target.value)}
-                  className="bg-black/20 border border-white/10 rounded-lg px-2 py-1 text-xs outline-none focus:border-purple-500/50"
-                  style={{ color: composerTextColor }}
-                />
-                {composerReminder && (
+                {composerReminder ? (
+                  <>
+                    <input
+                      type="datetime-local"
+                      value={composerReminder}
+                      onChange={e => setComposerReminder(e.target.value)}
+                      className="bg-black/20 border border-white/10 rounded-lg px-2 py-1 text-xs outline-none focus:border-purple-500/50"
+                      style={{ color: composerTextColor }}
+                    />
+                    <button
+                      onClick={() => setComposerReminder('')}
+                      className="text-white/30 hover:text-red-400 transition-colors"
+                      title="Clear reminder"
+                    >
+                      <SvgIcon d={ICONS.clear} className="w-3.5 h-3.5" />
+                    </button>
+                  </>
+                ) : (
                   <button
-                    onClick={() => setComposerReminder('')}
-                    className="text-white/30 hover:text-red-400 transition-colors"
-                    title="Clear reminder"
+                    onClick={() => setComposerReminder(new Date(Date.now() + 3600000).toISOString().slice(0, 16))}
+                    className="text-xs text-white/40 hover:text-white/70 transition-colors"
                   >
-                    <SvgIcon d={ICONS.clear} className="w-3.5 h-3.5" />
+                    + Add reminder
                   </button>
                 )}
               </div>
@@ -1510,9 +1699,7 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
         <>
           {editingNoteId && (
             <div className="mb-4">
-              {notes.find(n => n._id === editingNoteId) && (
-                <NoteCard note={notes.find(n => n._id === editingNoteId)!} />
-              )}
+              {notes.find(n => n._id === editingNoteId) && renderNoteCard(notes.find(n => n._id === editingNoteId)!)}
             </div>
           )}
 
@@ -1529,7 +1716,7 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
                       <SvgIcon d={ICONS.pin} className="w-3 h-3" fill /> Pinned
                     </p>
                     <div className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-4">
-                      {pinned.map(n => <NoteCard key={n._id} note={n} />)}
+                      {pinned.map(n => renderNoteCard(n))}
                     </div>
                   </div>
                 )}
@@ -1537,7 +1724,7 @@ const NotesManager: React.FC<NotesManagerProps> = ({ token, apiBase, isSuperAdmi
                   <div>
                     {hasPinned && <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-2 mt-4">Others</p>}
                     <div className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-4">
-                      {others.map(n => <NoteCard key={n._id} note={n} />)}
+                      {others.map(n => renderNoteCard(n))}
                     </div>
                   </div>
                 )}

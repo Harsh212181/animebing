@@ -168,6 +168,7 @@ notesRoutes.post('/', async (c) => {
       title: body.title || '',
       content: body.content || '',
       color: body.color || '#ffffff',
+      textColor: body.textColor || '#ffffff',   // 👈 ADD karo
       pinned: false,
       archived: false,
       trashed: false,
@@ -210,7 +211,7 @@ notesRoutes.put('/:id', async (c) => {
     }
 
     const allowedFields = [
-      'title', 'content', 'color', 'pinned',
+      'title', 'content', 'color', 'textColor', 'pinned',   // 👈 'textColor' add karo
       'archived', 'labels', 'checklist', 'reminder'
     ]
 
