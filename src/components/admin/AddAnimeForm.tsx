@@ -986,7 +986,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5 flex flex-wrap items-center gap-2">
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5 flexl flex-wrap items-center gap-2">
                     <Icons.Title className="w-3 h-3" />
                     SEO Title
                     {seoTitleTouched && (
@@ -1006,7 +1006,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5 flex flex-wrap items-center gap-2">
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5 flexl flex-wrap items-center gap-2">
                     <Icons.Description className="w-3 h-3" />
                     SEO Description
                     {seoDescriptionTouched && (

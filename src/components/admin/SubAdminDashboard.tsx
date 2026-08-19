@@ -230,8 +230,9 @@ const SidebarSection: React.FC<{ label: string; children: React.ReactNode }> = (
 );
 
 // ─── Tab Content ─────────────────────────────────────────────────────
-const TabContent: React.FC<{ activeTab: string; token: string }> = React.memo(({ activeTab, token }) => {
-  switch (activeTab) {
+// Har tab ka component render karne wala helper — same switch, bas function bana diya
+function renderTab(tabId: string, token: string) {
+  switch (tabId) {
     case 'list':           return <AnimeListTable token={token} />;
     case 'add':            return <AddAnimeForm token={token} />;
     case 'episodes':       return <EpisodesManager token={token} />;
@@ -245,11 +246,23 @@ const TabContent: React.FC<{ activeTab: string; token: string }> = React.memo(({
     case 'shortenerUsers': return <ShortUsersManager token={token} subAdminMode />;
     case 'pageviews':      return <SubAdminPageViewManager token={token} />;
     case 'linkControl':    return <AnimeLinkControlManager token={token} />;
-    case 'notes':          return <NotesManager token={token} apiBase={API_BASE} />; // 👈 Notes tab
-    case 'tracklist':      return <TrackListManager />; // 🆕 Track List tab
-    default:               return <AnimeListTable token={token} />;
+    case 'notes':          return <NotesManager token={token} apiBase={API_BASE} />;
+    case 'tracklist':      return <TrackListManager />;
+    default:               return null;
   }
-});
+}
+
+// Ab saare "visited" tabs mounted rehte hain, sirf hide/show hota hai — kabhi unmount nahi hoga
+const TabContent: React.FC<{ activeTab: string; visitedTabs: Set<string>; token: string }> =
+  React.memo(({ activeTab, visitedTabs, token }) => (
+    <>
+      {Array.from(visitedTabs).map(tabId => (
+        <div key={tabId} style={{ display: activeTab === tabId ? 'block' : 'none' }}>
+          {renderTab(tabId, token)}
+        </div>
+      ))}
+    </>
+  ));
 
 // ─── Scroll to top button ────────────────────────────────────────────
 const ScrollToTopButton: React.FC = () => {
@@ -296,6 +309,20 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
     .filter(section => section.tabs.length > 0);
 
   const [activeTab, setActiveTab] = useState(visibleTabs[0] || 'list');
+
+  // 🆕 Sirf woh tabs mount karo jo user ne kabhi khole hain
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set([visibleTabs[0] || 'list']));
+
+  useEffect(() => {
+    if (!canAccessTab(activeTab)) return; // permission na ho to mount hi mat karo
+    setVisitedTabs(prev => {
+      if (prev.has(activeTab)) return prev;
+      const next = new Set(prev);
+      next.add(activeTab);
+      return next;
+    });
+  }, [activeTab]);
+
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [sidebarPinned, setSidebarPinned] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false); // 📱 mobile drawer state
@@ -633,7 +660,7 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
         <main className="flex-1 py-3 sm:py-6 px-0 space-y-4">
           <div className="bg-white/[0.04] border-y sm:border border-white/[0.06] rounded-none sm:rounded-xl p-0 min-h-[300px]">
             {canAccessTab(activeTab) ? (
-              <TabContent activeTab={activeTab} token={token} />
+              <TabContent activeTab={activeTab} visitedTabs={visitedTabs} token={token} />
             ) : (
               <div className="text-center py-12 text-gray-500 px-4">
                 You don't have permission to access this section.

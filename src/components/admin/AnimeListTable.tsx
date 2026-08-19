@@ -40,7 +40,7 @@ const CustomSelect: React.FC<{
 
   return (
     <div ref={ref} className="relative">
-      <label className="block text-xs font-medium text-slate-300 mb-1 flex items-center gap-1.5">
+      <label className="block text-xs font-medium text-slate-300 mb-1 flexl items-center gap-1.5">
         {icon}
         {label} {required && <span className="text-red-400">*</span>}
       </label>

@@ -109,9 +109,9 @@ const TAB_LABELS: Record<string, string> = {
   trackList:       'Track List',
 };
 
-// ─── TabContent ──────────────────────────────────────────────────────────────
-const TabContent: React.FC<{ activeTab: string; token: string }> = React.memo(({ activeTab, token }) => {
-  switch (activeTab) {
+// ─── renderTab function ──────────────────────────────────────────────────────
+function renderTab(tabId: string, token: string) {
+  switch (tabId) {
     case 'list':           return <AnimeListTable token={token} isMainAdmin={true} />;
     case 'add':            return <AddAnimeForm />;
     case 'episodes':       return <EpisodesManager token={token || ''} isMainAdmin={true} />;
@@ -132,7 +132,19 @@ const TabContent: React.FC<{ activeTab: string; token: string }> = React.memo(({
     case 'trackList':      return <TrackListManager />;
     default:               return <AnimeListTable token={token} isMainAdmin={true} />;
   }
-});
+}
+
+// ─── TabContent ──────────────────────────────────────────────────────────────
+const TabContent: React.FC<{ activeTab: string; visitedTabs: Set<string>; token: string }> =
+  React.memo(({ activeTab, visitedTabs, token }) => (
+    <>
+      {Array.from(visitedTabs).map(tabId => (
+        <div key={tabId} style={{ display: activeTab === tabId ? 'block' : 'none' }}>
+          {renderTab(tabId, token)}
+        </div>
+      ))}
+    </>
+  ));
 
 // ─── Scroll to top ───────────────────────────────────────────────────────────
 const ScrollToTopButton: React.FC = () => {
@@ -267,6 +279,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false); // 📱 mobile drawer state
   const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // ✅ NEW: Track which tabs have actually been opened
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set(['list']));
+
+  useEffect(() => {
+    setVisitedTabs(prev => {
+      if (prev.has(activeTab)) return prev;
+      const next = new Set(prev);
+      next.add(activeTab);
+      return next;
+    });
+  }, [activeTab]);
 
   const handleSidebarMouseEnter = () => {
     if (sidebarPinned) return;
@@ -868,7 +892,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
           {/* Active Tab Content – flush edges on all screens */}
           <div className="bg-white/[0.04] border-y sm:border border-white/[0.06] rounded-none sm:rounded-xl p-0 min-h-[300px]">
-            <TabContent key={`${activeTab}-${refreshKey}`} activeTab={activeTab} token={token || ''} />
+            <TabContent activeTab={activeTab} visitedTabs={visitedTabs} token={token || ''} />
           </div>
         </main>
       </div>
