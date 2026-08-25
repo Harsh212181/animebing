@@ -19,6 +19,7 @@ import AnimeLinkControlManager from './AnimeLinkControlManager';
 import SpecialModeManager from './SpecialModeManager';
 import NotesManager from './NotesManager';
 import TrackListManager from './TrackListManager';
+import InstagramAutomationManager from './InstagramAutomationManager';
 import Spinner from '../Spinner';
 import axios from 'axios';
 
@@ -83,6 +84,7 @@ const ICONS: Record<string, string> = {
   specialModes:    'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z',
   notes:           'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
   trackList:       'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z',
+  instagram:       'M12 3l2.6 5.6 6.1.6-4.5 4.2 1.3 6-5.5-3-5.5 3 1.3-6-4.5-4.2 6.1-.6L12 3z',
   // 🆕 Mobile icons
   menu:            'M4 6h16M4 12h16M4 18h16',
   close:           'M6 18L18 6M6 6l12 12',
@@ -107,6 +109,7 @@ const TAB_LABELS: Record<string, string> = {
   specialModes:    'Special Modes',
   notes:           'Notes',
   trackList:       'Track List',
+  instagram:       'Instagram Tool',
 };
 
 // ─── renderTab function ──────────────────────────────────────────────────────
@@ -130,6 +133,7 @@ function renderTab(tabId: string, token: string) {
     case 'specialModes':   return <SpecialModeManager token={token} apiBase={API_BASE} />;
     case 'notes':          return <NotesManager token={token} apiBase={API_BASE} isSuperAdmin={true} />;
     case 'trackList':      return <TrackListManager />;
+    case 'instagram':      return <InstagramAutomationManager token={token} apiBase={API_BASE} />;
     default:               return <AnimeListTable token={token} isMainAdmin={true} />;
   }
 }
@@ -544,7 +548,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         <div className="h-14 flex items-center justify-center border-b border-white/[0.06] flex-shrink-0">
           <BrandLogo />
         </div>
-        <div className="flex-1 flex flex-col items-center py-3 gap-1 overflow-y-auto overflow-x-hidden">
+        <div className="flex-1 flex flex-col items-center py-3 gap-1 overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
           {Object.keys(TAB_LABELS).map(tabId => (
             <button
               key={tabId}
@@ -601,7 +605,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             </svg>
           </button>
         </div>
-        <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-4 scrollbar-thin scrollbar-thumb-white/10">
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-4 [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
           <SidebarSection label="Content">
             <NavItem tabId="list"            activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
             <NavItem tabId="add"             activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
@@ -623,6 +627,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             <NavItem tabId="shortener"       activeTab={activeTab} collapsed={false} onClick={handleTabChange} badge={unreadShortMessagesCount} />
             <NavItem tabId="shortusers"      activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
             <NavItem tabId="partners"        activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
+          </SidebarSection>
+          <SidebarSection label="Tools">
+            <NavItem tabId="instagram"       activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
           </SidebarSection>
           <SidebarSection label="Analytics">
             <NavItem tabId="pageviews" activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
@@ -682,7 +689,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-4">
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-4 [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
           <SidebarSection label="Content">
             <NavItem tabId="list"            activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
             <NavItem tabId="add"             activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
@@ -704,6 +711,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             <NavItem tabId="shortener"       activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} badge={unreadShortMessagesCount} />
             <NavItem tabId="shortusers"      activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
             <NavItem tabId="partners"        activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+          </SidebarSection>
+          <SidebarSection label="Tools">
+            <NavItem tabId="instagram"       activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
           </SidebarSection>
           <SidebarSection label="Analytics">
             <NavItem tabId="pageviews" activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />

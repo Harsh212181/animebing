@@ -1,4 +1,4 @@
-// components/PrivacyPolicy.tsx
+ // components/PrivacyPolicy.tsx
 import React from 'react';
 import { Link } from 'react-router-dom';
 import SEO from '../src/components/SEO';
@@ -185,6 +185,37 @@ const PrivacyPolicy: React.FC = () => {
                 </p>
                 <p className="text-slate-300 text-sm sm:text-base">
                   If you believe your child provided personal data on our site, please contact us immediately so we can remove such information promptly.
+                </p>
+              </section>
+
+              {/* Instagram Automation Data */}
+              <section className="bg-slate-700/30 rounded-lg p-4 sm:p-6 border-l-4 border-pink-500">
+                <h2 className="text-xl sm:text-2xl font-bold text-white mb-3 sm:mb-4 flex items-center gap-2">
+                  <span className="text-pink-400">🔹</span> Instagram Integration & Automated Messaging
+                </h2>
+                <p className="text-slate-300 mb-3 sm:mb-4 text-sm sm:text-base">
+                  Animebing uses the Instagram API to power an automated comment-reply feature on our
+                  connected Instagram account(s). When a user comments a specific keyword on one of our
+                  posts, we collect the following limited data solely to send that user an automated
+                  private reply:
+                </p>
+                <ul className="text-slate-300 list-disc list-inside space-y-2 ml-3 mb-3 sm:mb-4 text-sm sm:text-base">
+                  <li>The Instagram-assigned user ID of the commenter</li>
+                  <li>The text content of the matched comment</li>
+                  <li>The timestamp and delivery status of the automated reply</li>
+                </ul>
+                <p className="text-slate-300 mb-3 sm:mb-4 text-sm sm:text-base">
+                  This data is used only to identify which comment to reply to and to prevent duplicate
+                  replies. We do not use this data for advertising, profiling, or any purpose beyond
+                  operating this feature, and we do not share it with third parties.
+                </p>
+                <p className="text-slate-300 text-sm sm:text-base">
+                  You can request deletion of this data at any time by removing our app from your
+                  Instagram/Facebook account settings, or by emailing us at{' '}
+                  <a href="mailto:animebingofficial@gmail.com" className="text-purple-400 hover:text-purple-300 transition-colors">
+                    animebingofficial@gmail.com
+                  </a>{' '}
+                  — we will confirm and complete deletion within a reasonable timeframe.
                 </p>
               </section>
 

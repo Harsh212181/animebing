@@ -27,6 +27,9 @@ import { findMany, insertOne, updateOne } from './services/mongoService'
 import { ITrackedChannel } from './models/types'
 import { processChannelUpdates, notifyOnce, processInBatches } from './services/youtubeCheckService'
 import linkGeneratorRoutes from './routes/linkGeneratorRoutes'
+import instagramWebhookRoutes from './routes/instagramWebhookRoutes'
+import instagramAuthRoutes from './routes/instagramAuthRoutes'
+import instagramAutomationRoutes from './routes/instagramAutomationRoutes'
 
 export type Env = {
   MONGODB_URI: string
@@ -44,6 +47,11 @@ export type Env = {
   SHRINKME_API_KEY: string
   GPLINKS_API_KEY: string
   LINKJUST_API_KEY: string
+  IG_APP_ID: string
+  IG_APP_SECRET: string
+  IG_VERIFY_TOKEN: string
+  IG_USER_ID: string
+  IG_ACCESS_TOKEN: string
 }
 
 export type Variables = {
@@ -115,6 +123,11 @@ app.route('/api/special-modes', specialModeRoutes)
 app.route('/api/notes', notesRoutes)
 app.route('/api/track', trackRoutes)
 app.route('/api/link-generator', linkGeneratorRoutes)
+
+// ============ INSTAGRAM WEBHOOK (comment → DM automation) ============
+app.route('/', instagramWebhookRoutes)
+app.route('/', instagramAuthRoutes)
+app.route('/api/instagram-automation', instagramAutomationRoutes)
 
 // ============ SITEMAP ============
 app.route('/', sitemapRoutes)
