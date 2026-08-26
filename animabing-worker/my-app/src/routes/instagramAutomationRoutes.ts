@@ -88,8 +88,11 @@ instagramAutomationRoutes.get('/accounts/:id/posts', async (c) => {
   if (!account) return c.json({ success: false, error: 'Account nahi mila' }, 404)
 
   // 👇 /me/media use karte hain, igUserId ki jagah
+  // ⚠️ FIX: 'v23.0' version prefix hata diya — graph.instagram.com
+  // (Instagram Login API) unversioned calls expect karta hai, warna Meta
+  // "Unsupported request" jaisa misleading error deta hai.
   const res = await fetch(
-    `https://graph.instagram.com/v23.0/me/media` +
+    `https://graph.instagram.com/me/media` +
     `?fields=id,caption,media_type,media_url,thumbnail_url,permalink,timestamp` +
     `&limit=25&access_token=${account.accessToken}`
   )

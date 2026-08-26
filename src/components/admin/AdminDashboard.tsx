@@ -20,6 +20,7 @@ import SpecialModeManager from './SpecialModeManager';
 import NotesManager from './NotesManager';
 import TrackListManager from './TrackListManager';
 import InstagramAutomationManager from './InstagramAutomationManager';
+import UserActivityManager from './UserActivityManager';   // ✅ NEW
 import Spinner from '../Spinner';
 import axios from 'axios';
 
@@ -85,6 +86,7 @@ const ICONS: Record<string, string> = {
   notes:           'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
   trackList:       'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z',
   instagram:       'M12 3l2.6 5.6 6.1.6-4.5 4.2 1.3 6-5.5-3-5.5 3 1.3-6-4.5-4.2 6.1-.6L12 3z',
+  userActivity:    'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m6-4a2 2 0 100-4 2 2 0 000 4zm0 0v4m0-4V9', // ✅ NEW — clock/eye style
   // 🆕 Mobile icons
   menu:            'M4 6h16M4 12h16M4 18h16',
   close:           'M6 18L18 6M6 6l12 12',
@@ -110,6 +112,7 @@ const TAB_LABELS: Record<string, string> = {
   notes:           'Notes',
   trackList:       'Track List',
   instagram:       'Instagram Tool',
+  userActivity:    'User Activity',   // ✅ NEW
 };
 
 // ─── renderTab function ──────────────────────────────────────────────────────
@@ -134,16 +137,25 @@ function renderTab(tabId: string, token: string) {
     case 'notes':          return <NotesManager token={token} apiBase={API_BASE} isSuperAdmin={true} />;
     case 'trackList':      return <TrackListManager />;
     case 'instagram':      return <InstagramAutomationManager token={token} apiBase={API_BASE} />;
+    case 'userActivity':   return <UserActivityManager token={token} />;   // ✅ NEW
     default:               return <AnimeListTable token={token} isMainAdmin={true} />;
   }
 }
 
 // ─── TabContent ──────────────────────────────────────────────────────────────
-const TabContent: React.FC<{ activeTab: string; visitedTabs: Set<string>; token: string }> =
-  React.memo(({ activeTab, visitedTabs, token }) => (
+// ✅ FIX: each tab has its own version number in `tabRefreshVersions`. A tab's
+// key only changes when ITS OWN version changes (i.e. Refresh was clicked while
+// that tab was active). Switching tabs never touches any version, so no key
+// ever changes on switch → no remount → no refetch. Clicking Refresh bumps only
+// the active tab's version → only that tab remounts and refetches its data.
+const TabContent: React.FC<{ activeTab: string; visitedTabs: Set<string>; token: string; tabRefreshVersions: Record<string, number> }> =
+  React.memo(({ activeTab, visitedTabs, token, tabRefreshVersions }) => (
     <>
       {Array.from(visitedTabs).map(tabId => (
-        <div key={tabId} style={{ display: activeTab === tabId ? 'block' : 'none' }}>
+        <div
+          key={`${tabId}-${tabRefreshVersions[tabId] || 0}`}
+          style={{ display: activeTab === tabId ? 'block' : 'none' }}
+        >
           {renderTab(tabId, token)}
         </div>
       ))}
@@ -282,7 +294,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [sidebarPinned, setSidebarPinned] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false); // 📱 mobile drawer state
   const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
+  // ✅ per-tab refresh version map — bumping a tab's own entry forces just
+  // that tab to remount (and refetch); other tabs' entries stay untouched.
+  const [tabRefreshVersions, setTabRefreshVersions] = useState<Record<string, number>>({});
 
   // ✅ NEW: Track which tabs have actually been opened
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set(['list']));
@@ -633,6 +647,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           </SidebarSection>
           <SidebarSection label="Analytics">
             <NavItem tabId="pageviews" activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
+            <NavItem tabId="userActivity" activeTab={activeTab} collapsed={false} onClick={handleTabChange} />   {/* ✅ NEW */}
           </SidebarSection>
           <SidebarSection label="Administration">
             <NavItem tabId="subadmins" activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
@@ -717,6 +732,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           </SidebarSection>
           <SidebarSection label="Analytics">
             <NavItem tabId="pageviews" activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+            <NavItem tabId="userActivity" activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />   {/* ✅ NEW */}
           </SidebarSection>
           <SidebarSection label="Administration">
             <NavItem tabId="subadmins" activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
@@ -765,7 +781,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             <button
               onClick={() => {
                 loadInitialData(true);
-                setRefreshKey(k => k + 1);
+                setTabRefreshVersions(prev => ({
+                  ...prev,
+                  [activeTab]: (prev[activeTab] || 0) + 1,
+                }));
               }}
               disabled={isRefreshing}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition border border-white/[0.06] disabled:opacity-50"
@@ -902,7 +921,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
           {/* Active Tab Content – flush edges on all screens */}
           <div className="bg-white/[0.04] border-y sm:border border-white/[0.06] rounded-none sm:rounded-xl p-0 min-h-[300px]">
-            <TabContent activeTab={activeTab} visitedTabs={visitedTabs} token={token || ''} />
+            <TabContent activeTab={activeTab} visitedTabs={visitedTabs} token={token || ''} tabRefreshVersions={tabRefreshVersions} />
           </div>
         </main>
       </div>

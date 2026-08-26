@@ -15,7 +15,7 @@
     "FRONTEND_URL": "https://animebing.in"
   },
   "triggers": {
-    "crons": ["30 2,14 * * *"]
+    "crons": ["30 2,14 * * *", "*/5 * * * *"]
   },
   "routes": [
     {

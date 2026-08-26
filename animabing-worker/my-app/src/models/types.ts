@@ -643,3 +643,27 @@ export interface IClickSession {
   completedAt?: Date | null
   ipMismatch?: boolean             // 🆕 suspicious flag
 }
+
+// ============ WATCH / DOWNLOAD ACTIVITY (per-user tracking) ============
+export interface IWatchActivity {
+  _id?: ObjectId
+  animeId: ObjectId
+  animeTitle?: string
+  contentType?: string
+  episodeNumber?: number
+  downloadPageId?: ObjectId | null
+  activityType: 'watch' | 'download'
+  videoUrl?: string
+  quality?: string
+  language?: string
+  ip: string
+  userAgent?: string
+  device?: 'mobile' | 'tablet' | 'desktop' | 'unknown'
+  country?: string
+  watchDurationSec?: number       // sirf 'watch' type ke liye — kitni der dekha (approx, 15s heartbeat se)
+  lastHeartbeatAt?: Date
+  startedAt: Date
+  endedAt?: Date
+  createdAt?: Date
+  updatedAt?: Date
+}

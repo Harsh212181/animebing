@@ -30,6 +30,8 @@ import linkGeneratorRoutes from './routes/linkGeneratorRoutes'
 import instagramWebhookRoutes from './routes/instagramWebhookRoutes'
 import instagramAuthRoutes from './routes/instagramAuthRoutes'
 import instagramAutomationRoutes from './routes/instagramAutomationRoutes'
+import watchActivityRoutes from './routes/watchActivityRoutes'
+import { runQueueChain } from './services/instagramQueueService'   // 👈 CHANGED: processInstagramDMQueue → runQueueChain
 
 export type Env = {
   MONGODB_URI: string
@@ -123,6 +125,7 @@ app.route('/api/special-modes', specialModeRoutes)
 app.route('/api/notes', notesRoutes)
 app.route('/api/track', trackRoutes)
 app.route('/api/link-generator', linkGeneratorRoutes)
+app.route('/api/watch-activity', watchActivityRoutes)
 
 // ============ INSTAGRAM WEBHOOK (comment → DM automation) ============
 app.route('/', instagramWebhookRoutes)
@@ -145,6 +148,18 @@ export default {
   fetch: app.fetch,
 
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    // ✅ 🆕 Naya 5-minute cron sirf Instagram DM queue check karega — 
+    // YouTube tracking wale bhaari cron se poori tarah alag rakha hai
+    if (event.cron === '*/5 * * * *') {
+      try {
+        await runQueueChain(env, 0)   // 👈 CHANGED: processInstagramDMQueue → runQueueChain
+      } catch (err) {
+        console.error('Instagram DM queue processing failed:', err)
+      }
+      return // ✅ yahin ruk jao — neeche wala YouTube tracking code bilkul mat chalne do
+    }
+
+    // ============ MAIN YOUTUBE TRACKER CRON ============
     try {
       // ✅ NEW — idempotency guard: agar Cloudflare ne pichle 5 min me already ek run
       // start/complete kiya hai (retry ki wajah se), toh skip karo. Isse duplicate

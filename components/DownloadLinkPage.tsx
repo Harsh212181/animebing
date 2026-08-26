@@ -1,4 +1,4 @@
- import React, { useEffect, useState } from 'react';
+ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { FaDownload, FaPlay, FaFilm, FaTv } from 'react-icons/fa';
 import Spinner from './Spinner';
@@ -8,6 +8,7 @@ import { isYouTubeUrl } from './utils/videoHelpers';
 import { DownloadPage, Anime } from '../src/types';
 import { captureTokenFromUrl, completeFunnel } from '../utils/clickFunnel';
 import { getContentGroup } from '../src/utils/contentGroup';
+import { startActivity, sendHeartbeat, endActivity } from '../utils/watchActivity';   // ✅ NEW
 
 const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
 
@@ -113,6 +114,11 @@ const DownloadLinkPage: React.FC = () => {
   // ✅ State for description Show More / Less
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
 
+  // ✅ NEW: Watch activity tracking states/refs
+  const [activityId, setActivityId] = useState<string | null>(null);
+  const watchSecondsRef = useRef(0);
+  const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
   useEffect(() => {
     captureTokenFromUrl();
   }, []);
@@ -125,6 +131,55 @@ const DownloadLinkPage: React.FC = () => {
     }, 5000);
     return () => clearTimeout(timer);
   }, [animeDetails?._id]);
+
+  // ✅ NEW — Watch activity tracking when selectedIndex changes
+  useEffect(() => {
+    const cleanup = () => {
+      if (activityId) {
+        endActivity(activityId, watchSecondsRef.current);
+      }
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+      }
+      setActivityId(null);
+      watchSecondsRef.current = 0;
+    };
+
+    if (selectedIndex === null || !sortedWatchLinks[selectedIndex] || !animeDetails?._id) {
+      cleanup();
+      return;
+    }
+
+    const link = sortedWatchLinks[selectedIndex];
+    let cancelled = false;
+
+    startActivity({
+      animeId: animeDetails._id,
+      animeTitle: animeDetails.title,
+      contentType: animeDetails.contentType,
+      episodeNumber: isMovie ? undefined : Number(link.episode),
+      downloadPageId: page?._id,
+      activityType: 'watch',
+      videoUrl: link.url,
+      quality: link.quality,
+      language: link.language,
+    }).then(id => {
+      if (cancelled || !id) return;
+      setActivityId(id);
+      watchSecondsRef.current = 0;
+      heartbeatIntervalRef.current = setInterval(() => {
+        watchSecondsRef.current += 15;
+        sendHeartbeat(id, watchSecondsRef.current);
+      }, 15000);
+    });
+
+    return () => {
+      cancelled = true;
+      cleanup();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIndex]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -619,7 +674,7 @@ const DownloadLinkPage: React.FC = () => {
           </div>
         )}
 
-        {/* ✅ NEW: Download tab content bhi sirf tab dikhega jab download links hon (activeTab safety) */}
+        {/* ✅ NEW: Download tab content with activity logging */}
         {activeTab === 'download' && downloadLinks.length > 0 && (
           <div className="space-y-3">
             {downloadLinks.map((link, idx) => (
@@ -627,7 +682,23 @@ const DownloadLinkPage: React.FC = () => {
                 key={idx}
                 link={link}
                 isMovie={isMovie}
-                onAction={() => window.open(link.url, '_blank')}
+                onAction={() => {
+                  // ✅ NEW — download click log karo
+                  if (animeDetails?._id) {
+                    startActivity({
+                      animeId: animeDetails._id,
+                      animeTitle: animeDetails.title,
+                      contentType: animeDetails.contentType,
+                      episodeNumber: isMovie ? undefined : Number(link.episode),
+                      downloadPageId: page?._id,
+                      activityType: 'download',
+                      videoUrl: link.url,
+                      quality: link.quality,
+                      language: link.language,
+                    });
+                  }
+                  window.open(link.url, '_blank');
+                }}
                 actionIcon={<FaDownload />}
                 actionLabel="Download"
               />

@@ -1,4 +1,4 @@
-import { MongoClient, Db, ObjectId, Filter, Document } from 'mongodb'
+ import { MongoClient, Db, ObjectId, Filter, Document } from 'mongodb'
 
 // ============================================================================
 // ✅ IMPORTANT ARCHITECTURE NOTE
@@ -61,7 +61,10 @@ export async function getDb(mongoUri: string, dbName: string): Promise<Db> {
 }
 
 // ✅ Ek request ke andar helper jo: connect -> operation -> close (guaranteed)
-async function withDb<T>(
+// 🆕 FIX: 'export' add kiya gaya — instagramWebhookRoutes.ts aur
+// instagramQueueService.ts dono is function ko directly import karte hain,
+// export missing hone ki wajah se wahan red/unresolved error aa raha tha.
+export async function withDb<T>(
   mongoUri: string,
   dbName: string,
   label: string,
