@@ -430,6 +430,8 @@ export interface DownloadPageLink {
   quality?: string;
   language?: string;
   type: 'download' | 'watch';
+  durationSec?: number;                      // ✅ NEW
+  playerMode?: 'custom' | 'default';         // ✅ NEW
 }
 
 export interface DownloadPage {
@@ -449,6 +451,7 @@ export interface DownloadPage {
   buttonTitle?: string;
   episodeNumber: number;
   links: DownloadPageLink[];
+  defaultPlayerMode?: 'custom' | 'default';   // ✅ NEW — page-wide YouTube player mode
   createdAt: string;
   updatedAt?: string;
 }

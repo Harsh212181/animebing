@@ -3,7 +3,7 @@ import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
 import { findMany, findOne, insertOne, updateOne, deleteOne, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
 import { IDownloadPage } from '../models/types'
-import { syncPageDerivedData, syncAnimeEpisodeCountFromAnime } from '../services/episodeSyncService'   // ✅ UPDATED: syncPageDerivedData (combined helper) use kiya
+import { syncPageDerivedData, syncAnimeEpisodeCountFromAnime } from '../services/episodeSyncService'
 
 const downloadPageRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
@@ -17,11 +17,11 @@ function countLinksByType(links: any[]) {
 function slugify(input: string): string {
   return input
     .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')   // accents strip
-    .replace(/[''"""]/g, '')          // apostrophes/quotes remove
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[''"""]/g, '')
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')       // baaki sab -> hyphen
-    .replace(/^-+|-+$/g, '')           // trim hyphens
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
 }
 
 // ============ HELPER: sub-admin (animeAccess:'own') ke owned anime IDs laao (string[]) ============
@@ -139,7 +139,7 @@ downloadPageRoutes.get('/', adminAuth, async (c) => {
 // CREATE — ✅ Allows creating a page with no links (links field optional)
 downloadPageRoutes.post('/', adminAuth, async (c) => {
   try {
-    const { animeId, slug, title, episodeNumber, links } = await c.req.json()
+    const { animeId, slug, title, episodeNumber, links, defaultPlayerMode } = await c.req.json()
 
     // Required fields: animeId and slug
     if (!animeId || !slug) {
@@ -147,7 +147,7 @@ downloadPageRoutes.post('/', adminAuth, async (c) => {
     }
     if (!isValidObjectId(animeId)) return c.json({ error: 'Invalid animeId' }, 400)
 
-    const cleanSlug = slugify(slug)   // ✅ NEW
+    const cleanSlug = slugify(slug)
     if (!cleanSlug) return c.json({ error: 'Invalid slug' }, 400)
 
     const existing = await findOne('downloadpages', { slug: cleanSlug }, c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -165,19 +165,17 @@ downloadPageRoutes.post('/', adminAuth, async (c) => {
       if (!link.type) link.type = 'download'
     }
 
-    // episodeNumber default to 1 if not provided
     const page = { 
       animeId: toObjectId(animeId), 
-      slug: cleanSlug,   // ✅ raw slug ki jagah cleanSlug
+      slug: cleanSlug,
       title: title || 'Download', 
       episodeNumber: episodeNumber || 1, 
       links: sanitizedLinks, 
-      isHidden: false 
+      isHidden: false,
+      defaultPlayerMode: defaultPlayerMode === 'custom' ? 'custom' : 'default'   // ✅ NEW — default = normal YouTube button
     }
     const result = await insertOne('downloadpages', page, c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    // ✅ agar links ke saath page bana hai toh anime.currentEpisode aur episode titles sync karo
-    // ✅ UPDATED: dono ab ek hi combined helper se sync hote hain
     if (sanitizedLinks.length > 0) {
       await syncPageDerivedData(result.insertedId.toString(), c.env.MONGODB_URI, c.env.MONGODB_DB)
     }
@@ -193,14 +191,14 @@ downloadPageRoutes.put('/:id', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
-    const { slug, title, episodeNumber, links } = await c.req.json()
+    const { slug, title, episodeNumber, links, defaultPlayerMode } = await c.req.json()
 
     const page = await findOne<IDownloadPage>('downloadpages', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
     if (!page) return c.json({ error: 'Page not found' }, 404)
 
     const updateData: any = {}
     if (slug && slug !== page.slug) {
-      const cleanSlug = slugify(slug)   // ✅ NEW
+      const cleanSlug = slugify(slug)
       if (!cleanSlug) return c.json({ error: 'Invalid slug' }, 400)
       const existing = await findOne('downloadpages', { slug: cleanSlug }, c.env.MONGODB_URI, c.env.MONGODB_DB)
       if (existing) return c.json({ error: 'Slug already exists' }, 400)
@@ -218,12 +216,12 @@ downloadPageRoutes.put('/:id', adminAuth, async (c) => {
       }
       updateData.links = links
     }
+    if (defaultPlayerMode !== undefined) {
+      updateData.defaultPlayerMode = defaultPlayerMode === 'custom' ? 'custom' : 'default'   // ✅ NEW
+    }
 
     const updated = await updateOne('downloadpages', { _id: toObjectId(id) }, updateData, c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    // ✅ agar links change hue hain (add YA remove/kam bhi) toh anime.currentEpisode
-    // aur episode titles dobara SCRATCH se sync karo — isliye ye ghatna/badhna dono handle karta hai
-    // ✅ UPDATED: dono ab ek hi combined helper se sync hote hain
     if (links) {
       await syncPageDerivedData(id!, c.env.MONGODB_URI, c.env.MONGODB_DB)
     }
@@ -256,6 +254,32 @@ downloadPageRoutes.patch('/:id/toggle-hide', adminAuth, async (c) => {
   }
 })
 
+// ✅ NEW — Page-level YouTube player mode toggle (Custom ↔ Default) — direct from card, no edit form
+downloadPageRoutes.patch('/:id/player-mode', adminAuth, async (c) => {
+  try {
+    const id = c.req.param('id')
+    if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
+
+    const { defaultPlayerMode } = await c.req.json()
+    if (defaultPlayerMode !== 'custom' && defaultPlayerMode !== 'default') {
+      return c.json({ error: 'defaultPlayerMode must be "custom" or "default"' }, 400)
+    }
+
+    const page = await findOne<IDownloadPage>('downloadpages', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    if (!page) return c.json({ error: 'Page not found' }, 404)
+
+    const updated = await updateOne(
+      'downloadpages',
+      { _id: toObjectId(id) },
+      { defaultPlayerMode },
+      c.env.MONGODB_URI, c.env.MONGODB_DB
+    )
+    return c.json(updated)
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
 // DELETE
 downloadPageRoutes.delete('/:id', adminAuth, async (c) => {
   try {
@@ -264,17 +288,10 @@ downloadPageRoutes.delete('/:id', adminAuth, async (c) => {
     const page = await findOne('downloadpages', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
     if (!page) return c.json({ error: 'Page not found' }, 404)
 
-    // ✅ animeId pehle nikaal lo — delete ke baad page hi nahi rahega toh animeId access nahi ho payega
     const animeId = (page as any).animeId
 
     await deleteOne('downloadpages', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    // ✅ NEW: page delete hone ke baad currentEpisode dobara calculate karo (poore anime
-    // ke baaki bache hue pages ke links se) — taaki agar sabse bada episode wala page hi
-    // delete hua ho, toh currentEpisode automatically kam ho jaye aur detail page turant
-    // sahi "Ch X" / "EP X" dikhaye
-    // (Page delete ho chuka hai isliye syncPageDerivedData/syncEpisodeTitleFromDownloadPage
-    // use nahi kar sakte — wo pageId maangte hain. Sirf currentEpisode hi anime-level se sync hota hai.)
     if (animeId) {
       await syncAnimeEpisodeCountFromAnime(animeId, c.env.MONGODB_URI, c.env.MONGODB_DB)
     }
@@ -298,7 +315,6 @@ downloadPageRoutes.post('/:id/set-primary-episode-count', adminAuth, async (c) =
 
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    // sabhi is anime ke pages ko unmark karo, phir sirf isi ko mark karo
     await db.collection('downloadpages').updateMany(
       { animeId: (page as any).animeId },
       { $set: { isPrimaryForEpisodeCount: false } }
@@ -308,7 +324,6 @@ downloadPageRoutes.post('/:id/set-primary-episode-count', adminAuth, async (c) =
       { $set: { isPrimaryForEpisodeCount: true } }
     )
 
-    // ✅ turant currentEpisode is naye primary page ke hisaab se recalculate karo
     const newCount = await syncAnimeEpisodeCountFromAnime((page as any).animeId, c.env.MONGODB_URI, c.env.MONGODB_DB)
 
     return c.json({ success: true, currentEpisode: newCount })
@@ -349,12 +364,10 @@ downloadPageRoutes.get('/:slug', async (c) => {
     )
     if (!page) return c.json({ error: 'Page not found' }, 404)
 
-    // ✅ Public page ke liye hidden pages block karo
     if ((page as any).isHidden) {
       return c.json({ error: 'Page not found' }, 404)
     }
 
-    // ✅ animeId se anime fetch karo — thumbnail aur description ke liye
     let animeData = null
     const animeIdStr = (page as any).animeId?.toString()
 
@@ -368,7 +381,6 @@ downloadPageRoutes.get('/:slug', async (c) => {
         )
     }
 
-    // ✅ Backward compatible format — React component ke liye same structure
     return c.json({
       ...(page as any),
       animeId: animeData || (page as any).animeId

@@ -195,7 +195,8 @@ export interface IDownloadPageLink {
   quality?: string
   language?: string
   type?: 'download' | 'watch'
-  durationSec?: number    
+  durationSec?: number
+  playerMode?: 'custom' | 'default'   // ✅ NEW — 'custom' = apna control bar, 'default' = normal YouTube player
 }
 
 export interface IDownloadPage {
@@ -206,7 +207,8 @@ export interface IDownloadPage {
   episodeNumber?: number
   links: IDownloadPageLink[]
   isHidden?: boolean
-  isPrimaryForEpisodeCount?: boolean    
+  isPrimaryForEpisodeCount?: boolean
+  defaultPlayerMode?: 'custom' | 'default'   // ✅ NEW — page-level YouTube player mode
   createdAt?: Date
   updatedAt?: Date
 }

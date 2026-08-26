@@ -592,6 +592,7 @@ const DownloadLinkPage: React.FC = () => {
                         key="active-youtube-player"
                         videoUrl={sortedWatchLinks[selectedIndex].url}
                         title={title}
+                        playerMode={page.defaultPlayerMode || 'default'}   // ✅ CHANGED — ab page-level se aata hai
                         onNextEpisode={() => setSelectedIndex(selectedIndex + 1)}
                         onPreviousEpisode={() => setSelectedIndex(selectedIndex - 1)}
                         hasNextEpisode={!isMovie && selectedIndex < sortedWatchLinks.length - 1}

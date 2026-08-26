@@ -1,9 +1,10 @@
- // src/components/admin/DownloadPageManager.tsx – FULL CODE WITH COMPACT FILTER/SINGLE ROW + Z-INDEX FIX + SEARCH BAR LONGER + GAP ABOVE PAGE COUNT + 📱 MOBILE-FRIENDLY LAYOUT
+ // src/components/admin/DownloadPageManager.tsx – FULL CODE WITH PLAYER MODE TOGGLE BUTTON (ICON ONLY) + PLAYER MODE FILTER
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { DownloadPage, DownloadPageLink, ContentType, SubDubStatus } from '../../types';
 import SearchableDropdown from './SearchableDropdown';
 import Spinner from '../Spinner';
 import { CONTENT_TYPE_OPTIONS } from '../../utils/contentGroup';
+import { isYouTubeUrl } from '@components/utils/videoHelpers';   // ✅ NEW
 
 const API_BASE = import.meta.env.VITE_API_BASE || 
   'https://animabing-backend.animabingwatch.workers.dev/api';
@@ -117,6 +118,7 @@ interface FormPage {
   title: string;
   episodeNumber: number;
   links: DownloadPageLink[];
+  defaultPlayerMode?: 'custom' | 'default';   // ✅ NEW
 }
 
 const getAnimeTitle = (page: DownloadPage): string => {
@@ -131,6 +133,11 @@ const isAnimeHidden = (page: DownloadPage): boolean => {
     return !!(page.animeId as any).isHidden;
   }
   return false;
+};
+
+// ✅ NEW — check karo ke is page mein koi YouTube watch link hai ya nahi
+const hasYouTubeWatchLink = (page: DownloadPage): boolean => {
+  return (page.links || []).some(l => l.type === 'watch' && isYouTubeUrl(l.url));
 };
 
 // ----- Toast Component -----
@@ -266,6 +273,8 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
 
   const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; id: string | null }>({ show: false, id: null });
   const [settingPrimaryId, setSettingPrimaryId] = useState<string | null>(null);
+  // ✅ NEW: player mode toggle loading state
+  const [togglingPlayerModeId, setTogglingPlayerModeId] = useState<string | null>(null);
 
   // ✅ Filters – now using CustomSelect
   const [contentTypeFilter, setContentTypeFilter] = useState<'all' | ContentType>('all');
@@ -273,6 +282,8 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
   const [subDubFilter, setSubDubFilter] = useState<'all' | string>('all');
   const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'visible' | 'hidden'>('all');
   const [subAdminFilter, setSubAdminFilter] = useState<'all' | 'admin' | 'subadmin'>('all');
+  // ✅ NEW: Player mode filter
+  const [playerModeFilter, setPlayerModeFilter] = useState<'all' | 'custom' | 'default'>('all');
 
   const fetchPages = async () => {
     setLoading(true);
@@ -377,6 +388,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
     slug: page.slug,
     title: page.title,
     episodeNumber: page.episodeNumber || 1,
+    defaultPlayerMode: page.defaultPlayerMode || 'default',   // ✅ NEW
     links: (page.links || []).map(link => ({
       ...link,
       type: (link as any).type || 'download'
@@ -561,6 +573,34 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
     }
   };
 
+  // ✅ NEW: Player Mode toggle handler
+  const handleTogglePlayerMode = async (pageId: string, currentMode: 'custom' | 'default') => {
+    const nextMode = currentMode === 'custom' ? 'default' : 'custom';
+    setTogglingPlayerModeId(pageId);
+    try {
+      const token = resolveToken();
+      const res = await fetch(`${API_BASE}/download-pages/${pageId}/player-mode`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ defaultPlayerMode: nextMode }),
+      });
+      if (res.ok) {
+        setPages(prev => prev.map(p => p._id === pageId ? { ...p, defaultPlayerMode: nextMode } : p));
+        showToast(`Player mode set to ${nextMode === 'custom' ? 'Custom' : 'Default'}`, 'success');
+      } else {
+        showToast('Failed to update player mode', 'error');
+      }
+    } catch (error) {
+      console.error('Toggle player mode error:', error);
+      showToast('Network error', 'error');
+    } finally {
+      setTogglingPlayerModeId(null);
+    }
+  };
+
   const addDownloadLink = async () => {
     if (!editingPage || !editingPage.animeId) return;
     setCalculatingNext(true);
@@ -595,6 +635,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
         type: 'watch',
         quality: '',
         language: ''
+        // ❌ playerMode line removed
       };
       return { ...prev, links: [...prev.links, newLink] };
     });
@@ -625,6 +666,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
         type: 'watch',
         quality: '',
         language: ''
+        // ❌ playerMode line removed
       };
       return { ...prev, links: [...prev.links, newDownloadLink, newWatchLink] };
     });
@@ -672,6 +714,11 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
     return pages.some(page => getAnimeDetails(page).isSubAdminCreated);
   }, [pages, subAdminMode]);
 
+  // ✅ NEW — filter dropdown ko conditionally dikhane ke liye
+  const hasAnyYouTubeLinks = useMemo(() => {
+    return pages.some(page => hasYouTubeWatchLink(page));
+  }, [pages]);
+
   const filteredPages = useMemo(() => {
     return pages.filter(page => {
       const details = getAnimeDetails(page);
@@ -695,9 +742,14 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
       if (visibilityFilter === 'hidden' && !details.isHidden) return false;
       if (subAdminFilter === 'subadmin' && !details.isSubAdminCreated) return false;
       if (subAdminFilter === 'admin' && details.isSubAdminCreated) return false;
+      // ✅ NEW: player mode filter
+      if (playerModeFilter !== 'all') {
+        const pagePlayerMode = page.defaultPlayerMode || 'default';
+        if (pagePlayerMode !== playerModeFilter) return false;
+      }
       return true;
     });
-  }, [pages, searchTerm, contentTypeFilter, statusFilter, subDubFilter, visibilityFilter, subAdminFilter, subAdminMode, ownedAnimeIdSet]);
+  }, [pages, searchTerm, contentTypeFilter, statusFilter, subDubFilter, visibilityFilter, subAdminFilter, playerModeFilter, subAdminMode, ownedAnimeIdSet]);
 
   const sortedPages = useMemo(() => {
     const groups = new Map<string, DownloadPage[]>();
@@ -768,7 +820,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
                 setEditingPage(null);
               } else {
                 initialLinkCountsRef.current = { download: 0, watch: 0 };
-                setEditingPage({ animeId: '', slug: '', title: '', episodeNumber: 1, links: [] });
+                setEditingPage({ animeId: '', slug: '', title: '', episodeNumber: 1, links: [], defaultPlayerMode: 'default' });
                 setShowNewForm(true);
               }
             }}
@@ -878,6 +930,21 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
             className="w-[calc(50%-4px)] sm:w-28 shrink-0"
           />
 
+          {/* ✅ Player Mode filter — sirf tab dikhega jab kisi bhi page mein YouTube watch link ho */}
+          {hasAnyYouTubeLinks && (
+            <CustomSelect
+              label="Player"
+              value={playerModeFilter}
+              onChange={(v) => setPlayerModeFilter(v as 'all' | 'custom' | 'default')}
+              options={[
+                { value: 'all', label: 'All', color: 'from-gray-500 to-gray-400' },
+                { value: 'custom', label: 'Custom', color: 'from-purple-500 to-pink-500' },
+                { value: 'default', label: 'Default', color: 'from-blue-500 to-cyan-500' },
+              ]}
+              className="w-[calc(50%-4px)] sm:w-28 shrink-0"
+            />
+          )}
+
           {!subAdminMode && hasSubAdminPages && (
             <CustomSelect
               label="Creator"
@@ -918,7 +985,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
 
         <div className="flex items-center justify-between text-xs text-white/40 px-1 mt-1 gap-2 flex-wrap">
           <span>{filteredPages.length} / {pages.length} pages shown</span>
-          {(contentTypeFilter !== 'all' || statusFilter !== 'all' || subDubFilter !== 'all' || visibilityFilter !== 'all' || subAdminFilter !== 'all') && (
+          {(contentTypeFilter !== 'all' || statusFilter !== 'all' || subDubFilter !== 'all' || visibilityFilter !== 'all' || subAdminFilter !== 'all' || playerModeFilter !== 'all') && (
             <button
               onClick={() => {
                 setContentTypeFilter('all');
@@ -926,6 +993,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
                 setSubDubFilter('all');
                 setVisibilityFilter('all');
                 setSubAdminFilter('all');
+                setPlayerModeFilter('all'); // ✅ RESET
               }}
               className="text-purple-400 hover:text-purple-300 underline"
             >
@@ -1080,6 +1148,12 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
                             <span className="text-white/70">
                               <span className="text-purple-300 font-medium">{episodeRange}</span>
                             </span>
+                            {/* ✅ Player badge — sirf tab dikhega jab page mein YouTube watch link ho */}
+                            {hasYouTubeWatchLink(page) && (
+                              <span className="text-white/70">
+                                <span className="text-purple-300 font-medium">Player:</span> {page.defaultPlayerMode || 'default'}
+                              </span>
+                            )}
                           </div>
 
                           <div className="mt-2 text-sm text-white/50 flex items-center gap-2 flex-wrap">
@@ -1133,6 +1207,33 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                         </svg>
                       </button>
+                      
+                      {/* ✅ Player mode toggle button – sirf tab dikhega jab page mein YouTube watch link ho */}
+                      {hasYouTubeWatchLink(page) && (
+                        <button
+                          onClick={() => handleTogglePlayerMode(page._id, page.defaultPlayerMode || 'default')}
+                          disabled={togglingPlayerModeId === page._id}
+                          title={
+                            (page.defaultPlayerMode || 'default') === 'custom'
+                              ? 'Custom Player active — click to switch to Default YouTube Player'
+                              : 'Default YouTube Player active — click to switch to Custom Player'
+                          }
+                          className={`p-2.5 border rounded-xl transition-all disabled:opacity-50 ${
+                            (page.defaultPlayerMode || 'default') === 'custom'
+                              ? 'bg-purple-500/20 border-purple-500/50 text-purple-300 hover:bg-purple-500/30'
+                              : 'bg-white/5 hover:bg-red-500/20 border-white/10 hover:border-red-500/50 text-white/80 hover:text-red-300'
+                          }`}
+                        >
+                          {togglingPlayerModeId === page._id ? (
+                            <Spinner size="sm" />
+                          ) : (
+                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M21.582 7.203a2.51 2.51 0 00-1.766-1.778C18.254 5 12 5 12 5s-6.254 0-7.816.425A2.51 2.51 0 002.418 7.203 26.14 26.14 0 002 12a26.14 26.14 0 00.418 4.797 2.51 2.51 0 001.766 1.778C5.746 19 12 19 12 19s6.254 0 7.816-.425a2.51 2.51 0 001.766-1.778A26.14 26.14 0 0022 12a26.14 26.14 0 00-.418-4.797zM10 15V9l5.196 3z" />
+                            </svg>
+                          )}
+                        </button>
+                      )}
+                      
                       {animePageList.length > 1 && (
                         <button
                           onClick={() =>
@@ -1218,7 +1319,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
   );
 };
 
-// ---------- PAGE FORM (UPDATED — link rows now stack cleanly on phone) ----------
+// ---------- PAGE FORM (NO PAGE-LEVEL PLAYER MODE DROPDOWN) ----------
 const PageForm: React.FC<{
   editingPage: FormPage;
   setEditingPage: React.Dispatch<React.SetStateAction<FormPage | null>>;
@@ -1313,6 +1414,8 @@ const PageForm: React.FC<{
         />
       </div>
 
+      {/* ❌ Page-level Player Mode dropdown REMOVED — ab card ke button se control hota hai */}
+
       <div>
         <label className="block text-sm font-medium text-white/80 mb-3 flexl items-center gap-2">
           <span className="w-1.5 h-5 bg-amber-400 rounded-full"></span>
@@ -1395,6 +1498,8 @@ const PageForm: React.FC<{
                 className="bg-gray-700/60 border border-gray-600/80 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
             </div>
+
+            {/* ❌ Per-link Player Mode dropdown removed */}
           </div>
         ))}
 
