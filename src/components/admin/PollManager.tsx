@@ -1,4 +1,4 @@
-// src/components/admin/PollManager.tsx
+ // src/components/admin/PollManager.tsx
 
 import React, { useState, useEffect } from 'react';
 import { Poll, CreatePollData, Anime } from '../../types';
@@ -38,7 +38,6 @@ const getDeviceIcon = (type?: string) => {
 const truncate = (str: string, n: number) =>
   str.length > n ? str.slice(0, n) + '…' : str;
 
-// Renders text with newlines preserved + clickable URLs (matches homepage PollCard rendering)
 const renderMultilineText = (text: string): React.ReactNode[] => {
   if (!text) return [];
   const urlRegex = /(https?:\/\/[^\s<]+)/gi;
@@ -62,6 +61,12 @@ const renderMultilineText = (text: string): React.ReactNode[] => {
   });
 };
 
+const LOCATIONS: { value: 'home' | 'detail' | 'downloadLink'; label: string }[] = [
+  { value: 'home', label: 'Home Page' },
+  { value: 'detail', label: 'Anime Detail Page' },
+  { value: 'downloadLink', label: 'Download Link Page' },
+];
+
 const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
   const [polls, setPolls] = useState<Poll[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,15 +88,18 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
   const [showExpired, setShowExpired] = useState(false);
   const [expandedPollId, setExpandedPollId] = useState<string | null>(null);
 
-  // ✅ NEW: tab switch between "Browse Anime" and "Custom Images", + infinite-scroll page size for custom images
   const [browseTab, setBrowseTab] = useState<'anime' | 'custom'>('anime');
   const [customVisibleCount, setCustomVisibleCount] = useState(30);
   const [loadingMoreAnime, setLoadingMoreAnime] = useState(false);
   const [loadingDetailsId, setLoadingDetailsId] = useState<string | null>(null);
   const questionRef = React.useRef<HTMLTextAreaElement>(null);
 
-  // ✅ NEW: previously used/saved custom options (persisted in localStorage)
   const [savedCustomOptions, setSavedCustomOptions] = useState<SavedCustomOption[]>([]);
+
+  const [selectedLocations, setSelectedLocations] = useState<('home' | 'detail' | 'downloadLink')[]>(['home', 'detail', 'downloadLink']);
+
+  // ✅ NEW — hide vote counts from users
+  const [hideVoteCounts, setHideVoteCounts] = useState(false);
 
   const loadSavedCustomOptions = () => {
     try {
@@ -145,18 +153,13 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
     return null;
   };
 
-  // ✅ FIX: expand instantly on click (no waiting for the network first), then quietly
-  // refresh the poll's full data (voters/results) in the background. Uses the functional
-  // form of setPolls so a slow earlier fetch can't overwrite a newer one (this was the
-  // "have to click 2-3 times" bug — the button gave no feedback while awaiting the fetch,
-  // and a stale `polls` closure could clobber fresher data when two fetches resolved out of order).
   const handleToggleDetails = async (poll: Poll) => {
     const pollId = poll._id;
     if (expandedPollId === pollId) {
       setExpandedPollId(null);
       return;
     }
-    setExpandedPollId(pollId); // instant visual feedback
+    setExpandedPollId(pollId);
     setLoadingDetailsId(pollId);
     const detailed = await fetchPollDetails(pollId);
     if (detailed) {
@@ -188,12 +191,11 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
   };
 
   useEffect(() => {
-    if (browseTab !== 'anime') return; // custom images tab doesn't need the anime API
+    if (browseTab !== 'anime') return;
     const t = setTimeout(() => fetchAnime(searchQuery, 1, 50), 500);
     return () => clearTimeout(t);
   }, [searchQuery, browseTab]);
 
-  // ✅ Reset how many custom images are visible whenever the search text or tab changes
   useEffect(() => {
     setCustomVisibleCount(30);
   }, [searchQuery, browseTab]);
@@ -201,7 +203,7 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
   useEffect(() => {
     fetchPolls();
     fetchAnime('', 1, 50);
-    loadSavedCustomOptions(); // ✅ load saved custom options on mount
+    loadSavedCustomOptions();
   }, []);
 
   const addAnimeToOptions = (anime: Anime) => {
@@ -214,7 +216,6 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
     setSelectedAnimeIds(prev => [...prev, anime._id]);
   };
 
-  // ✅ UPDATED: also saves the custom option to localStorage for future reuse
   const addCustomOption = () => {
     if (!customOption.title.trim()) { toast.error('Title required'); return; }
     if (!customOption.imageUrl.trim()) { toast.error('Image URL required'); return; }
@@ -230,8 +231,6 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
       options: [...prev.options, { animeId: id, title, image }]
     }));
 
-    // Save for reuse next time (dedupe by title+image, newest first). Kept permanently —
-    // even if the poll using it is later deleted, it stays here for reuse.
     setSavedCustomOptions(prev => {
       const withoutDup = prev.filter(o => !(o.title === title && o.image === image));
       const updated = [{ title, image }, ...withoutDup].slice(0, 1000);
@@ -243,7 +242,6 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
     toast.success('Added & saved for next time');
   };
 
-  // ✅ NEW: quickly re-use a previously saved custom option
   const addSavedCustomOption = (opt: SavedCustomOption) => {
     if (newPoll.options.length >= 10) { toast.error('Max 10 options'); return; }
     const alreadyInPoll = newPoll.options.some(o => o.title === opt.title && o.image === opt.image);
@@ -252,7 +250,6 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
     setNewPoll(prev => ({ ...prev, options: [...prev.options, { animeId: id, title: opt.title, image: opt.image }] }));
   };
 
-  // ✅ NEW: remove a saved custom option from the reusable list
   const removeSavedCustomOption = (opt: SavedCustomOption) => {
     setSavedCustomOptions(prev => {
       const updated = prev.filter(o => !(o.title === opt.title && o.image === opt.image));
@@ -284,7 +281,13 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
       const res = await fetch(`${apiBase}/polls/admin/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ question: newPoll.question.trim(), options: newPoll.options, expiresAt: new Date(newPoll.expiresAt).toISOString() })
+        body: JSON.stringify({
+          question: newPoll.question.trim(),
+          options: newPoll.options,
+          expiresAt: new Date(newPoll.expiresAt).toISOString(),
+          displayLocations: selectedLocations,
+          hideVoteCounts // ✅ NEW
+        })
       });
       if (!res.ok) throw new Error(`Failed: ${res.status}`);
       toast.success('Poll created!');
@@ -299,7 +302,13 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
       const res = await fetch(`${apiBase}/polls/admin/${editingPollId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ question: newPoll.question.trim(), options: newPoll.options, expiresAt: new Date(newPoll.expiresAt).toISOString() })
+        body: JSON.stringify({
+          question: newPoll.question.trim(),
+          options: newPoll.options,
+          expiresAt: new Date(newPoll.expiresAt).toISOString(),
+          displayLocations: selectedLocations,
+          hideVoteCounts // ✅ NEW
+        })
       });
       if (!res.ok) throw new Error(`Failed: ${res.status}`);
       toast.success('Updated!');
@@ -307,7 +316,6 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
     } catch (e: any) { toast.error(e.message); } finally { setUpdatingPoll(false); }
   };
 
-  // ✅ UPDATED: TypeScript-safe handleEditPoll - no 'as any' needed
   const handleEditPoll = (poll: Poll) => {
     setEditingPollId(poll._id);
     setIsEditing(true);
@@ -325,6 +333,12 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
     setSelectedAnimeIds(
       poll.options?.filter(o => o.animeId && !o.animeId.startsWith('custom_')).map(o => o.animeId!) || []
     );
+    setSelectedLocations(
+      poll.displayLocations && poll.displayLocations.length > 0
+        ? (poll.displayLocations as ('home' | 'detail' | 'downloadLink')[])
+        : ['home', 'detail', 'downloadLink']
+    );
+    setHideVoteCounts(!!poll.hideVoteCounts); // ✅ NEW
     setViewMode('create');
   };
 
@@ -334,6 +348,12 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
       options: poll.options?.map(o => ({ animeId: o.animeId || '', title: o.title, image: o.image || '' })) || [],
       expiresAt: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 16)
     });
+    setSelectedLocations(
+      poll.displayLocations && poll.displayLocations.length > 0
+        ? (poll.displayLocations as ('home' | 'detail' | 'downloadLink')[])
+        : ['home', 'detail', 'downloadLink']
+    );
+    setHideVoteCounts(!!poll.hideVoteCounts); // ✅ NEW — duplicate should copy this too
     setIsEditing(false); setViewMode('create');
   };
 
@@ -395,6 +415,18 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
     setSelectedAnimeIds([]); setCustomOption({ title: '', imageUrl: '' });
     setSearchQuery(''); setEditingIndex(null); setEditedTitle('');
     setEditingPollId(null); setIsEditing(false);
+    setSelectedLocations(['home', 'detail', 'downloadLink']);
+    setHideVoteCounts(false); // ✅ NEW
+  };
+
+  const toggleLocation = (loc: 'home' | 'detail' | 'downloadLink') => {
+    setSelectedLocations(prev => {
+      if (prev.includes(loc)) {
+        if (prev.length === 1) return prev;
+        return prev.filter(l => l !== loc);
+      }
+      return [...prev, loc];
+    });
   };
 
   const isFormValid = !!(newPoll.question.trim() && newPoll.options.length >= 4 && newPoll.options.length <= 10 && newPoll.expiresAt && new Date(newPoll.expiresAt) > new Date());
@@ -402,7 +434,6 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
   const expiredPolls = polls.filter(p => p.isExpired || (p.expiresAt && new Date(p.expiresAt) < new Date()));
   const filteredPolls = showExpired ? expiredPolls : polls.filter(p => !p.isExpired && (!p.expiresAt || new Date(p.expiresAt) >= new Date()));
 
-  // ✅ NEW: Custom Images tab helpers
   const switchBrowseTab = (tab: 'anime' | 'custom') => {
     setBrowseTab(tab);
     setCustomVisibleCount(30);
@@ -416,7 +447,6 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
   const isCustomOptionInPoll = (opt: SavedCustomOption) =>
     newPoll.options.some(o => o.title === opt.title && o.image === opt.image);
 
-  // Infinite scroll: jab grid ke bottom ke paas pahunche, aur 30 images load kar do
   const handleCustomGridScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget;
     if (el.scrollTop + el.clientHeight >= el.scrollHeight - 60) {
@@ -424,7 +454,6 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
     }
   };
 
-  // ✅ Anime grid infinite scroll — no "Load more" button, auto-fetches next page on scroll
   const handleAnimeGridScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget;
     if (!loadingMoreAnime && hasMoreAnime && el.scrollTop + el.clientHeight >= el.scrollHeight - 60) {
@@ -432,7 +461,6 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
     }
   };
 
-  // ✅ NEW: Question list-style toolbar helpers (numbers, roman numerals, alphabets, bullets, arrows, stars)
   const toRoman = (num: number): string => {
     const map: [number, string][] = [
       [1000, 'm'], [900, 'cm'], [500, 'd'], [400, 'cd'],
@@ -462,7 +490,6 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
     const before = question.slice(0, start);
     const after = question.slice(end);
 
-    // next number/letter counted from how many non-empty lines already exist before the cursor
     const n = before.split('\n').filter(l => l.trim() !== '').length + 1;
 
     let prefix = '';
@@ -490,7 +517,6 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
     });
   };
 
-  // ─── STYLES (LIGHTER DARK THEME) ───────────────────────────────────────────
   const S = {
     page:    'min-h-screen bg-[#f8fafc] dark:bg-[#0f1219] text-gray-800 dark:text-gray-100',
     card:    'bg-white dark:bg-[#1a1e2a] border border-gray-200 dark:border-[#2a2f3f] rounded-2xl shadow-sm',
@@ -505,7 +531,6 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
     expand:  'bg-gray-50 dark:bg-[#0d1017] px-4 py-5 border-t border-gray-200 dark:border-[#2a2f3f]',
   };
 
-  // ─── LOADING ───────────────────────────────────────────────────────────────
   if (loading && viewMode === 'manage') {
     return (
       <div className={`${S.page} flex items-center justify-center`}>
@@ -517,15 +542,9 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
     );
   }
 
-  // ─── CREATE / EDIT VIEW ────────────────────────────────────────────────────
   if (viewMode === 'create') {
     return (
-      // ✅ FIX: normal page flow (no h-screen / no nested overflow-y-auto box), so the page
-      // scrolls the regular way — no more "mini window scrolling inside a window" feeling.
-      // Footer uses `sticky bottom-0` instead of `fixed`, so it never floats outside this
-      // component's own boundaries.
       <div className={`${S.page} relative`}>
-        {/* Header */}
         <div className="bg-white/90 dark:bg-[#0f1219]/95 backdrop-blur border-b border-gray-200 dark:border-[#2a2f3f] px-6 py-4">
           <div className="flex items-center justify-between max-w-5xl mx-auto">
             <div className="flex items-center gap-3">
@@ -543,14 +562,12 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
           </div>
         </div>
 
-        {/* Content — scrolls with the normal page, extra bottom padding so the sticky footer never covers it */}
         <div>
           <div className="max-w-5xl mx-auto px-6 py-6 space-y-5">
             {/* Question */}
             <div className={S.card + ' p-5'}>
               <label className="block text-xs font-semibold text-gray-500 dark:text-[#5a6080] uppercase tracking-wider mb-3">Poll Question *</label>
 
-              {/* ✅ Quick list toolbar — click to insert at cursor position */}
               <div className="flex flex-wrap items-center gap-2 mb-3">
                 <span className="text-xs text-gray-400 dark:text-[#3a4055] mr-1">Point add karein:</span>
                 <button type="button" onClick={() => insertListPrefix('number')} className={`${S.btn} ${S.btnGray} py-1.5 px-2.5 text-xs`}>1. 2. 3.</button>
@@ -585,7 +602,54 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
                 onChange={e => setNewPoll({ ...newPoll, expiresAt: e.target.value })} />
             </div>
 
-            {/* ✅ Browse Anime / Custom Images (tabbed) */}
+            {/* Show Poll On */}
+            <div className={S.card + ' p-5'}>
+              <label className="block text-xs font-semibold text-gray-500 dark:text-[#5a6080] uppercase tracking-wider mb-3">
+                Show Poll On <span className="normal-case text-gray-400 dark:text-[#3a4055]">— select one or more pages</span>
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {LOCATIONS.map(loc => {
+                  const selected = selectedLocations.includes(loc.value);
+                  return (
+                    <button
+                      key={loc.value}
+                      type="button"
+                      onClick={() => toggleLocation(loc.value)}
+                      className={`py-2.5 px-3 rounded-xl border text-xs font-semibold transition-all text-left flex items-center gap-2 ${
+                        selected
+                          ? 'bg-violet-600/10 border-violet-500/40 text-violet-600 dark:text-violet-300'
+                          : 'bg-gray-50 dark:bg-[#12151f] border-gray-300 dark:border-[#2a2f3f] text-gray-500 dark:text-[#5a6080]'
+                      }`}
+                    >
+                      <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 ${selected ? 'bg-violet-500 border-violet-400' : 'border-gray-400 dark:border-[#3a4055]'}`}>
+                        {selected && <CheckCircle size={10} className="text-white" />}
+                      </span>
+                      {loc.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* ✅ NEW — Hide vote counts option */}
+            <div className={S.card + ' p-5'}>
+              <label className="flex items-start gap-3 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={hideVoteCounts}
+                  onChange={e => setHideVoteCounts(e.target.checked)}
+                  className="w-5 h-5 mt-0.5 accent-violet-500 rounded"
+                />
+                <span>
+                  <span className="block text-sm font-semibold text-gray-800 dark:text-white">Hide vote counts from users</span>
+                  <span className="block text-xs text-gray-500 dark:text-[#5a6080] mt-0.5">
+                    Jab ON ho, to vote karne ke baad bhi users ko percentage ya total votes nahi dikhenge — sirf unka selected option (✓) dikhega. Aapko admin panel me hamesha poori results dikhengi.
+                  </span>
+                </span>
+              </label>
+            </div>
+
+            {/* Browse Anime / Custom Images (tabbed) */}
             <div className={S.card + ' p-5'}>
               <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                 <div className="flex items-center gap-1 bg-gray-100 dark:bg-[#12151f] border border-gray-200 dark:border-[#2a2f3f] rounded-xl p-1">
@@ -639,8 +703,6 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
                 </>
               ) : (
                 <>
-                  {/* ✅ Custom Images grid — permanently saved, survives poll deletion.
-                      Auto-loads more as you scroll (infinite scroll), no button needed. */}
                   <div onScroll={handleCustomGridScroll} className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-2 max-h-64 overflow-y-auto pr-1">
                     {visibleCustomOptions.map((opt, idx) => {
                       const selected = isCustomOptionInPoll(opt);
@@ -751,7 +813,7 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
               )}
             </div>
 
-            {/* ✅ NEW: Live Preview — exactly kaisa home page par dikhega */}
+            {/* Live Preview */}
             <div className={S.card + ' p-5'}>
               <label className="flex items-center gap-2 text-xs font-semibold text-gray-500 dark:text-[#5a6080] uppercase tracking-wider mb-4">
                 <EyeIcon size={13} /> Home Page Preview
@@ -811,7 +873,7 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
           </div>
         </div>
 
-        {/* Footer — normal bar at the end of the content, no sticky/fixed positioning */}
+        {/* Footer */}
         <div className="bg-white/95 dark:bg-[#0f1219]/95 border-t border-gray-200 dark:border-[#2a2f3f] px-6 py-4">
           <div className="flex items-center justify-between max-w-5xl mx-auto">
             <div className="flex items-center gap-2">
@@ -838,11 +900,8 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
     );
   }
 
-  // ─── MANAGE VIEW ───────────────────────────────────────────────────────────
   return (
     <div className={`${S.page} p-6 space-y-6`}>
-
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
@@ -863,7 +922,6 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
         </div>
       </div>
 
-      {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label: 'Total', value: polls.length, icon: <FileText size={16} />, color: 'text-gray-800 dark:text-white' },
@@ -881,7 +939,6 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
         ))}
       </div>
 
-      {/* Tab */}
       <div className="flex items-center gap-1 bg-gray-100 dark:bg-[#12151f] border border-gray-200 dark:border-[#2a2f3f] rounded-xl p-1 w-fit">
         <button onClick={() => setShowExpired(false)}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${!showExpired ? 'bg-violet-600 text-white shadow-md' : 'text-gray-700 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}`}>
@@ -893,7 +950,6 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
         </button>
       </div>
 
-      {/* Polls Table with Inline Expandable Details */}
       <div className={S.card + ' overflow-hidden'}>
         {filteredPolls.length === 0 ? (
           <div className="text-center py-16">
@@ -932,6 +988,18 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
                           <p className="text-gray-500 dark:text-[#5a6080] text-xs mt-0.5">
                             {poll.createdAt ? new Date(poll.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
                           </p>
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {(poll.displayLocations && poll.displayLocations.length > 0 ? poll.displayLocations : ['home', 'detail', 'downloadLink']).map(loc => (
+                              <span key={loc} className="text-[9px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-[#1f2330] text-gray-500 dark:text-[#5a6080] border border-gray-200 dark:border-[#2a2f3f]">
+                                {LOCATIONS.find(l => l.value === loc)?.label || loc}
+                              </span>
+                            ))}
+                            {poll.hideVoteCounts && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40 ml-1">
+                                Votes Hidden
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className={S.td}>
                           <span className={`${S.badge} ${
@@ -993,12 +1061,10 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
                         </td>
                       </tr>
 
-                      {/* INLINE EXPANDED ROW – shows results & voters */}
                       {isExpanded && (
                         <tr>
                           <td colSpan={6} className={S.expand}>
                             <div className="space-y-5">
-                              {/* Poll Results */}
                               <div>
                                 <h4 className="text-sm font-semibold text-gray-800 dark:text-white flex items-center gap-2 mb-3">
                                   <BarChart3 size={14} className="text-violet-600 dark:text-violet-400" /> Results
@@ -1028,13 +1094,11 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
                                 </div>
                               </div>
 
-                              {/* Voters Breakdown & List */}
                               {(poll.voters as any[])?.length > 0 && (
                                 <div>
                                   <h4 className="text-sm font-semibold text-gray-800 dark:text-white flex items-center gap-2 mb-3">
                                     <Users size={14} className="text-violet-600 dark:text-violet-400" /> Voters
                                   </h4>
-                                  {/* Device breakdown */}
                                   <div className="grid grid-cols-3 gap-3 mb-4">
                                     {['mobile', 'tablet', 'desktop'].map(type => {
                                       const voters = poll.voters as any[];
@@ -1050,7 +1114,6 @@ const PollManager: React.FC<PollManagerProps> = ({ token, apiBase }) => {
                                     })}
                                   </div>
 
-                                  {/* Voters list table */}
                                   <div className="overflow-x-auto">
                                     <div className="grid grid-cols-12 text-[10px] text-gray-500 dark:text-[#5a6080] uppercase tracking-wider px-3 py-2 border-b border-gray-200 dark:border-[#2a2f3f]">
                                       <div className="col-span-1">#</div>

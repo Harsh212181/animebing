@@ -284,6 +284,12 @@ export interface Poll {
 
   // ✅ FIX: isExpired boolean force karne ke liye
   isExpired?: boolean;
+
+  // ✅ NEW — displayLocations: poll kis page par dikhega (home, detail, downloadLink)
+  displayLocations?: ('home' | 'detail' | 'downloadLink')[];
+  
+  // ✅ NEW — true hone par users ko votes/percentage nahi dikhega
+  hideVoteCounts?: boolean;
 }
 
 /* =========================
@@ -332,6 +338,7 @@ export interface CreatePollData {
   options: PollFormOption[];
   expiresAt?: string;
   isActive?: boolean;
+  displayLocations?: ('home' | 'detail' | 'downloadLink')[]; // ✅ NEW
 }
 
 /* =========================

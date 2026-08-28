@@ -9,6 +9,7 @@ import SEO from '../src/components/SEO';
 import PollCard from './PollCard';
 import { useAnimeContext } from '../src/context/AnimeContext';
 import AppDownloadPopup from './AppDownloadPopup';
+import SpecialModeBanner from '../src/components/SpecialModeBanner'; // 🆕 Import
 import { matchesContentTypeFilter } from '../src/utils/contentGroup';
 
 interface Props {
@@ -80,12 +81,6 @@ const HomePage: React.FC<Props> = ({
   const [isPollActive, setIsPollActive] = useState(false);
   const [pollChecked, setPollChecked] = useState(false);
 
-  const [specialMode, setSpecialMode] = useState<{
-    active: boolean;
-    name?: string;
-    bannerText?: string;
-  }>({ active: false });
-
   // URL is the single source of truth for filter / contentType.
   // Header.tsx (and this page's own mobile buttons) only ever change the URL —
   // never call setFilter/setContentType directly — so this effect is the ONLY
@@ -140,31 +135,18 @@ const HomePage: React.FC<Props> = ({
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch special mode
-  useEffect(() => {
-    const fetchSpecialMode = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/special-modes/active`);
-        const data = await res.json();
-        setSpecialMode(data);
-      } catch {
-        setSpecialMode({ active: false });
-      }
-    };
-    fetchSpecialMode();
-  }, []);
-
   // Poll check
   const checkPollStatus = useCallback(async () => {
     try {
-      const res = await fetch(`${POLL_API_URL}/active`, {
+      const res = await fetch(`${POLL_API_URL}/active?location=home`, {
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
       });
       if (!res.ok) return false;
       const contentTypeHeader = res.headers.get('content-type');
       if (!contentTypeHeader || !contentTypeHeader.includes('application/json')) return false;
       const data = await res.json();
-      return data.success && data.poll && data.poll.isActive !== false;
+      const list = data.polls || (data.poll ? [data.poll] : []);
+      return data.success && list.length > 0;
     } catch {
       return false;
     }
@@ -375,25 +357,8 @@ const HomePage: React.FC<Props> = ({
 
         <div className="homepage-content-container mx-auto px-2 sm:px-3 py-2 lg:py-4">
 
-          {!searchQuery && !isSearching && specialMode.active && (
-            <div className="mb-6 transform hover:scale-[1.02] transition-transform duration-300">
-              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-purple-600 via-pink-500 to-orange-500 p-1 shadow-2xl">
-                <div className="absolute inset-0 bg-gradient-to-r from-yellow-300/20 via-transparent to-purple-300/20 animate-shimmer" />
-                <div className="relative rounded-xl bg-gradient-to-br from-purple-900/90 to-purple-800/90 px-4 sm:px-6 py-3 sm:py-4 backdrop-blur-sm border border-white/20">
-                  <div className="flex items-center gap-2 sm:gap-3">
-                    <span className="text-3xl sm:text-4xl animate-bounce">🎉</span>
-                    <div>
-                      <h3 className="text-lg sm:text-xl lg:text-2xl font-extrabold bg-gradient-to-r from-yellow-300 to-pink-300 bg-clip-text text-transparent">
-                        {specialMode.name}!
-                      </h3>
-                      <p className="text-xs sm:text-sm lg:text-base text-white">
-                        {specialMode.bannerText}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+          {!searchQuery && !isSearching && (
+            <SpecialModeBanner location="home" className="mb-6" />
           )}
 
           {!searchQuery && !isSearching && featuredAnimes.length > 0 && (
@@ -412,7 +377,7 @@ const HomePage: React.FC<Props> = ({
                 <span className="bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mx-2">Community</span>
                 <span className="text-purple-300">🪶</span>
               </h2>
-              <PollCard onVoteSuccess={() => {}} />
+              <PollCard onVoteSuccess={() => {}} location="home" />
             </div>
           )}
 

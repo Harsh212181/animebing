@@ -1,4 +1,4 @@
- // App.tsx -  
+// App.tsx -  
 import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
@@ -17,6 +17,7 @@ import TermsAndConditions from './components/TermsAndConditions';
 import Contact from './components/Contact';
 import AnalyticsTracker from './src/components/AnalyticsTracker';
 import AnimeDetailWrapper from './components/AnimeDetailWrapper';
+import PublicFormPage from  './src/components/PublicFormPage'; // ✅ NEW
 
 import { AnimeProvider } from './src/context/AnimeContext';
 
@@ -960,6 +961,12 @@ const MainApp: React.FC = () => {
                 <Route path="/welcome" element={
                   <div className="rounded-none sm:rounded-lg overflow-hidden glow-green-border">
                     <WelcomePage />
+                  </div>
+                } />
+                {/* ✅ NEW — Public form page route */}
+                <Route path="/form/:slug" element={
+                  <div className="rounded-none sm:rounded-lg overflow-hidden">
+                    <PublicFormPage />
                   </div>
                 } />
                 <Route path="*" element={

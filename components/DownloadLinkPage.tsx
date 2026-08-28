@@ -8,7 +8,9 @@ import { isYouTubeUrl } from './utils/videoHelpers';
 import { DownloadPage, Anime } from '../src/types';
 import { captureTokenFromUrl, completeFunnel } from '../utils/clickFunnel';
 import { getContentGroup } from '../src/utils/contentGroup';
-import { startActivity, sendHeartbeat, endActivity } from '../utils/watchActivity';   // ✅ NEW
+import { startActivity, sendHeartbeat, endActivity } from '../utils/watchActivity';
+import SpecialModeBanner from '../src/components/SpecialModeBanner'; // ✅ NEW import
+import PollCard from './PollCard'; // ✅ NEW import
 
 const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
 
@@ -530,6 +532,9 @@ const DownloadLinkPage: React.FC = () => {
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900/20 to-black py-8 px-4">
       <div className="w-full max-w-7xl mx-auto">
 
+        {/* ✅ NEW — Special mode banner (agar download-link page ke liye enabled hai) */}
+        <SpecialModeBanner location="downloadLink" className="mb-4" />
+
         {/* Banner-style hero — same look as FeaturedAnimeCarousel banner slide */}
         <div className="mb-4 lg:mb-6">
           <AnimeBannerHero />
@@ -595,6 +600,11 @@ const DownloadLinkPage: React.FC = () => {
           </div>
         </div>
 
+        {/* ✅ NEW — Poll, watch/download links se turant upar */}
+        <div className="mb-6">
+          <PollCard onVoteSuccess={() => {}} location="downloadLink" />
+        </div>
+
         <div className="mb-4">
           <span className="text-lg font-medium bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">{page.title}</span>
         </div>
@@ -647,7 +657,7 @@ const DownloadLinkPage: React.FC = () => {
                         key="active-youtube-player"
                         videoUrl={sortedWatchLinks[selectedIndex].url}
                         title={title}
-                        playerMode={page.defaultPlayerMode || 'default'}   // ✅ CHANGED — ab page-level se aata hai
+                        playerMode={page.defaultPlayerMode || 'default'}
                         onNextEpisode={() => setSelectedIndex(selectedIndex + 1)}
                         onPreviousEpisode={() => setSelectedIndex(selectedIndex - 1)}
                         hasNextEpisode={!isMovie && selectedIndex < sortedWatchLinks.length - 1}

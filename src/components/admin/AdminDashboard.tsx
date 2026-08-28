@@ -21,6 +21,7 @@ import NotesManager from './NotesManager';
 import TrackListManager from './TrackListManager';
 import InstagramAutomationManager from './InstagramAutomationManager';
 import UserActivityManager from './UserActivityManager';   // ✅ NEW
+import FormBuilderManager from './FormBuilderManager'; // ✅ NEW
 import Spinner from '../Spinner';
 import axios from 'axios';
 
@@ -87,6 +88,7 @@ const ICONS: Record<string, string> = {
   trackList:       'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z',
   instagram:       'M12 3l2.6 5.6 6.1.6-4.5 4.2 1.3 6-5.5-3-5.5 3 1.3-6-4.5-4.2 6.1-.6L12 3z',
   userActivity:    'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m6-4a2 2 0 100-4 2 2 0 000 4zm0 0v4m0-4V9', // ✅ NEW — clock/eye style
+  forms:           'M9 12h6m-6 4h4m1 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', // ✅ NEW
   // 🆕 Mobile icons
   menu:            'M4 6h16M4 12h16M4 18h16',
   close:           'M6 18L18 6M6 6l12 12',
@@ -113,6 +115,7 @@ const TAB_LABELS: Record<string, string> = {
   trackList:       'Track List',
   instagram:       'Instagram Tool',
   userActivity:    'User Activity',   // ✅ NEW
+  forms:           'Form Builder',     // ✅ NEW
 };
 
 // ─── renderTab function ──────────────────────────────────────────────────────
@@ -138,6 +141,7 @@ function renderTab(tabId: string, token: string) {
     case 'trackList':      return <TrackListManager />;
     case 'instagram':      return <InstagramAutomationManager token={token} apiBase={API_BASE} />;
     case 'userActivity':   return <UserActivityManager token={token} />;   // ✅ NEW
+    case 'forms':          return <FormBuilderManager token={token} />;    // ✅ NEW
     default:               return <AnimeListTable token={token} isMainAdmin={true} />;
   }
 }
@@ -633,6 +637,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             <NavItem tabId="social"          activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
             <NavItem tabId="notes"           activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
             <NavItem tabId="trackList"       activeTab={activeTab} collapsed={false} onClick={handleTabChange} badge={trackUnreadCount} />
+            <NavItem tabId="forms"           activeTab={activeTab} collapsed={false} onClick={handleTabChange} />  {/* ✅ NEW */}
           </SidebarSection>
           <SidebarSection label="Downloads">
             <NavItem tabId="downloadPages"   activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
@@ -718,6 +723,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             <NavItem tabId="social"          activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
             <NavItem tabId="notes"           activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
             <NavItem tabId="trackList"       activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} badge={trackUnreadCount} />
+            <NavItem tabId="forms"           activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />  {/* ✅ NEW */}
           </SidebarSection>
           <SidebarSection label="Downloads">
             <NavItem tabId="downloadPages"   activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />

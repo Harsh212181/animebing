@@ -31,7 +31,8 @@ import instagramWebhookRoutes from './routes/instagramWebhookRoutes'
 import instagramAuthRoutes from './routes/instagramAuthRoutes'
 import instagramAutomationRoutes from './routes/instagramAutomationRoutes'
 import watchActivityRoutes from './routes/watchActivityRoutes'
-import { runQueueChain } from './services/instagramQueueService'   // 👈 CHANGED: processInstagramDMQueue → runQueueChain
+import { runQueueChain } from './services/instagramQueueService'
+import formRoutes from './routes/formRoutes' // ✅ NEW
 
 export type Env = {
   MONGODB_URI: string
@@ -126,6 +127,7 @@ app.route('/api/notes', notesRoutes)
 app.route('/api/track', trackRoutes)
 app.route('/api/link-generator', linkGeneratorRoutes)
 app.route('/api/watch-activity', watchActivityRoutes)
+app.route('/api/forms', formRoutes) // ✅ NEW
 
 // ============ INSTAGRAM WEBHOOK (comment → DM automation) ============
 app.route('/', instagramWebhookRoutes)

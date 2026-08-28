@@ -13,9 +13,11 @@ import DownloadPageManager from './DownloadPageManager';
 import ShortenerManager from './ShortenerManager';
 import ShortUsersManager from './ShortUsersManager';
 import SubAdminPageViewManager from './SubAdminPageViewManager';
+import UserActivityManager from './UserActivityManager';
 import AnimeLinkControlManager from './AnimeLinkControlManager';
-import NotesManager from './NotesManager'; // 👈 Notes import
-import TrackListManager from './TrackListManager'; // 🆕 Track List import
+import NotesManager from './NotesManager';
+import TrackListManager from './TrackListManager';
+import InstagramAutomationManager from './InstagramAutomationManager';
 import Spinner from '../Spinner';
 import axios from 'axios';
 
@@ -55,15 +57,17 @@ const ICONS: Record<string, string> = {
   shortenerLinks:  'M9 15l6-6M8.5 8.5L11 6a3.5 3.5 0 115 5l-2.5 2.5M15.5 15.5L13 18a3.5 3.5 0 11-5-5l2.5-2.5',
   shortenerUsers:  'M5 20a5 5 0 0110 0M10 11a3 3 0 100-6 3 3 0 000 6zM17 20a4 4 0 00-3-3.87M14.5 8.13A3 3 0 1116 14',
   pageviews:       'M3 12s3.5-6.5 9-6.5S21 12 21 12s-3.5 6.5-9 6.5S3 12 3 12z M12 14.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z',
+  useractivity:    'M4 20h16M5 20V15M9 20V10M13 20V12M17 20V7', // 🆕 Changed to bar chart (unique)
   linkControl:     'M10 14a4 4 0 005.66 0l3-3a4 4 0 10-5.66-5.66l-1 1M14 10a4 4 0 00-5.66 0l-3 3a4 4 0 105.66 5.66l1-1',
   refresh:         'M4 4v5h5M20 20v-5h-5M4.5 9A8 8 0 0119 8M19.5 15A8 8 0 015 16',
   logout:          'M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9',
   pin:             'M12 2l1.5 4.5L18 8l-4.5 1.5L12 14l-1.5-4.5L6 8l4.5-1.5L12 2zM12 14v8',
   chevron:         'M9 18l6-6-6-6',
-  notes:           'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', // 👈 Notes icon
-  tracklist:       'M4 6h16M4 10h16M4 14h10 M18 15l2 2 4-4', // 🆕 Track List icon
-  menu:            'M4 6h16M4 12h16M4 18h16', // 📱 Hamburger icon
-  close:           'M6 18L18 6M6 6l12 12', // 📱 Close icon
+  notes:           'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
+  tracklist:       'M4 6h16M4 10h16M4 14h10 M18 15l2 2 4-4',
+  instagram:       'M3 8a2 2 0 012-2h2l1.5-2h7L17 6h2a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V8z M12 15a3 3 0 100-6 3 3 0 000 6z',
+  menu:            'M4 6h16M4 12h16M4 18h16',
+  close:           'M6 18L18 6M6 6l12 12',
 };
 
 const TAB_LABELS: Record<string, string> = {
@@ -79,9 +83,11 @@ const TAB_LABELS: Record<string, string> = {
   shortenerLinks:  'Shortener Links',
   shortenerUsers:  'Shortener Users',
   pageviews:       'Analytics',
+  useractivity:    'User Activity',
   linkControl:     'Link Control',
-  notes:           'Notes', // 👈 Notes label
-  tracklist:       'Track List', // 🆕 Track List label
+  notes:           'Notes',
+  tracklist:       'Track List',
+  instagram:       'Instagram Automation',
 };
 
 const TAB_PERMISSIONS: Record<string, string | null> = {
@@ -97,17 +103,19 @@ const TAB_PERMISSIONS: Record<string, string | null> = {
   shortenerLinks:  'shortener',
   shortenerUsers:  'shortener',
   pageviews:       'pageviews',
+  useractivity:    'useractivity',
   linkControl:     'link-control',
-  notes:           'notes', // 👈 Notes permission
-  tracklist:       'tracklist', // 🆕 Track List permission
+  notes:           'notes',
+  tracklist:       'tracklist',
+  instagram:       'instagram',
 };
 
 // ─── Sidebar sections ──────────────────────────────────────────────
 const SIDEBAR_SECTIONS = [
   { id: 'content', label: 'Content', tabs: ['list', 'add', 'episodes', 'episode-status'] },
-  { id: 'engagement', label: 'Engagement', tabs: ['polls', 'social', 'reports', 'notes'] }, // 👈 notes added
-  { id: 'links', label: 'Links & Downloads', tabs: ['downloadPages', 'partners', 'shortenerLinks', 'shortenerUsers', 'linkControl', 'tracklist'] }, // 🆕 tracklist added
-  { id: 'analytics', label: 'Analytics', tabs: ['pageviews'] },
+  { id: 'engagement', label: 'Engagement', tabs: ['polls', 'social', 'reports', 'notes', 'instagram'] },
+  { id: 'links', label: 'Links & Downloads', tabs: ['downloadPages', 'partners', 'shortenerLinks', 'shortenerUsers', 'linkControl', 'tracklist'] },
+  { id: 'analytics', label: 'Analytics', tabs: ['pageviews', 'useractivity'] },
 ];
 
 // ─── User Avatar ─────────────────────────────────────────────────────
@@ -230,7 +238,6 @@ const SidebarSection: React.FC<{ label: string; children: React.ReactNode }> = (
 );
 
 // ─── Tab Content ─────────────────────────────────────────────────────
-// Har tab ka component render karne wala helper — same switch, bas function bana diya
 function renderTab(tabId: string, token: string) {
   switch (tabId) {
     case 'list':           return <AnimeListTable token={token} />;
@@ -245,9 +252,11 @@ function renderTab(tabId: string, token: string) {
     case 'shortenerLinks': return <ShortenerManager token={token} subAdminMode />;
     case 'shortenerUsers': return <ShortUsersManager token={token} subAdminMode />;
     case 'pageviews':      return <SubAdminPageViewManager token={token} />;
+    case 'useractivity':   return <UserActivityManager token={token} subAdminMode />;
     case 'linkControl':    return <AnimeLinkControlManager token={token} />;
     case 'notes':          return <NotesManager token={token} apiBase={API_BASE} />;
     case 'tracklist':      return <TrackListManager />;
+    case 'instagram':      return <InstagramAutomationManager token={token} apiBase={API_BASE} subAdminMode />;
     default:               return null;
   }
 }
@@ -310,11 +319,10 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
 
   const [activeTab, setActiveTab] = useState(visibleTabs[0] || 'list');
 
-  // 🆕 Sirf woh tabs mount karo jo user ne kabhi khole hain
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set([visibleTabs[0] || 'list']));
 
   useEffect(() => {
-    if (!canAccessTab(activeTab)) return; // permission na ho to mount hi mat karo
+    if (!canAccessTab(activeTab)) return;
     setVisitedTabs(prev => {
       if (prev.has(activeTab)) return prev;
       const next = new Set(prev);
@@ -325,7 +333,7 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [sidebarPinned, setSidebarPinned] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false); // 📱 mobile drawer state
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleSidebarMouseEnter = () => {
@@ -338,13 +346,11 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
     hoverTimeout.current = setTimeout(() => setSidebarCollapsed(true), 300);
   };
 
-  // 📱 Close the mobile drawer whenever a tab is picked
   const handleMobileNavClick = (tabId: string) => {
     setActiveTab(tabId);
     setMobileMenuOpen(false);
   };
 
-  // 📱 Lock body scroll while the mobile drawer is open
   useEffect(() => {
     document.body.style.overflow = mobileMenuOpen ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
@@ -416,7 +422,6 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
-  // ✅ Changed: no confirm popup, direct logout
   const handleLogout = () => {
     sessionStorage.removeItem('subAdminToken');
     sessionStorage.removeItem('subAdminUsername');
@@ -468,7 +473,7 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
         <div className="absolute -bottom-40 -right-20 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl" />
       </div>
 
-      {/* ─── Icon Strip (desktop/tablet only — hidden on phones) ───────── */}
+      {/* ─── Icon Strip (desktop/tablet only) ───────── */}
       <div
         onMouseEnter={handleSidebarMouseEnter}
         onMouseLeave={handleSidebarMouseLeave}
@@ -564,7 +569,7 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
         </div>
       </aside>
 
-      {/* ─── 📱 Mobile Drawer (phones only — opened via hamburger in header) ─── */}
+      {/* ─── 📱 Mobile Drawer (phones only) ─── */}
       {/* Backdrop */}
       <div
         onClick={() => setMobileMenuOpen(false)}

@@ -490,8 +490,8 @@ analyticsRoutes.get('/sub-admins-list', adminAuth, async (c) => {
 
 // ─── GET /api/analytics/sub-admin-stats ───────────────────────────────────
 // Per-sub-admin summary: anime count, download pages, total views,
-// shortener users, links, and clicks. Main admin only — powers the
-// SubAdminManager overview cards.
+// shortener users, links, clicks, and Instagram accounts.
+// Main admin only — powers the SubAdminManager overview cards.
 analyticsRoutes.get('/sub-admin-stats', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
@@ -541,6 +541,10 @@ analyticsRoutes.get('/sub-admin-stats', adminAuth, async (c) => {
 
       const totalClicks = shortUsers.reduce((sum: number, u: any) => sum + (u.totalClicks || 0), 0)
 
+      // ── Instagram automation accounts ────────────────────────────────
+      const instagramAccountsCount = await db.collection('instagramAccounts')
+        .countDocuments({ createdBy: subAdminId })
+
       return {
         subAdminId,
         username: sa.username,
@@ -551,6 +555,7 @@ analyticsRoutes.get('/sub-admin-stats', adminAuth, async (c) => {
         shortUsersCount: shortUsers.length,
         linksCount: linksByUser + linksAssignedDirectly,
         totalClicks,
+        instagramAccountsCount,
       }
     }))
 

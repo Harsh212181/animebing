@@ -25,15 +25,8 @@ interface Poll {
   userVoteOption?: string;
   votersCount?: number;
   isExpired?: boolean;
-}
-
-interface VoteResponse {
-  success: boolean;
-  message?: string;
-  totalVotes: number;
-  optionVotes: number;
-  userHasVoted?: boolean;
-  userVoteOption?: string;
+  displayLocations?: string[];
+  hideVoteCounts?: boolean;   // ✅ NEW
 }
 
 const getDeviceId = (): string => {
@@ -62,24 +55,6 @@ const getDeviceType = (): 'mobile' | 'tablet' | 'desktop' | 'unknown' => {
 
 const deviceType = getDeviceType();
 
-interface VoteStatus {
-  voted: boolean;
-  optionId?: string;
-  timestamp?: number;
-}
-
-const getLocalVoteStatus = (pollId: string): VoteStatus | false => {
-  if (typeof window === 'undefined') return false;
-  try {
-    const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
-    const voteData = votedPolls[pollId];
-    if (typeof voteData === 'boolean') return { voted: voteData };
-    return voteData || false;
-  } catch {
-    return false;
-  }
-};
-
 const setLocalVoteStatus = (pollId: string, optionId?: string) => {
   if (typeof window === 'undefined') return;
   try {
@@ -91,11 +66,6 @@ const setLocalVoteStatus = (pollId: string, optionId?: string) => {
   }
 };
 
-// ✅ FIX: previously this only linkified URLs but ignored newlines, so numbered
-// points typed like "1. abc\n2. def" collapsed onto one line. Now it splits by
-// line first (so each point renders on its own line, stacked vertically — same
-// on mobile and PC since the card is always single-column) and still linkifies
-// any URLs within each line.
 const makeTextClickable = (text: string): React.ReactNode[] => {
   if (!text) return [];
   const urlRegex = /(https?:\/\/[^\s<]+)/gi;
@@ -126,100 +96,20 @@ const AvatarFallback = () => (
   </div>
 );
 
-interface PollCardProps {
-  onVoteSuccess?: () => void;
-}
-
-const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
-  const [poll, setPoll] = useState<Poll | null>(null);
-  const [loading, setLoading] = useState(true);
+// ✅ NEW — single poll ka poora UI + voting logic, per-poll isolated state ke saath
+const SinglePollCard: React.FC<{ poll: Poll; onVoteSuccess?: () => void; onRefresh: () => void }> = ({ poll, onVoteSuccess, onRefresh }) => {
   const [voting, setVoting] = useState(false);
-  const [hasVoted, setHasVoted] = useState(false);
-  const [selectedOption, setSelectedOption] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isActive, setIsActive] = useState(false);
-  const [userVoteOption, setUserVoteOption] = useState<string | null>(null);
+  const [hasVoted, setHasVoted] = useState(!!poll.userHasVoted);
+  const [selectedOption, setSelectedOption] = useState<string | null>(poll.userVoteOption || null);
   const [avatarError, setAvatarError] = useState(false);
 
-  const loadPoll = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const res = await fetch(`${API_BASE_URL}/polls/active?deviceId=${encodeURIComponent(deviceId)}`, {
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'Cache-Control': 'no-cache' },
-        cache: 'no-cache',
-      });
-
-      if (res.status === 404) {
-        setPoll(null);
-        setIsActive(false);
-        return;
-      }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-      const data = await res.json();
-      if (!data.success || !data.poll) {
-        setPoll(null);
-        setIsActive(false);
-        return;
-      }
-
-      const pollData = data.poll;
-      if (!pollData.isActive || (pollData.expiresAt && new Date(pollData.expiresAt) < new Date())) {
-        setPoll(null);
-        setIsActive(false);
-        return;
-      }
-
-      const userHasVoted = pollData.userHasVoted || false;
-      const userVoteOption = pollData.userVoteOption || null;
-
-      if (userHasVoted) {
-        setHasVoted(true);
-        setUserVoteOption(userVoteOption);
-        setSelectedOption(userVoteOption);
-        setLocalVoteStatus(pollData._id, userVoteOption);
-      } else {
-        setHasVoted(false);
-        setUserVoteOption(null);
-        setSelectedOption(null);
-      }
-
-      const totalVotes = pollData.totalVotes || 0;
-      const optionsWithPercentage = pollData.options.map((opt: any) => ({
-        ...opt,
-        votes: opt.votes || 0,
-        percentage: totalVotes > 0 ? Math.round((opt.votes / totalVotes) * 100) : 0,
-      }));
-
-      setPoll({ ...pollData, userHasVoted, userVoteOption, options: optionsWithPercentage });
-      setIsActive(true);
-    } catch (err: any) {
-      console.error('❌ Error loading poll:', err);
-      setError('Failed to load poll');
-      setIsActive(false);
-      setPoll(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []); // stable reference
-
-  // Initial poll load on mount
   useEffect(() => {
-    loadPoll();
-  }, []);
-
-  // Auto-refresh if poll is active and user hasn't voted
-  useEffect(() => {
-    if (!hasVoted && isActive) {
-      const interval = setInterval(loadPoll, 30000);
-      return () => clearInterval(interval);
-    }
-  }, [hasVoted, isActive, loadPoll]);
+    setHasVoted(!!poll.userHasVoted);
+    setSelectedOption(poll.userVoteOption || null);
+  }, [poll.userHasVoted, poll.userVoteOption]);
 
   const handleVote = async (optionId: string) => {
-    if (!poll || hasVoted || voting) return;
+    if (hasVoted || voting) return;
     if (!deviceId || deviceId === 'server') {
       alert('Device identifier not available. Please refresh.');
       return;
@@ -235,27 +125,21 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
         body: JSON.stringify({ pollId: poll._id, optionId, deviceId, deviceType }),
       });
 
-      const result: VoteResponse = await res.json();
+      const result = await res.json();
 
       if (!res.ok) {
         if (result.message?.toLowerCase().includes('already voted')) {
           setHasVoted(true);
           setLocalVoteStatus(poll._id, optionId);
-          // Already voted, no need to reload
           return;
         }
         throw new Error(result.message || 'Vote failed');
       }
 
-      // ✅ Vote successful: update state and then reload fresh data
       setHasVoted(true);
-      setUserVoteOption(optionId);
       setLocalVoteStatus(poll._id, optionId);
       if (onVoteSuccess) onVoteSuccess();
-
-      // Fresh data lo backend se - correct percentages ke liye
-      await loadPoll();
-
+      onRefresh();
     } catch (err: any) {
       console.error('❌ Vote error:', err);
       alert('Failed to vote. Please try again.');
@@ -264,12 +148,7 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
     }
   };
 
-  if (!isActive) return null;
-  if (loading) return <div className="p-4 bg-[#1a1a1a] rounded-lg border border-gray-700 animate-pulse">Loading...</div>;
-  if (error || !poll) return null;
-
   const totalVotes = poll.totalVotes || poll.options.reduce((sum, opt) => sum + (opt.votes || 0), 0);
-  const isUserVoteOption = userVoteOption || poll.userVoteOption;
 
   return (
     <div className="w-full bg-[#1a1a1a] rounded-lg border border-gray-700 overflow-hidden mb-4">
@@ -293,8 +172,6 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
       </div>
 
       <div className="px-3 pt-2 pb-3">
-        {/* ✅ whitespace-pre-line + line-aware rendering so numbered points (1. .. / 2. ..)
-            each show on their own line, same on mobile & desktop */}
         <h3 className="text-sm font-semibold text-gray-100 break-words whitespace-pre-line">
           {makeTextClickable(poll.question)}
         </h3>
@@ -304,7 +181,7 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
         {poll.options.map(opt => {
           const percentage = opt.percentage || 0;
           const isSelected = selectedOption === opt._id;
-          const isUserVote = hasVoted && isUserVoteOption === opt._id;
+          const isUserVote = hasVoted && selectedOption === opt._id;
 
           return (
             <div
@@ -321,6 +198,7 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
               } ${isSelected && voting ? 'ring-2 ring-blue-500' : ''}`}
               style={{ padding: hasVoted ? '0.2rem 0.5rem 0.2rem 0.2rem' : '0.2rem' }}
             >
+              {/* ✅ Bar hamesha dikhega jab vote ho chuka ho — chahe hideVoteCounts ON ho ya OFF */}
               {hasVoted && (
                 <div className="absolute inset-0 bg-gray-800 rounded-md overflow-hidden">
                   <div className="h-full bg-gray-700 transition-all duration-700 ease-out" style={{ width: `${percentage}%` }} />
@@ -357,6 +235,7 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
                   ) : (
                     <div className="flex items-center">
                       {isUserVote && <span className="text-xs text-green-400 mr-2 font-medium">✓</span>}
+                      {/* ✅ Percentage hamesha dikhega */}
                       <span className="text-sm md:text-base font-bold text-gray-300">{percentage}%</span>
                     </div>
                   )}
@@ -369,13 +248,96 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess }) => {
 
       <div className="px-3 py-2 border-t border-gray-800">
         <div className="flex justify-between items-center">
-          <span className="text-xs text-gray-500">
-            {totalVotes} {totalVotes === 1 ? 'vote' : 'votes'}
-          </span>
+          {/* ✅ sirf total-votes number hide hota hai, jab hideVoteCounts ON ho */}
+          {!poll.hideVoteCounts ? (
+            <span className="text-xs text-gray-500">
+              {totalVotes} {totalVotes === 1 ? 'vote' : 'votes'}
+            </span>
+          ) : <span />}
           {!hasVoted && !voting && <span className="text-xs text-gray-400">Click to vote</span>}
         </div>
       </div>
     </div>
+  );
+};
+
+interface PollCardProps {
+  onVoteSuccess?: () => void;
+  // ✅ NEW — kis page pe render ho raha hai, sirf usi location ke liye enabled polls fetch honge
+  location: 'home' | 'detail' | 'downloadLink';
+}
+
+const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess, location }) => {
+  const [polls, setPolls] = useState<Poll[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadPolls = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const res = await fetch(`${API_BASE_URL}/polls/active?deviceId=${encodeURIComponent(deviceId)}&location=${encodeURIComponent(location)}`, {
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'Cache-Control': 'no-cache' },
+        cache: 'no-cache',
+      });
+
+      if (res.status === 404) {
+        setPolls([]);
+        return;
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const data = await res.json();
+      const list: Poll[] = data.polls || (data.poll ? [data.poll] : []);
+
+      const now = new Date();
+      const valid = list.filter(p => p.isActive && (!p.expiresAt || new Date(p.expiresAt) >= now));
+
+      const withPercentage = valid.map(p => {
+        const totalVotes = p.totalVotes || 0;
+        return {
+          ...p,
+          options: p.options.map(opt => ({
+            ...opt,
+            votes: opt.votes || 0,
+            percentage: totalVotes > 0 ? Math.round((opt.votes / totalVotes) * 100) : 0,
+          })),
+        };
+      });
+
+      setPolls(withPercentage);
+    } catch (err: any) {
+      console.error('❌ Error loading polls:', err);
+      setError('Failed to load polls');
+      setPolls([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [location]);
+
+  useEffect(() => {
+    loadPolls();
+  }, [loadPolls]);
+
+  // ✅ Auto-refresh sirf tab jab koi poll ho jisme user ne vote nahi kiya
+  useEffect(() => {
+    const anyUnvoted = polls.some(p => !p.userHasVoted);
+    if (anyUnvoted) {
+      const interval = setInterval(loadPolls, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [polls, loadPolls]);
+
+  if (loading && polls.length === 0) return <div className="p-4 bg-[#1a1a1a] rounded-lg border border-gray-700 animate-pulse">Loading...</div>;
+  if (error || polls.length === 0) return null;
+
+  return (
+    <>
+      {polls.map(poll => (
+        <SinglePollCard key={poll._id} poll={poll} onVoteSuccess={onVoteSuccess} onRefresh={loadPolls} />
+      ))}
+    </>
   );
 };
 

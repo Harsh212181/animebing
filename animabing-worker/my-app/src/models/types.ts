@@ -135,6 +135,8 @@ export interface IPoll {
   isActive?: boolean
   totalVotes?: number
   voters?: IVoter[]
+  displayLocations?: ('home' | 'detail' | 'downloadLink')[]   // ✅ NEW
+  hideVoteCounts?: boolean   // ✅ NEW — true hone par users ko votes/percentage nahi dikhega
   createdAt?: Date
   updatedAt?: Date
 }
@@ -457,6 +459,8 @@ export interface ISpecialMode {
   bannerText?: string
   isEnabled: boolean
   forceLink5Only?: boolean
+  // ✅ NEW — banner kahan-kahan dikhega. Missing/undefined = purane modes ke liye default sabhi jagah
+  displayLocations?: ('home' | 'detail' | 'downloadLink')[]
   createdAt?: Date
   updatedAt?: Date
 }
@@ -666,4 +670,54 @@ export interface IWatchActivity {
   endedAt?: Date
   createdAt?: Date
   updatedAt?: Date
+}
+
+// ============ FORM BUILDER (Google-Forms-jaisa) ============
+export type FormFieldType =
+  | 'text'
+  | 'textarea'
+  | 'email'
+  | 'number'
+  | 'date'
+  | 'radio'
+  | 'checkbox'
+  | 'dropdown'
+
+export interface IFormField {
+  id: string                 // e.g. 'f_1699999999_1' — unique within the form
+  type: FormFieldType
+  label: string
+  placeholder?: string
+  required?: boolean
+  options?: string[]         // radio / checkbox / dropdown ke liye
+  order: number
+}
+
+export interface IForm {
+  _id?: ObjectId
+  title: string
+  description?: string
+  slug: string                // public URL: /form/:slug
+  fields: IFormField[]
+  isActive?: boolean          // false = public submit band, "closed" jaisa
+  submissionCount?: number
+  createdBy?: string
+  createdByUsername?: string
+  createdAt?: Date
+  updatedAt?: Date
+}
+
+export interface IFormAnswer {
+  fieldId: string
+  label: string                 // submit ke waqt ka label snapshot (form baad me edit ho sakta hai)
+  value: string | string[]
+}
+
+export interface IFormSubmission {
+  _id?: ObjectId
+  formId: ObjectId
+  answers: IFormAnswer[]
+  ip?: string
+  userAgent?: string
+  submittedAt: Date
 }

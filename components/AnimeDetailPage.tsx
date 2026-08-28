@@ -17,6 +17,8 @@ import SEO from '../src/components/SEO';
 import ShareIcon from './icons/ShareIcon';
 import { captureTokenFromUrl, advanceFunnel, completeFunnel, appendTokenToPath } from '../utils/clickFunnel';
 import { getContentGroup } from '../src/utils/contentGroup';
+import SpecialModeBanner from '../src/components/SpecialModeBanner';
+import PollCard from './PollCard'; // ✅ NEW IMPORT
 
 // Simple SVG Icons for Like/Dislike
 const HeartIcon = ({ className = "w-5 h-5", filled = false }: { className?: string, filled?: boolean }) => (
@@ -571,6 +573,9 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
             Back to Home
           </button>
 
+          {/* ✅ NEW — Special mode banner (agar detail page ke liye enabled hai) */}
+          <SpecialModeBanner location="detail" className="mb-4" />
+
           {/* ========== BANNER HERO (from DownloadLinkPage) ========== */}
           {/* MOBILE BANNER */}
           <div className="block lg:hidden mb-4">
@@ -767,6 +772,11 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* ✅ NEW — Poll, episodes/chapters list se turant upar */}
+          <div className="mb-6">
+            <PollCard onVoteSuccess={() => {}} location="detail" />
           </div>
 
           {/* ========== SESSIONS / EPISODES / CHAPTERS ========== */}

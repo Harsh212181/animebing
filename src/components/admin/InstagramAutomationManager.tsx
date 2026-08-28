@@ -13,6 +13,8 @@ interface InstagramAccount {
   isActive: boolean;
   connectedAt?: string;
   profilePictureUrl?: string | null;
+  createdBy?: string | null;
+  createdByUsername?: string;
 }
 
 interface InstagramPost {
@@ -353,9 +355,10 @@ const LogRow: React.FC<{ log: AutomationLog }> = ({ log }) => {
 interface InstagramAutomationManagerProps {
   token?: string;
   apiBase?: string;
+  subAdminMode?: boolean;   // 👈 naya
 }
 
-const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({ token: tokenProp, apiBase }) => {
+const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({ token: tokenProp, apiBase, subAdminMode = false }) => {
   const token = tokenProp || localStorage.getItem('adminToken') || '';
   const API = apiBase || API_BASE;
   const authHeaders = { headers: { Authorization: `Bearer ${token}` } };
@@ -381,7 +384,7 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
   const [logFilter, setLogFilter] = useState<'all' | 'sent' | 'failed'>('all');
   const [logSearch, setLogSearch] = useState('');
   const [autoRefresh, setAutoRefresh] = useState(false);
-  const [, forceTick] = useState(0); // re-render periodically so relative timestamps stay fresh
+  const [, forceTick] = useState(0);
   const refreshInterval = useRef<NodeJS.Timeout | null>(null);
   const tickInterval = useRef<NodeJS.Timeout | null>(null);
 
@@ -423,7 +426,6 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
 
   useEffect(() => {
     fetchAll();
-    // Keep relative timestamps ("2m ago") fresh without refetching data
     tickInterval.current = setInterval(() => forceTick((t) => t + 1), 30000);
     return () => {
       if (refreshInterval.current) clearInterval(refreshInterval.current);
@@ -592,7 +594,7 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
           <GradientButton
             onClick={() => {
               window.open(
-                `${API.replace('/api', '')}/api/auth/instagram/connect`,
+                `${API.replace('/api', '')}/api/auth/instagram/connect?token=${encodeURIComponent(token)}`,
                 '_blank'
               );
             }}
@@ -600,14 +602,16 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
             {Icons.instagram('h-4 w-4')}
             Connect Instagram
           </GradientButton>
-          <OutlineButton onClick={() => setShowAddAccount(!showAddAccount)}>
-            {showAddAccount ? 'Cancel' : 'Add Manually'}
-          </OutlineButton>
+          {!subAdminMode && (
+            <OutlineButton onClick={() => setShowAddAccount(!showAddAccount)}>
+              {showAddAccount ? 'Cancel' : 'Add Manually'}
+            </OutlineButton>
+          )}
         </div>
       </div>
 
-      {/* Add account form */}
-      {showAddAccount && (
+      {/* Add account form - visible only for main admin (subAdminMode = false) */}
+      {!subAdminMode && showAddAccount && (
         <form onSubmit={handleAddAccount} className="rounded-3xl border border-white/10 bg-white/[0.02] p-6 backdrop-blur-md space-y-4">
           <p className="text-xs text-white/40">Get User ID & Access Token from Meta Developer Dashboard.</p>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -681,6 +685,11 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
                 <div>
                   <p className="font-semibold text-white">@{acc.igUsername}</p>
                   <p className="text-xs text-white/40">ID: {acc.igUserId}</p>
+                  {!subAdminMode && (
+                    <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] text-indigo-300">
+                      👤 Added by {acc.createdByUsername || 'Admin'}
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2">

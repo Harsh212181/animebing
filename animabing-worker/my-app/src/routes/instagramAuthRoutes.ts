@@ -1,14 +1,24 @@
- import { Hono } from 'hono'
+import { Hono } from 'hono'
 import type { Env, Variables } from '../index'
 import { insertOne, findMany, updateOne, deleteOne } from '../services/mongoService'
+import { verifyJWT } from '../middleware/auth' // ✅ corrected import
 
 const instagramAuthRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
-// ============================================================
-// STEP 1: Admin dashboard ka "Connect Instagram Account" button
-// isi route par redirect karega (naya tab/window mein kholna).
-// ============================================================
-instagramAuthRoutes.get('/api/auth/instagram/connect', (c) => {
+instagramAuthRoutes.get('/api/auth/instagram/connect', async (c) => {
+  const token = c.req.query('token')
+  let creator = { role: 'admin', id: null as string | null, username: 'Admin' }
+
+  if (token) {
+    try {
+      const payload: any = await verifyJWT(token, c.env.JWT_SECRET) // ✅ fixed
+      creator = { role: payload.role, id: payload.id, username: payload.username }
+    } catch {
+      // invalid/expired token — Admin fallback rahega
+    }
+  }
+
+  const state = btoa(JSON.stringify(creator))
   const redirectUri = `${c.env.API_URL}/api/auth/instagram/callback`
   const scopes = [
     'instagram_business_basic',
@@ -21,7 +31,8 @@ instagramAuthRoutes.get('/api/auth/instagram/connect', (c) => {
     `?client_id=${c.env.IG_APP_ID}` +
     `&redirect_uri=${encodeURIComponent(redirectUri)}` +
     `&response_type=code` +
-    `&scope=${encodeURIComponent(scopes)}`
+    `&scope=${encodeURIComponent(scopes)}` +
+    `&state=${encodeURIComponent(state)}`
 
   return c.redirect(authUrl)
 })
@@ -32,10 +43,22 @@ instagramAuthRoutes.get('/api/auth/instagram/connect', (c) => {
 instagramAuthRoutes.get('/api/auth/instagram/callback', async (c) => {
   const code = c.req.query('code')
   const error = c.req.query('error')
+  const state = c.req.query('state')
 
   if (error || !code) {
     return c.html(`<h3>Instagram connection failed or cancelled.</h3>`)
   }
+
+  let creator = { role: 'admin', id: null as string | null, username: 'Admin' }
+  if (state) {
+    try {
+      creator = JSON.parse(atob(decodeURIComponent(state)))
+    } catch {
+      // ignore, fallback to default
+    }
+  }
+  const createdBy = creator.role === 'subadmin' ? creator.id : null
+  const createdByUsername = creator.role === 'subadmin' ? creator.username : 'Admin'
 
   try {
     const redirectUri = `${c.env.API_URL}/api/auth/instagram/callback`
@@ -82,9 +105,9 @@ instagramAuthRoutes.get('/api/auth/instagram/callback', async (c) => {
 
     const igUsername = profileData.username || 'unknown'
     const resolvedIgUserId = String(profileData.user_id || igUserId)
-    const profilePictureUrl = profileData.profile_picture_url || null   // 👈 naya
+    const profilePictureUrl = profileData.profile_picture_url || null
 
-    // --- 🆕 Is account ko webhook ke liye subscribe karo — warna Meta comment events kabhi nahi bhejega ---
+    // --- Is account ko webhook ke liye subscribe karo — warna Meta comment events kabhi nahi bhejega ---
     const subscribeRes = await fetch(
       `https://graph.instagram.com/v23.0/${resolvedIgUserId}/subscribed_apps?subscribed_fields=comments&access_token=${longLivedToken}`,
       { method: 'POST' }
@@ -96,7 +119,7 @@ instagramAuthRoutes.get('/api/auth/instagram/callback', async (c) => {
       console.log('✅ Webhook subscribed successfully for', resolvedIgUserId)
     }
 
-    // --- Database mein save/update karo (agar already exist karta hai to update) ---
+    // --- Database mein save/update karo ---
     const existing = await findMany<any>(
       'instagramAccounts', { igUserId: resolvedIgUserId }, { limit: 1 },
       c.env.MONGODB_URI, c.env.MONGODB_DB
@@ -116,14 +139,15 @@ instagramAuthRoutes.get('/api/auth/instagram/callback', async (c) => {
         igUsername,
         igUserId: resolvedIgUserId,
         accessToken: longLivedToken,
-        profilePictureUrl,   // 👈 naya
+        profilePictureUrl,
         tokenExpiresAt,
         isActive: true,
         connectedAt: new Date(),
+        createdBy,
+        createdByUsername,
       }, c.env.MONGODB_URI, c.env.MONGODB_DB)
     }
 
-    // Admin dashboard par wapas bhej do success message ke saath
     return c.html(`
       <html>
         <body style="font-family: sans-serif; text-align: center; padding-top: 60px;">
@@ -175,7 +199,7 @@ async function verifyAndParseSignedRequest(signedRequest: string, appSecret: str
 
   if (expectedSigBytes.length !== actualSigBytes.length) return null
   for (let i = 0; i < expectedSigBytes.length; i++) {
-    if (expectedSigBytes[i] !== actualSigBytes[i]) return null // signature mismatch — request fake ho sakta hai
+    if (expectedSigBytes[i] !== actualSigBytes[i]) return null
   }
 
   const payloadBytes = base64UrlDecode(encodedPayload)
@@ -211,7 +235,7 @@ instagramAuthRoutes.post('/api/auth/instagram/deauthorize', async (c) => {
     return c.json({ success: true })
   } catch (err) {
     console.error('Deauthorize handling failed', err)
-    return c.json({ success: true }) // Meta ko hamesha 200 do, warna retries aate rahenge
+    return c.json({ success: true })
   }
 })
 

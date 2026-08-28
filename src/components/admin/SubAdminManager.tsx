@@ -29,6 +29,7 @@ interface SubAdminStat {
   shortUsersCount: number;
   linksCount: number;
   totalClicks: number;
+  instagramAccountsCount: number;   // 👈 add karo
 }
 
 interface SubAnime {
@@ -68,6 +69,7 @@ const AVAILABLE_PERMISSIONS = [
   { key: 'episodes', label: 'Episodes', icon: 'M4 6h16M4 10h16M4 14h16M4 18h16' },
   { key: 'chapters', label: 'Manage Chapters', icon: 'M4 6h16M4 10h16M4 14h16M9 6v12M15 6v12' },
   { key: 'reports', label: 'User Reports', icon: 'M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9' },
+  { key: 'useractivity', label: 'User Activity', icon: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z' },
   { key: 'notes', label: 'Notes', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
   { key: 'polls', label: 'Poll Manager', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
   { key: 'social', label: 'Social Media', icon: 'M4 12a8 8 0 018-8 8 8 0 018 8 8 8 0 01-8 8 8 8 0 01-8-8zm3.5 0a4.5 4.5 0 109 0 4.5 4.5 0 00-9 0zm8 4.5a8.03 8.03 0 01-6 2.5 8.03 8.03 0 01-6-2.5' },
@@ -77,6 +79,7 @@ const AVAILABLE_PERMISSIONS = [
   { key: 'pageviews', label: 'Analytics (Page Views)', icon: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z' },
   { key: 'link-control', label: 'Link Control', icon: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z' },
   { key: 'tracklist', label: 'YouTube Track List', icon: 'M15 10l4.55-2.27a1 1 0 011.45.9v6.74a1 1 0 01-1.45.9L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z' },
+  { key: 'instagram', label: 'Instagram Automation', icon: 'M12 3l2.6 5.6 6.1.6-4.5 4.2 1.3 6-5.5-3-5.5 3 1.3-6-4.5-4.2 6.1-.6L12 3z' }, // 👈 add karo
 ];
 
 const COPY_ICON = 'M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z';
@@ -169,6 +172,7 @@ const ICONS = {
   eye: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z',
   heart: 'M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z',
   info: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
+  instagram: 'M12 3l2.6 5.6 6.1.6-4.5 4.2 1.3 6-5.5-3-5.5 3 1.3-6-4.5-4.2 6.1-.6L12 3z',
 };
 
 // ── Custom styled checkbox component ─────────────────────────────────
@@ -802,6 +806,9 @@ const SubAdminManager: React.FC = () => {
                         <span className="flex items-center gap-1 text-xs text-emerald-300" title="Users">
                           <SvgIcon d={ICONS.users} className="h-3.5 w-3.5" /> {s.shortUsersCount}
                         </span>
+                        <span className="flex items-center gap-1 text-xs text-pink-300" title="Instagram Accounts">
+                          <SvgIcon d={ICONS.instagram} className="h-3.5 w-3.5" /> {s.instagramAccountsCount}
+                        </span>
                       </>
                     ) : null}
 
@@ -966,13 +973,19 @@ const SubAdminManager: React.FC = () => {
                 {isExpanded && (
                   <div className="border-t border-white/10 bg-white/[0.01] p-5 space-y-6">
                     {s && (
-                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-8">
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-9">
                         <StatPill icon={<SvgIcon d={ICONS.anime} />} label="Anime" value={s.animeCount} color="text-purple-300" />
                         <StatPill icon={<SvgIcon d={ICONS.download} />} label="Download Pages" value={s.downloadPagesCount} color="text-fuchsia-300" />
                         <StatPill icon={<SvgIcon d={ICONS.eye} />} label="Views" value={s.totalViews} color="text-cyan-300" />
                         <StatPill icon={<SvgIcon d={ICONS.users} />} label="Short Users" value={s.shortUsersCount} color="text-emerald-300" />
                         <StatPill icon={<SvgIcon d={ICONS.links} />} label="Links" value={s.linksCount} color="text-blue-300" />
                         <StatPill icon={<SvgIcon d={ICONS.clicks} />} label="Clicks" value={s.totalClicks} color="text-amber-300" />
+                        <StatPill
+                          icon={<SvgIcon d={ICONS.instagram} />}
+                          label="IG Accounts"
+                          value={s.instagramAccountsCount}
+                          color="text-pink-300"
+                        />
                         <StatPill
                           icon={<SvgIcon d="M15 10l4.55-2.27a1 1 0 011.45.9v6.74a1 1 0 01-1.45.9L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />}
                           label="YT Channels"

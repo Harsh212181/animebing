@@ -1,6 +1,7 @@
  import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
+import { linkifyText } from '../SpecialModeLinkify';
 
 interface SpecialModeManagerProps {
   token?: string;
@@ -13,13 +14,14 @@ interface SpecialMode {
   _id: string;
   name: string;
   type: ModeType;
-  weekdays?: number[];      // multi-day support (preferred)
-  weekday?: number;         // legacy single-day (still read for old data)
+  weekdays?: number[];       
+  weekday?: number;          
   startDate?: string;
   endDate?: string;
   bannerText?: string;
   isEnabled: boolean;
   forceLink5Only?: boolean;
+  displayLocations?: ('home' | 'detail' | 'downloadLink')[];
   createdAt?: string;
 }
 
@@ -33,8 +35,17 @@ const WEEKDAYS = [
   { value: 6, label: 'Sat', full: 'Saturday' },
 ];
 
+const LOCATIONS: { value: 'home' | 'detail' | 'downloadLink'; label: string }[] = [
+  { value: 'home', label: 'Home Page' },
+  { value: 'detail', label: 'Anime Detail Page' },
+  { value: 'downloadLink', label: 'Download Link Page' },
+];
+
 const getModeWeekdays = (m: SpecialMode): number[] =>
   m.weekdays && m.weekdays.length > 0 ? m.weekdays : (m.weekday !== undefined ? [m.weekday] : []);
+
+const getModeLocations = (m: SpecialMode): ('home' | 'detail' | 'downloadLink')[] =>
+  m.displayLocations && m.displayLocations.length > 0 ? m.displayLocations : ['home', 'detail', 'downloadLink'];
 
 const getIndiaToday = () => {
   const now = new Date();
@@ -55,15 +66,53 @@ const isModeActiveToday = (m: SpecialMode): boolean => {
   return false;
 };
 
+// ✅ Custom checkbox component – dark theme friendly
+const CustomCheckbox: React.FC<{
+  checked: boolean;
+  onChange: () => void;
+  label: string;
+  description?: string;
+}> = ({ checked, onChange, label, description }) => (
+  <button
+    type="button"
+    onClick={onChange}
+    className="flex items-start gap-3 w-full text-left group"
+  >
+    <span
+      className={`mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center transition-all duration-200 ${
+        checked
+          ? 'bg-purple-600 border-purple-500 shadow-md shadow-purple-500/20'
+          : 'bg-white/5 border-white/30 group-hover:border-white/50'
+      }`}
+    >
+      {checked && (
+        <svg
+          className="w-3.5 h-3.5 text-white"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={3}
+          viewBox="0 0 24 24"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M5 13l4 4L19 7" />
+        </svg>
+      )}
+    </span>
+    <span className="flex-1">
+      <span className="block text-sm font-semibold text-white">{label}</span>
+      {description && <span className="block text-xs text-slate-400 mt-0.5">{description}</span>}
+    </span>
+  </button>
+);
+
 const SpecialModeManager: React.FC<SpecialModeManagerProps> = ({ token: propToken, apiBase }) => {
   const [modes, setModes] = useState<SpecialMode[]>([]);
   const [loading, setLoading] = useState(true);
   const [masterEnabled, setMasterEnabled] = useState(true);
   const [masterLoading, setMasterLoading] = useState(false);
 
-  // Drawer = only used for CREATE (new mode)
   const [drawerOpen, setDrawerOpen] = useState(false);
-  // Inline edit = shown below the specific row being edited
   const [editingMode, setEditingMode] = useState<SpecialMode | null>(null);
 
   const [saving, setSaving] = useState(false);
@@ -77,6 +126,7 @@ const SpecialModeManager: React.FC<SpecialModeManagerProps> = ({ token: propToke
   const [bannerText, setBannerText] = useState('');
   const [isEnabled, setIsEnabled] = useState(true);
   const [forceLink5Only, setForceLink5Only] = useState(false);
+  const [selectedLocations, setSelectedLocations] = useState<('home' | 'detail' | 'downloadLink')[]>(['home', 'detail', 'downloadLink']);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -133,21 +183,19 @@ const SpecialModeManager: React.FC<SpecialModeManagerProps> = ({ token: propToke
     setName(''); setType('weekday'); setSelectedWeekdays([0]);
     setStartDate(''); setEndDate(''); setBannerText('');
     setIsEnabled(true); setForceLink5Only(false);
+    setSelectedLocations(['home', 'detail', 'downloadLink']);
   };
 
-  // ---- CREATE (drawer, side panel) ----
   const openNewModeDrawer = () => {
-    setEditingMode(null); // make sure inline edit is closed
+    setEditingMode(null);
     resetForm();
     setDrawerOpen(true);
   };
   const closeDrawer = () => { if (saving) return; setDrawerOpen(false); };
 
-  // ---- EDIT (inline, below the row) ----
   const openInlineEdit = (mode: SpecialMode) => {
-    setDrawerOpen(false); // make sure create-drawer is closed
+    setDrawerOpen(false);
     if (editingMode?._id === mode._id) {
-      // clicking edit again on the same row collapses it
       setEditingMode(null);
       return;
     }
@@ -159,12 +207,23 @@ const SpecialModeManager: React.FC<SpecialModeManagerProps> = ({ token: propToke
     setBannerText(mode.bannerText || '');
     setIsEnabled(mode.isEnabled);
     setForceLink5Only(!!mode.forceLink5Only);
+    setSelectedLocations(getModeLocations(mode));
     setEditingMode(mode);
   };
   const closeInlineEdit = () => { if (saving) return; setEditingMode(null); };
 
   const toggleWeekdaySelection = (day: number) => {
     setSelectedWeekdays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day].sort());
+  };
+
+  const toggleLocationSelection = (loc: 'home' | 'detail' | 'downloadLink') => {
+    setSelectedLocations(prev => {
+      if (prev.includes(loc)) {
+        if (prev.length === 1) return prev;
+        return prev.filter(l => l !== loc);
+      }
+      return [...prev, loc];
+    });
   };
 
   const conflicts = useMemo(() => {
@@ -190,6 +249,7 @@ const SpecialModeManager: React.FC<SpecialModeManagerProps> = ({ token: propToke
       if (!startDate || !endDate) { toast.error('Start and end date required'); return; }
       if (new Date(endDate) < new Date(startDate)) { toast.error('End date must be after start date'); return; }
     }
+    if (selectedLocations.length === 0) { toast.error('Select at least one display location'); return; }
 
     setSaving(true);
     const payload: any = {
@@ -198,6 +258,7 @@ const SpecialModeManager: React.FC<SpecialModeManagerProps> = ({ token: propToke
       bannerText: bannerText.trim(),
       isEnabled,
       forceLink5Only,
+      displayLocations: selectedLocations,
     };
     if (type === 'weekday') payload.weekdays = selectedWeekdays;
     if (type === 'dateRange') { payload.startDate = startDate; payload.endDate = endDate; }
@@ -253,12 +314,14 @@ const SpecialModeManager: React.FC<SpecialModeManagerProps> = ({ token: propToke
     const base = m.type === 'weekday'
       ? getModeWeekdays(m).map(d => WEEKDAYS.find(w => w.value === d)?.full).join(', ') || '-'
       : `${m.startDate ? new Date(m.startDate).toLocaleDateString('en-IN') : '?'} \u2192 ${m.endDate ? new Date(m.endDate).toLocaleDateString('en-IN') : '?'}`;
-    return m.forceLink5Only ? `${base} \u00b7 Link5 Only` : base;
+    const locsLabel = getModeLocations(m).map(l => LOCATIONS.find(x => x.value === l)?.label).join(' + ');
+    const withForce = m.forceLink5Only ? `${base} \u00b7 Link5 Only` : base;
+    return `${withForce} \u00b7 Shown on: ${locsLabel}`;
   };
 
   const filteredModes = modes.filter(m => m.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
-  const activeToday = useMemo(() => modes.find(isModeActiveToday) || null, [modes]);
+  const activeModesToday = useMemo(() => modes.filter(isModeActiveToday), [modes]);
 
   const drawerClasses = `fixed inset-y-0 right-0 w-full sm:w-[520px] bg-slate-900/95 backdrop-blur-2xl border-l border-white/10 shadow-2xl shadow-black/50 z-50 transform transition-transform duration-300 ease-in-out ${
     drawerOpen ? 'translate-x-0' : 'translate-x-full'
@@ -267,7 +330,6 @@ const SpecialModeManager: React.FC<SpecialModeManagerProps> = ({ token: propToke
     drawerOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
   }`;
 
-  // ---- Shared form fields (used both in the create-drawer AND inline edit panel) ----
   const renderFormFields = () => (
     <>
       <div>
@@ -339,8 +401,8 @@ const SpecialModeManager: React.FC<SpecialModeManagerProps> = ({ token: propToke
       )}
 
       {conflicts.length > 0 && (
-        <div className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg py-2 px-3">
-          Overlaps with <b>{conflicts.map(c => c.name).join(', ')}</b>. Only the first enabled match (list order) will apply.
+        <div className="text-xs text-sky-300 bg-sky-500/10 border border-sky-500/20 rounded-lg py-2 px-3">
+          Overlaps with <b>{conflicts.map(c => c.name).join(', ')}</b>. Multiple modes can be active together — all matching banners will show simultaneously on the selected pages.
         </div>
       )}
 
@@ -357,7 +419,37 @@ const SpecialModeManager: React.FC<SpecialModeManagerProps> = ({ token: propToke
       </div>
 
       <div>
-        <p className="text-xs font-semibold text-slate-400 mb-1.5">Homepage Preview</p>
+        <label className="block text-xs font-semibold text-slate-400 mb-1.5">
+          Show Banner On <span className="text-slate-600">- select one or more pages</span>
+        </label>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          {LOCATIONS.map(loc => {
+            const selected = selectedLocations.includes(loc.value);
+            return (
+              <button
+                key={loc.value}
+                onClick={() => toggleLocationSelection(loc.value)}
+                type="button"
+                className={`py-2.5 px-3 rounded-lg border text-xs font-semibold transition-all text-left ${
+                  selected
+                    ? 'bg-purple-600/30 border-purple-500/50 text-purple-200'
+                    : 'bg-white/[0.03] border-white/10 text-slate-400 hover:bg-white/[0.06]'
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center ${selected ? 'bg-purple-500 border-purple-400' : 'border-slate-500'}`}>
+                    {selected && <span className="text-[9px] text-white">✓</span>}
+                  </span>
+                  {loc.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        <p className="text-xs font-semibold text-slate-400 mb-1.5">Banner Preview</p>
         <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-purple-600 via-pink-500 to-orange-500 p-1">
           <div className="rounded-lg bg-gradient-to-br from-purple-900/90 to-purple-800/90 px-4 py-3 backdrop-blur-sm border border-white/20">
             <div className="flex items-center gap-2">
@@ -367,7 +459,7 @@ const SpecialModeManager: React.FC<SpecialModeManagerProps> = ({ token: propToke
                   {name.trim() || 'Mode Name'}!
                 </h3>
                 <p className="text-[11px] text-white/90">
-                  {bannerText.trim() || 'Download all anime & movies without any ads - only during this mode!'}
+                  {bannerText.trim() ? linkifyText(bannerText.trim()) : 'Download all anime & movies without any ads - only during this mode!'}
                 </p>
               </div>
             </div>
@@ -376,21 +468,17 @@ const SpecialModeManager: React.FC<SpecialModeManagerProps> = ({ token: propToke
       </div>
 
       <div className="bg-black/30 border border-white/10 rounded-xl p-4 hover:border-white/20 transition">
-        <label className="flex items-start gap-3 cursor-pointer select-none">
-          <input type="checkbox" checked={forceLink5Only} onChange={e => setForceLink5Only(e.target.checked)} className="w-5 h-5 mt-0.5 accent-purple-500 rounded" />
-          <span>
-            <span className="block text-sm font-semibold text-white">Force Link 5 Only</span>
-            <span className="block text-xs text-slate-400 mt-0.5">
-              When active, only Link 5 will be available during this mode. Other links auto-restore after it ends. Leave unchecked to just show the banner without touching links.
-            </span>
-          </span>
-        </label>
+        <CustomCheckbox
+          checked={forceLink5Only}
+          onChange={() => setForceLink5Only(!forceLink5Only)}
+          label="Force Link 5 Only"
+          description="When active, only Link 5 will be available during this mode. Other links auto-restore after it ends. Leave unchecked to just show the banner without touching links."
+        />
       </div>
 
-      <label className="flex items-center gap-2.5 cursor-pointer select-none">
-        <input type="checkbox" checked={isEnabled} onChange={e => setIsEnabled(e.target.checked)} className="w-5 h-5 accent-purple-500 rounded" />
-        <span className="text-sm text-slate-300">Enabled</span>
-      </label>
+      <div className="flex items-center gap-2.5">
+        <CustomCheckbox checked={isEnabled} onChange={() => setIsEnabled(!isEnabled)} label="Enabled" />
+      </div>
     </>
   );
 
@@ -411,7 +499,7 @@ const SpecialModeManager: React.FC<SpecialModeManagerProps> = ({ token: propToke
         <div>
           <h3 className="text-xl font-bold text-white">Special Modes</h3>
           <p className="text-sm text-slate-400 mt-1 max-w-2xl">
-            Set weekday(s) or festival date ranges to display a homepage banner and optionally force Link 5 only.
+            Set weekday(s) or festival date ranges to display banners on selected pages and optionally force Link 5 only.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -439,17 +527,19 @@ const SpecialModeManager: React.FC<SpecialModeManagerProps> = ({ token: propToke
       )}
 
       <div className={`rounded-xl p-4 border flex items-center gap-3 ${
-        masterEnabled && activeToday ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-white/[0.03] border-white/10'
+        masterEnabled && activeModesToday.length > 0 ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-white/[0.03] border-white/10'
       }`}>
-        <span className="text-xl">{masterEnabled && activeToday ? '\ud83d\udfe2' : '\u26aa'}</span>
+        <span className="text-xl">{masterEnabled && activeModesToday.length > 0 ? '\ud83d\udfe2' : '\u26aa'}</span>
         <div>
           <p className="text-sm font-semibold text-white">
-            {masterEnabled && activeToday ? `Active right now: ${activeToday.name}` : 'No special mode active right now'}
+            {masterEnabled && activeModesToday.length > 0
+              ? `Active right now: ${activeModesToday.map(m => m.name).join(', ')}`
+              : 'No special mode active right now'}
           </p>
           <p className="text-xs text-slate-500">
-            {masterEnabled && activeToday
-              ? (activeToday.forceLink5Only ? 'Link 5 only is being enforced.' : 'Banner is showing on homepage; links unaffected.')
-              : 'Homepage banner is hidden until a mode matches today.'}
+            {masterEnabled && activeModesToday.length > 0
+              ? (activeModesToday.some(m => m.forceLink5Only) ? 'Link 5 only is being enforced.' : 'Banner(s) showing on selected pages; links unaffected.')
+              : 'No banner is showing until a mode matches today.'}
           </p>
         </div>
       </div>
@@ -523,8 +613,8 @@ const SpecialModeManager: React.FC<SpecialModeManagerProps> = ({ token: propToke
                     <p className="text-xs text-slate-400 mt-1">{describeMode(m)}</p>
                     {m.bannerText && <p className="text-xs text-slate-500 mt-1 italic truncate">"{m.bannerText}"</p>}
                     {conflictsForRow.length > 0 && (
-                      <p className="text-[11px] text-amber-400/90 mt-1.5 flex items-center gap-1">
-                        Overlaps with: {conflictsForRow.map(c => c.name).join(', ')} - first match in list order wins.
+                      <p className="text-[11px] text-sky-400/90 mt-1.5 flex items-center gap-1">
+                        Also overlaps with: {conflictsForRow.map(c => c.name).join(', ')} — both will run together.
                       </p>
                     )}
                   </div>
@@ -556,7 +646,6 @@ const SpecialModeManager: React.FC<SpecialModeManagerProps> = ({ token: propToke
                   </div>
                 </div>
 
-                {/* ✅ INLINE EDIT PANEL — opens directly below this row, no side drawer */}
                 {isEditingThisRow && (
                   <div className="bg-slate-800/50 backdrop-blur-md border border-t-0 border-purple-500/50 rounded-b-2xl p-6 space-y-5 animate-[fadeIn_0.2s_ease]">
                     {renderFormFields()}
@@ -584,7 +673,6 @@ const SpecialModeManager: React.FC<SpecialModeManagerProps> = ({ token: propToke
         )}
       </div>
 
-      {/* Side drawer — used ONLY for creating a brand-new mode */}
       <div onClick={closeDrawer} className={backdropClasses}></div>
       <div className={drawerClasses} role="dialog" aria-modal="true">
         <div className="flex flex-col h-full">

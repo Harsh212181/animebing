@@ -1,7 +1,8 @@
  import { Hono } from 'hono'
 import { Env, Variables } from '../index'
-import { adminAuth } from '../middleware/auth'
+import { adminAuth, requirePermission } from '../middleware/auth'
 import { insertOne, updateOne, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
+import { getOwnedAnimeIds, getAnimeIdsForSubAdmin, toObjectIds } from '../services/subAdminScope'
 import { IWatchActivity } from '../models/types'
 
 const watchActivityRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
@@ -114,40 +115,56 @@ watchActivityRoutes.patch('/:id/end', async (c) => {
   }
 })
 
-// ✅ ADMIN — activity list (filters + pagination)
-watchActivityRoutes.get('/', adminAuth, async (c) => {
+// ✅ ADMIN — activity list (filters + pagination + sub-admin scoping + badge)
+watchActivityRoutes.get('/', adminAuth, requirePermission('useractivity'), async (c) => {
   try {
-    const { animeId, activityType, ip, range, page = '1', limit = '50' } = c.req.query()
+    const { animeId, activityType, ip, range, subAdminId, page = '1', limit = '50' } = c.req.query()
+    const admin = c.get('admin')
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
     const filter: any = {}
-    if (animeId && isValidObjectId(animeId)) filter.animeId = toObjectId(animeId)
     if (activityType === 'watch' || activityType === 'download') filter.activityType = activityType
     if (ip) filter.ip = ip
 
-    // ✅ NEW: Range filter (today, week, month)
     if (range) {
       const now = new Date()
       let startDate: Date
-
       switch (range) {
         case 'today':
           startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
           break
-        case 'week':
-          const day = now.getDay() // 0 = Sunday
-          const diff = day === 0 ? 6 : day - 1 // Monday as start of week
+        case 'week': {
+          const day = now.getDay()
+          const diff = day === 0 ? 6 : day - 1
           startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diff)
           startDate.setHours(0, 0, 0, 0)
           break
+        }
         case 'month':
           startDate = new Date(now.getFullYear(), now.getMonth(), 1)
           break
         default:
-          startDate = new Date(0) // all time
+          startDate = new Date(0)
       }
-
       filter.startedAt = { $gte: startDate }
+    }
+
+    // 🔒 Sub-admin (animeAccess:'own') → sirf apne (created+assigned) anime ka activity
+    const ownedAnimeIds = await getOwnedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    if (ownedAnimeIds !== null) {
+      if (ownedAnimeIds.length === 0) {
+        return c.json({ success: true, data: [], total: 0, page: 1, limit: Number(limit) })
+      }
+      filter.animeId = { $in: toObjectIds(ownedAnimeIds) }
+    } else if (subAdminId && isValidObjectId(subAdminId)) {
+      // ✅ Main admin — ek specific sub-admin ke anime ka activity dekhna chahta hai
+      const scopedIds = await getAnimeIdsForSubAdmin(subAdminId, c.env.MONGODB_URI, c.env.MONGODB_DB)
+      filter.animeId = { $in: toObjectIds(scopedIds) }
+    }
+
+    if (animeId && isValidObjectId(animeId)) {
+      filter.animeId = { $in: [toObjectId(animeId)] }
     }
 
     const pageNum = Math.max(1, parseInt(page))
@@ -162,19 +179,41 @@ watchActivityRoutes.get('/', adminAuth, async (c) => {
       .limit(limitNum)
       .toArray()
 
-    return c.json({ success: true, data: activities, total, page: pageNum, limit: limitNum })
+    // ✅ Badge (subAdminUsername) sirf main admin ya animeAccess:'all' sub-admin ke liye attach hota hai
+    let enriched: any[] = activities
+    if (ownedAnimeIds === null) {
+      const animeIds = Array.from(new Set(activities.map((a: any) => a.animeId?.toString()).filter(Boolean)))
+        .filter(isValidObjectId)
+        .map((id: string) => toObjectId(id))
+
+      const animeMap: Record<string, string | null> = {}
+      if (animeIds.length > 0) {
+        const animes = await db.collection('animes')
+          .find({ _id: { $in: animeIds } }, { projection: { createdByUsername: 1 } })
+          .toArray()
+        animes.forEach((an: any) => { animeMap[an._id.toString()] = an.createdByUsername || null })
+      }
+
+      enriched = activities.map((a: any) => ({
+        ...a,
+        subAdminUsername: animeMap[a.animeId?.toString()] || null
+      }))
+    }
+
+    return c.json({ success: true, data: enriched, total, page: pageNum, limit: limitNum })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// ✅ ADMIN — summary stats (with range filter)
-watchActivityRoutes.get('/stats', adminAuth, async (c) => {
+// ✅ ADMIN — summary stats (with range filter + sub-admin scoping)
+watchActivityRoutes.get('/stats', adminAuth, requirePermission('useractivity'), async (c) => {
   try {
-    const { range } = c.req.query()
+    const { range, subAdminId } = c.req.query()
+    const admin = c.get('admin')
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    // ✅ NEW: Build date filter for range
+    // Date filter
     const dateFilter: any = {}
     if (range) {
       const now = new Date()
@@ -184,12 +223,13 @@ watchActivityRoutes.get('/stats', adminAuth, async (c) => {
         case 'today':
           startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
           break
-        case 'week':
+        case 'week': {
           const day = now.getDay()
           const diff = day === 0 ? 6 : day - 1
           startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diff)
           startDate.setHours(0, 0, 0, 0)
           break
+        }
         case 'month':
           startDate = new Date(now.getFullYear(), now.getMonth(), 1)
           break
@@ -199,7 +239,22 @@ watchActivityRoutes.get('/stats', adminAuth, async (c) => {
       dateFilter.startedAt = { $gte: startDate }
     }
 
-    // Apply dateFilter to all aggregate queries
+    // 🔒 scoping — sub-admin 'own' ya main-admin ka subAdminId filter
+    const ownedAnimeIds = await getOwnedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    let animeScope: string[] | null = null
+    if (ownedAnimeIds !== null) {
+      animeScope = ownedAnimeIds
+    } else if (subAdminId && isValidObjectId(subAdminId)) {
+      animeScope = await getAnimeIdsForSubAdmin(subAdminId, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    }
+    if (animeScope !== null) {
+      if (animeScope.length === 0) {
+        return c.json({ success: true, totalWatch: 0, totalDownload: 0, uniqueViewers: 0, totalWatchTimeSec: 0, topAnime: [], topDownloads: [] })
+      }
+      dateFilter.animeId = { $in: toObjectIds(animeScope) }
+    }
+
+    // Aggregations (now dateFilter may include animeId scope)
     const totalWatch = await db.collection('watchactivities').countDocuments({ ...dateFilter, activityType: 'watch' })
     const totalDownload = await db.collection('watchactivities').countDocuments({ ...dateFilter, activityType: 'download' })
 

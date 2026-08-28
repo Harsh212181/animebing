@@ -15,6 +15,7 @@ interface Activity {
   country?: string;
   watchDurationSec?: number;
   startedAt: string;
+  subAdminUsername?: string | null;
 }
 
 interface Stats {
@@ -26,6 +27,12 @@ interface Stats {
   topDownloads: { _id: string; title?: string; count: number }[];
 }
 
+interface SubAdminOption {
+  _id: string;
+  username: string;
+  fullName?: string;
+}
+
 const formatDuration = (sec: number = 0): string => {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
@@ -35,14 +42,12 @@ const formatDuration = (sec: number = 0): string => {
   return `${s}s`;
 };
 
-// Custom SVG icon component
 const SvgIcon: React.FC<{ d: string; className?: string }> = ({ d, className = 'w-4 h-4' }) => (
   <svg className={className} fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
     <path d={d} />
   </svg>
 );
 
-// Icon paths
 const ICONS = {
   eye: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z',
   download: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4',
@@ -53,15 +58,17 @@ const ICONS = {
   clock: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
   star: 'M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.958a1 1 0 00.95.69h4.162c.969 0 1.371 1.24.588 1.81l-3.368 2.447a1 1 0 00-.364 1.118l1.287 3.959c.3.921-.755 1.688-1.54 1.118l-3.367-2.447a1 1 0 00-1.176 0l-3.367 2.447c-.784.57-1.838-.197-1.539-1.118l1.286-3.96a1 1 0 00-.363-1.117L2.063 9.385c-.783-.57-.38-1.81.588-1.81h4.162a1 1 0 00.95-.69l1.286-3.957z',
   calendar: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z',
+  badge: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z',
 };
 
 interface UserActivityManagerProps {
   token?: string;
+  subAdminMode?: boolean;
 }
 
 type RangeFilter = 'all' | 'today' | 'week' | 'month';
 
-const UserActivityManager: React.FC<UserActivityManagerProps> = ({ token: tokenProp }) => {
+const UserActivityManager: React.FC<UserActivityManagerProps> = ({ token: tokenProp, subAdminMode = false }) => {
   const resolveToken = () => tokenProp || localStorage.getItem('adminToken') || '';
 
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -69,9 +76,27 @@ const UserActivityManager: React.FC<UserActivityManagerProps> = ({ token: tokenP
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState<'all' | 'watch' | 'download'>('all');
   const [rangeFilter, setRangeFilter] = useState<RangeFilter>('all');
+  const [subAdminFilter, setSubAdminFilter] = useState('all');
+  const [subAdminList, setSubAdminList] = useState<SubAdminOption[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const limit = 50;
+
+  useEffect(() => {
+    if (subAdminMode) return;
+    (async () => {
+      try {
+        const token = resolveToken();
+        const res = await fetch(`${API_BASE}/sub-admin`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        const data = await res.json();
+        if (data.success) setSubAdminList(data.data || []);
+      } catch (err) {
+        console.error('Failed to fetch sub-admin list:', err);
+      }
+    })();
+  }, [subAdminMode]);
 
   const fetchActivities = async () => {
     setLoading(true);
@@ -80,6 +105,7 @@ const UserActivityManager: React.FC<UserActivityManagerProps> = ({ token: tokenP
       const params = new URLSearchParams({ page: String(page), limit: String(limit) });
       if (typeFilter !== 'all') params.set('activityType', typeFilter);
       if (rangeFilter !== 'all') params.set('range', rangeFilter);
+      if (!subAdminMode && subAdminFilter !== 'all') params.set('subAdminId', subAdminFilter);
 
       const res = await fetch(`${API_BASE}/watch-activity?${params.toString()}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
@@ -101,6 +127,7 @@ const UserActivityManager: React.FC<UserActivityManagerProps> = ({ token: tokenP
       const token = resolveToken();
       const params = new URLSearchParams();
       if (rangeFilter !== 'all') params.set('range', rangeFilter);
+      if (!subAdminMode && subAdminFilter !== 'all') params.set('subAdminId', subAdminFilter);
 
       const res = await fetch(`${API_BASE}/watch-activity/stats?${params.toString()}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
@@ -114,11 +141,11 @@ const UserActivityManager: React.FC<UserActivityManagerProps> = ({ token: tokenP
 
   useEffect(() => {
     fetchStats();
-  }, [rangeFilter]);
+  }, [rangeFilter, subAdminFilter]);
 
   useEffect(() => {
     fetchActivities();
-  }, [typeFilter, rangeFilter, page]);
+  }, [typeFilter, rangeFilter, subAdminFilter, page]);
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
@@ -152,7 +179,7 @@ const UserActivityManager: React.FC<UserActivityManagerProps> = ({ token: tokenP
               setRangeFilter(r.value);
               setPage(1);
             }}
-            className={`relative px-5 py-2 rounded-xl text-sm font-medium transition-all duration-200 flex items-center gap-2
+            className={`px-5 py-2 rounded-xl text-sm font-medium transition-all duration-200 flex items-center gap-2
               ${rangeFilter === r.value
                 ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-500/30 scale-105'
                 : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/80'
@@ -160,12 +187,31 @@ const UserActivityManager: React.FC<UserActivityManagerProps> = ({ token: tokenP
           >
             <SvgIcon d={ICONS.calendar} className="w-4 h-4" />
             <span>{r.label}</span>
-            {rangeFilter === r.value && (
-              <span className="absolute -top-1 -right-1 w-3 h-3 bg-white rounded-full border-2 border-purple-600" />
-            )}
           </button>
         ))}
       </div>
+
+      {/* Sub-Admin Filter (sirf main admin mode mein dikhta hai) */}
+      {!subAdminMode && subAdminList.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm text-gray-400 mr-2">Sub-Admin:</span>
+          <div className="relative">
+            <select
+              value={subAdminFilter}
+              onChange={e => { setSubAdminFilter(e.target.value); setPage(1); }}
+              className="appearance-none px-5 py-2 pr-9 rounded-xl text-sm font-medium bg-white/5 border border-white/10 text-white/80 outline-none cursor-pointer transition-all hover:bg-white/10 focus:border-purple-500/50"
+            >
+              <option value="all" className="bg-slate-900">All (Admin + Sub-Admins)</option>
+              {subAdminList.map(sa => (
+                <option key={sa._id} value={sa._id} className="bg-slate-900">
+                  {sa.fullName || sa.username}
+                </option>
+              ))}
+            </select>
+            <SvgIcon d="M19 9l-7 7-7-7" className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-white/50" />
+          </div>
+        </div>
+      )}
 
       {/* Stats Cards */}
       {stats && (
@@ -311,7 +357,7 @@ const UserActivityManager: React.FC<UserActivityManagerProps> = ({ token: tokenP
           <button
             key={t}
             onClick={() => { setTypeFilter(t); setPage(1); }}
-            className={`relative px-5 py-2 rounded-xl text-sm font-medium transition-all duration-200 flex items-center gap-2
+            className={`px-5 py-2 rounded-xl text-sm font-medium transition-all duration-200 flex items-center gap-2
               ${typeFilter === t 
                 ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-500/30 scale-105' 
                 : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white/80'
@@ -320,9 +366,6 @@ const UserActivityManager: React.FC<UserActivityManagerProps> = ({ token: tokenP
             {t === 'watch' && <SvgIcon d={ICONS.eye} className="w-4 h-4" />}
             {t === 'download' && <SvgIcon d={ICONS.download} className="w-4 h-4" />}
             <span>{t === 'all' ? 'All Activity' : t === 'watch' ? 'Watching' : 'Downloads'}</span>
-            {typeFilter === t && (
-              <span className="absolute -top-1 -right-1 w-3 h-3 bg-white rounded-full border-2 border-purple-600" />
-            )}
           </button>
         ))}
       </div>
@@ -344,6 +387,7 @@ const UserActivityManager: React.FC<UserActivityManagerProps> = ({ token: tokenP
                   <th className="px-4 py-3.5 font-medium">Type</th>
                   <th className="px-4 py-3.5 font-medium">Duration</th>
                   <th className="px-4 py-3.5 font-medium">IP Address</th>
+                  {!subAdminMode && <th className="px-4 py-3.5 font-medium">Added By</th>}
                   <th className="px-4 py-3.5 font-medium">Device</th>
                   <th className="px-4 py-3.5 font-medium">Country</th>
                 </tr>
@@ -351,7 +395,7 @@ const UserActivityManager: React.FC<UserActivityManagerProps> = ({ token: tokenP
               <tbody>
                 {activities.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-12 text-center text-gray-500">
+                    <td colSpan={subAdminMode ? 8 : 9} className="px-4 py-12 text-center text-gray-500">
                       <div className="flex flex-col items-center gap-2">
                         <SvgIcon d={ICONS.eye} className="w-12 h-12 text-gray-600" />
                         <p className="text-gray-500">No activity recorded yet</p>
@@ -385,6 +429,14 @@ const UserActivityManager: React.FC<UserActivityManagerProps> = ({ token: tokenP
                       {a.activityType === 'watch' ? formatDuration(a.watchDurationSec) : '-'}
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-gray-400">{a.ip}</td>
+                    {!subAdminMode && (
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-600/20 text-purple-300 border border-purple-500/30">
+                          <SvgIcon d={ICONS.badge} className="w-3 h-3" />
+                          {a.subAdminUsername || 'Admin'}
+                        </span>
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-gray-300">
                       {a.device ? (
                         <span className="flex items-center gap-1.5">
