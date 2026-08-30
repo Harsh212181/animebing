@@ -18,6 +18,7 @@ import AnimeLinkControlManager from './AnimeLinkControlManager';
 import NotesManager from './NotesManager';
 import TrackListManager from './TrackListManager';
 import InstagramAutomationManager from './InstagramAutomationManager';
+import VideoManager from './VideoManager'; // ✅ NEW
 import Spinner from '../Spinner';
 import axios from 'axios';
 
@@ -66,6 +67,7 @@ const ICONS: Record<string, string> = {
   notes:           'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
   tracklist:       'M4 6h16M4 10h16M4 14h10 M18 15l2 2 4-4',
   instagram:       'M3 8a2 2 0 012-2h2l1.5-2h7L17 6h2a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V8z M12 15a3 3 0 100-6 3 3 0 000 6z',
+  videoUpload:     'M15 10l4.55-2.27a1 1 0 011.45.9v6.74a1 1 0 01-1.45.9L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z', // ✅ NEW
   menu:            'M4 6h16M4 12h16M4 18h16',
   close:           'M6 18L18 6M6 6l12 12',
 };
@@ -88,6 +90,7 @@ const TAB_LABELS: Record<string, string> = {
   notes:           'Notes',
   tracklist:       'Track List',
   instagram:       'Instagram Automation',
+  videoUpload:     'Video Upload', // ✅ NEW
 };
 
 const TAB_PERMISSIONS: Record<string, string | null> = {
@@ -108,13 +111,14 @@ const TAB_PERMISSIONS: Record<string, string | null> = {
   notes:           'notes',
   tracklist:       'tracklist',
   instagram:       'instagram',
+  videoUpload:     'videoUpload', // ✅ NEW
 };
 
 // ─── Sidebar sections ──────────────────────────────────────────────
 const SIDEBAR_SECTIONS = [
   { id: 'content', label: 'Content', tabs: ['list', 'add', 'episodes', 'episode-status'] },
   { id: 'engagement', label: 'Engagement', tabs: ['polls', 'social', 'reports', 'notes', 'instagram'] },
-  { id: 'links', label: 'Links & Downloads', tabs: ['downloadPages', 'partners', 'shortenerLinks', 'shortenerUsers', 'linkControl', 'tracklist'] },
+  { id: 'links', label: 'Links & Downloads', tabs: ['downloadPages', 'videoUpload', 'partners', 'shortenerLinks', 'shortenerUsers', 'linkControl', 'tracklist'] }, // ✅ videoUpload added
   { id: 'analytics', label: 'Analytics', tabs: ['pageviews', 'useractivity'] },
 ];
 
@@ -257,6 +261,7 @@ function renderTab(tabId: string, token: string) {
     case 'notes':          return <NotesManager token={token} apiBase={API_BASE} />;
     case 'tracklist':      return <TrackListManager />;
     case 'instagram':      return <InstagramAutomationManager token={token} apiBase={API_BASE} subAdminMode />;
+    case 'videoUpload':    return <VideoManager token={token} subAdminMode />; // ✅ NEW
     default:               return null;
   }
 }

@@ -22,6 +22,8 @@ import TrackListManager from './TrackListManager';
 import InstagramAutomationManager from './InstagramAutomationManager';
 import UserActivityManager from './UserActivityManager';   // ✅ NEW
 import FormBuilderManager from './FormBuilderManager'; // ✅ NEW
+import R2ProviderManager from './R2ProviderManager'; // ✅ NEW
+import VideoManager from './VideoManager'; // ✅ NEW — VideoUploader ki jagah
 import Spinner from '../Spinner';
 import axios from 'axios';
 
@@ -89,6 +91,8 @@ const ICONS: Record<string, string> = {
   instagram:       'M12 3l2.6 5.6 6.1.6-4.5 4.2 1.3 6-5.5-3-5.5 3 1.3-6-4.5-4.2 6.1-.6L12 3z',
   userActivity:    'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m6-4a2 2 0 100-4 2 2 0 000 4zm0 0v4m0-4V9', // ✅ NEW — clock/eye style
   forms:           'M9 12h6m-6 4h4m1 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', // ✅ NEW
+  r2providers:     'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4', // ✅ NEW — database/storage icon
+  videoUpload:     'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12', // ✅ NEW — upload arrow
   // 🆕 Mobile icons
   menu:            'M4 6h16M4 12h16M4 18h16',
   close:           'M6 18L18 6M6 6l12 12',
@@ -116,6 +120,8 @@ const TAB_LABELS: Record<string, string> = {
   instagram:       'Instagram Tool',
   userActivity:    'User Activity',   // ✅ NEW
   forms:           'Form Builder',     // ✅ NEW
+  r2providers:     'R2 Providers',     // ✅ NEW
+  videoUpload:     'Video Upload',     // ✅ NEW
 };
 
 // ─── renderTab function ──────────────────────────────────────────────────────
@@ -142,6 +148,8 @@ function renderTab(tabId: string, token: string) {
     case 'instagram':      return <InstagramAutomationManager token={token} apiBase={API_BASE} />;
     case 'userActivity':   return <UserActivityManager token={token} />;   // ✅ NEW
     case 'forms':          return <FormBuilderManager token={token} />;    // ✅ NEW
+    case 'r2providers':    return <R2ProviderManager token={token} />;     // ✅ NEW
+    case 'videoUpload':    return <VideoManager token={token} />;         // ✅ NEW — subAdminMode nahi diya, badge dikhega
     default:               return <AnimeListTable token={token} isMainAdmin={true} />;
   }
 }
@@ -629,6 +637,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             <NavItem tabId="add"             activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
             <NavItem tabId="episodes"        activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
             <NavItem tabId="episode-status"  activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
+            <NavItem tabId="videoUpload"     activeTab={activeTab} collapsed={false} onClick={handleTabChange} />  {/* ✅ NEW */}
           </SidebarSection>
           <SidebarSection label="Manage">
             <NavItem tabId="featured"        activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
@@ -656,6 +665,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           </SidebarSection>
           <SidebarSection label="Administration">
             <NavItem tabId="subadmins" activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
+            <NavItem tabId="r2providers" activeTab={activeTab} collapsed={false} onClick={handleTabChange} />   {/* ✅ NEW */}
           </SidebarSection>
         </nav>
         <div className="flex-shrink-0 border-t border-white/[0.06] p-3">
@@ -715,6 +725,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             <NavItem tabId="add"             activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
             <NavItem tabId="episodes"        activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
             <NavItem tabId="episode-status"  activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+            <NavItem tabId="videoUpload"     activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />  {/* ✅ NEW */}
           </SidebarSection>
           <SidebarSection label="Manage">
             <NavItem tabId="featured"        activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
@@ -742,6 +753,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           </SidebarSection>
           <SidebarSection label="Administration">
             <NavItem tabId="subadmins" activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+            <NavItem tabId="r2providers" activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />   {/* ✅ NEW */}
           </SidebarSection>
         </nav>
 

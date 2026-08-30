@@ -55,6 +55,10 @@ export async function syncAnimeEpisodeCountFromAnime(
 
   return maxEpisode
 }
+
+// ✅ FIXED — ab yeh function sirf actual links ke numbers (episode / episodeStart) se
+// range nikalta hai. "Starting Episode Number (reference only)" field ab title
+// calculation ko override NAHI karega — jaisa UI pe likha hai waisa hi behavior hoga.
 function computeEpisodeRangeTitle(page: any, label: 'Episode' | 'Chapter'): string {
   const links = page?.links || []
   const nums: number[] = []
@@ -64,17 +68,8 @@ function computeEpisodeRangeTitle(page: any, label: 'Episode' | 'Chapter'): stri
   })
   if (nums.length === 0) return ''
 
-  const maxFromLinks = Math.max(...nums)
-  const minFromLinks = Math.min(...nums)
-
-  // ✅ "Starting Episode Number" field ko range ka START maano (agar set hai aur valid hai)
-  const startRef = typeof page?.episodeNumber === 'number' && page.episodeNumber > 0
-    ? page.episodeNumber
-    : minFromLinks
-
-  // Safety: agar startRef kisi wajah se max se bada ho jaaye, to swap kar do
-  const min = Math.min(startRef, maxFromLinks)
-  const max = Math.max(startRef, maxFromLinks)
+  const min = Math.min(...nums)
+  const max = Math.max(...nums)
 
   return min === max ? `${label} ${min}` : `${label} ${min}-${max}`
 }

@@ -930,7 +930,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
             className="w-[calc(50%-4px)] sm:w-28 shrink-0"
           />
 
-          {/* ✅ Player Mode filter — sirf tab dikhega jab kisi bhi page mein YouTube watch link ho */}
+          {/* ✅ Player Mode filter – sirf tab dikhega jab kisi bhi page mein YouTube watch link ho */}
           {hasAnyYouTubeLinks && (
             <CustomSelect
               label="Player"
@@ -1148,7 +1148,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
                             <span className="text-white/70">
                               <span className="text-purple-300 font-medium">{episodeRange}</span>
                             </span>
-                            {/* ✅ Player badge — sirf tab dikhega jab page mein YouTube watch link ho */}
+                            {/* ✅ Player badge – sirf tab dikhega jab page mein YouTube watch link ho */}
                             {hasYouTubeWatchLink(page) && (
                               <span className="text-white/70">
                                 <span className="text-purple-300 font-medium">Player:</span> {page.defaultPlayerMode || 'default'}
@@ -1351,6 +1351,19 @@ const PageForm: React.FC<{
   watchCount,
   downloadCount
 }) => {
+  // ✅ ADD: hostname suggestions state and effect
+  const [hostnameSuggestions, setHostnameSuggestions] = useState<{ hostname: string; label: string }[]>([]);
+
+  useEffect(() => {
+    const token = localStorage.getItem('adminToken') || sessionStorage.getItem('subAdminToken') || '';
+    fetch(`${API_BASE}/r2-providers/hostnames`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    })
+      .then(res => res.json())
+      .then(data => Array.isArray(data) && setHostnameSuggestions(data))
+      .catch(() => {});
+  }, []);
+
   return (
     <div className="space-y-6">
       <div>
@@ -1464,11 +1477,18 @@ const PageForm: React.FC<{
                 <label className="block text-[10px] text-gray-500 mb-1 sm:hidden">URL</label>
                 <input
                   type="url"
-                  placeholder="URL"
+                  placeholder="URL (e.g. https://subadmin1-videos.internal/filename.mkv)"
                   value={link.url}
                   onChange={e => updateLink(idx, 'url', e.target.value)}
+                  list="hostname-suggestions"
                   className="w-full bg-gray-700/60 border border-gray-600/80 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
+                {/* ✅ ADD: datalist for hostname suggestions */}
+                <datalist id="hostname-suggestions">
+                  {hostnameSuggestions.map(h => (
+                    <option key={h.hostname} value={`https://${h.hostname}/`}>{h.label}</option>
+                  ))}
+                </datalist>
               </div>
               <div className="sm:col-span-2 flex sm:justify-end">
                 <button

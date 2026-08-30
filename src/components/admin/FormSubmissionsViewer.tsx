@@ -1,7 +1,9 @@
  // src/components/admin/FormSubmissionsViewer.tsx
-// Google Forms ke "Responses" tab jaisa — table view + CSV export + delete
-// Enhanced: sorting, multi-select, bulk delete, column visibility, better UX.
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+// Card-based responses view — no horizontal table scrolling.
+// Each response is a vertical card. Pick which fields show in the compact
+// preview; tap "expand" on any card to see the FULL response, all fields,
+// stacked vertically. Search, sort, bulk delete, CSV export, pagination kept.
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 
@@ -55,53 +57,152 @@ const SearchIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
   </svg>
 );
-
 const DownloadIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V3" />
   </svg>
 );
-
 const RefreshIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h5M20 20v-5h-5M4 9a8 8 0 0114.5-3.5M20 15a8 8 0 01-14.5 3.5" />
   </svg>
 );
-
 const DeleteIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m1 0v12a2 2 0 01-2 2H8a2 2 0 01-2-2V7h12z" />
   </svg>
 );
-
 const CheckIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
   </svg>
 );
-
-const ChevronUpIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
-  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-  </svg>
-);
-
 const ChevronDownIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
   </svg>
 );
+const ChevronUpIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+  </svg>
+);
+const ExpandIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 4H4v4m16-4h-4v4M4 16v4h4m8 0h4v-4" />
+  </svg>
+);
+
+// ---------- Custom Checkbox (themed — no native white checkbox) ----------
+interface CustomCheckboxProps {
+  checked: boolean;
+  onChange: () => void;
+  title?: string;
+}
+const CustomCheckbox: React.FC<CustomCheckboxProps> = ({ checked, onChange, title }) => (
+  <button
+    type="button"
+    role="checkbox"
+    aria-checked={checked}
+    title={title}
+    onClick={(e) => { e.stopPropagation(); onChange(); }}
+    className={`w-4 h-4 flex-shrink-0 rounded flex items-center justify-center border transition-all duration-150 ${
+      checked
+        ? 'bg-purple-500 border-purple-500 shadow-sm shadow-purple-500/40'
+        : 'bg-white/5 border-white/25 hover:border-purple-400/60'
+    }`}
+  >
+    {checked && <span className="text-white"><CheckIcon className="w-2.5 h-2.5" /></span>}
+  </button>
+);
+
+// ---------- Fields Picker Dropdown (click to open, not hover — works on mobile too) ----------
+interface FieldsPickerDropdownProps {
+  fields: FormField[];
+  selectedIds: Set<string>;
+  onToggle: (fieldId: string) => void;
+  onSelectAll: () => void;
+  onClearAll: () => void;
+}
+
+const FieldsPickerDropdown: React.FC<FieldsPickerDropdownProps> = ({ fields, selectedIds, onToggle, onSelectAll, onClearAll }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div ref={dropdownRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setIsOpen(prev => !prev)}
+        className={`px-3.5 py-2.5 text-xs rounded-xl border transition-all flex items-center gap-2 whitespace-nowrap ${
+          isOpen
+            ? 'bg-purple-500/15 border-purple-500/40 text-purple-200'
+            : 'bg-white/[0.06] hover:bg-white/[0.12] text-gray-300 border-white/[0.08]'
+        }`}
+      >
+        <CheckIcon className="w-3.5 h-3.5" />
+        Card Preview Fields
+        <span className="px-1.5 py-0.5 rounded-full bg-purple-500/25 text-purple-200 text-[10px] font-semibold">
+          {selectedIds.size}
+        </span>
+        <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform duration-150 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute right-0 mt-2 w-64 rounded-xl bg-[#1a1a2e] border border-white/[0.1] shadow-2xl z-30 overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/[0.06]">
+            <p className="text-[10px] uppercase tracking-wide text-gray-500">Show on card</p>
+            <div className="flex items-center gap-2">
+              <button onClick={onSelectAll} className="text-[10px] text-purple-300 hover:text-purple-200 font-medium">
+                Select all
+              </button>
+              <span className="text-white/10">|</span>
+              <button onClick={onClearAll} className="text-[10px] text-gray-400 hover:text-white font-medium">
+                Clear
+              </button>
+            </div>
+          </div>
+          <div className="max-h-60 overflow-y-auto p-2">
+            {fields.map(f => (
+              <label
+                key={f.id}
+                className="flex items-center gap-2.5 px-2.5 py-2 text-xs text-gray-300 hover:bg-white/[0.06] rounded-lg cursor-pointer transition-colors"
+              >
+                <CustomCheckbox checked={selectedIds.has(f.id)} onChange={() => onToggle(f.id)} />
+                <span className="truncate">{f.label}</span>
+              </label>
+            ))}
+            {fields.length === 0 && (
+              <p className="text-xs text-gray-500 px-2.5 py-2">No questions in this form yet.</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ---------- Skeleton ----------
-const SkeletonRow = ({ columns }: { columns: number }) => (
-  <tr className="border-t border-white/[0.06] animate-pulse">
-    <td className="px-4 py-4"><div className="h-3 bg-white/10 rounded w-6" /></td>
-    <td className="px-4 py-4"><div className="h-3 bg-white/10 rounded w-20" /></td>
-    {Array.from({ length: columns }).map((_, i) => (
-      <td key={i} className="px-4 py-4"><div className="h-3 bg-white/10 rounded w-28" /></td>
-    ))}
-    <td className="px-4 py-4"><div className="h-3 bg-white/10 rounded w-8" /></td>
-  </tr>
+const SkeletonCard = () => (
+  <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4 animate-pulse">
+    <div className="flex items-center gap-3">
+      <div className="w-4 h-4 bg-white/10 rounded" />
+      <div className="flex-1 space-y-2">
+        <div className="h-3.5 bg-white/10 rounded w-1/3" />
+        <div className="h-2.5 bg-white/10 rounded w-1/4" />
+      </div>
+    </div>
+  </div>
 );
 
 // ---------- Main Component ----------
@@ -110,17 +211,35 @@ const FormSubmissionsViewer: React.FC<{ token: string; form: FormItem; onBack: (
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(10);
+  const [perPage, setPerPage] = useState(25);
 
-  // Enhanced features
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
-  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(
-    () => new Set(form.fields?.map(f => f.id) || [])
-  );
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
 
+  // Which fields show directly on the compact card (rest are visible only after expanding)
+  const [highlightedFieldIds, setHighlightedFieldIds] = useState<Set<string>>(new Set());
+  const highlightedInitialized = React.useRef(false);
+
+  // Cards expanded to show every question/answer for that response
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  // Only the first few cards show by default; "Show All" reveals the rest of the current page
+  const [showAllCards, setShowAllCards] = useState(false);
+  const CARDS_PREVIEW_COUNT = 3;
+
   const authHeaders = () => ({ headers: { Authorization: `Bearer ${token}` } });
+
+  const sortedFields = useMemo(() =>
+    [...(form.fields || [])].sort((a, b) => a.order - b.order),
+  [form.fields]);
+
+  // Default: highlight the first 2 questions on the compact card
+  useEffect(() => {
+    if (!highlightedInitialized.current && sortedFields.length > 0) {
+      setHighlightedFieldIds(new Set(sortedFields.slice(0, 2).map(f => f.id)));
+      highlightedInitialized.current = true;
+    }
+  }, [sortedFields]);
 
   const fetchSubmissions = useCallback(async () => {
     try {
@@ -144,7 +263,8 @@ const FormSubmissionsViewer: React.FC<{ token: string; form: FormItem; onBack: (
       await axios.delete(`${API_BASE}/forms/admin/${form._id}/submissions/${subId}`, authHeaders());
       toast.success('Response deleted', { style: { background: '#1a1a2e', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', fontSize: '13px' } });
       setSubmissions(prev => prev.filter(s => s._id !== subId));
-      setSelectedIds(prev => { const newSet = new Set(prev); newSet.delete(subId); return newSet; });
+      setSelectedIds(prev => { const n = new Set(prev); n.delete(subId); return n; });
+      setExpandedIds(prev => { const n = new Set(prev); n.delete(subId); return n; });
     } catch (e: any) {
       toast.error(e.response?.data?.error || 'Delete failed', { style: { background: '#1a1a2e', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', fontSize: '13px' } });
     }
@@ -154,8 +274,7 @@ const FormSubmissionsViewer: React.FC<{ token: string; form: FormItem; onBack: (
     if (selectedIds.size === 0) return;
     if (!confirm(`Delete ${selectedIds.size} selected responses?`)) return;
     try {
-      // Loop through each id and delete (no bulk endpoint given)
-      await Promise.all([...selectedIds].map(id => 
+      await Promise.all([...selectedIds].map(id =>
         axios.delete(`${API_BASE}/forms/admin/${form._id}/submissions/${id}`, authHeaders())
       ));
       toast.success(`${selectedIds.size} responses deleted`, { style: { background: '#1a1a2e', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', fontSize: '13px' } });
@@ -167,37 +286,16 @@ const FormSubmissionsViewer: React.FC<{ token: string; form: FormItem; onBack: (
     }
   };
 
-  const sortedFields = useMemo(() =>
-    [...(form.fields || [])].sort((a, b) => a.order - b.order),
-  [form.fields]);
-
-  // Toggle column visibility
-  const toggleColumnVisibility = (fieldId: string) => {
-    setVisibleColumns(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(fieldId)) newSet.delete(fieldId);
-      else newSet.add(fieldId);
-      return newSet;
+  const toggleHighlighted = (fieldId: string) => {
+    setHighlightedFieldIds(prev => {
+      const n = new Set(prev);
+      if (n.has(fieldId)) n.delete(fieldId); else n.add(fieldId);
+      return n;
     });
   };
 
-  // Sorting logic
-  const requestSort = (key: string) => {
-    let direction: 'asc' | 'desc' = 'asc';
-    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
-      direction = 'desc';
-    }
-    setSortConfig({ key, direction });
-  };
-
-  const getSortValue = (submission: Submission, key: string): string | number => {
-    if (key === '#') return 0; // placeholder, we sort by index later
-    if (key === 'submittedAt') return new Date(submission.submittedAt).getTime();
-    if (key === 'ip') return submission.ip || '';
-    // key is a fieldId
-    const answer = submission.answers.find(a => a.fieldId === key);
-    return answer ? formatValue(answer.value).toLowerCase() : '';
-  };
+  const selectAllHighlighted = () => setHighlightedFieldIds(new Set(sortedFields.map(f => f.id)));
+  const clearAllHighlighted = () => setHighlightedFieldIds(new Set());
 
   const filteredSubmissions = useMemo(() => {
     let result = [...submissions];
@@ -208,27 +306,12 @@ const FormSubmissionsViewer: React.FC<{ token: string; form: FormItem; onBack: (
         return fullText.includes(q);
       });
     }
-    // Apply sorting
-    if (sortConfig) {
-      result.sort((a, b) => {
-        let aVal, bVal;
-        if (sortConfig.key === '#') {
-          aVal = submissions.indexOf(a);
-          bVal = submissions.indexOf(b);
-        } else {
-          aVal = getSortValue(a, sortConfig.key);
-          bVal = getSortValue(b, sortConfig.key);
-        }
-        if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
-        if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
-        return 0;
-      });
-    } else {
-      // default: newest first
-      result.sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
-    }
+    result.sort((a, b) => {
+      const diff = new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime();
+      return sortOrder === 'newest' ? diff : -diff;
+    });
     return result;
-  }, [submissions, search, sortConfig]);
+  }, [submissions, search, sortOrder]);
 
   const totalPages = Math.max(1, Math.ceil(filteredSubmissions.length / perPage));
   const paginated = useMemo(() => {
@@ -240,15 +323,20 @@ const FormSubmissionsViewer: React.FC<{ token: string; form: FormItem; onBack: (
     if (page > totalPages) setPage(totalPages);
   }, [totalPages, page]);
 
+  // Collapse back to the preview count whenever the visible dataset changes
+  useEffect(() => {
+    setShowAllCards(false);
+  }, [page, search, sortOrder, perPage]);
+
   const exportCSV = () => {
-    const headers = ['Submitted At', 'IP', ...sortedFields.filter(f => visibleColumns.has(f.id)).map(f => f.label)];
+    const headers = ['Submitted At', 'IP', ...sortedFields.map(f => f.label)];
     const rows = filteredSubmissions.map(s => {
       const answerMap: Record<string, string> = {};
       s.answers.forEach(a => { answerMap[a.fieldId] = formatValue(a.value); });
       return [
         new Date(s.submittedAt).toLocaleString(),
         s.ip || '',
-        ...sortedFields.filter(f => visibleColumns.has(f.id)).map(f => `"${(answerMap[f.id] || '').replace(/"/g, '""')}"`)
+        ...sortedFields.map(f => `"${(answerMap[f.id] || '').replace(/"/g, '""')}"`)
       ];
     });
     const csv = ['\uFEFF' + headers.join(','), ...rows.map(r => r.join(','))].join('\n');
@@ -262,43 +350,39 @@ const FormSubmissionsViewer: React.FC<{ token: string; form: FormItem; onBack: (
     toast.success('CSV exported!', { style: { background: '#1a1a2e', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', fontSize: '13px' } });
   };
 
-  // Stats
   const totalResponses = submissions.length;
   const lastResponse = submissions.length > 0 ? timeAgo(submissions[0]?.submittedAt || '') : '—';
 
-  // Handle select all checkbox
   const allVisibleSelected = paginated.length > 0 && paginated.every(s => selectedIds.has(s._id));
   const toggleSelectAll = () => {
     if (allVisibleSelected) {
-      setSelectedIds(prev => {
-        const newSet = new Set(prev);
-        paginated.forEach(s => newSet.delete(s._id));
-        return newSet;
-      });
+      setSelectedIds(prev => { const n = new Set(prev); paginated.forEach(s => n.delete(s._id)); return n; });
     } else {
-      setSelectedIds(prev => {
-        const newSet = new Set(prev);
-        paginated.forEach(s => newSet.add(s._id));
-        return newSet;
-      });
+      setSelectedIds(prev => { const n = new Set(prev); paginated.forEach(s => n.add(s._id)); return n; });
     }
   };
 
   const toggleSelectRow = (id: string) => {
-    setSelectedIds(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(id)) newSet.delete(id);
-      else newSet.add(id);
-      return newSet;
-    });
+    setSelectedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   };
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  };
+
+  const cardsToRender = showAllCards ? paginated : paginated.slice(0, CARDS_PREVIEW_COUNT);
+  const hiddenCardsCount = paginated.length - cardsToRender.length;
+
+  const highlightedFields = useMemo(
+    () => sortedFields.filter(f => highlightedFieldIds.has(f.id)),
+    [sortedFields, highlightedFieldIds]
+  );
 
   return (
     <div className="py-4 md:py-6 space-y-5 w-full">
       {/* ===== Header Card ===== */}
       <div className="rounded-2xl border border-white/[0.08] bg-gradient-to-br from-white/[0.06] to-white/[0.02] overflow-hidden">
         <div className="p-5 md:p-7">
-          {/* Top row */}
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
             <div className="min-w-0">
               <button onClick={onBack} className="text-xs text-gray-400 hover:text-white mb-2 flex items-center gap-1.5 transition-colors group">
@@ -349,8 +433,8 @@ const FormSubmissionsViewer: React.FC<{ token: string; form: FormItem; onBack: (
             </div>
           </div>
 
-          {/* Search and column visibility */}
-          <div className="flex flex-col md:flex-row gap-4 mt-5">
+          {/* Search, sort, and preview-field picker */}
+          <div className="flex flex-col md:flex-row gap-3 mt-5">
             <div className="relative flex-1">
               <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
                 <SearchIcon className="w-4 h-4 text-gray-500" />
@@ -368,63 +452,40 @@ const FormSubmissionsViewer: React.FC<{ token: string; form: FormItem; onBack: (
                 </button>
               )}
             </div>
-            <div className="flex items-center gap-2">
-              {/* Column visibility dropdown */}
-              <div className="relative group">
-                <button className="px-3.5 py-2 text-xs rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-gray-300 border border-white/[0.08] transition-all flex items-center gap-2">
-                  <CheckIcon className="w-3.5 h-3.5" />
-                  Columns
-                </button>
-                <div className="absolute right-0 mt-2 w-48 rounded-xl bg-[#1a1a2e] border border-white/[0.08] shadow-2xl z-30 hidden group-hover:block p-2 max-h-60 overflow-y-auto">
-                  {sortedFields.map(f => (
-                    <label key={f.id} className="flex items-center gap-2 px-3 py-2 text-xs text-gray-300 hover:bg-white/[0.05] rounded-lg cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={visibleColumns.has(f.id)}
-                        onChange={() => toggleColumnVisibility(f.id)}
-                        className="accent-purple-500"
-                      />
-                      <span className="truncate">{f.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
+
+            <select
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value as 'newest' | 'oldest')}
+              className="bg-white/[0.06] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-purple-500/40 cursor-pointer"
+            >
+              <option value="newest" className="bg-[#1a1a2e]">Newest first</option>
+              <option value="oldest" className="bg-[#1a1a2e]">Oldest first</option>
+            </select>
+
+            {/* Preview-fields dropdown — pick which questions show directly on each card */}
+            <FieldsPickerDropdown
+              fields={sortedFields}
+              selectedIds={highlightedFieldIds}
+              onToggle={toggleHighlighted}
+              onSelectAll={selectAllHighlighted}
+              onClearAll={clearAllHighlighted}
+            />
           </div>
+
+          {/* Select-all row */}
+          {!loading && paginated.length > 0 && (
+            <div className="flex items-center gap-2 mt-4 text-xs text-gray-400">
+              <CustomCheckbox checked={allVisibleSelected} onChange={toggleSelectAll} title="Select all on this page" />
+              <span>Select all on this page</span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* ===== Table Area ===== */}
+      {/* ===== Cards Area ===== */}
       {loading ? (
-        <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="bg-white/[0.04] text-gray-400 text-xs">
-                  <th className="px-4 py-3 text-left font-medium whitespace-nowrap w-8">
-                    <div className="h-3 bg-white/10 rounded w-4" />
-                  </th>
-                  <th className="px-4 py-3 text-left font-medium whitespace-nowrap">
-                    <div className="h-3 bg-white/10 rounded w-16" />
-                  </th>
-                  {sortedFields.filter(f => visibleColumns.has(f.id)).map(f => (
-                    <th key={f.id} className="px-4 py-3 text-left font-medium whitespace-nowrap">
-                      <div className="h-3 bg-white/10 rounded w-20" />
-                    </th>
-                  ))}
-                  <th className="px-4 py-3 text-left font-medium whitespace-nowrap w-16">
-                    <div className="h-3 bg-white/10 rounded w-8" />
-                  </th>
-                  <th className="px-4 py-3 text-right font-medium w-8" />
-                </tr>
-              </thead>
-              <tbody>
-                {[1, 2, 3, 4, 5].map((_, i) => (
-                  <SkeletonRow key={i} columns={sortedFields.filter(f => visibleColumns.has(f.id)).length + 1} />
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <div className="space-y-3">
+          {[1, 2, 3].map(i => <SkeletonCard key={i} />)}
         </div>
       ) : filteredSubmissions.length === 0 ? (
         <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] py-16 flex flex-col items-center justify-center">
@@ -441,117 +502,106 @@ const FormSubmissionsViewer: React.FC<{ token: string; form: FormItem; onBack: (
           </p>
         </div>
       ) : (
-        <div className="rounded-xl border border-white/[0.08] bg-[#0f0f1a] overflow-hidden shadow-2xl">
-          <div className="overflow-auto max-h-[60vh]">
-            <table className="min-w-full text-xs border-collapse">
-              <thead className="sticky top-0 z-10">
-                <tr className="bg-[#1a1a2e] text-gray-300 uppercase tracking-wider">
-                  {/* Checkbox column */}
-                  <th className="px-2 py-2.5 text-left font-semibold border-b border-r border-white/[0.08] whitespace-nowrap sticky left-0 bg-[#1a1a2e] z-20 w-8">
-                    <input
-                      type="checkbox"
-                      checked={allVisibleSelected}
-                      onChange={toggleSelectAll}
-                      className="accent-purple-500 cursor-pointer"
-                    />
-                  </th>
-                  <th
-                    className="px-3 py-2.5 text-left font-semibold border-b border-r border-white/[0.08] whitespace-nowrap cursor-pointer hover:bg-white/[0.05] transition-colors"
-                    onClick={() => requestSort('submittedAt')}
-                  >
-                    <div className="flex items-center gap-1">
-                      Submitted
-                      {sortConfig?.key === 'submittedAt' && (
-                        sortConfig.direction === 'asc' ? <ChevronUpIcon className="w-3 h-3" /> : <ChevronDownIcon className="w-3 h-3" />
-                      )}
-                    </div>
-                  </th>
-                  {sortedFields.filter(f => visibleColumns.has(f.id)).map(f => (
-                    <th
-                      key={f.id}
-                      className="px-3 py-2.5 text-left font-semibold border-b border-r border-white/[0.08] whitespace-nowrap cursor-pointer hover:bg-white/[0.05] transition-colors"
-                      onClick={() => requestSort(f.id)}
-                    >
-                      <div className="flex items-center gap-1">
-                        <span className="truncate">{f.label}</span>
-                        {sortConfig?.key === f.id && (
-                          sortConfig.direction === 'asc' ? <ChevronUpIcon className="w-3 h-3" /> : <ChevronDownIcon className="w-3 h-3" />
-                        )}
+        <div className="space-y-3">
+          {cardsToRender.map(s => {
+            const answerMap: Record<string, string> = {};
+            s.answers.forEach(a => { answerMap[a.fieldId] = formatValue(a.value); });
+            const isSelected = selectedIds.has(s._id);
+            const isExpanded = expandedIds.has(s._id);
+
+            return (
+              <div
+                key={s._id}
+                className={`rounded-xl border overflow-hidden transition-all ${
+                  isSelected ? 'border-purple-500/40 bg-purple-500/[0.06]' : 'border-white/[0.08] bg-[#12121f] hover:border-white/[0.15]'
+                }`}
+              >
+                {/* Compact card row — no side-scrolling, everything wraps vertically */}
+                <div className="p-4 flex items-start gap-3">
+                  <div className="pt-0.5">
+                    <CustomCheckbox checked={isSelected} onChange={() => toggleSelectRow(s._id)} />
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    {highlightedFields.length > 0 ? (
+                      <div className="space-y-1">
+                        {highlightedFields.map(f => (
+                          <p key={f.id} className="text-sm text-white truncate">
+                            <span className="text-gray-500 text-[11px]">{f.label}: </span>
+                            <span className="font-medium">{answerMap[f.id] || '—'}</span>
+                          </p>
+                        ))}
                       </div>
-                    </th>
-                  ))}
-                  <th
-                    className="px-3 py-2.5 text-left font-semibold border-b border-r border-white/[0.08] whitespace-nowrap cursor-pointer hover:bg-white/[0.05] transition-colors"
-                    onClick={() => requestSort('ip')}
-                  >
-                    <div className="flex items-center gap-1">
-                      IP
-                      {sortConfig?.key === 'ip' && (
-                        sortConfig.direction === 'asc' ? <ChevronUpIcon className="w-3 h-3" /> : <ChevronDownIcon className="w-3 h-3" />
-                      )}
-                    </div>
-                  </th>
-                  <th className="px-3 py-2.5 text-right font-semibold border-b border-white/[0.08] whitespace-nowrap">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginated.map((s, idx) => {
-                  const answerMap: Record<string, string> = {};
-                  s.answers.forEach(a => { answerMap[a.fieldId] = formatValue(a.value); });
-                  const rowIndex = (page - 1) * perPage + idx + 1;
-                  const isSelected = selectedIds.has(s._id);
-                  return (
-                    <tr
-                      key={s._id}
-                      className={`transition-colors ${
-                        idx % 2 === 0 ? 'bg-[#12121f]' : 'bg-[#161625]'
-                      } hover:bg-[#1e1e32] ${isSelected ? 'bg-purple-500/10' : ''}`}
+                    ) : (
+                      <p className="text-sm text-gray-400">No preview fields selected — tap expand to view answers.</p>
+                    )}
+                    <p className="text-[11px] text-gray-500 mt-1.5">
+                      {timeAgo(s.submittedAt)} · {new Date(s.submittedAt).toLocaleDateString()}
+                      {s.ip && <> · IP: {s.ip}</>}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => toggleExpand(s._id)}
+                      className={`p-1.5 rounded-lg transition-colors ${isExpanded ? 'text-purple-300 bg-purple-500/15' : 'text-gray-500 hover:text-purple-300 hover:bg-purple-500/10'}`}
+                      title={isExpanded ? 'Collapse full response' : 'View full response'}
                     >
-                      <td className="px-2 py-2 text-gray-500 border-b border-r border-white/[0.04] whitespace-nowrap sticky left-0 bg-inherit">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleSelectRow(s._id)}
-                          className="accent-purple-500 cursor-pointer"
-                        />
-                      </td>
-                      <td className="px-3 py-2 text-gray-300 border-b border-r border-white/[0.04] whitespace-nowrap">
-                        <span className="block text-[11px] font-medium">{timeAgo(s.submittedAt)}</span>
-                        <span className="block text-[10px] text-gray-500">{new Date(s.submittedAt).toLocaleDateString()}</span>
-                      </td>
-                      {sortedFields.filter(f => visibleColumns.has(f.id)).map(f => (
-                        <td key={f.id} className="px-3 py-2 text-gray-200 border-b border-r border-white/[0.04] whitespace-pre-wrap break-words align-top">
-                          {answerMap[f.id] ? (
-                            <span className="text-[11px]">{answerMap[f.id]}</span>
-                          ) : (
-                            <span className="text-gray-600 text-[11px]">—</span>
-                          )}
-                        </td>
+                      <ExpandIcon className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => deleteSubmission(s._id)}
+                      className="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                      title="Delete"
+                    >
+                      <DeleteIcon className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Expanded full response — every question stacked vertically, always readable */}
+                {isExpanded && (
+                  <div className="px-4 pb-4 pt-1 border-t border-white/[0.06] bg-black/10">
+                    <p className="text-[10px] uppercase tracking-wide text-gray-500 mt-3 mb-2">Full Response</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {sortedFields.map(f => (
+                        <div key={f.id} className="bg-white/[0.04] border border-white/[0.07] rounded-lg px-3 py-2.5">
+                          <p className="text-[10px] uppercase tracking-wide text-gray-500 mb-1 truncate">{f.label}</p>
+                          <p className="text-xs text-gray-200 whitespace-pre-wrap break-words">
+                            {answerMap[f.id] ? answerMap[f.id] : <span className="text-gray-600">—</span>}
+                          </p>
+                        </div>
                       ))}
-                      <td className="px-3 py-2 text-gray-300 border-b border-r border-white/[0.04] whitespace-nowrap align-top">
-                        {s.ip || <span className="text-gray-600">—</span>}
-                      </td>
-                      <td className="px-3 py-2 text-right border-b border-white/[0.04] whitespace-nowrap">
-                        <button
-                          onClick={() => deleteSubmission(s._id)}
-                          className="p-1 rounded text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                          title="Delete"
-                        >
-                          <DeleteIcon className="w-3 h-3" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* ===== Show All / Show Less ===== */}
+          {hiddenCardsCount > 0 && (
+            <button
+              onClick={() => setShowAllCards(true)}
+              className="w-full flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium text-gray-400 hover:text-purple-300 bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.08] rounded-xl transition-colors"
+            >
+              Show All ({hiddenCardsCount} more)
+              <ChevronDownIcon className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {showAllCards && paginated.length > CARDS_PREVIEW_COUNT && (
+            <button
+              onClick={() => setShowAllCards(false)}
+              className="w-full flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium text-gray-400 hover:text-purple-300 bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.08] rounded-xl transition-colors"
+            >
+              Show Less
+              <ChevronUpIcon className="w-3.5 h-3.5" />
+            </button>
+          )}
 
           {/* ===== Pagination ===== */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-between px-3 py-2.5 border-t border-white/[0.06] bg-[#0f0f1a] flex-wrap gap-2">
+            <div className="flex items-center justify-between px-3 py-2.5 border border-white/[0.08] rounded-xl bg-[#0f0f1a] flex-wrap gap-2">
               <div className="flex items-center gap-2 text-xs text-gray-500">
                 <span>Page {page} of {totalPages}</span>
                 <span className="text-gray-600">•</span>

@@ -4,6 +4,7 @@ import { adminAuth } from '../middleware/auth'
 import { findMany, findOne, insertOne, updateOne, deleteOne, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
 import { IDownloadPage } from '../models/types'
 import { syncPageDerivedData, syncAnimeEpisodeCountFromAnime } from '../services/episodeSyncService'
+import { signDownloadUrl, isProtectedDomain } from '../services/signedUrlService'
 
 const downloadPageRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
@@ -381,8 +382,37 @@ downloadPageRoutes.get('/:slug', async (c) => {
         )
     }
 
+    // Updated signed URL logic with fail-safe and extra parameters
+    const signedLinks = await Promise.all(
+      ((page as any).links || []).map(async (link: any) => {
+        const protectedDomain = await isProtectedDomain(link.url, c.env.MONGODB_URI, c.env.MONGODB_DB)
+        if (protectedDomain) {
+          try {
+            const signed = await signDownloadUrl(
+              link.url,
+              {
+                R2_ACCOUNT_ID: c.env.R2_ACCOUNT_ID,
+                R2_ACCESS_KEY_ID: c.env.R2_ACCESS_KEY_ID,
+                R2_SECRET_ACCESS_KEY: c.env.R2_SECRET_ACCESS_KEY,
+                ENCRYPTION_KEY: c.env.ENCRYPTION_KEY,
+              },
+              link.type,
+              c.env.MONGODB_URI,
+              c.env.MONGODB_DB
+            )
+            return { ...link, url: signed }
+          } catch (e) {
+            console.error('Signing failed for link:', link.url, e)
+            return link // fail-safe — ek broken provider se poora page na tootey
+          }
+        }
+        return link
+      })
+    )
+
     return c.json({
       ...(page as any),
+      links: signedLinks,
       animeId: animeData || (page as any).animeId
     })
   } catch (err: any) {

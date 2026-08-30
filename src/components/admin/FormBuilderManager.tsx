@@ -1,5 +1,4 @@
  // src/components/admin/FormBuilderManager.tsx
-// Enhanced Form Builder Manager — polished UI, custom dropdown, live preview, better UX.
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
@@ -55,6 +54,19 @@ const newField = (order: number): FormField => ({
 
 const PUBLIC_ORIGIN = typeof window !== 'undefined' ? window.location.origin : '';
 
+const formatDate = (iso?: string) => {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  } catch {
+    return '—';
+  }
+};
+
 // ---------- SVG Icons (no emojis) ----------
 const PlusIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
@@ -77,8 +89,8 @@ const ArrowUpIcon = () => (
 const ArrowDownIcon = () => (
   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
 );
-const ChevronDownIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+const ChevronDownIcon = ({ className = 'w-4 h-4' }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
 );
 const TextIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h10" /></svg>
@@ -104,6 +116,12 @@ const CheckboxIcon = () => (
 const DropdownIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
 );
+const CheckIcon = () => (
+  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+);
+const InfoIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+);
 
 const FIELD_TYPE_ICONS: Record<FieldType, React.ReactNode> = {
   text: <TextIcon />,
@@ -114,6 +132,34 @@ const FIELD_TYPE_ICONS: Record<FieldType, React.ReactNode> = {
   radio: <RadioIcon />,
   checkbox: <CheckboxIcon />,
   dropdown: <DropdownIcon />,
+};
+
+// ---------- Custom Checkbox Component (replaces native white checkbox) ----------
+interface CustomCheckboxProps {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label?: string;
+}
+
+const CustomCheckbox: React.FC<CustomCheckboxProps> = ({ checked, onChange, label }) => {
+  return (
+    <label className="inline-flex items-center gap-2 text-xs text-gray-400 cursor-pointer select-none group">
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={`w-4 h-4 flex-shrink-0 rounded flex items-center justify-center border transition-all duration-150 ${
+          checked
+            ? 'bg-purple-500 border-purple-500 shadow-sm shadow-purple-500/40'
+            : 'bg-white/5 border-white/20 group-hover:border-purple-400/60'
+        }`}
+      >
+        {checked && <span className="text-white"><CheckIcon /></span>}
+      </button>
+      {label && <span className={checked ? 'text-gray-200' : 'text-gray-400'}>{label}</span>}
+    </label>
+  );
 };
 
 // ---------- Custom Dropdown Component ----------
@@ -192,6 +238,7 @@ const FormBuilderManager: React.FC<{ token: string }> = ({ token }) => {
   const [view, setView] = useState<'list' | 'edit' | 'responses'>('list');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [responsesForm, setResponsesForm] = useState<FormItem | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   // editor state
   const [title, setTitle] = useState('');
@@ -334,6 +381,14 @@ const FormBuilderManager: React.FC<{ token: string }> = ({ token }) => {
     toast.success('Link copied!');
   };
 
+  const toggleExpand = (id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
   // ---------- RESPONSES VIEW ----------
   if (view === 'responses' && responsesForm) {
     return (
@@ -472,15 +527,11 @@ const FormBuilderManager: React.FC<{ token: string }> = ({ token }) => {
               )}
 
               <div className="flex items-center justify-between pt-3 border-t border-white/[0.06]">
-                <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={!!field.required}
-                    onChange={e => updateField(idx, { required: e.target.checked })}
-                    className="accent-purple-500"
-                  />
-                  Required
-                </label>
+                <CustomCheckbox
+                  checked={!!field.required}
+                  onChange={(val) => updateField(idx, { required: val })}
+                  label="Required"
+                />
               </div>
             </div>
           ))}
@@ -616,58 +667,159 @@ const FormBuilderManager: React.FC<{ token: string }> = ({ token }) => {
         </div>
       ) : (
         <div className="space-y-3">
-          {forms.map(f => (
-            <div key={f._id} className="bg-white/[0.05] border border-white/[0.1] rounded-xl p-5 flex flex-wrap items-center gap-4 hover:border-white/[0.15] transition-all">
-              <div className="flex-1 min-w-[200px]">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-white truncate">{f.title}</h3>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${f.isActive !== false ? 'bg-emerald-500/20 text-emerald-300' : 'bg-gray-500/20 text-gray-400'}`}>
-                    {f.isActive !== false ? 'Active' : 'Closed'}
-                  </span>
+          {forms.map(f => {
+            const isExpanded = expandedIds.has(f._id);
+            return (
+              <div key={f._id} className="bg-white/[0.05] border border-white/[0.1] rounded-xl hover:border-white/[0.15] transition-all overflow-hidden">
+                {/* Main row — most important data */}
+                <div className="p-5 flex flex-wrap items-center gap-4">
+                  <div className="flex-1 min-w-[200px]">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-semibold text-white truncate">{f.title}</h3>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${f.isActive !== false ? 'bg-emerald-500/20 text-emerald-300' : 'bg-gray-500/20 text-gray-400'}`}>
+                        {f.isActive !== false ? 'Active' : 'Closed'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-500 mt-1 truncate">
+                      /form/{f.slug} · {f.fields?.length || 0} questions · {f.submissionCount || 0} responses
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      onClick={() => copyLink(f)}
+                      className="px-3 py-1.5 text-xs rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 transition-colors flex items-center gap-1.5"
+                      title="Copy public link"
+                    >
+                      <CopyIcon />
+                      Link
+                    </button>
+                    <button
+                      onClick={() => openResponses(f)}
+                      className="px-3 py-1.5 text-xs rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/20 transition-colors flex items-center gap-1.5"
+                    >
+                      <EyeIcon />
+                      Responses
+                    </button>
+                    <button
+                      onClick={() => startEdit(f._id)}
+                      className="px-3 py-1.5 text-xs rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 transition-colors flex items-center gap-1.5"
+                    >
+                      <EditIcon />
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => toggleActive(f)}
+                      className="px-3 py-1.5 text-xs rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 transition-colors"
+                    >
+                      {f.isActive !== false ? 'Close' : 'Reopen'}
+                    </button>
+                    <button
+                      onClick={() => deleteForm(f)}
+                      className="px-3 py-1.5 text-xs rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 transition-colors flex items-center gap-1.5"
+                    >
+                      <TrashIcon />
+                      Delete
+                    </button>
+                  </div>
                 </div>
-                <p className="text-[11px] text-gray-500 mt-1 truncate">
-                  /form/{f.slug} · {f.fields?.length || 0} questions · {f.submissionCount || 0} responses
-                </p>
+
+                {/* Show All toggle */}
+                <button
+                  onClick={() => toggleExpand(f._id)}
+                  className="w-full flex items-center justify-center gap-1.5 py-2 text-[11px] font-medium text-gray-400 hover:text-purple-300 bg-white/[0.02] hover:bg-white/[0.05] border-t border-white/[0.06] transition-colors"
+                >
+                  {isExpanded ? 'Show Less' : 'Show All'}
+                  <span className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
+                    <ChevronDownIcon className="w-3.5 h-3.5" />
+                  </span>
+                </button>
+
+                {/* Expandable details — grows downward */}
+                <div
+                  className={`grid transition-all duration-300 ease-in-out ${
+                    isExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+                  }`}
+                >
+                  <div className="overflow-hidden">
+                    <div className="p-5 pt-4 border-t border-white/[0.06] bg-black/10 space-y-4">
+                      {/* Description */}
+                      <div>
+                        <p className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">Description</p>
+                        <p className="text-xs text-gray-300">
+                          {f.description?.trim() ? f.description : 'No description added.'}
+                        </p>
+                      </div>
+
+                      {/* Meta grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="bg-white/[0.04] border border-white/[0.08] rounded-lg p-3">
+                          <p className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">Created</p>
+                          <p className="text-xs text-white flex items-center gap-1.5">
+                            <CalendarIcon />
+                            {formatDate(f.createdAt)}
+                          </p>
+                        </div>
+                        <div className="bg-white/[0.04] border border-white/[0.08] rounded-lg p-3">
+                          <p className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">Questions</p>
+                          <p className="text-xs text-white">{f.fields?.length || 0}</p>
+                        </div>
+                        <div className="bg-white/[0.04] border border-white/[0.08] rounded-lg p-3">
+                          <p className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">Responses</p>
+                          <p className="text-xs text-white">{f.submissionCount || 0}</p>
+                        </div>
+                        <div className="bg-white/[0.04] border border-white/[0.08] rounded-lg p-3">
+                          <p className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">Status</p>
+                          <p className={`text-xs font-medium ${f.isActive !== false ? 'text-emerald-300' : 'text-gray-400'}`}>
+                            {f.isActive !== false ? 'Active' : 'Closed'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Full field list */}
+                      <div>
+                        <p className="text-[10px] uppercase tracking-wide text-gray-500 mb-2">All Questions</p>
+                        {f.fields && f.fields.length > 0 ? (
+                          <div className="space-y-1.5">
+                            {[...f.fields]
+                              .sort((a, b) => a.order - b.order)
+                              .map((fld, i) => (
+                                <div
+                                  key={fld.id}
+                                  className="flex items-center gap-3 bg-white/[0.03] border border-white/[0.06] rounded-lg px-3 py-2"
+                                >
+                                  <span className="text-gray-500 flex-shrink-0">{FIELD_TYPE_ICONS[fld.type]}</span>
+                                  <span className="text-xs text-gray-200 flex-1 truncate">
+                                    {i + 1}. {fld.label || 'Untitled question'}
+                                  </span>
+                                  <span className="text-[10px] text-gray-500 flex-shrink-0">
+                                    {FIELD_TYPE_LABELS[fld.type]}
+                                  </span>
+                                  {fld.required && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 flex-shrink-0">
+                                      Required
+                                    </span>
+                                  )}
+                                </div>
+                              ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-gray-500 flex items-center gap-1.5">
+                            <InfoIcon /> No questions added yet.
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Public link */}
+                      <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                        <span>Public link:</span>
+                        <span className="text-gray-300 truncate">{PUBLIC_ORIGIN}/form/{f.slug}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  onClick={() => copyLink(f)}
-                  className="px-3 py-1.5 text-xs rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 transition-colors flex items-center gap-1.5"
-                  title="Copy public link"
-                >
-                  <CopyIcon />
-                  Link
-                </button>
-                <button
-                  onClick={() => openResponses(f)}
-                  className="px-3 py-1.5 text-xs rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/20 transition-colors flex items-center gap-1.5"
-                >
-                  <EyeIcon />
-                  Responses
-                </button>
-                <button
-                  onClick={() => startEdit(f._id)}
-                  className="px-3 py-1.5 text-xs rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 transition-colors flex items-center gap-1.5"
-                >
-                  <EditIcon />
-                  Edit
-                </button>
-                <button
-                  onClick={() => toggleActive(f)}
-                  className="px-3 py-1.5 text-xs rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 transition-colors"
-                >
-                  {f.isActive !== false ? 'Close' : 'Reopen'}
-                </button>
-                <button
-                  onClick={() => deleteForm(f)}
-                  className="px-3 py-1.5 text-xs rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 transition-colors flex items-center gap-1.5"
-                >
-                  <TrashIcon />
-                  Delete
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

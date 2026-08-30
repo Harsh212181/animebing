@@ -33,10 +33,15 @@ import instagramAutomationRoutes from './routes/instagramAutomationRoutes'
 import watchActivityRoutes from './routes/watchActivityRoutes'
 import { runQueueChain } from './services/instagramQueueService'
 import formRoutes from './routes/formRoutes' // ✅ NEW
+import r2ProviderRoutes from './routes/r2ProviderRoutes' // ✅ NEW
+import uploadRoutes from './routes/uploadRoutes' // ✅ NEW
 
 export type Env = {
   MONGODB_URI: string
   MONGODB_DB: string
+  R2_ACCOUNT_ID: string        // ✅ NEW
+  R2_ACCESS_KEY_ID: string     // ✅ NEW
+  R2_SECRET_ACCESS_KEY: string // ✅ NEW
   ALLOWED_ORIGIN: string
   JWT_SECRET: string
   ADMIN_USER: string
@@ -55,6 +60,7 @@ export type Env = {
   IG_VERIFY_TOKEN: string
   IG_USER_ID: string
   IG_ACCESS_TOKEN: string
+  ENCRYPTION_KEY: string   // ✅ NEW
 }
 
 export type Variables = {
@@ -128,6 +134,8 @@ app.route('/api/track', trackRoutes)
 app.route('/api/link-generator', linkGeneratorRoutes)
 app.route('/api/watch-activity', watchActivityRoutes)
 app.route('/api/forms', formRoutes) // ✅ NEW
+app.route('/api/r2-providers', r2ProviderRoutes) // ✅ NEW
+app.route('/api/uploads', uploadRoutes) // ✅ NEW
 
 // ============ INSTAGRAM WEBHOOK (comment → DM automation) ============
 app.route('/', instagramWebhookRoutes)

@@ -721,3 +721,19 @@ export interface IFormSubmission {
   userAgent?: string
   submittedAt: Date
 }
+
+// ============ R2 PROVIDER (sub-admin ke apne R2 bucket) ============
+export interface IR2Provider {
+  _id?: ObjectId
+  hostname: string                    // e.g. 'subadmin1-videos.internal' — sirf lookup key, real DNS nahi
+  bucketName: string
+  accountId: string
+  accessKeyId: string
+  encryptedSecretAccessKey: string    // AES-GCM encrypted
+  iv: string                          // encryption IV
+  ownerUsername?: string
+  label?: string
+  isActive?: boolean
+  createdAt?: Date
+  updatedAt?: Date
+}
