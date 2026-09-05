@@ -1,4 +1,4 @@
-// src/components/admin/MyStorageManager.tsx — Sub-admin self-service R2 connect
+ // src/components/admin/MyStorageManager.tsx — Sub-admin self-service R2 connect
 import React, { useState, useEffect } from 'react';
 
 const API_BASE = import.meta.env.VITE_API_BASE ||
@@ -33,6 +33,10 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
     secretAccessKey: '',
   });
 
+  // ✅ NEW: fetched bucket list state
+  const [bucketOptions, setBucketOptions] = useState<string[]>([]);
+  const [fetchingBuckets, setFetchingBuckets] = useState(false);
+
   const fetchStatus = async () => {
     setLoading(true);
     try {
@@ -51,10 +55,56 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
 
   useEffect(() => { fetchStatus(); }, []);
 
+  // ✅ NEW: credentials se account ke buckets fetch karo
+  const fetchBuckets = async () => {
+    if (!form.accountId || !form.accessKeyId || !form.secretAccessKey) {
+      setError('Pehle Account ID, Access Key aur Secret Key bharo');
+      return;
+    }
+    setError(''); setSuccess('');
+    setFetchingBuckets(true);
+    try {
+      const token = resolveToken();
+      const res = await fetch(`${API_BASE}/uploads/list-buckets`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          accountId: form.accountId,
+          accessKeyId: form.accessKeyId,
+          secretAccessKey: form.secretAccessKey,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setBucketOptions(data.buckets || []);
+        if (data.buckets?.length) {
+          setForm(prev => ({ ...prev, bucketName: data.buckets[0] }));
+        } else {
+          setError('Is account mein koi bucket nahi mila');
+        }
+      } else {
+        setError(data.error || 'Buckets fetch nahi ho sake — credentials check karo');
+      }
+    } catch {
+      setError('Network error');
+    } finally {
+      setFetchingBuckets(false);
+    }
+  };
+
+  // credentials change hone pe purani fetched list clear kar do
+  const updateCred = (field: 'accountId' | 'accessKeyId' | 'secretAccessKey', value: string) => {
+    setForm(prev => ({ ...prev, [field]: value }));
+    setBucketOptions([]);
+  };
+
   const handleConnect = async () => {
     setError(''); setSuccess('');
     if (!form.bucketName || !form.accountId || !form.accessKeyId || !form.secretAccessKey) {
-      setError('Saare fields bharo — Bucket Name, Account ID, Access Key, Secret Key');
+      setError('Saare fields bharo aur bucket select karo');
       return;
     }
     setSaving(true);
@@ -72,6 +122,7 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
       if (res.ok) {
         setSuccess('Bucket connect ho gaya! Ab Video Upload page pe yeh dikhega.');
         setForm({ bucketName: '', accountId: '', accessKeyId: '', secretAccessKey: '' });
+        setBucketOptions([]);
         fetchStatus();
       } else {
         setError(data.error || 'Connect nahi ho saka');
@@ -107,7 +158,7 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
           My Storage (R2 Bucket)
         </h2>
         <p className="text-xs text-white/40 mt-1">
-          Apna Cloudflare R2 bucket connect karo — sirf tumhe hi dikhega upload karte waqt.
+          Apna Cloudflare R2 account connect karo — bucket khud detect ho jayega.
         </p>
       </div>
 
@@ -137,21 +188,11 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
       ) : (
         <div className="bg-white/5 border border-white/10 rounded-2xl p-5 space-y-4">
           <div>
-            <label className="block text-xs text-white/60 mb-1">Bucket Name *</label>
-            <input
-              type="text"
-              value={form.bucketName}
-              onChange={e => setForm({ ...form, bucketName: e.target.value })}
-              className="w-full px-3 py-2 bg-gray-800/60 border border-gray-700/80 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-              placeholder="mera-bucket-naam"
-            />
-          </div>
-          <div>
             <label className="block text-xs text-white/60 mb-1">Cloudflare Account ID *</label>
             <input
               type="text"
               value={form.accountId}
-              onChange={e => setForm({ ...form, accountId: e.target.value })}
+              onChange={e => updateCred('accountId', e.target.value)}
               className="w-full px-3 py-2 bg-gray-800/60 border border-gray-700/80 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
               placeholder="32-character hex ID"
             />
@@ -161,7 +202,7 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
             <input
               type="text"
               value={form.accessKeyId}
-              onChange={e => setForm({ ...form, accessKeyId: e.target.value })}
+              onChange={e => updateCred('accessKeyId', e.target.value)}
               className="w-full px-3 py-2 bg-gray-800/60 border border-gray-700/80 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
           </div>
@@ -170,16 +211,41 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
             <input
               type="password"
               value={form.secretAccessKey}
-              onChange={e => setForm({ ...form, secretAccessKey: e.target.value })}
+              onChange={e => updateCred('secretAccessKey', e.target.value)}
               className="w-full px-3 py-2 bg-gray-800/60 border border-gray-700/80 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
           </div>
+
+          <button
+            onClick={fetchBuckets}
+            disabled={fetchingBuckets}
+            className="px-4 py-2 bg-blue-500/20 hover:bg-blue-500/40 border border-blue-500/30 text-blue-200 rounded-lg text-sm font-medium transition-all disabled:opacity-50"
+          >
+            {fetchingBuckets ? 'Buckets dhoond rahe hain...' : '🔍 Fetch My Buckets'}
+          </button>
+
+          {bucketOptions.length > 0 && (
+            <div>
+              <label className="block text-xs text-white/60 mb-1">Bucket Select Karo *</label>
+              <select
+                value={form.bucketName}
+                onChange={e => setForm(prev => ({ ...prev, bucketName: e.target.value }))}
+                className="w-full px-3 py-2 bg-gray-800/60 border border-gray-700/80 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+              >
+                {bucketOptions.map(b => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <p className="text-[11px] text-white/40">
-            Tip: Cloudflare dashboard mein sirf isi bucket ke liye scoped API token banao — poore account ki access wali key mat do.
+            Tip: Cloudflare dashboard mein sirf apne bucket(s) ke liye scoped API token banao — poore account ki access wali key mat do.
           </p>
+
           <button
             onClick={handleConnect}
-            disabled={saving}
+            disabled={saving || !form.bucketName}
             className="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-medium rounded-xl transition-all disabled:opacity-50"
           >
             {saving ? 'Connecting...' : 'Connect My Storage'}

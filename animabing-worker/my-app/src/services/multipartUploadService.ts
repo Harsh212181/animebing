@@ -135,3 +135,14 @@ export async function generateSimplePutUrl(creds: Creds, key: string): Promise<s
   const signed = await client.sign(url, { method: 'PUT', aws: { signQuery: true } })
   return signed.url
 }
+
+// ✅ NEW: List all buckets for a given R2 account
+export async function listBuckets(accountId: string, accessKeyId: string, secretAccessKey: string): Promise<string[]> {
+  const client = new AwsClient({ accessKeyId, secretAccessKey })
+  const url = `https://${accountId}.r2.cloudflarestorage.com/`
+  const res = await client.fetch(url, { method: 'GET' })
+  if (!res.ok) throw new Error(`Bucket list fail ho gayi: ${res.status} ${await res.text()}`)
+  const xml = await res.text()
+  const nameMatches = [...xml.matchAll(/<Name>(.*?)<\/Name>/g)]
+  return nameMatches.map(m => m[1])
+}

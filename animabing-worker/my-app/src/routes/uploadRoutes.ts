@@ -14,6 +14,7 @@ import {
   deleteObject,
   renameObject,
   generateSimplePutUrl,
+  listBuckets, // ✅ NEW
 } from '../services/multipartUploadService'
 
 const uploadRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
@@ -405,7 +406,7 @@ uploadRoutes.post('/my-provider', adminAuth, async (c) => {
     // 🔒 hostname khud backend generate karta hai — sub-admin isko choose ya spoof nahi kar sakta
     const hostname = `${admin.username}-r2.internal`
 
-    const { encrypted, iv } = await encryptSecret(secretAccessKey, c.env.ENCRYPTION_KEY)
+    const { ciphertext, iv } = await encryptSecret(secretAccessKey, c.env.ENCRYPTION_KEY) // ✅ FIXED
 
     const existing = await findOne<IR2Provider>(
       'r2providers', { ownerUsername: admin.username }, c.env.MONGODB_URI, c.env.MONGODB_DB
@@ -416,7 +417,7 @@ uploadRoutes.post('/my-provider', adminAuth, async (c) => {
       bucketName,
       accountId,
       accessKeyId,
-      encryptedSecretAccessKey: encrypted,
+      encryptedSecretAccessKey: ciphertext, // ✅ FIXED: ciphertext ko sahi field naam se save karo
       iv,
       ownerUsername: admin.username, // 🔒 hamesha JWT se — client body se KABHI mat lo
       label: `${admin.username} ka storage`,
@@ -444,6 +445,24 @@ uploadRoutes.delete('/my-provider', adminAuth, async (c) => {
     }
     await deleteOne('r2providers', { ownerUsername: admin.username }, c.env.MONGODB_URI, c.env.MONGODB_DB)
     return c.json({ success: true })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============ Account ke andar ke buckets fetch karo (dropdown ke liye) ============
+uploadRoutes.post('/list-buckets', adminAuth, async (c) => {
+  try {
+    const admin = c.get('admin')
+    if (admin?.role !== 'subadmin') {
+      return c.json({ error: 'Yeh feature sirf sub-admin ke liye hai' }, 403)
+    }
+    const { accountId, accessKeyId, secretAccessKey } = await c.req.json()
+    if (!accountId || !accessKeyId || !secretAccessKey) {
+      return c.json({ error: 'Account ID, Access Key aur Secret Key zaroori hain' }, 400)
+    }
+    const buckets = await listBuckets(accountId, accessKeyId, secretAccessKey)
+    return c.json({ buckets })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
