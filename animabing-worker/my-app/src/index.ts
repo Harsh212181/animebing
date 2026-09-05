@@ -19,6 +19,7 @@ import referralRoutes from './routes/referralRoutes'
 import analyticsRoutes from './routes/analyticsRoutes'
 import authRoutes from './routes/authRoutes'
 import subAdminRoutes from './routes/subAdminRoutes'
+import subAdminEarningsRoutes from './routes/subAdminEarningsRoutes' // ✅ NEW
 import animeLinkControlRoutes from './routes/animeLinkControlRoutes'
 import specialModeRoutes from './routes/specialModeRoutes'
 import notesRoutes from './routes/notesRoutes'
@@ -127,6 +128,7 @@ app.route('/api/short-users/referral', referralRoutes)
 app.route('/api/analytics', analyticsRoutes)
 app.route('/api/auth', authRoutes)
 app.route('/api/sub-admin', subAdminRoutes)
+app.route('/api/sub-admin-earnings', subAdminEarningsRoutes) // ✅ NEW
 app.route('/api/anime-link-control', animeLinkControlRoutes)
 app.route('/api/special-modes', specialModeRoutes)
 app.route('/api/notes', notesRoutes)

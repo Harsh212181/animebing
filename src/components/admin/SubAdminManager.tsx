@@ -17,6 +17,7 @@ interface SubAdmin {
   upi?: string;
   gmail?: string;
   youtubeChannel?: string;
+  ratePerThousandViews?: number | null; // 🆕 CUSTOM RATE
 }
 
 interface SubAdminStat {
@@ -81,6 +82,8 @@ const AVAILABLE_PERMISSIONS = [
   { key: 'tracklist', label: 'YouTube Track List', icon: 'M15 10l4.55-2.27a1 1 0 011.45.9v6.74a1 1 0 01-1.45.9L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z' },
   { key: 'instagram', label: 'Instagram Automation', icon: 'M12 3l2.6 5.6 6.1.6-4.5 4.2 1.3 6-5.5-3-5.5 3 1.3-6-4.5-4.2 6.1-.6L12 3z' }, // 👈 add karo
   { key: 'videoUpload', label: 'Video Upload', icon: 'M15 10l4.55-2.27a1 1 0 011.45.9v6.74a1 1 0 01-1.45.9L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z' },
+  { key: 'r2storage', label: 'Connect Own Storage (R2)', icon: 'M20 7h-9m3-3v6M4 17h9m-3 3v-6M4 7h4M16 17h4' },
+  { key: 'earnings', label: 'My Earnings', icon: 'M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6' }, // 🆕 EARNINGS
 ];
 
 const COPY_ICON = 'M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z';
@@ -284,6 +287,9 @@ const SubAdminManager: React.FC = () => {
     youtubeChannel: '',
   });
 
+  // 🆕 NEW: custom rate state
+  const [ratePerThousandViews, setRatePerThousandViews] = useState<string>('');
+
   const [showPassCreate, setShowPassCreate] = useState(false);
   const [showPassEdit, setShowPassEdit] = useState(false);
 
@@ -345,6 +351,7 @@ const SubAdminManager: React.FC = () => {
       gmail: '',
       youtubeChannel: '',
     });
+    setRatePerThousandViews(''); // 🆕 reset custom rate
     setEditingId(null);
     setShowForm(false);
     setShowPassCreate(false);
@@ -374,6 +381,12 @@ const SubAdminManager: React.FC = () => {
       gmail: sa.gmail || '',
       youtubeChannel: sa.youtubeChannel || '',
     });
+    // 🆕 set custom rate if exists
+    setRatePerThousandViews(
+      typeof sa.ratePerThousandViews === 'number'
+        ? String(sa.ratePerThousandViews)
+        : ''
+    );
     setShowPassEdit(false);
   };
 
@@ -390,12 +403,19 @@ const SubAdminManager: React.FC = () => {
           upi: form.upi,
           gmail: form.gmail,
           youtubeChannel: form.youtubeChannel,
+          // 🆕 add custom rate
+          ratePerThousandViews: ratePerThousandViews.trim() === '' ? null : parseFloat(ratePerThousandViews),
         };
         if (form.password.trim()) payload.password = form.password;
         await axios.put(`${API_BASE}/sub-admin/${editingId}`, payload, authHeaders);
         toast.success('Sub-admin updated', { id: toastId });
       } else {
-        await axios.post(`${API_BASE}/sub-admin`, form, authHeaders);
+        // 🆕 build payload for create (with custom rate)
+        const payload = {
+          ...form,
+          ratePerThousandViews: ratePerThousandViews.trim() === '' ? null : parseFloat(ratePerThousandViews),
+        };
+        await axios.post(`${API_BASE}/sub-admin`, payload, authHeaders);
         toast.success('Sub-admin created', { id: toastId });
       }
       resetForm();
@@ -706,6 +726,25 @@ const SubAdminManager: React.FC = () => {
                 placeholder="Optional"
               />
             </div>
+            {/* 🆕 CUSTOM RATE FIELD */}
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-1">
+                Custom rate ($/1000 download-page views)
+              </label>
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                placeholder="Leave blank to use global rate"
+                value={ratePerThousandViews}
+                onChange={e => setRatePerThousandViews(e.target.value)}
+                className="w-full px-3 py-2 text-sm bg-[#1c1b29] border border-white/10 rounded-lg text-white placeholder-gray-600 focus:outline-none focus:border-purple-500/50"
+              />
+              <p className="text-[10px] text-gray-600 mt-1">
+                Leave blank to use the main admin's global rate. This only affects
+                download-page views where a short link (1-4) was used.
+              </p>
+            </div>
           </div>
 
           <div>
@@ -945,6 +984,25 @@ const SubAdminManager: React.FC = () => {
                           className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white outline-none focus:border-purple-500/50"
                           placeholder="Optional"
                         />
+                      </div>
+                      {/* 🆕 CUSTOM RATE FIELD */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-400 mb-1">
+                          Custom rate ($/1000 download-page views)
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          placeholder="Leave blank to use global rate"
+                          value={ratePerThousandViews}
+                          onChange={e => setRatePerThousandViews(e.target.value)}
+                          className="w-full px-3 py-2 text-sm bg-[#1c1b29] border border-white/10 rounded-lg text-white placeholder-gray-600 focus:outline-none focus:border-purple-500/50"
+                        />
+                        <p className="text-[10px] text-gray-600 mt-1">
+                          Leave blank to use the main admin's global rate. This only affects
+                          download-page views where a short link (1-4) was used.
+                        </p>
                       </div>
                     </div>
 

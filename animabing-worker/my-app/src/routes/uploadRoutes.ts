@@ -1,9 +1,9 @@
  import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
-import { findOne, findMany, updateOne, deleteOne } from '../services/mongoService'
+import { findOne, findMany, updateOne, deleteOne, insertOne } from '../services/mongoService'
 import { IR2Provider } from '../models/types'
-import { decryptSecret } from '../services/encryptionService'
+import { decryptSecret, encryptSecret } from '../services/encryptionService'
 import { signDownloadUrl } from '../services/signedUrlService'
 import {
   initiateMultipartUpload,
@@ -13,6 +13,7 @@ import {
   listBucketObjects,
   deleteObject,
   renameObject,
+  generateSimplePutUrl,
 } from '../services/multipartUploadService'
 
 const uploadRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
@@ -335,6 +336,114 @@ uploadRoutes.post('/preview-url', adminAuth, async (c) => {
       c.env.MONGODB_DB
     )
     return c.json({ url: signed })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ✅ NEW: Simple image upload (for thumbnails) using existing animedata bucket and public domain
+const THUMBNAIL_FOLDER = 'image/'                    // ✅ animedata bucket ke andar folder
+const THUMBNAIL_HOSTNAME = 'files.animebing.in'       // ✅ existing public domain, naya kuch nahi
+
+uploadRoutes.post('/image-presign', adminAuth, async (c) => {
+  try {
+    const { filename } = await c.req.json()
+    if (!filename) return c.json({ error: 'filename required' }, 400)
+
+    const creds = await resolveUploadCreds(THUMBNAIL_HOSTNAME, c)
+    if (!creds) return c.json({ error: 'Bucket not configured' }, 500)
+
+    const ext = filename.includes('.') ? filename.split('.').pop() : 'jpg'
+    const key = `${THUMBNAIL_FOLDER}thumb-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
+
+    const uploadUrl = await generateSimplePutUrl(creds, key)
+    const publicUrl = `https://${THUMBNAIL_HOSTNAME}/${key}`
+
+    return c.json({ uploadUrl, publicUrl })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ============ SELF-SERVICE: Sub-admin apna khud ka R2 bucket connect kare ============
+
+// STATUS — connected hai ya nahi (secret kabhi return nahi hota)
+uploadRoutes.get('/my-provider', adminAuth, async (c) => {
+  try {
+    const admin = c.get('admin')
+    if (admin?.role !== 'subadmin') {
+      return c.json({ error: 'Yeh feature sirf sub-admin ke liye hai' }, 403)
+    }
+    const provider = await findOne<IR2Provider>(
+      'r2providers', { ownerUsername: admin.username }, c.env.MONGODB_URI, c.env.MONGODB_DB
+    )
+    if (!provider) return c.json({ connected: false })
+    return c.json({
+      connected: true,
+      hostname: (provider as any).hostname,
+      bucketName: (provider as any).bucketName,
+      accountId: (provider as any).accountId,
+      isActive: (provider as any).isActive !== false,
+    })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// CONNECT / UPDATE — sub-admin apne credentials submit karta hai
+uploadRoutes.post('/my-provider', adminAuth, async (c) => {
+  try {
+    const admin = c.get('admin')
+    if (admin?.role !== 'subadmin') {
+      return c.json({ error: 'Yeh feature sirf sub-admin ke liye hai' }, 403)
+    }
+    const { bucketName, accountId, accessKeyId, secretAccessKey } = await c.req.json()
+    if (!bucketName || !accountId || !accessKeyId || !secretAccessKey) {
+      return c.json({ error: 'Bucket Name, Account ID, Access Key aur Secret Key zaroori hain' }, 400)
+    }
+
+    // 🔒 hostname khud backend generate karta hai — sub-admin isko choose ya spoof nahi kar sakta
+    const hostname = `${admin.username}-r2.internal`
+
+    const { encrypted, iv } = await encryptSecret(secretAccessKey, c.env.ENCRYPTION_KEY)
+
+    const existing = await findOne<IR2Provider>(
+      'r2providers', { ownerUsername: admin.username }, c.env.MONGODB_URI, c.env.MONGODB_DB
+    )
+
+    const doc = {
+      hostname,
+      bucketName,
+      accountId,
+      accessKeyId,
+      encryptedSecretAccessKey: encrypted,
+      iv,
+      ownerUsername: admin.username, // 🔒 hamesha JWT se — client body se KABHI mat lo
+      label: `${admin.username} ka storage`,
+      isActive: true,
+    }
+
+    if (existing) {
+      await updateOne('r2providers', { _id: (existing as any)._id }, doc, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    } else {
+      await insertOne('r2providers', doc, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    }
+
+    return c.json({ success: true, hostname })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// DISCONNECT — apna bucket hata do
+uploadRoutes.delete('/my-provider', adminAuth, async (c) => {
+  try {
+    const admin = c.get('admin')
+    if (admin?.role !== 'subadmin') {
+      return c.json({ error: 'Yeh feature sirf sub-admin ke liye hai' }, 403)
+    }
+    await deleteOne('r2providers', { ownerUsername: admin.username }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    return c.json({ success: true })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }

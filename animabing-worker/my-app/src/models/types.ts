@@ -135,8 +135,8 @@ export interface IPoll {
   isActive?: boolean
   totalVotes?: number
   voters?: IVoter[]
-  displayLocations?: ('home' | 'detail' | 'downloadLink')[]   // ✅ NEW
-  hideVoteCounts?: boolean   // ✅ NEW — true hone par users ko votes/percentage nahi dikhega
+  displayLocations?: ('home' | 'detail' | 'downloadLink')[]
+  hideVoteCounts?: boolean
   createdAt?: Date
   updatedAt?: Date
 }
@@ -192,13 +192,13 @@ export interface IContact {
 // ============ DOWNLOAD PAGE ============
 export interface IDownloadPageLink {
   episode: number
-  episodeStart?: number    
+  episodeStart?: number
   url: string
   quality?: string
   language?: string
   type?: 'download' | 'watch'
   durationSec?: number
-  playerMode?: 'custom' | 'default'   // ✅ NEW — 'custom' = apna control bar, 'default' = normal YouTube player
+  playerMode?: 'custom' | 'default'
 }
 
 export interface IDownloadPage {
@@ -210,7 +210,7 @@ export interface IDownloadPage {
   links: IDownloadPageLink[]
   isHidden?: boolean
   isPrimaryForEpisodeCount?: boolean
-  defaultPlayerMode?: 'custom' | 'default'   // ✅ NEW — page-level YouTube player mode
+  defaultPlayerMode?: 'custom' | 'default'
   createdAt?: Date
   updatedAt?: Date
 }
@@ -242,6 +242,8 @@ export interface ILinkSettings {
   preModeLink3?: boolean
   preModeLink4?: boolean
   preModeLink5?: boolean
+  // 🆕 EARNINGS: default $/1000 views used when a sub-admin has no custom rate set
+  globalRatePerThousandViews?: number
 }
 
 // ============ ANALYTICS ============
@@ -296,7 +298,6 @@ export interface IShortUser {
   createdBy?: 'admin' | 'self'
   createdByAdminId?: string
   createdByAdminUsername?: string
-  // 🆕 Per-user click verification override — null/undefined = use global default
   requireFullCycle?: boolean | null
 }
 
@@ -407,16 +408,19 @@ export interface ISubAdmin {
   fullName?: string
   permissions: string[]
   animeAccess: 'own' | 'all'
-  assignedAnimeIds?: string[]   // 🆕 super admin ne manually assign kiya hua anime
+  assignedAnimeIds?: string[]
   isBlocked?: boolean
   createdBy?: string
   lastLogin?: Date
   createdAt?: Date
   updatedAt?: Date
-  phone?: string;          // optional phone number
-  upi?: string;            // optional UPI ID
-  gmail?: string;          // optional Gmail address
-  youtubeChannel?: string; // optional YouTube channel name
+  phone?: string
+  upi?: string
+  gmail?: string
+  youtubeChannel?: string
+  // 🆕 EARNINGS: custom $/1000 download-page-views rate for this sub-admin.
+  // null/undefined = falls back to linksettings.globalRatePerThousandViews
+  ratePerThousandViews?: number | null
 }
 
 // ============ ACTIVITY LOG ============
@@ -452,14 +456,13 @@ export interface ISpecialMode {
   _id?: ObjectId
   name: string
   type: 'weekday' | 'dateRange'
-  weekday?: number        
-  weekdays?: number[]     
+  weekday?: number
+  weekdays?: number[]
   startDate?: Date
   endDate?: Date
   bannerText?: string
   isEnabled: boolean
   forceLink5Only?: boolean
-  // ✅ NEW — banner kahan-kahan dikhega. Missing/undefined = purane modes ke liye default sabhi jagah
   displayLocations?: ('home' | 'detail' | 'downloadLink')[]
   createdAt?: Date
   updatedAt?: Date
@@ -506,9 +509,9 @@ export interface ITrackedTitle {
   baselineEpisodeDurationSec?: number
 
   initialized?: boolean
-  approvalNotified?: boolean           
-  lastApprovalNotifiedAt?: string      
-  noFormatSeenIds?: string[]           
+  approvalNotified?: boolean
+  lastApprovalNotifiedAt?: string
+  noFormatSeenIds?: string[]
   ignoredVideoIds?: string[]
   matchThreshold?: number
   excludeKeywords?: string[]
@@ -535,7 +538,6 @@ export interface ITrackedChannel {
 
   consecutiveErrors?: number
 
-  // ✅ NEW — naya title add hote hi ye defaults auto-apply hon
   defaultStrictChronology?: boolean
   defaultChronologyGraceGap?: number
 }
@@ -568,10 +570,8 @@ export interface ITrackNotification {
   suggestedRangeEnd?: number
   suggestedDurationMin?: number
 
-  // ✅ NEW — why this became a manual_review notification
   reviewReason?: 'duration' | 'chronology' | 'description' | 'unparseable'
 
-  // ✅ NEW — fuzzy match confidence (0-1) for this video, when relevant
   matchScore?: number
 
   removedOldLink?: {
@@ -593,7 +593,6 @@ export interface ICronRunLog {
   updatesFound: number
   errorCount: number
   errorChannels?: string[]
-  // ✅ NEW — approximate total YouTube API quota units consumed this run
   apiUnitsUsed?: number
 }
 
@@ -627,7 +626,7 @@ export interface IShortenerClickSettings {
   _id?: ObjectId
   requireFullCycle: boolean
   sessionExpiryMinutes: number
-  minDwellSeconds: number          // 🆕 anti-bot minimum time on anime page
+  minDwellSeconds: number
   updatedAt?: Date
 }
 
@@ -643,9 +642,9 @@ export interface IClickSession {
   stage: 'started' | 'anime_viewed' | 'completed'
   createdAt: Date
   expiresAt: Date
-  animeViewedAt?: Date | null      // 🆕 dwell-time check ke liye
+  animeViewedAt?: Date | null
   completedAt?: Date | null
-  ipMismatch?: boolean             // 🆕 suspicious flag
+  ipMismatch?: boolean
 }
 
 // ============ WATCH / DOWNLOAD ACTIVITY (per-user tracking) ============
@@ -664,7 +663,7 @@ export interface IWatchActivity {
   userAgent?: string
   device?: 'mobile' | 'tablet' | 'desktop' | 'unknown'
   country?: string
-  watchDurationSec?: number       // sirf 'watch' type ke liye — kitni der dekha (approx, 15s heartbeat se)
+  watchDurationSec?: number
   lastHeartbeatAt?: Date
   startedAt: Date
   endedAt?: Date
@@ -684,12 +683,12 @@ export type FormFieldType =
   | 'dropdown'
 
 export interface IFormField {
-  id: string                 // e.g. 'f_1699999999_1' — unique within the form
+  id: string
   type: FormFieldType
   label: string
   placeholder?: string
   required?: boolean
-  options?: string[]         // radio / checkbox / dropdown ke liye
+  options?: string[]
   order: number
 }
 
@@ -697,9 +696,9 @@ export interface IForm {
   _id?: ObjectId
   title: string
   description?: string
-  slug: string                // public URL: /form/:slug
+  slug: string
   fields: IFormField[]
-  isActive?: boolean          // false = public submit band, "closed" jaisa
+  isActive?: boolean
   submissionCount?: number
   createdBy?: string
   createdByUsername?: string
@@ -709,7 +708,7 @@ export interface IForm {
 
 export interface IFormAnswer {
   fieldId: string
-  label: string                 // submit ke waqt ka label snapshot (form baad me edit ho sakta hai)
+  label: string
   value: string | string[]
 }
 
@@ -725,15 +724,46 @@ export interface IFormSubmission {
 // ============ R2 PROVIDER (sub-admin ke apne R2 bucket) ============
 export interface IR2Provider {
   _id?: ObjectId
-  hostname: string                    // e.g. 'subadmin1-videos.internal' — sirf lookup key, real DNS nahi
+  hostname: string
   bucketName: string
   accountId: string
   accessKeyId: string
-  encryptedSecretAccessKey: string    // AES-GCM encrypted
-  iv: string                          // encryption IV
+  encryptedSecretAccessKey: string
+  iv: string
   ownerUsername?: string
   label?: string
   isActive?: boolean
   createdAt?: Date
   updatedAt?: Date
+}
+
+// ============ SUB-ADMIN EARNINGS (view→$ tracking) ============
+// Ek "earnings-relevant" pageview jab bhi kisi download page par record hoti hai,
+// us waqt ke link-5 / special-mode status ke hisaab se category tag hoti hai.
+// Ye teeno categories har jagah is exact naming se use hongi (backend + frontend):
+//   'normal'        → short links (1-4) active the → dollar earnings mein COUNT hota hai
+//   'link5-direct'  → link5 manually ON tha (short link bypass) → alag card, earnings mein NAHI
+//   'special-mode'  → kisi Special Mode ne link5 force kiya → alag card, earnings mein NAHI
+export type EarningType = 'normal' | 'link5-direct' | 'special-mode'
+
+export interface ISubAdminAnimeEarning {
+  animeId: string
+  animeTitle: string
+  normalViews: number
+  link5DirectViews: number
+  specialModeViews: number
+  earnings: number // normalViews * rate / 1000, rounded to 4 decimals
+}
+
+export interface ISubAdminEarningsSummary {
+  subAdminId: string
+  username: string
+  realName: string
+  rate: number
+  rateSource: 'custom' | 'global'
+  totalNormalViews: number
+  totalLink5DirectViews: number
+  totalSpecialModeViews: number
+  totalEarnings: number
+  byAnime: ISubAdminAnimeEarning[]
 }

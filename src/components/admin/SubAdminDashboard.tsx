@@ -19,6 +19,8 @@ import NotesManager from './NotesManager';
 import TrackListManager from './TrackListManager';
 import InstagramAutomationManager from './InstagramAutomationManager';
 import VideoManager from './VideoManager'; // ✅ NEW
+import SubAdminMyEarnings from './SubAdminMyEarnings'; // 🆕 EARNINGS
+import MyStorageManager from './MyStorageManager'; // ✅ NEW import
 import Spinner from '../Spinner';
 import axios from 'axios';
 
@@ -68,6 +70,8 @@ const ICONS: Record<string, string> = {
   tracklist:       'M4 6h16M4 10h16M4 14h10 M18 15l2 2 4-4',
   instagram:       'M3 8a2 2 0 012-2h2l1.5-2h7L17 6h2a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V8z M12 15a3 3 0 100-6 3 3 0 000 6z',
   videoUpload:     'M15 10l4.55-2.27a1 1 0 011.45.9v6.74a1 1 0 01-1.45.9L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z', // ✅ NEW
+  myEarnings:      'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 10v2m0-14a9 9 0 100 18 9 9 0 000-18z', // 🆕 EARNINGS
+  myStorage:       'M20 7h-9m3-3v6M4 17h9m-3 3v-6M4 7h4M16 17h4', // ✅ NEW icon
   menu:            'M4 6h16M4 12h16M4 18h16',
   close:           'M6 18L18 6M6 6l12 12',
 };
@@ -91,6 +95,8 @@ const TAB_LABELS: Record<string, string> = {
   tracklist:       'Track List',
   instagram:       'Instagram Automation',
   videoUpload:     'Video Upload', // ✅ NEW
+  myEarnings:      'My Earnings',  // 🆕 EARNINGS
+  myStorage:       'My Storage',   // ✅ NEW
 };
 
 const TAB_PERMISSIONS: Record<string, string | null> = {
@@ -112,14 +118,16 @@ const TAB_PERMISSIONS: Record<string, string | null> = {
   tracklist:       'tracklist',
   instagram:       'instagram',
   videoUpload:     'videoUpload', // ✅ NEW
+  myEarnings:      'earnings',    // 🆕 EARNINGS — super admin controls this via sub-admin permissions
+  myStorage:       'r2storage',   // ✅ NEW permission
 };
 
 // ─── Sidebar sections ──────────────────────────────────────────────
 const SIDEBAR_SECTIONS = [
   { id: 'content', label: 'Content', tabs: ['list', 'add', 'episodes', 'episode-status'] },
   { id: 'engagement', label: 'Engagement', tabs: ['polls', 'social', 'reports', 'notes', 'instagram'] },
-  { id: 'links', label: 'Links & Downloads', tabs: ['downloadPages', 'videoUpload', 'partners', 'shortenerLinks', 'shortenerUsers', 'linkControl', 'tracklist'] }, // ✅ videoUpload added
-  { id: 'analytics', label: 'Analytics', tabs: ['pageviews', 'useractivity'] },
+  { id: 'links', label: 'Links & Downloads', tabs: ['downloadPages', 'videoUpload', 'myStorage', 'partners', 'shortenerLinks', 'shortenerUsers', 'linkControl', 'tracklist'] }, // ✅ myStorage added
+  { id: 'analytics', label: 'Analytics', tabs: ['pageviews', 'useractivity', 'myEarnings'] }, // 🆕 EARNINGS
 ];
 
 // ─── User Avatar ─────────────────────────────────────────────────────
@@ -262,6 +270,8 @@ function renderTab(tabId: string, token: string) {
     case 'tracklist':      return <TrackListManager />;
     case 'instagram':      return <InstagramAutomationManager token={token} apiBase={API_BASE} subAdminMode />;
     case 'videoUpload':    return <VideoManager token={token} subAdminMode />; // ✅ NEW
+    case 'myEarnings':     return <SubAdminMyEarnings token={token} />; // 🆕 EARNINGS
+    case 'myStorage':      return <MyStorageManager token={token} />; // ✅ NEW
     default:               return null;
   }
 }

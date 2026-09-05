@@ -808,7 +808,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       )}
 
       {/* Centered play/pause overlay - YouTube-style circular button, fixed size */}
-      {!playing && (
+      {!playing && !isBuffering && (
         <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
           <div
             className="center-play-btn flex items-center justify-center rounded-full bg-black/45"

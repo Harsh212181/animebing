@@ -128,3 +128,10 @@ export async function renameObject(creds: Creds, oldKey: string, newKey: string)
   if (!res.ok) throw new Error(`Rename (copy) failed: ${res.status} ${await res.text()}`)
   await deleteObject(creds, oldKey)
 }
+
+export async function generateSimplePutUrl(creds: Creds, key: string): Promise<string> {
+  const client = getClient(creds)
+  const url = objectEndpoint(creds, key)
+  const signed = await client.sign(url, { method: 'PUT', aws: { signQuery: true } })
+  return signed.url
+}

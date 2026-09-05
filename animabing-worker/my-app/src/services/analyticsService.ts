@@ -1,6 +1,7 @@
-// src/services/analyticsService.ts
+ // src/services/analyticsService.ts
 import { getDb } from './mongoService'
 import { ObjectId } from 'mongodb'
+import { EarningType, ISubAdminAnimeEarning, ISubAdminEarningsSummary } from '../models/types'
 
 export interface PageViewRecord {
   path: string
@@ -18,6 +19,18 @@ export interface PageViewRecord {
   timeOnPage?: number
   timestamp: Date
   date: string
+  // 🆕 EARNINGS fields — only populated for pageType === 'download'
+  earningType?: EarningType
+  animeId?: string
+  subAdminId?: string
+}
+
+// 🆕 EARNINGS: signals passed in from the route handler describing the
+// link-5 / special-mode state AT THE MOMENT the pageview happened. Must be
+// resolved write-time — we can't reconstruct "what was link5's state" later.
+export interface EarningContext {
+  link5Active: boolean       // linksettings.link5 === true at time of view
+  specialModeForcing: boolean // isForceLink5ModeActive() === true at time of view
 }
 
 // Helper: returns date string in Indian Standard Time (UTC+5:30)
@@ -104,6 +117,50 @@ async function getSlugMetaMap(
   return map
 }
 
+// 🆕 EARNINGS: resolve { animeId, subAdminId (createdBy) } for a download-page
+// (or anime-detail) slug. Cached per-call via getDb; cheap enough for the
+// pageview write path since it's just two small indexed-ish lookups.
+async function resolveAnimeOwnerForSlug(
+  slug: string | undefined,
+  mongoUri: string,
+  dbName: string
+): Promise<{ animeId?: string; subAdminId?: string }> {
+  if (!slug) return {}
+  const db = await getDb(mongoUri, dbName)
+
+  // Try as a direct anime slug first
+  const anime = await db.collection('animes').findOne(
+    { slug },
+    { projection: { createdBy: 1 } }
+  )
+  if (anime) {
+    return {
+      animeId: anime._id.toString(),
+      subAdminId: anime.createdBy ? anime.createdBy.toString() : undefined,
+    }
+  }
+
+  // Fall back to download-page slug -> parent anime
+  const dp = await db.collection('downloadpages').findOne(
+    { slug },
+    { projection: { animeId: 1 } }
+  )
+  if (dp?.animeId) {
+    const parentAnime = await db.collection('animes').findOne(
+      { _id: dp.animeId },
+      { projection: { createdBy: 1 } }
+    )
+    if (parentAnime) {
+      return {
+        animeId: dp.animeId.toString(),
+        subAdminId: parentAnime.createdBy ? parentAnime.createdBy.toString() : undefined,
+      }
+    }
+  }
+
+  return {}
+}
+
 // ─── GeoIP response type ─────────────────────────────────────────────────
 interface GeoIPResponse {
   countryCode?: string
@@ -132,9 +189,10 @@ async function enrichGeo(ip: string): Promise<{ country?: string; region?: strin
 
 // Track single page view
 export async function trackPageView(
-  data: Omit<PageViewRecord, 'timestamp' | 'date'>,
+  data: Omit<PageViewRecord, 'timestamp' | 'date' | 'earningType' | 'animeId' | 'subAdminId'>,
   mongoUri: string,
-  dbName: string
+  dbName: string,
+  earningContext?: EarningContext // 🆕 EARNINGS — only relevant when data.pageType === 'download'
 ): Promise<void> {
   const db = await getDb(mongoUri, dbName)
   const now = new Date()
@@ -151,6 +209,29 @@ export async function trackPageView(
     city = city || geo.city
   }
 
+  // 🆕 EARNINGS: only download-page views are earnings-relevant. Category is
+  // decided from the link-5 / special-mode state AT THE TIME of this view —
+  // never recomputed later, since that state changes over time.
+  let earningType: EarningType | undefined
+  let animeId: string | undefined
+  let subAdminId: string | undefined
+
+  if (data.pageType === 'download') {
+    const owner = await resolveAnimeOwnerForSlug(data.slug, mongoUri, dbName)
+    animeId = owner.animeId
+    subAdminId = owner.subAdminId
+
+    if (earningContext) {
+      if (earningContext.specialModeForcing) {
+        earningType = 'special-mode'
+      } else if (earningContext.link5Active) {
+        earningType = 'link5-direct'
+      } else {
+        earningType = 'normal'
+      }
+    }
+  }
+
   await db.collection('pageviews').insertOne({
     ...data,
     country,
@@ -159,6 +240,9 @@ export async function trackPageView(
     timestamp: now,
     date,
     createdAt: now,
+    ...(earningType ? { earningType } : {}),
+    ...(animeId ? { animeId } : {}),
+    ...(subAdminId ? { subAdminId } : {}),
   })
 
   await db.collection('pageview_daily').updateOne(
@@ -1862,4 +1946,199 @@ export async function getMonthlyDetail(
   )
 
   return { month, days, totals }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// 🆕 SUB-ADMIN EARNINGS (view → $ tracking, per anime, split by earningType)
+// ══════════════════════════════════════════════════════════════════════════
+
+// Minimal shape we actually read off a `subadmins` document for earnings
+// calculations. Explicitly casting findOne()'s result to this interface
+// (instead of leaving it as the driver's loosely-typed Document) is what
+// fixes the "not assignable" red-line at resolveEffectiveRate(subAdmin, ...)
+// and at the subAdmin.username / subAdmin.fullName reads below.
+interface SubAdminRateDoc {
+  _id: ObjectId
+  username: string
+  fullName?: string
+  ratePerThousandViews?: number | null
+}
+
+// Resolve the effective $/1000-views rate for a sub-admin: their own custom
+// rate if set, else the global default from linksettings.
+async function resolveEffectiveRate(
+  subAdmin: { ratePerThousandViews?: number | null } | null | undefined,
+  mongoUri: string,
+  dbName: string
+): Promise<{ rate: number; rateSource: 'custom' | 'global' }> {
+  const db = await getDb(mongoUri, dbName)
+  const settings = await db.collection('linksettings').findOne({})
+  const globalRate = typeof settings?.globalRatePerThousandViews === 'number'
+    ? settings.globalRatePerThousandViews
+    : 0
+
+  if (subAdmin && typeof subAdmin.ratePerThousandViews === 'number') {
+    return { rate: subAdmin.ratePerThousandViews, rateSource: 'custom' }
+  }
+  return { rate: globalRate, rateSource: 'global' }
+}
+
+// Earnings summary for ONE sub-admin: per-anime breakdown of the three
+// earningType buckets, plus total $ (only 'normal' views count toward $).
+export async function getSubAdminEarnings(
+  subAdminId: string,
+  mongoUri: string,
+  dbName: string
+): Promise<ISubAdminEarningsSummary | null> {
+  const db = await getDb(mongoUri, dbName)
+
+  // ✅ FIX: explicit cast to SubAdminRateDoc — the raw driver return type
+  // doesn't guarantee ratePerThousandViews/username/fullName shapes, which
+  // is what caused the red-line type mismatch below.
+  const subAdmin = await db.collection('subadmins').findOne(
+    { _id: toObjectIdSafe(subAdminId) }
+  ) as SubAdminRateDoc | null
+  if (!subAdmin) return null
+
+  const { rate, rateSource } = await resolveEffectiveRate(subAdmin, mongoUri, dbName)
+
+  const raw = await db
+    .collection('pageviews')
+    .aggregate([
+      {
+        $match: {
+          subAdminId: subAdminId,
+          pageType: 'download',
+          earningType: { $exists: true },
+        },
+      },
+      {
+        $group: {
+          _id: { animeId: '$animeId', earningType: '$earningType' },
+          count: { $sum: 1 },
+        },
+      },
+    ])
+    .toArray()
+
+  // Group by animeId
+  const byAnimeMap = new Map<string, { normal: number; link5Direct: number; specialMode: number }>()
+  for (const row of raw) {
+    const animeId = row._id.animeId as string
+    if (!animeId) continue
+    if (!byAnimeMap.has(animeId)) {
+      byAnimeMap.set(animeId, { normal: 0, link5Direct: 0, specialMode: 0 })
+    }
+    const bucket = byAnimeMap.get(animeId)!
+    if (row._id.earningType === 'normal') bucket.normal += row.count
+    else if (row._id.earningType === 'link5-direct') bucket.link5Direct += row.count
+    else if (row._id.earningType === 'special-mode') bucket.specialMode += row.count
+  }
+
+  const animeIds = Array.from(byAnimeMap.keys()).filter(isValidObjectIdSafe).map(toObjectIdSafe)
+  const animeTitles = animeIds.length
+    ? await db.collection('animes')
+        .find({ _id: { $in: animeIds } }, { projection: { title: 1 } })
+        .toArray()
+    : []
+  const titleMap = new Map(animeTitles.map((a: any) => [a._id.toString(), a.title || 'Unknown']))
+
+  const byAnime: ISubAdminAnimeEarning[] = Array.from(byAnimeMap.entries()).map(([animeId, b]) => ({
+    animeId,
+    animeTitle: titleMap.get(animeId) || 'Unknown',
+    normalViews: b.normal,
+    link5DirectViews: b.link5Direct,
+    specialModeViews: b.specialMode,
+    earnings: parseFloat(((b.normal * rate) / 1000).toFixed(4)),
+  })).sort((a, b) => b.normalViews - a.normalViews)
+
+  const totalNormalViews = byAnime.reduce((s, a) => s + a.normalViews, 0)
+  const totalLink5DirectViews = byAnime.reduce((s, a) => s + a.link5DirectViews, 0)
+  const totalSpecialModeViews = byAnime.reduce((s, a) => s + a.specialModeViews, 0)
+  const totalEarnings = parseFloat(((totalNormalViews * rate) / 1000).toFixed(4))
+
+  return {
+    subAdminId,
+    username: subAdmin.username,
+    realName: subAdmin.fullName || subAdmin.username,
+    rate,
+    rateSource,
+    totalNormalViews,
+    totalLink5DirectViews,
+    totalSpecialModeViews,
+    totalEarnings,
+    byAnime,
+  }
+}
+
+// Lightweight summary across ALL sub-admins — powers the main-admin overview
+// table (no per-anime breakdown here, just totals per sub-admin).
+export async function getAllSubAdminEarningsSummary(
+  mongoUri: string,
+  dbName: string
+): Promise<Omit<ISubAdminEarningsSummary, 'byAnime'>[]> {
+  const db = await getDb(mongoUri, dbName)
+  const settings = await db.collection('linksettings').findOne({})
+  const globalRate = typeof settings?.globalRatePerThousandViews === 'number'
+    ? settings.globalRatePerThousandViews
+    : 0
+
+  const subAdmins = await db.collection('subadmins')
+    .find({}, { projection: { username: 1, fullName: 1, ratePerThousandViews: 1 } })
+    .toArray()
+
+  const results = await Promise.all(subAdmins.map(async (sa: any) => {
+    const subAdminId = sa._id.toString()
+    const rate = typeof sa.ratePerThousandViews === 'number' ? sa.ratePerThousandViews : globalRate
+    const rateSource: 'custom' | 'global' = typeof sa.ratePerThousandViews === 'number' ? 'custom' : 'global'
+
+    const raw = await db
+      .collection('pageviews')
+      .aggregate([
+        {
+          $match: {
+            subAdminId,
+            pageType: 'download',
+            earningType: { $exists: true },
+          },
+        },
+        {
+          $group: {
+            _id: '$earningType',
+            count: { $sum: 1 },
+          },
+        },
+      ])
+      .toArray()
+
+    let totalNormalViews = 0, totalLink5DirectViews = 0, totalSpecialModeViews = 0
+    for (const row of raw) {
+      if (row._id === 'normal') totalNormalViews = row.count
+      else if (row._id === 'link5-direct') totalLink5DirectViews = row.count
+      else if (row._id === 'special-mode') totalSpecialModeViews = row.count
+    }
+
+    return {
+      subAdminId,
+      username: sa.username,
+      realName: sa.fullName || sa.username,
+      rate,
+      rateSource,
+      totalNormalViews,
+      totalLink5DirectViews,
+      totalSpecialModeViews,
+      totalEarnings: parseFloat(((totalNormalViews * rate) / 1000).toFixed(4)),
+    }
+  }))
+
+  return results.sort((a, b) => b.totalEarnings - a.totalEarnings)
+}
+
+// Small local helpers so this file doesn't need a top-level import that could
+// clash with existing ObjectId usage patterns in mongoService.ts
+function toObjectIdSafe(id: string): ObjectId {
+  return new ObjectId(id)
+}
+function isValidObjectIdSafe(id: string): boolean {
+  return ObjectId.isValid(id)
 }

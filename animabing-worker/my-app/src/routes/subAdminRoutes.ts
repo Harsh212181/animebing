@@ -99,7 +99,8 @@ subAdminRoutes.post('/', adminAuth, superAdminOnly, async (c) => {
   try {
     const {
       username, password, fullName, permissions, animeAccess,
-      phone, upi, gmail, youtubeChannel // <-- naye fields
+      phone, upi, gmail, youtubeChannel, // <-- naye fields
+      ratePerThousandViews // 🆕 EARNINGS: optional custom $/1000 download-page-views rate
     } = await c.req.json()
 
     if (!username || !password) {
@@ -107,6 +108,10 @@ subAdminRoutes.post('/', adminAuth, superAdminOnly, async (c) => {
     }
     if (password.length < 6) {
       return c.json({ success: false, error: 'Password must be at least 6 characters' }, 400)
+    }
+    if (ratePerThousandViews !== undefined && ratePerThousandViews !== null &&
+        (typeof ratePerThousandViews !== 'number' || ratePerThousandViews < 0)) {
+      return c.json({ success: false, error: 'ratePerThousandViews must be a non-negative number or null' }, 400)
     }
 
     const existing = await findOne('subadmins', { username }, c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -131,6 +136,8 @@ subAdminRoutes.post('/', adminAuth, superAdminOnly, async (c) => {
       ...(upi !== undefined && { upi }),
       ...(gmail !== undefined && { gmail }),
       ...(youtubeChannel !== undefined && { youtubeChannel }),
+      // 🆕 EARNINGS: agar diya gaya hai to save karo (null bhi valid hai = global rate use karo)
+      ...(ratePerThousandViews !== undefined && { ratePerThousandViews }),
     }
 
     const result = await insertOne('subadmins', newSubAdmin, c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -167,7 +174,8 @@ subAdminRoutes.put('/:id', adminAuth, superAdminOnly, async (c) => {
 
     const {
       fullName, permissions, animeAccess, password,
-      phone, upi, gmail, youtubeChannel // <-- new fields
+      phone, upi, gmail, youtubeChannel, // <-- new fields
+      ratePerThousandViews // 🆕 EARNINGS: optional custom rate override (null clears it)
     } = await c.req.json()
 
     const updateData: any = {}
@@ -180,6 +188,14 @@ subAdminRoutes.put('/:id', adminAuth, superAdminOnly, async (c) => {
     if (upi !== undefined) updateData.upi = upi
     if (gmail !== undefined) updateData.gmail = gmail
     if (youtubeChannel !== undefined) updateData.youtubeChannel = youtubeChannel
+
+    // 🆕 EARNINGS: ratePerThousandViews — number to set custom, null to clear (fallback to global)
+    if (ratePerThousandViews !== undefined) {
+      if (ratePerThousandViews !== null && (typeof ratePerThousandViews !== 'number' || ratePerThousandViews < 0)) {
+        return c.json({ success: false, error: 'ratePerThousandViews must be a non-negative number or null' }, 400)
+      }
+      updateData.ratePerThousandViews = ratePerThousandViews
+    }
 
     // Optional password reset by super admin
     if (password && password.trim()) {

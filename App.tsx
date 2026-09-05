@@ -1,4 +1,4 @@
-// App.tsx -  
+ // App.tsx -  
 import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
@@ -858,6 +858,14 @@ const MainApp: React.FC = () => {
         .border-green-custom-30 { border-color: rgba(115, 245, 138, 0.3); }
         html { scroll-behavior: auto !important; }
         body { overflow-anchor: none; }
+        /* ✅ Hide main page scrollbar */
+        body {
+          scrollbar-width: none !important;
+          -ms-overflow-style: none !important;
+        }
+        body::-webkit-scrollbar {
+          display: none !important;
+        }
       `}</style>
 
       <AnalyticsTracker />

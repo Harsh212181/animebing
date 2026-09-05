@@ -3,6 +3,7 @@ import axios from 'axios';
 import type { SubDubStatus } from '../../types';
 import Spinner from '../Spinner';
 import { getAdminToken } from '../../../utils/authToken'; // ✅ fresh token per submit
+import ImageUploadField from './ImageUploadField'; // ✅ new import
 
 const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
 
@@ -730,91 +731,33 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                 ]}
               />
 
-              {/* Thumbnail Preview + Description — stacked on phone, side-by-side on larger screens.
-                  Description box now auto-grows to fit ALL the text, no more hidden/clipped lines. */}
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1.5 flexl items-center gap-2">
-                  <Icons.Description className="w-4 h-4 text-slate-400" />
-                  Description <span className="text-slate-500 text-xs font-normal">(optional)</span>
-                  <span className="ml-auto text-[10px] text-slate-500 font-normal hidden sm:inline">Box grows to show full text</span>
-                </label>
-                <div className="flex flex-col sm:flex-row gap-4 items-start">
-                  {/* Thumbnail Preview — fixed size, matches poster ratio, centered on phone */}
-                  <div className="flex-shrink-0 self-center sm:self-start">
-                    <div className="relative bg-slate-900/50 rounded-xl overflow-hidden border border-slate-700/30 w-[100px] h-[150px]">
-                      {form.thumbnail ? (
-                        <img
-                          src={form.thumbnail}
-                          alt="Thumbnail preview"
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            const img = e.target as HTMLImageElement;
-                            img.style.display = 'none';
-                            const parent = img.parentElement;
-                            if (parent) {
-                              const fallback = document.createElement('div');
-                              fallback.className = 'w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-700 to-slate-800';
-                              fallback.innerHTML = `
-                                <svg class="w-6 h-6 text-slate-500 mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                                  <circle cx="8.5" cy="8.5" r="1.5" />
-                                  <polyline points="21 15 16 10 5 21" />
-                                </svg>
-                                <span class="text-slate-400 text-[9px]">No Image</span>
-                              `;
-                              parent.appendChild(fallback);
-                            }
-                          }}
-                        />
-                      ) : (
-                        <div className="flex flex-col items-center justify-center w-full h-full bg-gradient-to-br from-slate-700/50 to-slate-800/50">
-                          <Icons.Image className="w-6 h-6 text-slate-500 mb-1 opacity-40" />
-                          <span className="text-slate-400 text-[9px]">No thumb</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  {/* Description — auto-resizing textarea, full width on phone */}
+              {/* Thumbnail + Description — hamesha side by side, thumbnail apni content-width leta hai, description baaki jagah fill karta hai */}
+              <div className="flex flex-row gap-3 sm:gap-4 items-stretch">
+                <div className="flex-shrink-0">
+                  <label className="block text-sm font-medium text-slate-300 mb-1.5 flexl items-center gap-2">
+                    <Icons.Image className="w-4 h-4 text-slate-400" />
+                    Thumbnail <span className="text-red-400">*</span>
+                  </label>
+                  <ImageUploadField
+                    value={form.thumbnail}
+                    onChange={(url) => setForm({ ...form, thumbnail: url })}
+                  />
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <label className="block text-sm font-medium text-slate-300 mb-1.5 flexl items-center gap-2">
+                    <Icons.Description className="w-4 h-4 text-slate-400" />
+                    Description <span className="text-slate-500 text-xs font-normal">(optional)</span>
+                  </label>
                   <textarea
                     ref={descriptionRef}
                     value={form.description}
                     onChange={(e) => setForm({ ...form, description: e.target.value })}
-                    className="w-full sm:flex-1 bg-slate-900/80 border border-slate-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all resize-none overflow-hidden placeholder:text-slate-500 min-h-[150px]"
+                    className="w-full h-full bg-slate-900/80 border border-slate-700 text-white rounded-xl px-3 sm:px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all resize-none overflow-hidden placeholder:text-slate-500 min-h-[150px]"
                     placeholder="Write a brief description of the anime..."
-                    rows={5}
+                    rows={4}
                   />
                 </div>
-              </div>
-
-              {/* Thumbnail URL input — icon padding fixed so text/checkmark never overlaps */}
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1.5 flexl items-center gap-2">
-                  <Icons.Image className="w-4 h-4 text-slate-400" />
-                  Thumbnail URL <span className="text-red-400">*</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type="url"
-                    value={form.thumbnail}
-                    onChange={(e) => setForm({ ...form, thumbnail: e.target.value })}
-                    className={`w-full bg-slate-900/80 border ${form.thumbnail ? 'border-emerald-500/50' : 'border-slate-700'} text-white rounded-xl pl-11 pr-10 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all placeholder:text-slate-500`}
-                    placeholder="https://res.cloudinary.com/.../thumbnail.jpg"
-                    title={form.thumbnail}
-                    required
-                  />
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
-                    <Icons.Image className="w-4 h-4" />
-                  </div>
-                  {form.thumbnail && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                      <Icons.CheckCircle className="w-4 h-4 text-emerald-400" />
-                    </div>
-                  )}
-                </div>
-                <p className="text-slate-400 text-xs mt-1.5 flex items-center gap-1">
-                  <Icons.Info className="w-3 h-3 text-yellow-400" />
-                  Recommended: Cloudinary URL (WebP, 193×289px) — tap/hover the field to see the full link
-                </p>
               </div>
             </div>
           </div>

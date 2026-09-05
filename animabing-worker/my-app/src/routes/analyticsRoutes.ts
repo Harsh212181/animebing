@@ -30,6 +30,8 @@ import {
   getMonthlyOverview,
   getMonthlyDetail,
 } from '../services/analyticsService'
+// 🆕 EARNINGS: reuse the existing "is a special mode forcing link5" check
+import { isForceLink5ModeActive } from './specialModeRoutes'
 
 const analyticsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
@@ -166,6 +168,19 @@ analyticsRoutes.post('/pageview', async (c) => {
     // Allow the frontend to explicitly mark a path as 'not-found' (404 page)
     const pageType = overridePageType === 'not-found' ? 'not-found' : detectPageType(path)
 
+    // 🆕 EARNINGS: for download-page views, resolve the link-5 / special-mode
+    // state RIGHT NOW so trackPageView can tag the view's earning category
+    // at write-time (this state changes over time, so it must not be
+    // recomputed later from history).
+    let earningContext: { link5Active: boolean; specialModeForcing: boolean } | undefined
+    if (pageType === 'download') {
+      const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+      const linkSettings = await db.collection('linksettings').findOne({})
+      const link5Active = linkSettings?.link5 !== false
+      const specialModeForcing = await isForceLink5ModeActive(c.env.MONGODB_URI, c.env.MONGODB_DB)
+      earningContext = { link5Active, specialModeForcing }
+    }
+
     await trackPageView(
       {
         path,
@@ -183,7 +198,8 @@ analyticsRoutes.post('/pageview', async (c) => {
         timeOnPage,
       },
       c.env.MONGODB_URI,
-      c.env.MONGODB_DB
+      c.env.MONGODB_DB,
+      earningContext // 🆕 EARNINGS
     )
 
     return c.json({ ok: true })

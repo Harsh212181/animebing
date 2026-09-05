@@ -3,6 +3,7 @@ import { Env, Variables } from '../index'
 import { findOne, updateOne, insertOne, deleteMany, getDb } from '../services/mongoService'
 import { ILinkSettings } from '../models/types'
 import { getTodaysActiveMode, syncSpecialModeLinks } from './specialModeRoutes'
+import { adminAuth, superAdminOnly } from '../middleware/auth' // added for global rate endpoints
 
 const linkSettingsRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
@@ -186,6 +187,41 @@ linkSettingsRoutes.post('/reset', async (c) => {
     return c.json({ success: true, message: 'Reset to defaults', settings })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
+  }
+})
+
+// ── GET current global rate (koi bhi adminAuth wala dekh sakta hai) ──
+// GET /api/link-settings/global-rate
+linkSettingsRoutes.get('/global-rate', adminAuth, async (c) => {
+  try {
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const settings = await db.collection('linksettings').findOne({})
+    const globalRatePerThousandViews = typeof settings?.globalRatePerThousandViews === 'number'
+      ? settings.globalRatePerThousandViews
+      : 0
+    return c.json({ success: true, globalRatePerThousandViews })
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 500)
+  }
+})
+
+// ── SET global rate (super admin only) ──────────────────────────────
+// PUT /api/link-settings/global-rate   body: { rate: number }
+linkSettingsRoutes.put('/global-rate', adminAuth, superAdminOnly, async (c) => {
+  try {
+    const { rate } = await c.req.json()
+    if (typeof rate !== 'number' || rate < 0) {
+      return c.json({ success: false, error: 'rate must be a non-negative number' }, 400)
+    }
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    await db.collection('linksettings').updateOne(
+      {},
+      { $set: { globalRatePerThousandViews: rate } },
+      { upsert: true }
+    )
+    return c.json({ success: true, globalRatePerThousandViews: rate })
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 500)
   }
 })
 

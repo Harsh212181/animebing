@@ -1,5 +1,6 @@
  // src/components/admin/SearchableDropdown.tsx – NO PURPLE GLOW
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import axios from 'axios';
 
 export interface BaseOption {
@@ -66,7 +67,9 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
 
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);   // wrapper (input) — position anchor
+  const menuRef = useRef<HTMLDivElement>(null);        // portal-rendered menu
+  const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 });
 
   const localSelected = !asyncMode ? props.value : null;
 
@@ -81,9 +84,29 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
       )
     : [];
 
+  // ── Position calculate karo (trigger input ke hisaab se) ──
+  const updatePosition = useCallback(() => {
+    if (!dropdownRef.current) return;
+    const rect = dropdownRef.current.getBoundingClientRect();
+    const maxListHeight = 240; // matches max-h-60
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openUpward = spaceBelow < maxListHeight && rect.top > maxListHeight;
+
+    setCoords({
+      top: openUpward
+        ? rect.top + window.scrollY - maxListHeight - 6
+        : rect.bottom + window.scrollY + 4,
+      left: rect.left + window.scrollX,
+      width: rect.width,
+    });
+  }, []);
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      if (
+        dropdownRef.current && !dropdownRef.current.contains(event.target as Node) &&
+        menuRef.current && !menuRef.current.contains(event.target as Node)
+      ) {
         setIsOpen(false);
       }
     };
@@ -91,11 +114,22 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // ✅ Dropdown khulte hi position calculate karo, aur scroll/resize pe update karo
+  useEffect(() => {
+    if (!isOpen) return;
+    updatePosition();
+    const handle = () => updatePosition();
+    window.addEventListener('scroll', handle, true);
+    window.addEventListener('resize', handle);
+    return () => {
+      window.removeEventListener('scroll', handle, true);
+      window.removeEventListener('resize', handle);
+    };
+  }, [isOpen, updatePosition]);
+
   // ✅ UPDATED: always fetch, even on empty query, to show default/recent results
   const fetchAsyncResults = useCallback(
     debounce(async (query: string) => {
-      // 👇 Empty query pe bhi fetch karo — backend ko empty search='' bhejo,
-      // taaki default/recent results dikhein jab tak user kuch type na kare.
       setAsyncLoading(true);
       setAsyncError(null);
       try {
@@ -129,7 +163,7 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTerm, asyncMode]);
 
-  // 👇 NEW — dropdown open hote hi (focus) agar abhi tak koi results/search nahi hua, default list laao
+  // 👇 dropdown open hote hi (focus) agar abhi tak koi results/search nahi hua, default list laao
   useEffect(() => {
     if (asyncMode && isOpen && asyncResults.length === 0 && !searchTerm && !asyncLoading) {
       fetchAsyncResults('');
@@ -207,11 +241,20 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
         )}
       </div>
 
-      {isOpen && (
-        <div className="absolute z-50 w-full mt-1 bg-slate-800 border border-slate-600 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+      {isOpen && createPortal(
+        <div
+          ref={menuRef}
+          style={{
+            position: 'absolute',
+            top: coords.top,
+            left: coords.left,
+            width: coords.width,
+            zIndex: 9999,
+          }}
+          className="bg-slate-800 border border-slate-600 rounded-lg shadow-lg max-h-60 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
           {isLoading ? (
             <div className="p-4 text-center text-slate-400">
-              {/* ✅ No purple, using slate instead */}
               <div className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-slate-400 mr-2"></div>
               Loading...
             </div>
@@ -228,7 +271,7 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
                 onClick={() => handleSelect(option)}
                 className={`w-full text-left px-4 py-3 hover:bg-slate-700 transition-colors flex items-center gap-3 ${
                   currentSelected?._id === option._id
-                    ? 'bg-slate-700 text-white'        // ✅ No purple, using slate
+                    ? 'bg-slate-700 text-white'
                     : 'text-slate-300'
                 }`}
                 type="button"
@@ -249,7 +292,6 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
                   {option.contentType && (
                     <div className="text-xs text-slate-400">{option.contentType}</div>
                   )}
-                  {/* 👇 NEW: creator name (only for sub‑admin, not main admin) */}
                   {option.createdByUsername && option.createdBy && option.createdBy !== 'admin' && (
                     <div className="text-xs text-purple-400"> {option.createdByUsername}</div>
                   )}
@@ -257,7 +299,8 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
               </button>
             ))
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

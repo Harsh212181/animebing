@@ -24,6 +24,7 @@ import UserActivityManager from './UserActivityManager';   // ✅ NEW
 import FormBuilderManager from './FormBuilderManager'; // ✅ NEW
 import R2ProviderManager from './R2ProviderManager'; // ✅ NEW
 import VideoManager from './VideoManager'; // ✅ NEW — VideoUploader ki jagah
+import SubAdminEarningsManager from './SubAdminEarningsManager'; // 🆕 EARNINGS
 import Spinner from '../Spinner';
 import axios from 'axios';
 
@@ -93,6 +94,7 @@ const ICONS: Record<string, string> = {
   forms:           'M9 12h6m-6 4h4m1 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', // ✅ NEW
   r2providers:     'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4', // ✅ NEW — database/storage icon
   videoUpload:     'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12', // ✅ NEW — upload arrow
+  earnings:        'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 10v2m0-14a9 9 0 100 18 9 9 0 000-18z', // 🆕 EARNINGS — dollar circle
   // 🆕 Mobile icons
   menu:            'M4 6h16M4 12h16M4 18h16',
   close:           'M6 18L18 6M6 6l12 12',
@@ -122,6 +124,7 @@ const TAB_LABELS: Record<string, string> = {
   forms:           'Form Builder',     // ✅ NEW
   r2providers:     'R2 Providers',     // ✅ NEW
   videoUpload:     'Video Upload',     // ✅ NEW
+  earnings:        'Sub-Admin Earnings', // 🆕 EARNINGS
 };
 
 // ─── renderTab function ──────────────────────────────────────────────────────
@@ -150,6 +153,7 @@ function renderTab(tabId: string, token: string) {
     case 'forms':          return <FormBuilderManager token={token} />;    // ✅ NEW
     case 'r2providers':    return <R2ProviderManager token={token} />;     // ✅ NEW
     case 'videoUpload':    return <VideoManager token={token} />;         // ✅ NEW — subAdminMode nahi diya, badge dikhega
+    case 'earnings':       return <SubAdminEarningsManager token={token} />; // 🆕 EARNINGS
     default:               return <AnimeListTable token={token} isMainAdmin={true} />;
   }
 }
@@ -662,6 +666,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           <SidebarSection label="Analytics">
             <NavItem tabId="pageviews" activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
             <NavItem tabId="userActivity" activeTab={activeTab} collapsed={false} onClick={handleTabChange} />   {/* ✅ NEW */}
+            <NavItem tabId="earnings" activeTab={activeTab} collapsed={false} onClick={handleTabChange} />   {/* 🆕 EARNINGS */}
           </SidebarSection>
           <SidebarSection label="Administration">
             <NavItem tabId="subadmins" activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
@@ -750,6 +755,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           <SidebarSection label="Analytics">
             <NavItem tabId="pageviews" activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
             <NavItem tabId="userActivity" activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />   {/* ✅ NEW */}
+            <NavItem tabId="earnings" activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />   {/* 🆕 EARNINGS */}
           </SidebarSection>
           <SidebarSection label="Administration">
             <NavItem tabId="subadmins" activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
@@ -780,7 +786,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       </aside>
 
       {/* Main Content */}
-      <div id="main-scroll" className="h-full flex flex-col overflow-y-auto sm:pl-[52px]">
+      <div id="main-scroll" className="h-full flex flex-col overflow-y-auto sm:pl-[52px] [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
         <header className="sticky top-0 z-40 h-14 flex-shrink-0 flex items-center px-3 sm:px-5 gap-3 bg-[#13121e]/80 backdrop-blur border-b border-white/[0.06]">
           {/* 📱 Hamburger – phones only */}
           <button
