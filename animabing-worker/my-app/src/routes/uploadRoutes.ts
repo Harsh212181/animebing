@@ -71,7 +71,7 @@ async function resolveUploadCreds(hostname: string, c: any) {
     accessKeyId: (provider as any).accessKeyId,
     secretAccessKey,
     bucketName: (provider as any).bucketName,
-    publicBaseUrl: ((provider as any).publicBaseUrl || '').replace(/\/+$/, ''), // ✅ NEW
+    publicBaseUrl: ((provider as any).publicBaseUrl || `https://${hostname}`).replace(/\/+$/, ''), // ✅ NEW
   }
 }
 
@@ -474,7 +474,7 @@ uploadRoutes.post('/my-provider', adminAuth, async (c) => {
     }
 
     // 🔒 hostname khud backend generate karta hai — sub-admin isko choose ya spoof nahi kar sakta
-    const hostname = `${admin.username}-r2.internal`
+    const hostname = `${admin.username}-r2.internal`.toLowerCase() // ✅ NEW
 
     const { ciphertext, iv } = await encryptSecret(secretAccessKey, c.env.ENCRYPTION_KEY) // ✅ FIXED
 
