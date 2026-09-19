@@ -410,6 +410,7 @@ const VideoUploader: React.FC<Props> = ({ token: tokenProp, onUploadComplete }) 
   const itemsRef = useRef<UploadItem[]>([]);
   const activeRef = useRef<Set<string>>(new Set());
   const pauseFlagsRef = useRef<Map<string, boolean>>(new Map());
+  const cancelledRef = useRef<Set<string>>(new Set()); // ✅ NEW
 
   useEffect(() => { itemsRef.current = items; }, [items]);
 
@@ -526,6 +527,9 @@ const VideoUploader: React.FC<Props> = ({ token: tokenProp, onUploadComplete }) 
         const putRes = await fetch(url, { method: 'PUT', body: chunk });
         if (!putRes.ok) throw new Error(`Part ${partNumber} upload fail ho gaya`);
 
+        // ✅ NEW: cancel ho chuka hai to state dobara save mat karo
+        if (cancelledRef.current.has(id)) return;
+
         const eTag = putRes.headers.get('ETag') || '';
         completedParts = [...completedParts, { partNumber, eTag }];
         persistState({ hostname: item.hostname, ...session, fileSize: file.size, fileName: file.name, completedParts });
@@ -624,13 +628,21 @@ const VideoUploader: React.FC<Props> = ({ token: tokenProp, onUploadComplete }) 
   const handleCancel = async (id: string) => {
     const item = itemsRef.current.find(i => i.id === id);
     if (!item) return;
+
+    // 1) running loop ko rokne ka signal
     pauseFlagsRef.current.set(id, true);
+    cancelledRef.current.add(id);
     activeRef.current.delete(id);
+
+    // 2) pehle localStorage + UI saaf karo (abort ka wait nahi)
+    clearPersistedState(item.fileName, item.fileSize);
+    localStorage.removeItem(item.id); // recovered items ki id hi storage key hoti hai
+    setItems(prev => prev.filter(it => it.id !== id));
+
+    // 3) R2 me incomplete multipart abort, background me
     if (item.uploadId && item.key && item.status !== 'done') {
       try { await apiCall('/abort', { hostname: item.hostname, key: item.key, uploadId: item.uploadId }); } catch {}
     }
-    clearPersistedState(item.fileName, item.fileSize);
-    setItems(prev => prev.filter(it => it.id !== id));
   };
 
   const copyCorsPolicy = async () => {
