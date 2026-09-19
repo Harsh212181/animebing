@@ -1,4 +1,4 @@
- import { AwsClient } from 'aws4fetch'
+import { AwsClient } from 'aws4fetch'
 
 interface Creds {
   accountId: string
@@ -72,6 +72,15 @@ function decodeXmlEntities(str: string): string {
     .replace(/&apos;/g, "'")
 }
 
+function escapeXmlEntities(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
 export async function listBucketObjects(creds: Creds): Promise<R2ObjectSummary[]> {
   const client = getClient(creds)
   const results: R2ObjectSummary[] = []
@@ -115,6 +124,74 @@ export async function deleteObject(creds: Creds, key: string): Promise<void> {
   const url = objectEndpoint(creds, key)
   const res = await client.fetch(url, { method: 'DELETE' })
   if (!res.ok && res.status !== 404) throw new Error(`Delete failed: ${res.status} ${await res.text()}`)
+}
+
+// ✅ NEW: Batch delete using the S3-compatible multi-object delete API (POST ?delete).
+// R2 supports up to 1000 keys per request, so this deletes many objects in a single
+// round-trip instead of one DELETE call per key.
+export interface BulkDeleteResult {
+  deleted: string[]
+  errors: { key: string; message: string }[]
+}
+
+export async function deleteObjects(creds: Creds, keys: string[]): Promise<BulkDeleteResult> {
+  const deleted: string[] = []
+  const errors: { key: string; message: string }[] = []
+  if (!keys.length) return { deleted, errors }
+
+  const client = getClient(creds)
+  const chunkSize = 1000 // S3/R2 limit per batch-delete request
+
+  for (let i = 0; i < keys.length; i += chunkSize) {
+    const chunk = keys.slice(i, i + chunkSize)
+    const objectsXml = chunk.map(k => `<Object><Key>${escapeXmlEntities(k)}</Key></Object>`).join('')
+    const body = `<Delete>${objectsXml}</Delete>`
+    const url = `https://${creds.accountId}.r2.cloudflarestorage.com/${creds.bucketName}?delete`
+
+    try {
+      const res = await client.fetch(url, {
+        method: 'POST',
+        body,
+        headers: { 'Content-Type': 'application/xml' },
+      })
+
+      if (!res.ok) {
+        const text = await res.text()
+        chunk.forEach(k => errors.push({ key: k, message: `Batch delete failed: ${res.status} ${text}` }))
+        continue
+      }
+
+      const xml = await res.text()
+
+      const deletedBlocks = xml.match(/<Deleted>[\s\S]*?<\/Deleted>/g) || []
+      for (const block of deletedBlocks) {
+        const keyMatch = /<Key>(.*?)<\/Key>/.exec(block)
+        if (keyMatch) deleted.push(decodeXmlEntities(keyMatch[1]))
+      }
+
+      const errorBlocks = xml.match(/<Error>[\s\S]*?<\/Error>/g) || []
+      for (const block of errorBlocks) {
+        const keyMatch = /<Key>(.*?)<\/Key>/.exec(block)
+        const msgMatch = /<Message>(.*?)<\/Message>/.exec(block)
+        if (keyMatch) {
+          errors.push({
+            key: decodeXmlEntities(keyMatch[1]),
+            message: msgMatch ? decodeXmlEntities(msgMatch[1]) : 'Unknown error',
+          })
+        }
+      }
+
+      // Fallback: if the response had no <Deleted>/<Error> blocks at all but was 2xx,
+      // assume the whole chunk succeeded (some S3-compatible backends omit <Deleted> blocks).
+      if (deletedBlocks.length === 0 && errorBlocks.length === 0) {
+        chunk.forEach(k => deleted.push(k))
+      }
+    } catch (err: any) {
+      chunk.forEach(k => errors.push({ key: k, message: err.message || 'Network error' }))
+    }
+  }
+
+  return { deleted, errors }
 }
 
 export async function renameObject(creds: Creds, oldKey: string, newKey: string): Promise<void> {

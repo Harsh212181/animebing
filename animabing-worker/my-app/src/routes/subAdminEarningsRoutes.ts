@@ -53,7 +53,13 @@ subAdminEarningsRoutes.get('/all-summary', adminAuth, superAdminOnly, async (c) 
 subAdminEarningsRoutes.get('/:subAdminId', adminAuth, superAdminOnly, async (c) => {
   try {
     const subAdminId = c.req.param('subAdminId')
-    if (!isValidObjectId(subAdminId)) return c.json({ success: false, error: 'Invalid ID' }, 400)
+    // ✅ FIX: `!subAdminId ||` narrows the type from `string | undefined` to
+    // `string` for the rest of this handler — this is what removes the
+    // red-line at getSubAdminEarnings(subAdminId, ...) below, since that
+    // function's first parameter is typed as a strict `string`.
+    if (!subAdminId || !isValidObjectId(subAdminId)) {
+      return c.json({ success: false, error: 'Invalid ID' }, 400)
+    }
     const data = await getSubAdminEarnings(subAdminId, c.env.MONGODB_URI, c.env.MONGODB_DB)
     if (!data) return c.json({ success: false, error: 'Sub-admin not found' }, 404)
     return c.json({ success: true, data })
@@ -67,7 +73,10 @@ subAdminEarningsRoutes.get('/:subAdminId', adminAuth, superAdminOnly, async (c) 
 subAdminEarningsRoutes.put('/:subAdminId/rate', adminAuth, superAdminOnly, async (c) => {
   try {
     const subAdminId = c.req.param('subAdminId')
-    if (!isValidObjectId(subAdminId)) return c.json({ success: false, error: 'Invalid ID' }, 400)
+    // ✅ FIX: same narrowing guard as above, applied consistently here too.
+    if (!subAdminId || !isValidObjectId(subAdminId)) {
+      return c.json({ success: false, error: 'Invalid ID' }, 400)
+    }
 
     const { rate } = await c.req.json()
     if (rate !== null && (typeof rate !== 'number' || rate < 0)) {

@@ -12,6 +12,7 @@ import {
   abortMultipartUpload,
   listBucketObjects,
   deleteObject,
+  deleteObjects, // ✅ NEW
   renameObject,
   generateSimplePutUrl,
   listBuckets, // ✅ NEW
@@ -244,6 +245,58 @@ uploadRoutes.delete('/object', adminAuth, async (c) => {
 
     await deleteObject(creds, key)
     return c.json({ success: true })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ✅ NEW: BULK DELETE OBJECTS — accepts { items: { hostname, key }[] }, groups by
+// hostname (bucket), checks access per hostname, and issues one batch-delete call
+// per bucket via the R2 multi-object delete API.
+uploadRoutes.post('/bulk-delete', adminAuth, async (c) => {
+  try {
+    const admin = c.get('admin')
+    const body = await c.req.json()
+    const items: { hostname: string; key: string }[] = Array.isArray(body?.items) ? body.items : []
+
+    if (items.length === 0) {
+      return c.json({ error: 'items array zaroori hai (kam se kam ek item)' }, 400)
+    }
+
+    // Group requested keys by hostname so each bucket gets a single batch call
+    const byHostname = new Map<string, string[]>()
+    for (const { hostname, key } of items) {
+      if (!hostname || !key) continue
+      if (!byHostname.has(hostname)) byHostname.set(hostname, [])
+      byHostname.get(hostname)!.push(key)
+    }
+
+    const deleted: { hostname: string; key: string }[] = []
+    const errors: { hostname: string; key: string; message: string }[] = []
+
+    for (const [hostname, keys] of byHostname) {
+      const allowed = await checkHostnameAccess(hostname, admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+      if (!allowed) {
+        keys.forEach(key => errors.push({ hostname, key, message: 'Access denied' }))
+        continue
+      }
+
+      const creds = await resolveUploadCreds(hostname, c)
+      if (!creds) {
+        keys.forEach(key => errors.push({ hostname, key, message: 'Invalid hostname' }))
+        continue
+      }
+
+      try {
+        const result = await deleteObjects(creds, keys)
+        result.deleted.forEach(key => deleted.push({ hostname, key }))
+        result.errors.forEach(e => errors.push({ hostname, key: e.key, message: e.message }))
+      } catch (err: any) {
+        keys.forEach(key => errors.push({ hostname, key, message: err.message || 'Delete failed' }))
+      }
+    }
+
+    return c.json({ success: errors.length === 0, deleted, errors })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }

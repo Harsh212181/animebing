@@ -16,6 +16,40 @@ const formatSize = (bytes: number) => {
   return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
 };
 
+// ✅ NEW — stable id for an item across the whole app (hostname + key)
+function itemId(item: MediaItem): string {
+  return `${item.hostname}::${item.key}`;
+}
+
+// ✅ NEW — custom-styled checkbox (no native white browser checkbox) matching the dark/purple theme
+const CustomCheckbox: React.FC<{
+  checked: boolean;
+  onChange: () => void;
+  size?: 'sm' | 'md';
+  className?: string;
+}> = ({ checked, onChange, size = 'md', className = '' }) => {
+  const dims = size === 'sm' ? 'w-4 h-4' : 'w-5 h-5';
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      onClick={(e) => { e.stopPropagation(); onChange(); }}
+      className={`${dims} flex-shrink-0 rounded-md border flex items-center justify-center transition-all duration-150 ${
+        checked
+          ? 'bg-gradient-to-br from-purple-500 to-pink-500 border-purple-400 shadow-sm shadow-purple-500/40'
+          : 'bg-gray-800/80 border-gray-600 hover:border-purple-400/70'
+      } ${className}`}
+    >
+      {checked && (
+        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+        </svg>
+      )}
+    </button>
+  );
+};
+
 function normalizeKey(str: string): string {
   return str
     .toLowerCase()
@@ -103,11 +137,14 @@ interface EpisodeRowProps {
   setRenameValue: (val: string) => void;
   busyKey: string | null;
   isPlaying: boolean;
-  isAddingToPage: boolean;      // ✅ NEW
+  isAddingToPage: boolean;
+  selectMode: boolean;        // ✅ NEW
+  isSelected: boolean;        // ✅ NEW
+  onToggleSelect: () => void; // ✅ NEW
   onWatch: () => void;
   onDownload: () => void;
   onCopy: () => void;
-  onToggleAddToPage: () => void; // ✅ NEW
+  onToggleAddToPage: () => void;
   onRenameStart: () => void;
   onRenameConfirm: () => void;
   onRenameCancel: () => void;
@@ -122,96 +159,108 @@ const EpisodeRow: React.FC<EpisodeRowProps> = ({
   setRenameValue,
   busyKey,
   isPlaying,
-  isAddingToPage,      // ✅ NEW
+  isAddingToPage,
+  selectMode,        // ✅ NEW
+  isSelected,         // ✅ NEW
+  onToggleSelect,     // ✅ NEW
   onWatch,
   onDownload,
   onCopy,
-  onToggleAddToPage,   // ✅ NEW
+  onToggleAddToPage,
   onRenameStart,
   onRenameConfirm,
   onRenameCancel,
   onDelete
 }) => {
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 p-2.5 sm:p-3 hover:bg-white/[0.02] transition-colors">
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          {episode !== null && (
-            <span className="text-xs px-2 py-0.5 bg-purple-600/30 text-purple-200 border border-purple-500/40 rounded-full font-medium flex-shrink-0">
-              Ep {episode}
-            </span>
-          )}
+    <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 p-2.5 sm:p-3 transition-colors ${
+      isSelected ? 'bg-purple-500/10' : 'hover:bg-white/[0.02]'
+    }`}>
+      <div className="min-w-0 flex-1 flex items-start gap-2.5">
+        {/* ✅ NEW — selection checkbox */}
+        {selectMode && (
+          <CustomCheckbox checked={isSelected} onChange={onToggleSelect} size="sm" className="mt-1" />
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            {episode !== null && (
+              <span className="text-xs px-2 py-0.5 bg-purple-600/30 text-purple-200 border border-purple-500/40 rounded-full font-medium flex-shrink-0">
+                Ep {episode}
+              </span>
+            )}
+            {isRenaming ? (
+              <input
+                value={renameValue}
+                onChange={e => setRenameValue(e.target.value)}
+                className="flex-1 min-w-[150px] px-2 py-1 bg-gray-900 border border-purple-500/50 rounded text-white text-base sm:text-sm"
+                autoFocus
+              />
+            ) : (
+              <p className="text-sm text-white truncate">{item.key}</p>
+            )}
+          </div>
+          <p className="text-xs text-white/40 mt-1">
+            {formatSize(item.size)} · {new Date(item.lastModified).toLocaleString()}
+          </p>
+          <span className="inline-block mt-1 text-[10px] px-2 py-0.5 bg-blue-600/20 text-blue-300 border border-blue-500/30 rounded-full">
+            {item.hostname}
+          </span>
+        </div>
+      </div>
+
+      {!selectMode && (
+        <div className="flex gap-1 sm:gap-1.5 flex-wrap w-full sm:w-auto">
           {isRenaming ? (
-            <input
-              value={renameValue}
-              onChange={e => setRenameValue(e.target.value)}
-              className="flex-1 min-w-[150px] px-2 py-1 bg-gray-900 border border-purple-500/50 rounded text-white text-base sm:text-sm"
-              autoFocus
-            />
+            <>
+              <button onClick={onRenameConfirm} disabled={busyKey === item.key + 'rename'}
+                className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 text-emerald-200 rounded-lg text-xs font-medium">
+                Save
+              </button>
+              <button onClick={onRenameCancel}
+                className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium">
+                Cancel
+              </button>
+            </>
           ) : (
-            <p className="text-sm text-white truncate">{item.key}</p>
+            <>
+              <button onClick={onWatch} disabled={busyKey === item.key + 'watch'}
+                className={`px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg text-xs font-medium border ${
+                  isPlaying
+                    ? 'bg-rose-600/30 hover:bg-rose-600/50 border-rose-500/40 text-rose-200'
+                    : 'bg-blue-600/30 hover:bg-blue-600/50 border-blue-500/40 text-blue-200'
+                }`}>
+                {busyKey === item.key + 'watch' ? '...' : isPlaying ? 'Close' : 'Watch'}
+              </button>
+              <button onClick={onDownload} disabled={busyKey === item.key + 'download'}
+                className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 text-emerald-200 rounded-lg text-xs font-medium">
+                {busyKey === item.key + 'download' ? '...' : 'Download'}
+              </button>
+              <button onClick={onCopy}
+                className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 text-purple-200 rounded-lg text-xs font-medium">
+                Copy Link
+              </button>
+
+              <button onClick={onToggleAddToPage}
+                className={`px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg text-xs font-medium border ${
+                  isAddingToPage
+                    ? 'bg-rose-600/30 hover:bg-rose-600/50 border-rose-500/40 text-rose-200'
+                    : 'bg-indigo-600/30 hover:bg-indigo-600/50 border-indigo-500/40 text-indigo-200'
+                }`}>
+                {isAddingToPage ? 'Close' : '+ Page'}
+              </button>
+
+              <button onClick={onRenameStart}
+                className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-amber-600/30 hover:bg-amber-600/50 border border-amber-500/40 text-amber-200 rounded-lg text-xs font-medium">
+                Rename
+              </button>
+              <button onClick={onDelete} disabled={busyKey === item.key + 'delete'}
+                className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-rose-600/30 hover:bg-rose-600/50 border border-rose-500/40 text-rose-200 rounded-lg text-xs font-medium">
+                {busyKey === item.key + 'delete' ? '...' : 'Delete'}
+              </button>
+            </>
           )}
         </div>
-        <p className="text-xs text-white/40 mt-1">
-          {formatSize(item.size)} · {new Date(item.lastModified).toLocaleString()}
-        </p>
-        <span className="inline-block mt-1 text-[10px] px-2 py-0.5 bg-blue-600/20 text-blue-300 border border-blue-500/30 rounded-full">
-          {item.hostname}
-        </span>
-      </div>
-
-      <div className="flex gap-1 sm:gap-1.5 flex-wrap w-full sm:w-auto">
-        {isRenaming ? (
-          <>
-            <button onClick={onRenameConfirm} disabled={busyKey === item.key + 'rename'}
-              className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 text-emerald-200 rounded-lg text-xs font-medium">
-              Save
-            </button>
-            <button onClick={onRenameCancel}
-              className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium">
-              Cancel
-            </button>
-          </>
-        ) : (
-          <>
-            <button onClick={onWatch} disabled={busyKey === item.key + 'watch'}
-              className={`px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg text-xs font-medium border ${
-                isPlaying
-                  ? 'bg-rose-600/30 hover:bg-rose-600/50 border-rose-500/40 text-rose-200'
-                  : 'bg-blue-600/30 hover:bg-blue-600/50 border-blue-500/40 text-blue-200'
-              }`}>
-              {busyKey === item.key + 'watch' ? '...' : isPlaying ? 'Close' : 'Watch'}
-            </button>
-            <button onClick={onDownload} disabled={busyKey === item.key + 'download'}
-              className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 text-emerald-200 rounded-lg text-xs font-medium">
-              {busyKey === item.key + 'download' ? '...' : 'Download'}
-            </button>
-            <button onClick={onCopy}
-              className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 text-purple-200 rounded-lg text-xs font-medium">
-              Copy Link
-            </button>
-
-            {/* ✅ NEW — "+ Page" toggle button */}
-            <button onClick={onToggleAddToPage}
-              className={`px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg text-xs font-medium border ${
-                isAddingToPage
-                  ? 'bg-rose-600/30 hover:bg-rose-600/50 border-rose-500/40 text-rose-200'
-                  : 'bg-indigo-600/30 hover:bg-indigo-600/50 border-indigo-500/40 text-indigo-200'
-              }`}>
-              {isAddingToPage ? 'Close' : '+ Page'}
-            </button>
-
-            <button onClick={onRenameStart}
-              className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-amber-600/30 hover:bg-amber-600/50 border border-amber-500/40 text-amber-200 rounded-lg text-xs font-medium">
-              Rename
-            </button>
-            <button onClick={onDelete} disabled={busyKey === item.key + 'delete'}
-              className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-rose-600/30 hover:bg-rose-600/50 border border-rose-500/40 text-rose-200 rounded-lg text-xs font-medium">
-              {busyKey === item.key + 'delete' ? '...' : 'Delete'}
-            </button>
-          </>
-        )}
-      </div>
+      )}
     </div>
   );
 };
@@ -223,6 +272,9 @@ interface ImageCardProps {
   renameValue: string;
   setRenameValue: (val: string) => void;
   busyKey: string | null;
+  selectMode: boolean;        // ✅ NEW
+  isSelected: boolean;        // ✅ NEW
+  onToggleSelect: () => void; // ✅ NEW
   onDownload: () => void;
   onCopy: () => void;
   onRenameStart: () => void;
@@ -237,6 +289,9 @@ const ImageCard: React.FC<ImageCardProps> = ({
   renameValue,
   setRenameValue,
   busyKey,
+  selectMode,        // ✅ NEW
+  isSelected,         // ✅ NEW
+  onToggleSelect,     // ✅ NEW
   onDownload,
   onCopy,
   onRenameStart,
@@ -245,7 +300,22 @@ const ImageCard: React.FC<ImageCardProps> = ({
   onDelete
 }) => {
   return (
-    <div className="group relative rounded-xl overflow-hidden border border-white/10 bg-white/[0.03] hover:border-purple-500/30 transition-colors">
+    <div
+      onClick={() => selectMode && onToggleSelect()}
+      className={`group relative rounded-xl overflow-hidden border bg-white/[0.03] transition-colors ${
+        isSelected ? 'border-purple-500 ring-2 ring-purple-500/40' : 'border-white/10 hover:border-purple-500/30'
+      } ${selectMode ? 'cursor-pointer' : ''}`}
+    >
+      {/* ✅ NEW — selection checkbox */}
+      {selectMode && (
+        <CustomCheckbox
+          checked={isSelected}
+          onChange={onToggleSelect}
+          size="sm"
+          className="absolute top-2 left-2 z-10"
+        />
+      )}
+
       <div className="aspect-square bg-black/30 overflow-hidden">
         <img src={item.url} alt={item.key} className="w-full h-full object-cover" loading="lazy" />
       </div>
@@ -267,39 +337,41 @@ const ImageCard: React.FC<ImageCardProps> = ({
         </span>
       </div>
 
-      <div className="absolute inset-x-0 bottom-0 translate-y-full group-hover:translate-y-0 focus-within:translate-y-0 transition-transform bg-black/85 backdrop-blur-sm p-1.5 flex gap-1 flex-wrap">
-        {isRenaming ? (
-          <>
-            <button onClick={onRenameConfirm} disabled={busyKey === item.key + 'rename'}
-              className="flex-1 px-2 py-1 bg-emerald-600/40 hover:bg-emerald-600/60 border border-emerald-500/40 text-emerald-200 rounded text-[10px] font-medium">
-              Save
-            </button>
-            <button onClick={onRenameCancel}
-              className="flex-1 px-2 py-1 bg-white/10 hover:bg-white/20 text-white rounded text-[10px] font-medium">
-              Cancel
-            </button>
-          </>
-        ) : (
-          <>
-            <button onClick={onDownload} disabled={busyKey === item.key + 'download'}
-              className="flex-1 px-2 py-1 bg-emerald-600/40 hover:bg-emerald-600/60 border border-emerald-500/40 text-emerald-200 rounded text-[10px] font-medium">
-              {busyKey === item.key + 'download' ? '...' : 'Download'}
-            </button>
-            <button onClick={onCopy}
-              className="flex-1 px-2 py-1 bg-purple-600/40 hover:bg-purple-600/60 border border-purple-500/40 text-purple-200 rounded text-[10px] font-medium">
-              Copy
-            </button>
-            <button onClick={onRenameStart}
-              className="flex-1 px-2 py-1 bg-amber-600/40 hover:bg-amber-600/60 border border-amber-500/40 text-amber-200 rounded text-[10px] font-medium">
-              Rename
-            </button>
-            <button onClick={onDelete} disabled={busyKey === item.key + 'delete'}
-              className="flex-1 px-2 py-1 bg-rose-600/40 hover:bg-rose-600/60 border border-rose-500/40 text-rose-200 rounded text-[10px] font-medium">
-              {busyKey === item.key + 'delete' ? '...' : 'Del'}
-            </button>
-          </>
-        )}
-      </div>
+      {!selectMode && (
+        <div className="absolute inset-x-0 bottom-0 translate-y-full group-hover:translate-y-0 focus-within:translate-y-0 transition-transform bg-black/85 backdrop-blur-sm p-1.5 flex gap-1 flex-wrap">
+          {isRenaming ? (
+            <>
+              <button onClick={onRenameConfirm} disabled={busyKey === item.key + 'rename'}
+                className="flex-1 px-2 py-1 bg-emerald-600/40 hover:bg-emerald-600/60 border border-emerald-500/40 text-emerald-200 rounded text-[10px] font-medium">
+                Save
+              </button>
+              <button onClick={onRenameCancel}
+                className="flex-1 px-2 py-1 bg-white/10 hover:bg-white/20 text-white rounded text-[10px] font-medium">
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={onDownload} disabled={busyKey === item.key + 'download'}
+                className="flex-1 px-2 py-1 bg-emerald-600/40 hover:bg-emerald-600/60 border border-emerald-500/40 text-emerald-200 rounded text-[10px] font-medium">
+                {busyKey === item.key + 'download' ? '...' : 'Download'}
+              </button>
+              <button onClick={onCopy}
+                className="flex-1 px-2 py-1 bg-purple-600/40 hover:bg-purple-600/60 border border-purple-500/40 text-purple-200 rounded text-[10px] font-medium">
+                Copy
+              </button>
+              <button onClick={onRenameStart}
+                className="flex-1 px-2 py-1 bg-amber-600/40 hover:bg-amber-600/60 border border-amber-500/40 text-amber-200 rounded text-[10px] font-medium">
+                Rename
+              </button>
+              <button onClick={onDelete} disabled={busyKey === item.key + 'delete'}
+                className="flex-1 px-2 py-1 bg-rose-600/40 hover:bg-rose-600/60 border border-rose-500/40 text-rose-200 rounded text-[10px] font-medium">
+                {busyKey === item.key + 'delete' ? '...' : 'Del'}
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 };
@@ -322,9 +394,22 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
   const [markBusyKey, setMarkBusyKey] = useState<string | null>(null);
   const [markFilter, setMarkFilter] = useState<'all' | 'marked' | 'unmarked'>('all');
   const [playingItem, setPlayingItem] = useState<{ id: string; url: string } | null>(null);
-  const [addToPageRowId, setAddToPageRowId] = useState<string | null>(null);      // ✅ NEW
-  const [bulkAddGroupKey, setBulkAddGroupKey] = useState<string | null>(null);    // ✅ NEW
-  const [imagesExpanded, setImagesExpanded] = useState(true);                     // ✅ NEW
+  const [addToPageRowId, setAddToPageRowId] = useState<string | null>(null);
+  const [bulkAddGroupKey, setBulkAddGroupKey] = useState<string | null>(null);
+  const [imagesExpanded, setImagesExpanded] = useState(true);
+
+  // ✅ NEW — multi-select delete state
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  // ✅ NEW — themed confirm modal (replaces native window.confirm())
+  const [confirmModal, setConfirmModal] = useState<{
+    title: string;
+    message: string;
+    confirmLabel: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   const toggleGroup = (groupKey: string) => {
     setExpandedGroups(prev => {
@@ -445,6 +530,12 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
     return groupedSeries;
   }, [groupedSeries, markedKeys, markFilter]);
 
+  // ✅ NEW — every item currently visible on screen (images + videos inside filteredGroups)
+  const allVisibleItems = useMemo(() => {
+    const fromGroups = filteredGroups.flatMap(g => g.episodes.map(e => e.item));
+    return [...imageItems, ...fromGroups];
+  }, [imageItems, filteredGroups]);
+
   const handleWatchOrDownload = async (item: MediaItem, mode: 'watch' | 'download') => {
     const rowId = `${item.hostname}-${item.key}`;
 
@@ -472,8 +563,8 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
     navigator.clipboard.writeText(item.url);
   };
 
-  const handleDelete = async (item: MediaItem) => {
-    if (!confirm(`"${item.key}" permanently delete karna hai?`)) return;
+  // ✅ NEW — actual delete logic (called after custom confirm modal is accepted)
+  const doDelete = async (item: MediaItem) => {
     setBusyKey(item.key + 'delete');
     try {
       await apiCall(`/object?hostname=${encodeURIComponent(item.hostname)}&key=${encodeURIComponent(item.key)}`, 'DELETE');
@@ -483,6 +574,16 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
     } finally {
       setBusyKey(null);
     }
+  };
+
+  // ✅ NEW — opens the themed confirm modal instead of the native browser confirm()
+  const requestDelete = (item: MediaItem) => {
+    setConfirmModal({
+      title: 'Delete file?',
+      message: `"${item.key}" permanently delete karna hai? Yeh undo nahi ho sakta.`,
+      confirmLabel: 'Delete',
+      onConfirm: () => doDelete(item),
+    });
   };
 
   const startRename = (item: MediaItem) => {
@@ -541,7 +642,91 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
     }
   };
 
+  // ─── ✅ NEW: multi-select helpers ───
+
+  const toggleSelectMode = () => {
+    setSelectMode(prev => {
+      if (prev) setSelectedIds(new Set()); // clear selection when leaving select mode
+      return !prev;
+    });
+  };
+
+  const toggleSelectItem = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllVisible = () => {
+    setSelectedIds(new Set(allVisibleItems.map(itemId)));
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  // ✅ NEW — actual bulk-delete logic (called after custom confirm modal is accepted)
+  const doBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+
+    const idToItem = new Map(allVisibleItems.map(i => [itemId(i), i]));
+    const targets = Array.from(selectedIds)
+      .map(id => idToItem.get(id))
+      .filter((i): i is MediaItem => !!i);
+
+    if (targets.length === 0) {
+      setSelectedIds(new Set());
+      return;
+    }
+
+    setBulkDeleting(true);
+    try {
+      const payload = { items: targets.map(t => ({ hostname: t.hostname, key: t.key })) };
+      const result = await apiCall('/bulk-delete', 'POST', payload);
+
+      const deletedIds = new Set<string>(
+        (result.deleted || []).map((d: { hostname: string; key: string }) => `${d.hostname}::${d.key}`)
+      );
+
+      // Remove successfully deleted items from the list
+      setItems(prev => prev.filter(i => !deletedIds.has(itemId(i))));
+
+      // Keep only the ones that failed still selected, so the user can retry/inspect
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        deletedIds.forEach(id => next.delete(id));
+        return next;
+      });
+
+      if (result.errors && result.errors.length > 0) {
+        const preview = result.errors.slice(0, 5).map((e: any) => `${e.key}: ${e.message}`).join('\n');
+        alert(`${deletedIds.size} deleted, ${result.errors.length} fail ho gaye:\n${preview}${result.errors.length > 5 ? '\n...' : ''}`);
+      } else {
+        setSelectMode(false);
+      }
+    } catch (err: any) {
+      alert(err.message || 'Bulk delete failed');
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
+  // ✅ NEW — opens the themed confirm modal instead of the native browser confirm()
+  const requestBulkDelete = () => {
+    if (selectedIds.size === 0) return;
+    setConfirmModal({
+      title: 'Delete selected files?',
+      message: `${selectedIds.size} file(s) permanently delete karni hain? Yeh undo nahi ho sakta.`,
+      confirmLabel: `Delete ${selectedIds.size} file(s)`,
+      onConfirm: doBulkDelete,
+    });
+  };
+
+  const allVisibleSelected = allVisibleItems.length > 0 && allVisibleItems.every(i => selectedIds.has(itemId(i)));
+
   return (
+    <>
     <div className="bg-white/5 border border-white/10 rounded-2xl p-3 sm:p-5 space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h3 className="text-lg font-semibold text-white flex items-center gap-2">
@@ -576,11 +761,54 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
             </button>
           </div>
 
+          {/* ✅ NEW — Select mode toggle */}
+          <button
+            onClick={toggleSelectMode}
+            className={`px-3 py-1.5 sm:px-3 sm:py-2 rounded-lg text-xs font-medium border transition-colors ${
+              selectMode
+                ? 'bg-rose-600/30 hover:bg-rose-600/50 border-rose-500/40 text-rose-200'
+                : 'bg-indigo-600/20 hover:bg-indigo-600/40 border-indigo-500/30 text-indigo-200'
+            }`}
+          >
+            {selectMode ? 'Cancel Select' : '☑ Select'}
+          </button>
+
           <button onClick={fetchItems} disabled={loading} className="px-3 py-1.5 sm:px-3 sm:py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium">
             {loading ? 'Loading...' : 'Refresh'}
           </button>
         </div>
       </div>
+
+      {/* ✅ NEW — Bulk selection toolbar */}
+      {selectMode && (
+        <div className="flex items-center justify-between flex-wrap gap-3 p-3 bg-indigo-500/10 border border-indigo-500/30 rounded-xl">
+          <span className="text-sm text-indigo-200 font-medium">
+            {selectedIds.size} selected
+          </span>
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={allVisibleSelected ? clearSelection : selectAllVisible}
+              className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium"
+            >
+              {allVisibleSelected ? 'Deselect All' : 'Select All'}
+            </button>
+            <button
+              onClick={clearSelection}
+              disabled={selectedIds.size === 0}
+              className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium disabled:opacity-40"
+            >
+              Clear
+            </button>
+            <button
+              onClick={requestBulkDelete}
+              disabled={selectedIds.size === 0 || bulkDeleting}
+              className="px-3 py-1.5 bg-rose-600/40 hover:bg-rose-600/60 border border-rose-500/50 text-rose-100 rounded-lg text-xs font-semibold disabled:opacity-40"
+            >
+              {bulkDeleting ? 'Deleting...' : `Delete Selected (${selectedIds.size})`}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col sm:flex-row gap-3 min-w-0">
         <select
@@ -604,7 +832,7 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
 
       <div className="space-y-4 max-h-[650px] overflow-y-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
 
-        {/* ✅ NEW — Images section, separate from video groups, with real thumbnail previews */}
+        {/* Images section, separate from video groups, with real thumbnail previews */}
         {imageItems.length > 0 && (
           <div className="border border-white/5 rounded-xl overflow-hidden">
             <button onClick={() => setImagesExpanded(v => !v)}
@@ -619,22 +847,28 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
             </button>
             {imagesExpanded && (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 p-3">
-                {imageItems.map(item => (
-                  <ImageCard
-                    key={`${item.hostname}-${item.key}`}
-                    item={item}
-                    isRenaming={renamingKey === item.key}
-                    renameValue={renameValue}
-                    setRenameValue={setRenameValue}
-                    busyKey={busyKey}
-                    onDownload={() => handleWatchOrDownload(item, 'download')}
-                    onCopy={() => handleCopyLink(item)}
-                    onRenameStart={() => startRename(item)}
-                    onRenameConfirm={() => confirmRename(item)}
-                    onRenameCancel={() => setRenamingKey(null)}
-                    onDelete={() => handleDelete(item)}
-                  />
-                ))}
+                {imageItems.map(item => {
+                  const id = itemId(item);
+                  return (
+                    <ImageCard
+                      key={id}
+                      item={item}
+                      isRenaming={renamingKey === item.key}
+                      renameValue={renameValue}
+                      setRenameValue={setRenameValue}
+                      busyKey={busyKey}
+                      selectMode={selectMode}
+                      isSelected={selectedIds.has(id)}
+                      onToggleSelect={() => toggleSelectItem(id)}
+                      onDownload={() => handleWatchOrDownload(item, 'download')}
+                      onCopy={() => handleCopyLink(item)}
+                      onRenameStart={() => startRename(item)}
+                      onRenameConfirm={() => confirmRename(item)}
+                      onRenameCancel={() => setRenamingKey(null)}
+                      onDelete={() => requestDelete(item)}
+                    />
+                  );
+                })}
               </div>
             )}
           </div>
@@ -653,6 +887,51 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
         )}
       </div>
     </div>
+
+    {/* ✅ NEW — themed confirm modal, replaces native window.confirm() popups */}
+    {confirmModal && (
+      <div
+        className="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+        onClick={() => setConfirmModal(null)}
+      >
+        <div
+          onClick={e => e.stopPropagation()}
+          className="w-full max-w-sm bg-[#1a1a2e] border border-rose-500/30 rounded-2xl p-5 shadow-2xl shadow-black/50 animate-fadeIn"
+        >
+          <div className="flex items-start gap-3 mb-1">
+            <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center">
+              <svg className="w-5 h-5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </div>
+            <div className="min-w-0">
+              <h4 className="text-white font-semibold text-sm">{confirmModal.title}</h4>
+              <p className="text-white/60 text-sm mt-1 leading-relaxed">{confirmModal.message}</p>
+            </div>
+          </div>
+
+          <div className="flex gap-2 justify-end mt-5">
+            <button
+              onClick={() => setConfirmModal(null)}
+              className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-sm font-medium transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                const action = confirmModal.onConfirm;
+                setConfirmModal(null);
+                action();
+              }}
+              className="px-4 py-2 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white rounded-xl text-sm font-semibold shadow-lg shadow-rose-600/20 transition-all"
+            >
+              {confirmModal.confirmLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 
   function renderGroupCard(group: typeof groupedSeries[number]) {
@@ -681,32 +960,52 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
             </svg>
           </button>
 
-          {/* ✅ NEW — Bulk add button */}
-          <button
-            onClick={() => setBulkAddGroupKey(bulkAddGroupKey === group.groupKey ? null : group.groupKey)}
-            title="Sab episodes ek sath Download Page me add karo"
-            className={`px-2.5 sm:px-3 py-2.5 flex-shrink-0 text-xs font-medium transition-all whitespace-nowrap ${
-              bulkAddGroupKey === group.groupKey ? 'text-rose-400' : 'text-indigo-300 hover:text-indigo-200'
-            }`}
-          >
-            {bulkAddGroupKey === group.groupKey ? 'Close' : '+ All to Page'}
-          </button>
+          {!selectMode && (
+            <button
+              onClick={() => setBulkAddGroupKey(bulkAddGroupKey === group.groupKey ? null : group.groupKey)}
+              title="Sab episodes ek sath Download Page me add karo"
+              className={`px-2.5 sm:px-3 py-2.5 flex-shrink-0 text-xs font-medium transition-all whitespace-nowrap ${
+                bulkAddGroupKey === group.groupKey ? 'text-rose-400' : 'text-indigo-300 hover:text-indigo-200'
+              }`}
+            >
+              {bulkAddGroupKey === group.groupKey ? 'Close' : '+ All to Page'}
+            </button>
+          )}
 
-          <button
-            onClick={() => toggleMark(group.groupKey, group.displayName)}
-            disabled={markBusyKey === group.groupKey}
-            title={isMarked ? 'Unmark' : 'Mark'}
-            className={`px-2.5 sm:px-3 py-2.5 flex-shrink-0 text-base sm:text-lg transition-all ${
-              isMarked
-                ? 'text-amber-400 drop-shadow-[0_0_6px_rgba(251,191,36,0.9)]'
-                : 'text-white/25 hover:text-white/60'
-            }`}
-          >
-            {markBusyKey === group.groupKey ? '···' : isMarked ? '★' : '☆'}
-          </button>
+          {!selectMode && (
+            <button
+              onClick={() => toggleMark(group.groupKey, group.displayName)}
+              disabled={markBusyKey === group.groupKey}
+              title={isMarked ? 'Unmark' : 'Mark'}
+              className={`px-2.5 sm:px-3 py-2.5 flex-shrink-0 text-base sm:text-lg transition-all ${
+                isMarked
+                  ? 'text-amber-400 drop-shadow-[0_0_6px_rgba(251,191,36,0.9)]'
+                  : 'text-white/25 hover:text-white/60'
+              }`}
+            >
+              {markBusyKey === group.groupKey ? '···' : isMarked ? '★' : '☆'}
+            </button>
+          )}
+
+          {/* ✅ NEW — select all episodes in this group, shown while in select mode */}
+          {selectMode && (
+            <button
+              onClick={() => {
+                setSelectedIds(prev => {
+                  const next = new Set(prev);
+                  const ids = group.episodes.map(e => itemId(e.item));
+                  const allSelected = ids.every(id => next.has(id));
+                  ids.forEach(id => allSelected ? next.delete(id) : next.add(id));
+                  return next;
+                });
+              }}
+              className="px-2.5 sm:px-3 py-2.5 flex-shrink-0 text-xs font-medium text-indigo-300 hover:text-indigo-200 whitespace-nowrap"
+            >
+              {group.episodes.every(e => selectedIds.has(itemId(e.item))) ? 'Deselect Group' : 'Select Group'}
+            </button>
+          )}
         </div>
 
-        {/* ✅ NEW — Bulk AddToPageModal */}
         {bulkAddGroupKey === group.groupKey && (
           <AddToPageModal
             items={group.episodes.map(e => ({ url: e.item.url, episode: e.episode }))}
@@ -720,7 +1019,8 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
             {group.episodes.map(({ item, episode }) => {
               const rowId = `${item.hostname}-${item.key}`;
               const isPlaying = playingItem?.id === rowId;
-              const isAddingToPage = addToPageRowId === rowId;  // ✅ NEW
+              const isAddingToPage = addToPageRowId === rowId;
+              const id = itemId(item);
 
               return (
                 <React.Fragment key={rowId}>
@@ -732,15 +1032,18 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
                     setRenameValue={setRenameValue}
                     busyKey={busyKey}
                     isPlaying={isPlaying}
-                    isAddingToPage={isAddingToPage}        // ✅ NEW
+                    isAddingToPage={isAddingToPage}
+                    selectMode={selectMode}
+                    isSelected={selectedIds.has(id)}
+                    onToggleSelect={() => toggleSelectItem(id)}
                     onWatch={() => handleWatchOrDownload(item, 'watch')}
                     onDownload={() => handleWatchOrDownload(item, 'download')}
                     onCopy={() => handleCopyLink(item)}
-                    onToggleAddToPage={() => setAddToPageRowId(isAddingToPage ? null : rowId)}  // ✅ NEW
+                    onToggleAddToPage={() => setAddToPageRowId(isAddingToPage ? null : rowId)}
                     onRenameStart={() => startRename(item)}
                     onRenameConfirm={() => confirmRename(item)}
                     onRenameCancel={() => setRenamingKey(null)}
-                    onDelete={() => handleDelete(item)}
+                    onDelete={() => requestDelete(item)}
                   />
                   {isPlaying && playingItem && (
                     <div className="py-3 bg-black/40">
@@ -750,7 +1053,6 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
                     </div>
                   )}
 
-                  {/* ✅ NEW — Inline AddToPageModal for this episode */}
                   {isAddingToPage && (
                     <AddToPageModal
                       items={[{ url: item.url, episode }]}

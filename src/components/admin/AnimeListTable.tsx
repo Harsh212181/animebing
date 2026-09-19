@@ -1,4 +1,4 @@
- // src/components/admin/AnimeListTable.tsx – FULL CODE WITH MOBILE-FRIENDLY CARD VIEW + MAIN ADMIN SUB-ADMIN FILTER + CUSTOM DROPDOWNS + SHOW MORE BUTTON + DOUBLE CLICK TOGGLE + PROPER SIDE GAPS
+ // src/components/admin/AnimeListTable.tsx – FULL CODE WITH MOBILE-FRIENDLY CARD VIEW + MAIN ADMIN SUB-ADMIN FILTER + CUSTOM DROPDOWNS + SHOW MORE BUTTON + DOUBLE CLICK TOGGLE + PROPER SIDE GAPS + MULTI-SELECT BULK HIDE/SHOW + CLICK-ANYWHERE-TO-SELECT
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { Anime } from '../../types';
 import axios from 'axios';
@@ -94,10 +94,36 @@ const CustomSelect: React.FC<{
   );
 };
 
-// ============ CLICK-TO-EXPAND TEXTAREA (Mobile friendly with Show More button + double-click toggle) ============
-// On mobile: collapsed preview with "Show More" button; clicking preview or button expands to textarea.
-// When expanded: textarea with "Show Less" button; double-click on textarea collapses.
-// On desktop: always textarea with auto-resize.
+// ============ ✅ CUSTOM STYLED CHECKBOX ============
+const CustomCheckbox: React.FC<{
+  checked: boolean;
+  onChange: () => void;
+  size?: 'sm' | 'md';
+  className?: string;
+}> = ({ checked, onChange, size = 'md', className = '' }) => {
+  const dims = size === 'sm' ? 'w-4 h-4' : 'w-5 h-5';
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      onClick={(e) => { e.stopPropagation(); onChange(); }}
+      className={`${dims} flex-shrink-0 rounded-md border flex items-center justify-center transition-all duration-150 ${
+        checked
+          ? 'bg-gradient-to-br from-purple-500 to-pink-500 border-purple-400 shadow-sm shadow-purple-500/40'
+          : 'bg-gray-800/80 border-gray-600 hover:border-purple-400/70'
+      } ${className}`}
+    >
+      {checked && (
+        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+        </svg>
+      )}
+    </button>
+  );
+};
+
+// ============ CLICK-TO-EXPAND TEXTAREA ============
 const ClickToExpandTextarea: React.FC<React.TextareaHTMLAttributes<HTMLTextAreaElement> & {
   minHeight?: string;
   previewLines?: number;
@@ -113,7 +139,6 @@ const ClickToExpandTextarea: React.FC<React.TextareaHTMLAttributes<HTMLTextAreaE
     return () => window.removeEventListener('resize', check);
   }, []);
 
-  // Auto-resize when expanded or on desktop
   useEffect(() => {
     if (ref.current && (!isMobile || isExpanded)) {
       ref.current.style.height = 'auto';
@@ -122,7 +147,6 @@ const ClickToExpandTextarea: React.FC<React.TextareaHTMLAttributes<HTMLTextAreaE
   }, [props.value, isExpanded, isMobile, minHeight]);
 
   if (!isMobile) {
-    // Desktop: always textarea with auto-resize
     return (
       <textarea
         ref={ref}
@@ -141,7 +165,6 @@ const ClickToExpandTextarea: React.FC<React.TextareaHTMLAttributes<HTMLTextAreaE
     <div>
       {!isExpanded ? (
         <div>
-          {/* Preview block — click anywhere or double-click to expand */}
           <div
             onClick={() => setIsExpanded(true)}
             onDoubleClick={() => setIsExpanded(true)}
@@ -157,7 +180,6 @@ const ClickToExpandTextarea: React.FC<React.TextareaHTMLAttributes<HTMLTextAreaE
           >
             {props.value?.toString() || <span className="text-slate-500">{props.placeholder}</span>}
           </div>
-          {/* Show More button */}
           <button
             type="button"
             onClick={() => setIsExpanded(true)}
@@ -171,7 +193,7 @@ const ClickToExpandTextarea: React.FC<React.TextareaHTMLAttributes<HTMLTextAreaE
           <textarea
             ref={ref}
             {...props}
-            onDoubleClick={() => setIsExpanded(false)} // double-click collapses
+            onDoubleClick={() => setIsExpanded(false)}
             style={{
               ...props.style,
               minHeight,
@@ -243,6 +265,11 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
 
   const [hidingId, setHidingId] = useState<string | null>(null);
   const isPartnerMode = propAnimeList !== undefined;
+
+  // ✅ multi-select state for bulk hide/show
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkVisBusy, setBulkVisBusy] = useState(false);
 
   const resolveToken = () => tokenProp || getAdminToken();
 
@@ -445,6 +472,76 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
     }
   };
 
+  // ─── multi-select helpers ───
+
+  const toggleSelectMode = () => {
+    setSelectMode(prev => {
+      if (prev) setSelectedIds(new Set());
+      return !prev;
+    });
+  };
+
+  const toggleSelectItem = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllVisible = () => setSelectedIds(new Set(filteredAnimes.map(a => a.id)));
+  const clearSelection = () => setSelectedIds(new Set());
+  const allVisibleSelected = filteredAnimes.length > 0 && filteredAnimes.every(a => selectedIds.has(a.id));
+
+  const bulkSetVisibility = async (hidden: boolean) => {
+    const targets = filteredAnimes.filter(a => selectedIds.has(a.id) && !!a.isHidden !== hidden);
+
+    if (targets.length === 0) {
+      toast(`Sab selected anime pehle se hi ${hidden ? 'hidden' : 'visible'} hain`);
+      return;
+    }
+
+    setBulkVisBusy(true);
+    const toastId = toast.loading(`${hidden ? 'Hiding' : 'Showing'} ${targets.length} anime...`);
+    try {
+      const token = resolveToken();
+      const results = await Promise.allSettled(
+        targets.map(a =>
+          axios.patch(`${API_BASE}/admin/protected/toggle-hide/${a.id}`, {}, {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+        )
+      );
+
+      const succeededIds = new Set<string>();
+      results.forEach((r, idx) => {
+        if (r.status === 'fulfilled') succeededIds.add(targets[idx].id);
+      });
+
+      setAnimes(prev => prev.map(a => succeededIds.has(a.id) ? { ...a, isHidden: hidden } : a));
+      clearAnimeCache();
+
+      const failedCount = targets.length - succeededIds.size;
+      if (failedCount > 0) {
+        toast.error(`${succeededIds.size} update ho gaye, ${failedCount} fail ho gaye`, { id: toastId });
+        setSelectedIds(prev => {
+          const next = new Set(prev);
+          succeededIds.forEach(id => next.delete(id));
+          return next;
+        });
+      } else {
+        toast.success(`✅ ${succeededIds.size} anime ${hidden ? 'hidden' : 'shown'}!`, { id: toastId });
+        setSelectMode(false);
+        setSelectedIds(new Set());
+      }
+    } catch (err: any) {
+      toast.error('Bulk update failed', { id: toastId });
+    } finally {
+      setBulkVisBusy(false);
+    }
+  };
+
   const handleGenreChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const genres = e.target.value.split(',').map(g => g.trim()).filter(g => g);
     setEditForm({ ...editForm, genreList: genres.length ? genres : ['Action'] });
@@ -529,7 +626,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
 
   if (error) return <p className="text-red-400 text-center p-4">{error}</p>;
 
-  // ✅ Shared edit form (used inside both desktop table row AND mobile card)
+  // ✅ Shared edit form
   const renderEditForm = (anime: AnimeWithId) => (
     <div className="py-2">
       <div className="flex justify-between items-center mb-3 gap-2">
@@ -685,16 +782,70 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
   return (
     <div className="py-4 px-3 sm:px-4 lg:px-6 space-y-6 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 min-h-screen">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="p-2 bg-purple-500/20 rounded-xl">
-          <svg className="w-7 h-7 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-          </svg>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-purple-500/20 rounded-xl">
+            <svg className="w-7 h-7 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+            </svg>
+          </div>
+          <h1 className="text-xl sm:text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-pink-300">
+            Anime List Manager
+          </h1>
         </div>
-        <h1 className="text-xl sm:text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-pink-300">
-          Anime List Manager
-        </h1>
+
+        {/* Select mode toggle */}
+        {!isPartnerMode && (
+          <button
+            onClick={toggleSelectMode}
+            className={`px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${
+              selectMode
+                ? 'bg-rose-600/30 hover:bg-rose-600/50 border-rose-500/40 text-rose-200'
+                : 'bg-indigo-600/20 hover:bg-indigo-600/40 border-indigo-500/30 text-indigo-200'
+            }`}
+          >
+            {selectMode ? 'Cancel Select' : '☑ Select'}
+          </button>
+        )}
       </div>
+
+      {/* Bulk hide/show toolbar */}
+      {selectMode && (
+        <div className="flex items-center justify-between flex-wrap gap-3 p-3 bg-indigo-500/10 border border-indigo-500/30 rounded-2xl">
+          <span className="text-sm text-indigo-200 font-medium">
+            {selectedIds.size} selected
+          </span>
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={allVisibleSelected ? clearSelection : selectAllVisible}
+              className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium"
+            >
+              {allVisibleSelected ? 'Deselect All' : 'Select All'}
+            </button>
+            <button
+              onClick={clearSelection}
+              disabled={selectedIds.size === 0}
+              className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium disabled:opacity-40"
+            >
+              Clear
+            </button>
+            <button
+              onClick={() => bulkSetVisibility(false)}
+              disabled={selectedIds.size === 0 || bulkVisBusy}
+              className="px-3 py-1.5 bg-green-600/30 hover:bg-green-600/50 border border-green-500/40 text-green-200 rounded-lg text-xs font-semibold disabled:opacity-40"
+            >
+              {bulkVisBusy ? '...' : `👁 Show Selected`}
+            </button>
+            <button
+              onClick={() => bulkSetVisibility(true)}
+              disabled={selectedIds.size === 0 || bulkVisBusy}
+              className="px-3 py-1.5 bg-yellow-600/30 hover:bg-yellow-600/50 border border-yellow-500/40 text-yellow-200 rounded-lg text-xs font-semibold disabled:opacity-40"
+            >
+              {bulkVisBusy ? '...' : `🔒 Hide Selected`}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Delete Modal */}
       {deleteConfirm && (
@@ -734,7 +885,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
         </div>
       )}
 
-      {/* Filters — dropdown style */}
+      {/* Filters */}
       <div className="bg-white/5 border border-white/10 rounded-2xl py-4 px-3 shadow-xl mx-0">
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           <CustomSelect
@@ -796,7 +947,6 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
             />
           )}
 
-          {/* Search takes remaining space */}
           <div className="col-span-2 sm:col-span-1">
             <label className="block text-xs font-medium text-slate-300 mb-1">Search</label>
             <div className="relative">
@@ -825,16 +975,32 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
         </div>
       ) : (
         <>
-          {/* ============ MOBILE CARD VIEW (below md) ============ */}
+          {/* ============ MOBILE CARD VIEW ============ */}
           <div className="md:hidden space-y-3">
             {filteredAnimes.map(anime => {
               const uniqueKey = anime._id || anime.id;
               const seoStatus = !isPartnerMode ? getSEOStatus(anime) : null;
               const dlCount = downloadPageCounts[anime.id] || 0;
               const isEditingThis = !isPartnerMode && editingAnimeId === anime.id;
+              const isSelected = selectedIds.has(anime.id);
+              const isSelectable = selectMode && !isPartnerMode;
               return (
-                <div key={`card-${uniqueKey}`} className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
+                <div
+                  key={`card-${uniqueKey}`}
+                  onClick={isSelectable ? () => toggleSelectItem(anime.id) : undefined}
+                  className={`bg-white/5 border rounded-2xl overflow-hidden transition-colors ${
+                    isSelectable ? 'cursor-pointer hover:border-purple-500/50' : ''
+                  } ${
+                    isSelected ? 'border-purple-500/60 bg-purple-500/5' : 'border-white/10'
+                  }`}
+                >
                   <div className="flex gap-3 p-3">
+                    {/* selection checkbox */}
+                    {isSelectable && (
+                      <div className="flex items-start pt-1">
+                        <CustomCheckbox checked={isSelected} onChange={() => toggleSelectItem(anime.id)} />
+                      </div>
+                    )}
                     <img
                       src={anime.thumbnail || 'https://via.placeholder.com/64x86/1e293b/64748b?text=NA'}
                       alt={anime.title}
@@ -876,51 +1042,53 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
                   </div>
 
                   {/* Action buttons row */}
-                  <div className="flex items-center gap-2 px-3 pb-3 flex-wrap">
-                    {showRemoveButton && onRemoveFromPartner ? (
-                      <button onClick={() => onRemoveFromPartner(anime.id)}
-                        className="flex-1 min-w-[100px] px-2 py-2 bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 rounded-lg text-red-200 text-xs font-medium flex items-center justify-center gap-1">
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                        Remove
-                      </button>
-                    ) : !isPartnerMode && (
-                      <>
-                        <button
-                          onClick={() => handleToggleHide(anime)}
-                          disabled={hidingId === anime.id}
-                          className={`flex-1 min-w-[90px] px-2 py-2 border rounded-lg text-xs font-medium flex items-center justify-center gap-1 disabled:opacity-50 ${
-                            anime.isHidden
-                              ? 'bg-green-500/20 hover:bg-green-500/40 border-green-500/30 text-green-200'
-                              : 'bg-yellow-500/20 hover:bg-yellow-500/40 border-yellow-500/30 text-yellow-200'
-                          }`}
-                        >
-                          {hidingId === anime.id ? (
-                            <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                            </svg>
-                          ) : anime.isHidden ? 'Show' : 'Hide'}
+                  {!selectMode && (
+                    <div className="flex items-center gap-2 px-3 pb-3 flex-wrap">
+                      {showRemoveButton && onRemoveFromPartner ? (
+                        <button onClick={() => onRemoveFromPartner(anime.id)}
+                          className="flex-1 min-w-[100px] px-2 py-2 bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 rounded-lg text-red-200 text-xs font-medium flex items-center justify-center gap-1">
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                          Remove
                         </button>
-                        <button onClick={() => handleEdit(anime)}
-                          className={`flex-1 min-w-[90px] px-2 py-2 border rounded-lg text-xs font-medium flex items-center justify-center gap-1 ${
-                            isEditingThis
-                              ? 'bg-yellow-500/20 hover:bg-yellow-500/40 border-yellow-500/30 text-yellow-200'
-                              : 'bg-indigo-500/20 hover:bg-indigo-500/40 border-indigo-500/30 text-indigo-200'
-                          }`}>
-                          {isEditingThis ? 'Cancel' : 'Edit'}
-                        </button>
-                        {!isEditingThis && (
-                          <button onClick={() => handleDelete(anime.id)}
-                            className="flex-1 min-w-[90px] px-2 py-2 bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 rounded-lg text-red-200 text-xs font-medium flex items-center justify-center gap-1">
-                            Delete
+                      ) : !isPartnerMode && (
+                        <>
+                          <button
+                            onClick={() => handleToggleHide(anime)}
+                            disabled={hidingId === anime.id}
+                            className={`flex-1 min-w-[90px] px-2 py-2 border rounded-lg text-xs font-medium flex items-center justify-center gap-1 disabled:opacity-50 ${
+                              anime.isHidden
+                                ? 'bg-green-500/20 hover:bg-green-500/40 border-green-500/30 text-green-200'
+                                : 'bg-yellow-500/20 hover:bg-yellow-500/40 border-yellow-500/30 text-yellow-200'
+                            }`}
+                          >
+                            {hidingId === anime.id ? (
+                              <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                              </svg>
+                            ) : anime.isHidden ? 'Show' : 'Hide'}
                           </button>
-                        )}
-                      </>
-                    )}
-                  </div>
+                          <button onClick={() => handleEdit(anime)}
+                            className={`flex-1 min-w-[90px] px-2 py-2 border rounded-lg text-xs font-medium flex items-center justify-center gap-1 ${
+                              isEditingThis
+                                ? 'bg-yellow-500/20 hover:bg-yellow-500/40 border-yellow-500/30 text-yellow-200'
+                                : 'bg-indigo-500/20 hover:bg-indigo-500/40 border-indigo-500/30 text-indigo-200'
+                            }`}>
+                            {isEditingThis ? 'Cancel' : 'Edit'}
+                          </button>
+                          {!isEditingThis && (
+                            <button onClick={() => handleDelete(anime.id)}
+                              className="flex-1 min-w-[90px] px-2 py-2 bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 rounded-lg text-red-200 text-xs font-medium flex items-center justify-center gap-1">
+                              Delete
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
 
                   {/* Inline edit form for mobile */}
-                  {isEditingThis && (
+                  {isEditingThis && !selectMode && (
                     <div className="border-t border-white/10 p-0 bg-white/5">
                       {renderEditForm(anime)}
                     </div>
@@ -930,12 +1098,21 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
             })}
           </div>
 
-          {/* ============ DESKTOP TABLE VIEW (md and up) ============ */}
+          {/* ============ DESKTOP TABLE VIEW ============ */}
           <div className="hidden md:block bg-white/5 border border-white/10 rounded-2xl shadow-xl overflow-hidden mx-0">
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-white/10 text-sm">
                 <thead className="bg-white/5">
                   <tr>
+                    {selectMode && !isPartnerMode && (
+                      <th className="px-3 py-3 text-left">
+                        <CustomCheckbox
+                          checked={allVisibleSelected}
+                          onChange={allVisibleSelected ? clearSelection : selectAllVisible}
+                          size="sm"
+                        />
+                      </th>
+                    )}
                     <th className="px-3 py-3 text-left text-xs font-medium text-white/50 uppercase">Img</th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-white/50 uppercase">Title</th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-white/50 uppercase">Type</th>
@@ -955,9 +1132,23 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
                     const uniqueKey = anime._id || anime.id;
                     const seoStatus = !isPartnerMode ? getSEOStatus(anime) : null;
                     const dlCount = downloadPageCounts[anime.id] || 0;
+                    const isSelected = selectedIds.has(anime.id);
+                    const isRowSelectable = selectMode && !isPartnerMode;
+                    const colCount = 7 + (!isPartnerMode ? 3 : 0) + (selectMode && !isPartnerMode ? 1 : 0);
                     return (
                       <React.Fragment key={uniqueKey}>
-                        <tr key={`row-${uniqueKey}`} className={`hover:bg-white/5 transition ${editingAnimeId === anime.id ? 'bg-white/10' : ''}`}>
+                        <tr
+                          key={`row-${uniqueKey}`}
+                          onClick={isRowSelectable ? () => toggleSelectItem(anime.id) : undefined}
+                          className={`hover:bg-white/5 transition ${isRowSelectable ? 'cursor-pointer' : ''} ${
+                            editingAnimeId === anime.id ? 'bg-white/10' : isSelected ? 'bg-purple-500/10' : ''
+                          }`}
+                        >
+                          {selectMode && !isPartnerMode && (
+                            <td className="px-3 py-3 align-middle">
+                              <CustomCheckbox checked={isSelected} onChange={() => toggleSelectItem(anime.id)} size="sm" />
+                            </td>
+                          )}
                           <td className="px-3 py-3 align-middle">
                             <div className="w-14 h-18 rounded-lg overflow-hidden bg-gray-800 border border-white/10" style={{ minWidth: 56, height: 72 }}>
                               <img src={anime.thumbnail || 'https://via.placeholder.com/56x72/1e293b/64748b?text=NA'}
@@ -1031,10 +1222,10 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
                           )}
 
                           {!isPartnerMode && (
-                            <td className="px-3 py-3 whitespace-nowrap">
+                            <td className={`px-3 py-3 whitespace-nowrap ${selectMode ? 'pointer-events-none' : ''}`}>
                               <button
                                 onClick={() => handleToggleHide(anime)}
-                                disabled={hidingId === anime.id}
+                                disabled={hidingId === anime.id || selectMode}
                                 className={`px-2 py-1.5 border rounded-lg text-xs font-medium transition-all flex items-center gap-1 disabled:opacity-50 ${
                                   anime.isHidden
                                     ? 'bg-green-500/20 hover:bg-green-500/40 border-green-500/30 text-green-200'
@@ -1055,7 +1246,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
                             </td>
                           )}
 
-                          <td className="px-3 py-3 whitespace-nowrap">
+                          <td className={`px-3 py-3 whitespace-nowrap ${selectMode ? 'pointer-events-none' : ''}`}>
                             <div className="flex flex-col gap-1.5">
                               {showRemoveButton && onRemoveFromPartner ? (
                                 <button onClick={() => onRemoveFromPartner(anime.id)}
@@ -1065,8 +1256,8 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
                                 </button>
                               ) : !isPartnerMode && (
                                 <>
-                                  <button onClick={() => handleEdit(anime)}
-                                    className={`px-2 py-1.5 border rounded-lg text-xs font-medium flex items-center gap-1 ${
+                                  <button onClick={() => handleEdit(anime)} disabled={selectMode}
+                                    className={`px-2 py-1.5 border rounded-lg text-xs font-medium flex items-center gap-1 disabled:opacity-40 ${
                                       editingAnimeId === anime.id
                                         ? 'bg-yellow-500/20 hover:bg-yellow-500/40 border-yellow-500/30 text-yellow-200'
                                         : 'bg-indigo-500/20 hover:bg-indigo-500/40 border-indigo-500/30 text-indigo-200'
@@ -1078,8 +1269,8 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
                                     )}
                                   </button>
                                   {editingAnimeId !== anime.id && (
-                                    <button onClick={() => handleDelete(anime.id)}
-                                      className="px-2 py-1.5 bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 rounded-lg text-red-200 text-xs font-medium flex items-center gap-1">
+                                    <button onClick={() => handleDelete(anime.id)} disabled={selectMode}
+                                      className="px-2 py-1.5 bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 rounded-lg text-red-200 text-xs font-medium flex items-center gap-1 disabled:opacity-40">
                                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                                       Delete
                                     </button>
@@ -1090,9 +1281,9 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
                           </td>
                         </tr>
 
-                        {!isPartnerMode && editingAnimeId === anime.id && (
+                        {!isPartnerMode && !selectMode && editingAnimeId === anime.id && (
                           <tr key={`edit-${uniqueKey}`} className="bg-white/5">
-                            <td colSpan={10} className="p-4">
+                            <td colSpan={colCount} className="p-4">
                               {renderEditForm(anime)}
                             </td>
                           </tr>
