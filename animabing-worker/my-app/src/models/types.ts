@@ -732,6 +732,7 @@ export interface IR2Provider {
   iv: string
   ownerUsername?: string
   label?: string
+  publicBaseUrl?: string   // ✅ NEW
   isActive?: boolean
   createdAt?: Date
   updatedAt?: Date

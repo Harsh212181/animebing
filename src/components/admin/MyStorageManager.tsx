@@ -14,6 +14,7 @@ interface Status {
   bucketName?: string;
   accountId?: string;
   isActive?: boolean;
+  publicBaseUrl?: string; // ✅ NEW
 }
 
 const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
@@ -25,6 +26,8 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  const [publicUrl, setPublicUrl] = useState(''); // ✅ NEW
 
   const [form, setForm] = useState({
     bucketName: '',
@@ -46,6 +49,7 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
       });
       const data = await res.json();
       setStatus(data);
+      setPublicUrl(data.publicBaseUrl || ''); // ✅ NEW
     } catch {
       setError('Status load nahi ho saka');
     } finally {
@@ -148,6 +152,22 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
     }
   };
 
+  // ✅ NEW
+  const savePublicUrl = async () => {
+    setError(''); setSuccess('');
+    try {
+      const token = resolveToken();
+      const res = await fetch(`${API_BASE}/uploads/my-provider/public-url`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ publicBaseUrl: publicUrl.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok) setSuccess('Public URL save ho gaya!');
+      else setError(data.error || 'Save nahi ho saka');
+    } catch { setError('Network error'); }
+  };
+
   if (loading) return <div className="p-6 text-center text-white/60">Loading...</div>;
 
   return (
@@ -178,6 +198,23 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
           </div>
           <p className="text-sm text-white/70">Bucket: <span className="text-purple-300">{status.bucketName}</span></p>
           <p className="text-sm text-white/70">Account ID: <span className="text-purple-300">{status.accountId}</span></p>
+
+          <div>
+            <label className="block text-xs text-white/60 mb-1">Public URL (r2.dev ya custom domain)</label>
+            <div className="flex gap-2">
+              <input
+                value={publicUrl}
+                onChange={e => setPublicUrl(e.target.value)}
+                placeholder="https://pub-xxxx.r2.dev"
+                className="flex-1 px-3 py-2 bg-gray-800/60 border border-gray-700/80 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+              <button onClick={savePublicUrl}
+                className="px-4 py-2 bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 text-purple-200 rounded-lg text-sm font-medium">
+                Save
+              </button>
+            </div>
+          </div>
+
           <button
             onClick={handleDisconnect}
             className="px-4 py-2 bg-rose-500/20 hover:bg-rose-500/40 border border-rose-500/30 text-rose-200 rounded-lg text-sm font-medium transition-all"

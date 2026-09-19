@@ -1,4 +1,4 @@
-import { AwsClient } from 'aws4fetch'
+ import { AwsClient } from 'aws4fetch'
 
 interface Creds {
   accountId: string
@@ -222,4 +222,18 @@ export async function listBuckets(accountId: string, accessKeyId: string, secret
   const xml = await res.text()
   const nameMatches = [...xml.matchAll(/<Name>(.*?)<\/Name>/g)]
   return nameMatches.map(m => m[1])
+}
+
+// ✅ NEW: presigned GET url (public domain ke bina bhi Watch/Download chale)
+export async function generateGetUrl(
+  creds: Creds, key: string, opts: { expiresIn?: number; download?: boolean } = {}
+): Promise<string> {
+  const client = getClient(creds)
+  const url = new URL(objectEndpoint(creds, key))
+  url.searchParams.set('X-Amz-Expires', String(opts.expiresIn ?? 3600))
+  if (opts.download) {
+    url.searchParams.set('response-content-disposition', `attachment; filename="${key.replace(/"/g, '')}"`)
+  }
+  const signed = await client.sign(url.toString(), { method: 'GET', aws: { signQuery: true } })
+  return signed.url
 }

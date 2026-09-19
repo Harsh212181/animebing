@@ -327,6 +327,12 @@ const UploadRow: React.FC<{
         </div>
       )}
 
+      {item.status === 'done' && !item.finalUrl && (
+        <p className="text-xs text-amber-200/80">
+          Upload ho gaya, par Public URL set nahi hai. My Storage me jaake set karo.
+        </p>
+      )}
+
       <div className="flex gap-2 flex-wrap pt-1">
         {item.status === 'needs-file' && (
           <>

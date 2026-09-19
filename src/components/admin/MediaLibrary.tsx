@@ -559,7 +559,9 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
     }
   };
 
+  // ✅ UPDATED — guard against empty URL (public base URL not set)
   const handleCopyLink = (item: MediaItem) => {
+    if (!item.url) { alert('Public URL set nahi hai. My Storage me set karo.'); return; }
     navigator.clipboard.writeText(item.url);
   };
 

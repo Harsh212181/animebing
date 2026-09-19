@@ -16,6 +16,7 @@ import {
   renameObject,
   generateSimplePutUrl,
   listBuckets, // ✅ NEW
+  generateGetUrl, // ✅ NEW
 } from '../services/multipartUploadService'
 
 const uploadRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
@@ -55,6 +56,7 @@ async function resolveUploadCreds(hostname: string, c: any) {
       accessKeyId: c.env.R2_ACCESS_KEY_ID,
       secretAccessKey: c.env.R2_SECRET_ACCESS_KEY,
       bucketName: staticBucketHostMap[hostname],
+      publicBaseUrl: `https://${hostname}`, // ✅ NEW
     }
   }
   const provider = await findOne<IR2Provider>(
@@ -69,7 +71,13 @@ async function resolveUploadCreds(hostname: string, c: any) {
     accessKeyId: (provider as any).accessKeyId,
     secretAccessKey,
     bucketName: (provider as any).bucketName,
+    publicBaseUrl: ((provider as any).publicBaseUrl || '').replace(/\/+$/, ''), // ✅ NEW
   }
+}
+
+// ✅ NEW
+function buildUrl(creds: any, key: string): string {
+  return creds.publicBaseUrl ? `${creds.publicBaseUrl}/${encodeURIComponent(key)}` : ''
 }
 
 function sanitizeFilename(name: string): string {
@@ -147,7 +155,7 @@ uploadRoutes.get('/list', adminAuth, async (c) => {
             size: o.size,
             lastModified: o.lastModified,
             hostname,
-            url: `https://${hostname}/${encodeURIComponent(o.key)}`,
+            url: buildUrl(creds, o.key),
           }))
         } catch {
           return []
@@ -206,7 +214,7 @@ uploadRoutes.post('/complete', adminAuth, async (c) => {
 
     await completeMultipartUpload(creds, key, uploadId, parts)
 
-    const finalUrl = `https://${hostname}/${encodeURIComponent(key)}`
+    const finalUrl = buildUrl(creds, key)
     return c.json({ success: true, url: finalUrl })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -316,7 +324,7 @@ uploadRoutes.post('/rename', adminAuth, async (c) => {
     if (!creds) return c.json({ error: 'Invalid hostname' }, 400)
 
     await renameObject(creds, oldKey, newKey)
-    return c.json({ success: true, url: `https://${hostname}/${encodeURIComponent(newKey)}` })
+    return c.json({ success: true, url: buildUrl(creds, newKey) })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
@@ -375,6 +383,14 @@ uploadRoutes.post('/preview-url', adminAuth, async (c) => {
 
     const allowed = await checkHostnameAccess(hostname, admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
     if (!allowed) return c.json({ error: 'Access denied' }, 403)
+
+    // ✅ NEW: sub-admin ke bucket ke liye presigned GET
+    if (!(hostname in staticBucketHostMap)) {
+      const creds = await resolveUploadCreds(hostname, c)
+      if (!creds) return c.json({ error: 'Invalid hostname' }, 400)
+      const url = await generateGetUrl(creds, key, { expiresIn: 6 * 3600, download: mode === 'download' })
+      return c.json({ url })
+    }
 
     const fullUrl = `https://${hostname}/${encodeURIComponent(key)}`
     const signed = await signDownloadUrl(
@@ -438,6 +454,7 @@ uploadRoutes.get('/my-provider', adminAuth, async (c) => {
       bucketName: (provider as any).bucketName,
       accountId: (provider as any).accountId,
       isActive: (provider as any).isActive !== false,
+      publicBaseUrl: (provider as any).publicBaseUrl || '', // ✅ NEW
     })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -516,6 +533,30 @@ uploadRoutes.post('/list-buckets', adminAuth, async (c) => {
     }
     const buckets = await listBuckets(accountId, accessKeyId, secretAccessKey)
     return c.json({ buckets })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ✅ NEW: sub-admin apna public URL save kare
+uploadRoutes.patch('/my-provider/public-url', adminAuth, async (c) => {
+  try {
+    const admin = c.get('admin')
+    if (admin?.role !== 'subadmin') return c.json({ error: 'Yeh feature sirf sub-admin ke liye hai' }, 403)
+
+    const { publicBaseUrl } = await c.req.json()
+    let clean = ''
+    if (publicBaseUrl) {
+      try {
+        const u = new URL(publicBaseUrl)
+        if (u.protocol !== 'https:') throw new Error()
+        clean = (u.origin + u.pathname).replace(/\/+$/, '')
+      } catch {
+        return c.json({ error: 'Valid https URL daalo (e.g. https://pub-xxxx.r2.dev)' }, 400)
+      }
+    }
+    await updateOne('r2providers', { ownerUsername: admin.username }, { publicBaseUrl: clean }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    return c.json({ success: true, publicBaseUrl: clean })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
