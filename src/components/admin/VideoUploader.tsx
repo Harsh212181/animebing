@@ -5,10 +5,11 @@ const API_BASE = import.meta.env.VITE_API_BASE ||
   'https://animabing-backend.animabingwatch.workers.dev/api';
 
 const CHUNK_SIZE = 8 * 1024 * 1024; // 8 MB per part
+const MAX_CONCURRENT_UPLOADS = 2;   // how many files upload at the same time (like Cyberduck's queue)
 
 interface BucketOption { hostname: string; label: string; }
 
-interface UploadState {
+interface PersistedState {
   hostname: string;
   key: string;
   uploadId: string;
@@ -16,6 +17,25 @@ interface UploadState {
   fileSize: number;
   fileName: string;
   completedParts: { partNumber: number; eTag: string }[];
+}
+
+type ItemStatus = 'needs-file' | 'queued' | 'uploading' | 'paused' | 'done' | 'error';
+
+interface UploadItem {
+  id: string;
+  hostname: string;
+  fileName: string;
+  fileSize: number;
+  file: File | null;
+  status: ItemStatus;
+  progress: number; // 0-100
+  error?: string;
+  finalUrl?: string;
+  uploadId?: string;
+  key?: string;
+  totalParts?: number;
+  completedParts: { partNumber: number; eTag: string }[];
+  speed: number; // bytes/sec
 }
 
 interface Props {
@@ -34,13 +54,25 @@ const CORS_POLICY = JSON.stringify([
   }
 ], null, 2);
 
-// ─── Custom Select (portal-based, improved UI) ───
-interface SelectOption {
-  value: string;
-  label: string;
-  hint?: string;
-  color?: string;
-}
+const storageKey = (fileName: string, fileSize: number) => `upload_state_${fileName}__${fileSize}`;
+
+const formatSize = (bytes: number) => {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+};
+
+const formatSpeed = (speed: number) => {
+  if (!speed || speed <= 0) return '';
+  if (speed > 1024 * 1024) return (speed / (1024 * 1024)).toFixed(2) + ' MB/s';
+  if (speed > 1024) return (speed / 1024).toFixed(1) + ' KB/s';
+  return speed.toFixed(0) + ' B/s';
+};
+
+// ─── Custom Select (portal-based) ───
+interface SelectOption { value: string; label: string; hint?: string; color?: string; }
 
 const CustomSelect: React.FC<{
   value: string;
@@ -156,94 +188,203 @@ const CustomSelect: React.FC<{
   );
 };
 
-// ─── File Dropzone ───
-const FileDropzone: React.FC<{
-  file: File | null;
-  onFileSelect: (file: File) => void;
-  onFileRemove: () => void;
-  disabled?: boolean;
-}> = ({ file, onFileSelect, onFileRemove, disabled }) => {
+// ─── Multi-file Dropzone ───
+const MultiFileDropzone: React.FC<{
+  onFilesSelected: (files: File[]) => void;
+}> = ({ onFilesSelected }) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const isVideoLike = (f: File) =>
+    f.type.startsWith('video/') || /\.(mp4|mkv|avi|mov|webm|m4v|ts)$/i.test(f.name);
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    if (disabled) return;
-    const files = e.dataTransfer.files;
-    if (files.length > 0 && files[0].type.startsWith('video/')) {
-      onFileSelect(files[0]);
-    }
+    const files = Array.from(e.dataTransfer.files).filter(isVideoLike);
+    if (files.length) onFilesSelected(files);
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    if (!disabled) setIsDragOver(true);
-  };
-
+  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragOver(true); };
   const handleDragLeave = () => setIsDragOver(false);
-
-  const formatSize = (bytes: number) => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-  };
 
   return (
     <div>
-      <label className="block text-xs font-medium text-slate-300 mb-1.5">Video File</label>
-      {!file ? (
-        <div
-          onClick={() => !disabled && inputRef.current?.click()}
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
-            isDragOver
-              ? 'border-purple-500 bg-purple-500/10'
-              : 'border-gray-700 bg-gray-800/40 hover:border-gray-500 hover:bg-gray-800/60'
-          } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-        >
-          <svg className="mx-auto h-12 w-12 text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-          </svg>
-          <p className="text-sm text-gray-300 mb-1">
-            <span className="text-purple-400 font-medium">Click to upload</span> or drag and drop
-          </p>
-          <p className="text-xs text-gray-500">MP4, MKV, AVI up to large size (chunked upload)</p>
-          <input
-            ref={inputRef}
-            type="file"
-            accept="video/*"
-            className="hidden"
-            onChange={e => e.target.files?.[0] && onFileSelect(e.target.files[0])}
-          />
+      <label className="block text-xs font-medium text-slate-300 mb-1.5">Video File(s)</label>
+      <div
+        onClick={() => inputRef.current?.click()}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
+          isDragOver ? 'border-purple-500 bg-purple-500/10' : 'border-gray-700 bg-gray-800/40 hover:border-gray-500 hover:bg-gray-800/60'
+        }`}
+      >
+        <svg className="mx-auto h-12 w-12 text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+        </svg>
+        <p className="text-sm text-gray-300 mb-1">
+          <span className="text-purple-400 font-medium">Click to upload</span> or drag and drop — select multiple files to upload them together
+        </p>
+        <p className="text-xs text-gray-500">MP4, MKV, AVI up to large size (chunked, resumable upload)</p>
+        <input
+          ref={inputRef}
+          type="file"
+          accept="video/*"
+          multiple
+          className="hidden"
+          onChange={e => {
+            if (e.target.files?.length) onFilesSelected(Array.from(e.target.files));
+            e.target.value = '';
+          }}
+        />
+      </div>
+    </div>
+  );
+};
+
+// ─── Status badge ───
+const StatusBadge: React.FC<{ status: ItemStatus }> = ({ status }) => {
+  const map: Record<ItemStatus, { label: string; cls: string }> = {
+    'needs-file': { label: 'Needs file', cls: 'bg-amber-600/30 text-amber-200 border-amber-500/40' },
+    queued: { label: 'Queued', cls: 'bg-gray-600/30 text-gray-200 border-gray-500/40' },
+    uploading: { label: 'Uploading', cls: 'bg-blue-600/30 text-blue-200 border-blue-500/40' },
+    paused: { label: 'Paused', cls: 'bg-amber-600/30 text-amber-200 border-amber-500/40' },
+    done: { label: 'Done', cls: 'bg-emerald-600/30 text-emerald-200 border-emerald-500/40' },
+    error: { label: 'Error', cls: 'bg-rose-600/30 text-rose-200 border-rose-500/40' },
+  };
+  const s = map[status];
+  return <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${s.cls}`}>{s.label}</span>;
+};
+
+// ─── One row per upload in the queue ───
+const UploadRow: React.FC<{
+  item: UploadItem;
+  onPause: () => void;
+  onResume: () => void;
+  onCancel: () => void;
+  onRetry: () => void;
+  onAttachFile: (file: File) => void;
+  onCopyUrl: () => void;
+}> = ({ item, onPause, onResume, onCancel, onRetry, onAttachFile, onCopyUrl }) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [mismatch, setMismatch] = useState('');
+
+  const handlePick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    if (f.name !== item.fileName || f.size !== item.fileSize) {
+      setMismatch(`Yeh file match nahi hui — "${item.fileName}" (${formatSize(item.fileSize)}) chuno.`);
+      return;
+    }
+    setMismatch('');
+    onAttachFile(f);
+  };
+
+  return (
+    <div className="bg-gray-800/50 border border-gray-700/60 rounded-xl p-4 space-y-2.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-white truncate">{item.fileName}</p>
+          <p className="text-xs text-gray-400">{formatSize(item.fileSize)} · <span className="text-purple-300">{item.hostname}</span></p>
         </div>
-      ) : (
-        <div className="bg-gray-800/60 border border-gray-700 rounded-xl p-4 flex items-center gap-4">
-          <div className="flex-shrink-0 w-10 h-10 bg-purple-600/20 rounded-lg flex items-center justify-center">
-            <svg className="w-5 h-5 text-purple-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
-            </svg>
+        <StatusBadge status={item.status} />
+      </div>
+
+      {item.status !== 'needs-file' && (
+        <>
+          <div className="w-full bg-gray-800 rounded-full h-2.5 overflow-hidden">
+            <div
+              className="h-2.5 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300"
+              style={{ width: `${item.progress}%` }}
+            />
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-white truncate">{file.name}</p>
-            <p className="text-xs text-gray-400">{formatSize(file.size)}</p>
+          <div className="flex justify-between text-[11px] text-gray-400">
+            <span>{item.progress}%</span>
+            {item.status === 'uploading' && <span>{formatSpeed(item.speed)}</span>}
           </div>
-          <button
-            onClick={onFileRemove}
-            disabled={disabled}
-            className="text-gray-400 hover:text-red-400 transition-colors disabled:opacity-50"
-            aria-label="Remove file"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+        </>
+      )}
+
+      {item.status === 'needs-file' && (
+        <div className="space-y-2">
+          <p className="text-xs text-amber-200/80">
+            Interrupted upload — {item.progress}% already uploaded. Isi naam/size ki file dobara select karo to continue karne ke liye.
+          </p>
+          {mismatch && <p className="text-xs text-rose-300">{mismatch}</p>}
+          <div className="w-full bg-gray-800 rounded-full h-2.5 overflow-hidden">
+            <div className="h-2.5 rounded-full bg-amber-500/60" style={{ width: `${item.progress}%` }} />
+          </div>
         </div>
       )}
+
+      {item.error && <p className="text-xs text-rose-300">{item.error}</p>}
+
+      {item.status === 'done' && item.finalUrl && (
+        <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
+          <code className="text-[11px] text-white break-all">{item.finalUrl}</code>
+        </div>
+      )}
+
+      <div className="flex gap-2 flex-wrap pt-1">
+        {item.status === 'needs-file' && (
+          <>
+            <button
+              onClick={() => inputRef.current?.click()}
+              className="px-3 py-1.5 bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 text-purple-200 rounded-lg text-xs font-medium"
+            >
+              Select File to Resume
+            </button>
+            <input ref={inputRef} type="file" accept="video/*" className="hidden" onChange={handlePick} />
+            <button onClick={onCancel} className="px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600/40 border border-rose-500/30 text-rose-200 rounded-lg text-xs font-medium">
+              Discard
+            </button>
+          </>
+        )}
+        {(item.status === 'queued' || item.status === 'uploading') && (
+          <>
+            <button onClick={onPause} className="px-3 py-1.5 bg-amber-600/30 hover:bg-amber-600/50 border border-amber-500/40 text-amber-200 rounded-lg text-xs font-medium">
+              Pause
+            </button>
+            <button onClick={onCancel} className="px-3 py-1.5 bg-rose-600/30 hover:bg-rose-600/50 border border-rose-500/40 text-rose-200 rounded-lg text-xs font-medium">
+              Cancel
+            </button>
+          </>
+        )}
+        {item.status === 'paused' && (
+          <>
+            <button onClick={onResume} className="px-3 py-1.5 bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 text-emerald-200 rounded-lg text-xs font-medium">
+              Resume
+            </button>
+            <button onClick={onCancel} className="px-3 py-1.5 bg-rose-600/30 hover:bg-rose-600/50 border border-rose-500/40 text-rose-200 rounded-lg text-xs font-medium">
+              Cancel
+            </button>
+          </>
+        )}
+        {item.status === 'error' && (
+          <>
+            {item.file && (
+              <button onClick={onRetry} className="px-3 py-1.5 bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/40 text-blue-200 rounded-lg text-xs font-medium">
+                Retry
+              </button>
+            )}
+            <button onClick={onCancel} className="px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600/40 border border-rose-500/30 text-rose-200 rounded-lg text-xs font-medium">
+              Discard
+            </button>
+          </>
+        )}
+        {item.status === 'done' && (
+          <>
+            <button onClick={onCopyUrl} className="px-3 py-1.5 bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 text-purple-200 rounded-lg text-xs font-medium">
+              Copy URL
+            </button>
+            <button onClick={onCancel} className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium">
+              Remove from list
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 };
@@ -255,20 +396,16 @@ const VideoUploader: React.FC<Props> = ({ token: tokenProp, onUploadComplete }) 
 
   const [buckets, setBuckets] = useState<BucketOption[]>([]);
   const [selectedHostname, setSelectedHostname] = useState('');
-  const [file, setFile] = useState<File | null>(null);
-  const [progress, setProgress] = useState(0);
-  const [status, setStatus] = useState<'idle' | 'uploading' | 'paused' | 'done' | 'error'>('idle');
-  const [error, setError] = useState('');
-  const [finalUrl, setFinalUrl] = useState('');
-  const [copied, setCopied] = useState(false);
+  const [items, setItems] = useState<UploadItem[]>([]);
+  const [globalError, setGlobalError] = useState('');
   const [corsExpanded, setCorsExpanded] = useState(false);
-  const [uploadSpeed, setUploadSpeed] = useState(0); // bytes per second
-  const [elapsedTime, setElapsedTime] = useState(0);
+  const [copied, setCopied] = useState(false);
 
-  const pauseRef = useRef(false);
-  const stateRef = useRef<UploadState | null>(null);
-  const uploadStartTimeRef = useRef<number | null>(null);
-  const lastProgressRef = useRef<{ time: number; bytes: number } | null>(null);
+  const itemsRef = useRef<UploadItem[]>([]);
+  const activeRef = useRef<Set<string>>(new Set());
+  const pauseFlagsRef = useRef<Map<string, boolean>>(new Map());
+
+  useEffect(() => { itemsRef.current = items; }, [items]);
 
   useEffect(() => {
     const token = resolveToken();
@@ -278,34 +415,51 @@ const VideoUploader: React.FC<Props> = ({ token: tokenProp, onUploadComplete }) 
       .catch(() => {});
   }, []);
 
-  // Speed calculator interval
+  // ✅ On mount: recover any interrupted uploads from a previous session so they
+  // don't just silently vanish after a refresh — the user re-attaches the same
+  // file and it continues from the last completed part instead of restarting.
   useEffect(() => {
-    if (status !== 'uploading') return;
-    uploadStartTimeRef.current = Date.now();
-    const interval = setInterval(() => {
-      if (lastProgressRef.current) {
-        const now = Date.now();
-        const dt = (now - lastProgressRef.current.time) / 1000;
-        if (dt > 0) {
-          const speed = (progress - lastProgressRef.current.bytes) / dt;
-          setUploadSpeed(speed > 0 ? speed : 0);
-        }
-      }
-      setElapsedTime(Math.floor((Date.now() - (uploadStartTimeRef.current || Date.now())) / 1000));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [status, progress]);
+    const recovered: UploadItem[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith('upload_state_')) continue;
+      try {
+        const raw = localStorage.getItem(k);
+        if (!raw) continue;
+        const s: PersistedState = JSON.parse(raw);
+        if (!s.fileName || !s.fileSize) continue;
+        const completedBytes = (s.completedParts?.length || 0) * CHUNK_SIZE;
+        const progress = Math.min(99, Math.round((completedBytes / s.fileSize) * 100));
+        recovered.push({
+          id: k,
+          hostname: s.hostname,
+          fileName: s.fileName,
+          fileSize: s.fileSize,
+          file: null,
+          status: 'needs-file',
+          progress,
+          uploadId: s.uploadId,
+          key: s.key,
+          totalParts: s.totalParts,
+          completedParts: s.completedParts || [],
+          speed: 0,
+        });
+      } catch {}
+    }
+    if (recovered.length) setItems(prev => [...recovered, ...prev]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const storageKey = (name: string) => `upload_state_${name}`;
-  const saveState = (state: UploadState) => {
-    stateRef.current = state;
-    localStorage.setItem(storageKey(state.fileName), JSON.stringify(state));
+  const persistState = (state: PersistedState) => {
+    localStorage.setItem(storageKey(state.fileName, state.fileSize), JSON.stringify(state));
   };
-  const loadState = (name: string): UploadState | null => {
-    const raw = localStorage.getItem(storageKey(name));
-    return raw ? JSON.parse(raw) : null;
+  const clearPersistedState = (fileName: string, fileSize: number) => {
+    localStorage.removeItem(storageKey(fileName, fileSize));
   };
-  const clearState = (name: string) => localStorage.removeItem(storageKey(name));
+
+  const updateItem = (id: string, patch: Partial<UploadItem>) => {
+    setItems(prev => prev.map(it => (it.id === id ? { ...it, ...patch } : it)));
+  };
 
   const apiCall = async (path: string, body: any) => {
     const token = resolveToken();
@@ -319,86 +473,158 @@ const VideoUploader: React.FC<Props> = ({ token: tokenProp, onUploadComplete }) 
     return data;
   };
 
-  const startOrResumeUpload = async () => {
-    if (!file || !selectedHostname) {
-      setError('File aur bucket dono select karo');
-      return;
-    }
-    setError('');
-    setStatus('uploading');
-    pauseRef.current = false;
-    uploadStartTimeRef.current = Date.now();
-    lastProgressRef.current = { time: Date.now(), bytes: 0 };
+  const runUpload = useCallback(async (id: string) => {
+    const item = itemsRef.current.find(i => i.id === id);
+    if (!item || !item.file) { activeRef.current.delete(id); return; }
+
+    pauseFlagsRef.current.set(id, false);
+    updateItem(id, { status: 'uploading', error: undefined });
+
+    const file = item.file;
+    let lastTick = { time: Date.now(), bytes: item.completedParts.length * CHUNK_SIZE };
 
     try {
-      let state = loadState(file.name);
+      // Resolve into one guaranteed, explicitly-typed object up front. Doing it
+      // this way (instead of three separate `let`s reassigned inside an
+      // `if (!a || !b || !c)` block) avoids a TS "possibly undefined" error,
+      // since TS can't narrow three different optional variables at once
+      // across a compound OR condition.
+      let session: { uploadId: string; key: string; totalParts: number };
+      let completedParts = [...item.completedParts];
 
-      if (!state) {
-        const { uploadId, key } = await apiCall('/initiate', { hostname: selectedHostname, filename: file.name });
-        const totalParts = Math.ceil(file.size / CHUNK_SIZE);
-        state = { hostname: selectedHostname, key, uploadId, totalParts, fileSize: file.size, fileName: file.name, completedParts: [] };
-        saveState(state);
+      if (item.uploadId && item.key && item.totalParts) {
+        session = { uploadId: item.uploadId, key: item.key, totalParts: item.totalParts };
+      } else {
+        const res = await apiCall('/initiate', { hostname: item.hostname, filename: file.name });
+        session = { uploadId: res.uploadId, key: res.key, totalParts: Math.ceil(file.size / CHUNK_SIZE) };
+        completedParts = [];
+        persistState({ hostname: item.hostname, ...session, fileSize: file.size, fileName: file.name, completedParts });
+        updateItem(id, { uploadId: session.uploadId, key: session.key, totalParts: session.totalParts });
       }
 
-      stateRef.current = state;
-      const totalBytes = file.size;
-
-      for (let partNumber = 1; partNumber <= state.totalParts; partNumber++) {
-        if (pauseRef.current) { setStatus('paused'); return; }
-
-        const alreadyDone = state.completedParts.find(p => p.partNumber === partNumber);
-        if (alreadyDone) {
-          const completedBytes = state.completedParts.length * CHUNK_SIZE;
-          setProgress(Math.min(100, Math.round((completedBytes / totalBytes) * 100)));
-          lastProgressRef.current = { time: Date.now(), bytes: completedBytes };
-          continue;
+      for (let partNumber = 1; partNumber <= session.totalParts; partNumber++) {
+        if (pauseFlagsRef.current.get(id)) {
+          updateItem(id, { status: 'paused' });
+          activeRef.current.delete(id);
+          pump();
+          return;
         }
+
+        if (completedParts.find(p => p.partNumber === partNumber)) continue;
 
         const start = (partNumber - 1) * CHUNK_SIZE;
         const end = Math.min(start + CHUNK_SIZE, file.size);
         const chunk = file.slice(start, end);
 
-        const { url } = await apiCall('/part-url', {
-          hostname: state.hostname, key: state.key, uploadId: state.uploadId, partNumber
-        });
-
+        const { url } = await apiCall('/part-url', { hostname: item.hostname, key: session.key, uploadId: session.uploadId, partNumber });
         const putRes = await fetch(url, { method: 'PUT', body: chunk });
-        if (!putRes.ok) throw new Error(`Part ${partNumber} upload failed`);
+        if (!putRes.ok) throw new Error(`Part ${partNumber} upload fail ho gaya`);
 
         const eTag = putRes.headers.get('ETag') || '';
-        state.completedParts.push({ partNumber, eTag });
-        saveState(state);
+        completedParts = [...completedParts, { partNumber, eTag }];
+        persistState({ hostname: item.hostname, ...session, fileSize: file.size, fileName: file.name, completedParts });
 
-        const completedBytes = state.completedParts.length * CHUNK_SIZE;
-        const newProgress = Math.min(100, Math.round((completedBytes / totalBytes) * 100));
-        setProgress(newProgress);
-        lastProgressRef.current = { time: Date.now(), bytes: completedBytes };
+        const completedBytes = completedParts.length * CHUNK_SIZE;
+        const now = Date.now();
+        const dt = (now - lastTick.time) / 1000;
+        const speed = dt > 0 ? Math.max(0, (completedBytes - lastTick.bytes) / dt) : 0;
+        lastTick = { time: now, bytes: completedBytes };
+
+        updateItem(id, {
+          progress: Math.min(100, Math.round((completedBytes / file.size) * 100)),
+          completedParts,
+          speed,
+        });
       }
 
-      const { url: completedUrl } = await apiCall('/complete', {
-        hostname: state.hostname, key: state.key, uploadId: state.uploadId, parts: state.completedParts
-      });
-
-      clearState(file.name);
-      setFinalUrl(completedUrl);
-      setStatus('done');
+      const { url: completedUrl } = await apiCall('/complete', { hostname: item.hostname, key: session.key, uploadId: session.uploadId, parts: completedParts });
+      clearPersistedState(file.name, file.size);
+      updateItem(id, { status: 'done', progress: 100, finalUrl: completedUrl });
       onUploadComplete?.(completedUrl);
     } catch (err: any) {
-      console.error('Upload error:', err);
-      setError(err.message || 'Upload fail ho gaya');
-      setStatus('error');
+      updateItem(id, { status: 'error', error: err.message || 'Upload fail ho gaya' });
+    } finally {
+      activeRef.current.delete(id);
+      pump();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onUploadComplete]);
+
+  const pump = useCallback(() => {
+    const queued = itemsRef.current.filter(it => it.status === 'queued' && it.file);
+    let slots = MAX_CONCURRENT_UPLOADS - activeRef.current.size;
+    for (const it of queued) {
+      if (slots <= 0) break;
+      if (activeRef.current.has(it.id)) continue;
+      activeRef.current.add(it.id);
+      slots--;
+      runUpload(it.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runUpload]);
+
+  useEffect(() => { pump(); }, [items, pump]);
+
+  const handleFilesSelected = (files: File[]) => {
+    setGlobalError('');
+    setItems(prev => {
+      const next = [...prev];
+      files.forEach(file => {
+        // Does this file match a previously interrupted upload waiting to be resumed?
+        const matchIdx = next.findIndex(it =>
+          it.status === 'needs-file' && it.fileName === file.name && it.fileSize === file.size
+        );
+        if (matchIdx >= 0) {
+          next[matchIdx] = { ...next[matchIdx], file, status: 'queued' };
+          return;
+        }
+
+        // Skip if this exact file is already active in the list.
+        const dupe = next.find(it =>
+          it.fileName === file.name && it.fileSize === file.size &&
+          (it.status === 'queued' || it.status === 'uploading' || it.status === 'paused')
+        );
+        if (dupe) return;
+
+        if (!selectedHostname) {
+          setGlobalError('Pehle ek bucket select karo, phir video daalo.');
+          return;
+        }
+
+        next.push({
+          id: `${file.name}__${file.size}__${Date.now()}__${Math.random().toString(36).slice(2, 7)}`,
+          hostname: selectedHostname,
+          fileName: file.name,
+          fileSize: file.size,
+          file,
+          status: 'queued',
+          progress: 0,
+          completedParts: [],
+          speed: 0,
+        });
+      });
+      return next;
+    });
   };
 
-  const handlePause = () => { pauseRef.current = true; };
+  const handlePause = (id: string) => pauseFlagsRef.current.set(id, true);
+  const handleResume = (id: string) => updateItem(id, { status: 'queued' });
+  const handleRetry = (id: string) => updateItem(id, { status: 'queued', error: undefined });
 
-  const handleCancel = async () => {
-    const state = stateRef.current;
-    if (state) {
-      try { await apiCall('/abort', { hostname: state.hostname, key: state.key, uploadId: state.uploadId }); } catch {}
-      clearState(state.fileName);
+  const handleAttachFile = (id: string, file: File) => {
+    updateItem(id, { file, status: 'queued' });
+  };
+
+  const handleCancel = async (id: string) => {
+    const item = itemsRef.current.find(i => i.id === id);
+    if (!item) return;
+    pauseFlagsRef.current.set(id, true);
+    activeRef.current.delete(id);
+    if (item.uploadId && item.key && item.status !== 'done') {
+      try { await apiCall('/abort', { hostname: item.hostname, key: item.key, uploadId: item.uploadId }); } catch {}
     }
-    setStatus('idle'); setProgress(0); setFile(null); setUploadSpeed(0); setElapsedTime(0);
+    clearPersistedState(item.fileName, item.fileSize);
+    setItems(prev => prev.filter(it => it.id !== id));
   };
 
   const copyCorsPolicy = async () => {
@@ -411,23 +637,7 @@ const VideoUploader: React.FC<Props> = ({ token: tokenProp, onUploadComplete }) 
     }
   };
 
-  const bucketOptions: SelectOption[] = buckets.map(b => ({
-    value: b.hostname,
-    label: b.label,
-  }));
-
-  const formatSpeed = (speed: number) => {
-    if (speed > 1024 * 1024) return (speed / (1024 * 1024)).toFixed(2) + ' MB/s';
-    if (speed > 1024) return (speed / 1024).toFixed(1) + ' KB/s';
-    return speed.toFixed(0) + ' B/s';
-  };
-
-  const formatTime = (seconds: number) => {
-    if (seconds < 60) return `${seconds}s`;
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}m ${secs}s`;
-  };
+  const bucketOptions: SelectOption[] = buckets.map(b => ({ value: b.hostname, label: b.label }));
 
   return (
     <div className="bg-[#1a1a2e] border border-white/10 rounded-2xl p-6 space-y-6 shadow-2xl shadow-black/30 backdrop-blur-xl">
@@ -440,7 +650,7 @@ const VideoUploader: React.FC<Props> = ({ token: tokenProp, onUploadComplete }) 
         </div>
         <div>
           <h3 className="text-lg font-semibold text-white">Video Upload (Direct to R2)</h3>
-          <p className="text-xs text-white/40">Resumable chunked upload to Cloudflare R2</p>
+          <p className="text-xs text-white/40">Resumable, chunked, multi-file upload to Cloudflare R2 — up to {MAX_CONCURRENT_UPLOADS} at once</p>
         </div>
       </div>
 
@@ -468,11 +678,7 @@ const VideoUploader: React.FC<Props> = ({ token: tokenProp, onUploadComplete }) 
               <li>Settings tab → <strong>CORS Policy</strong> section</li>
               <li>Neeche diya JSON copy karke paste karo aur Save karo</li>
             </ol>
-
-            <pre className="bg-black/40 p-3 rounded-lg text-xs text-gray-300 overflow-x-auto whitespace-pre-wrap">
-              {CORS_POLICY}
-            </pre>
-
+            <pre className="bg-black/40 p-3 rounded-lg text-xs text-gray-300 overflow-x-auto whitespace-pre-wrap">{CORS_POLICY}</pre>
             <button
               onClick={copyCorsPolicy}
               className="px-4 py-1.5 bg-amber-600/30 hover:bg-amber-600/50 border border-amber-500/40 text-amber-100 rounded-lg text-xs font-medium transition"
@@ -483,118 +689,49 @@ const VideoUploader: React.FC<Props> = ({ token: tokenProp, onUploadComplete }) 
         )}
       </div>
 
-      {error && (
+      {globalError && (
         <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-200 text-sm flex items-center gap-2">
           <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          {error}
+          {globalError}
         </div>
       )}
 
-      {/* Bucket Selection */}
+      {/* Bucket Selection (used for newly added files) */}
       <CustomSelect
-        label="Select Bucket"
+        label="Select Bucket (new files)"
         value={selectedHostname}
-        onChange={(val) => setSelectedHostname(val)}
+        onChange={setSelectedHostname}
         options={bucketOptions}
         icon={
           <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8M9 12h6" />
           </svg>
         }
-        disabled={status === 'uploading'}
       />
 
-      {/* File Dropzone */}
-      <FileDropzone
-        file={file}
-        onFileSelect={setFile}
-        onFileRemove={() => { setFile(null); setProgress(0); setStatus('idle'); }}
-        disabled={status === 'uploading'}
-      />
+      {/* Multi-file Dropzone */}
+      <MultiFileDropzone onFilesSelected={handleFilesSelected} />
 
-      {/* Progress / Status */}
-      {(status === 'uploading' || status === 'paused' || status === 'done') && (
+      {/* Upload queue */}
+      {items.length > 0 && (
         <div className="space-y-3">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-white/70 font-medium">
-              {status === 'uploading' && 'Uploading...'}
-              {status === 'paused' && 'Paused'}
-              {status === 'done' && 'Completed'}
-            </span>
-            <span className="text-purple-300 font-semibold">{progress}%</span>
-          </div>
-          <div className="w-full bg-gray-800 rounded-full h-3 overflow-hidden">
-            <div
-              className="h-3 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300"
-              style={{ width: `${progress}%` }}
+          <h4 className="text-sm font-semibold text-white/70">Upload Queue ({items.length})</h4>
+          {items.map(item => (
+            <UploadRow
+              key={item.id}
+              item={item}
+              onPause={() => handlePause(item.id)}
+              onResume={() => handleResume(item.id)}
+              onCancel={() => handleCancel(item.id)}
+              onRetry={() => handleRetry(item.id)}
+              onAttachFile={(f) => handleAttachFile(item.id, f)}
+              onCopyUrl={() => item.finalUrl && navigator.clipboard.writeText(item.finalUrl)}
             />
-          </div>
-          {status === 'uploading' && (
-            <div className="flex justify-between text-xs text-gray-400">
-              <span>{formatSpeed(uploadSpeed)}</span>
-              <span>{formatTime(elapsedTime)} elapsed</span>
-            </div>
-          )}
+          ))}
         </div>
       )}
-
-      {/* Final URL */}
-      {finalUrl && (
-        <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
-          <div className="flex items-center gap-2 text-emerald-200 mb-2">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-            <span className="text-xs font-semibold">Upload complete!</span>
-          </div>
-          <code className="text-xs text-white break-all">{finalUrl}</code>
-          <button
-            onClick={() => navigator.clipboard.writeText(finalUrl)}
-            className="mt-2 text-xs px-3 py-1 bg-purple-600/40 hover:bg-purple-600/60 rounded-lg transition"
-          >
-            Copy URL
-          </button>
-        </div>
-      )}
-
-      {/* Action Buttons */}
-      <div className="flex gap-3 flex-wrap">
-        {status !== 'uploading' && status !== 'done' && (
-          <button
-            onClick={startOrResumeUpload}
-            disabled={!file || !selectedHostname}
-            className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white rounded-xl text-sm font-semibold disabled:opacity-50 shadow-lg shadow-purple-600/20 transition-all"
-          >
-            {status === 'paused' ? 'Resume Upload' : 'Start Upload'}
-          </button>
-        )}
-        {status === 'uploading' && (
-          <button
-            onClick={handlePause}
-            className="px-5 py-2.5 bg-amber-600/30 hover:bg-amber-600/50 border border-amber-500/40 text-amber-200 rounded-xl text-sm font-medium transition"
-          >
-            Pause
-          </button>
-        )}
-        {(status === 'uploading' || status === 'paused') && (
-          <button
-            onClick={handleCancel}
-            className="px-5 py-2.5 bg-rose-600/30 hover:bg-rose-600/50 border border-rose-500/40 text-rose-200 rounded-xl text-sm font-medium transition"
-          >
-            Cancel
-          </button>
-        )}
-        {status === 'done' && (
-          <button
-            onClick={() => { setStatus('idle'); setFile(null); setFinalUrl(''); setProgress(0); setUploadSpeed(0); setElapsedTime(0); }}
-            className="px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-sm font-medium transition"
-          >
-            Upload Another
-          </button>
-        )}
-      </div>
     </div>
   );
 };
