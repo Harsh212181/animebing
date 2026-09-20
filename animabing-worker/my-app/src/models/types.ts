@@ -244,6 +244,12 @@ export interface ILinkSettings {
   preModeLink5?: boolean
   // 🆕 EARNINGS: default $/1000 views used when a sub-admin has no custom rate set
   globalRatePerThousandViews?: number
+  // 🆕 EARNINGS: per-link $/1000 views rates (link1-link4). If present, overrides global/sub-admin rate per link.
+  linkRates?: { link1: number; link2: number; link3: number; link4: number }
+  // 🆕 TESTING: true = har download view count (dedupe/journey band). false/absent = normal
+  countEveryView?: boolean
+  // 🆕 Recount window in seconds (1 – 172800). Default 86400 (24h). Used when countEveryView is off
+  dedupeWindowSec?: number
 }
 
 // ============ ANALYTICS ============
@@ -761,7 +767,7 @@ export interface ISubAdminEarningsSummary {
   username: string
   realName: string
   rate: number
-  rateSource: 'custom' | 'global'
+  rateSource: 'custom' | 'global' | 'per-link'
   totalNormalViews: number
   totalLink5DirectViews: number
   totalSpecialModeViews: number

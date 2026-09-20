@@ -1,12 +1,13 @@
-import { Hono } from 'hono'
+ import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { findMany, findOne, insertOne, updateOne, deleteOne, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
 import { IChapter } from '../models/types'
+import { adminAuth, superAdminOnly } from '../middleware/auth'
 
 const chapterRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
-// DELETE ALL
-chapterRoutes.delete('/all', async (c) => {
+// DELETE ALL — sirf main admin
+chapterRoutes.delete('/all', adminAuth, superAdminOnly, async (c) => {
   try {
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
     const result = await db.collection('chapters').deleteMany({})
@@ -16,7 +17,7 @@ chapterRoutes.delete('/all', async (c) => {
   }
 })
 
-// GET ALL
+// GET ALL — public
 chapterRoutes.get('/', async (c) => {
   try {
     const chapters = await findMany<IChapter>('chapters', {}, { sort: { session: 1, chapterNumber: 1 } }, c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -26,8 +27,8 @@ chapterRoutes.get('/', async (c) => {
   }
 })
 
-// ADD CHAPTER
-chapterRoutes.post('/', async (c) => {
+// ADD CHAPTER — auth required
+chapterRoutes.post('/', adminAuth, async (c) => {
   try {
     const { mangaId, title, chapterNumber, secureFileReference, mainLink, downloadLinks, session } = await c.req.json()
 
@@ -85,7 +86,7 @@ chapterRoutes.post('/', async (c) => {
   }
 })
 
-// GET DOWNLOAD LINKS
+// GET DOWNLOAD LINKS — public
 chapterRoutes.get('/download/:mangaId/:chapterNumber', async (c) => {
   try {
     const mangaId = c.req.param('mangaId')
@@ -114,7 +115,7 @@ chapterRoutes.get('/download/:mangaId/:chapterNumber', async (c) => {
   }
 })
 
-// GET BY MANGA ID
+// GET BY MANGA ID — public
 chapterRoutes.get('/:mangaId', async (c) => {
   try {
     const mangaId = c.req.param('mangaId')
@@ -134,8 +135,8 @@ chapterRoutes.get('/:mangaId', async (c) => {
   }
 })
 
-// UPDATE CHAPTER
-chapterRoutes.patch('/', async (c) => {
+// UPDATE CHAPTER — auth required
+chapterRoutes.patch('/', adminAuth, async (c) => {
   try {
     const { mangaId, chapterNumber, title, secureFileReference, mainLink, downloadLinks, session } = await c.req.json()
 
@@ -186,8 +187,8 @@ chapterRoutes.patch('/', async (c) => {
   }
 })
 
-// DELETE CHAPTER
-chapterRoutes.delete('/', async (c) => {
+// DELETE CHAPTER — auth required
+chapterRoutes.delete('/', adminAuth, async (c) => {
   try {
     const { mangaId, chapterNumber, session } = await c.req.json()
 

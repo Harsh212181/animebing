@@ -1,6 +1,6 @@
  import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { FaDownload, FaPlay, FaFilm, FaTv } from 'react-icons/fa';
+import { FaDownload, FaPlay, FaFilm, FaTv, FaChrome, FaInfoCircle } from 'react-icons/fa';
 import Spinner from './Spinner';
 import VideoPlayer from './VideoPlayer';
 import YouTubeEmbed from './YouTubeEmbed';
@@ -607,6 +607,32 @@ const DownloadLinkPage: React.FC = () => {
 
         <div className="mb-4">
           <span className="text-lg font-medium bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">{page.title}</span>
+        </div>
+
+        {/* ✅ NEW — Chrome tip for best playback experience (matches page UI) */}
+        <div className="mb-6 bg-slate-800/40 backdrop-blur-sm rounded-xl border border-slate-700/50 hover:border-purple-500/40 transition-colors p-4">
+          <div className="flex items-start gap-3">
+            {/* Icon badge — matches page's purple theme */}
+            <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-gradient-to-br from-purple-600/30 to-pink-600/20 border border-purple-500/40 flex items-center justify-center shadow-lg shadow-purple-900/30">
+              <FaChrome className="w-4 h-4 text-purple-300" />
+            </div>
+
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap mb-1">
+                <p className="text-xs sm:text-sm font-semibold text-white">
+                  For the best experience, use Google Chrome
+                </p>
+                <span className="text-[9px] font-bold uppercase tracking-wider text-purple-300 bg-purple-500/15 px-1.5 py-0.5 rounded border border-purple-500/30">
+                  Tip
+                </span>
+              </div>
+              <p className="text-[11px] sm:text-xs text-slate-400 leading-relaxed">
+                If a video plays without audio (or doesn't play at all), switch to{' '}
+                <strong className="text-slate-200 font-semibold">Google Chrome</strong>{' '}
+                browser for smooth playback.
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Tabs */}

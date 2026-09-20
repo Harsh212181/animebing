@@ -5,7 +5,7 @@ import { ILinkSettings } from '../models/types'
 import { getTodaysActiveMode, syncSpecialModeLinks } from './specialModeRoutes'
 import { adminAuth, superAdminOnly } from '../middleware/auth' // added for global rate endpoints
 
-const linkSettingsRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
+const linkSettingsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
 function getIndiaWeekday(): number {
   const now = new Date()
@@ -64,8 +64,8 @@ linkSettingsRoutes.get('/effective', async (c) => {
   }
 })
 
-// UPDATE SETTINGS
-linkSettingsRoutes.put('/', async (c) => {
+// UPDATE SETTINGS — 🔐 sirf super admin
+linkSettingsRoutes.put('/', adminAuth, superAdminOnly, async (c) => {
   try {
     const { link1, link2, link3, link4, link5, autoSundayMode } = await c.req.json()
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -87,11 +87,11 @@ linkSettingsRoutes.put('/', async (c) => {
   }
 })
 
-// TOGGLE LINK
-linkSettingsRoutes.put('/toggle/:linkNumber', async (c) => {
+// TOGGLE LINK — 🔐 sirf super admin
+linkSettingsRoutes.put('/toggle/:linkNumber', adminAuth, superAdminOnly, async (c) => {
   try {
-    const linkNumber = parseInt(c.req.param('linkNumber'))
-    if (linkNumber < 1 || linkNumber > 5) {
+    const linkNumber = parseInt(c.req.param('linkNumber') ?? '', 10)
+    if (!Number.isInteger(linkNumber) || linkNumber < 1 || linkNumber > 5) {
       return c.json({ error: 'Link number must be between 1 and 5' }, 400)
     }
 
@@ -173,8 +173,8 @@ linkSettingsRoutes.get('/restore-preview', async (c) => {
   }
 })
 
-// RESET
-linkSettingsRoutes.post('/reset', async (c) => {
+// RESET — 🔐 sirf super admin
+linkSettingsRoutes.post('/reset', adminAuth, superAdminOnly, async (c) => {
   try {
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
     await db.collection('linksettings').deleteMany({})
@@ -220,6 +220,88 @@ linkSettingsRoutes.put('/global-rate', adminAuth, superAdminOnly, async (c) => {
       { upsert: true }
     )
     return c.json({ success: true, globalRatePerThousandViews: rate })
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 500)
+  }
+})
+
+// ── GET link-wise rates (link1..link4) — koi bhi adminAuth wala dekh sakta hai ──
+// GET /api/link-settings/link-rates
+linkSettingsRoutes.get('/link-rates', adminAuth, async (c) => {
+  try {
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const s: any = await db.collection('linksettings').findOne({})
+    const r = s?.linkRates || {}
+    return c.json({ success: true, linkRates: {
+      link1: r.link1 ?? 0, link2: r.link2 ?? 0, link3: r.link3 ?? 0, link4: r.link4 ?? 0,
+    }})
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 500)
+  }
+})
+
+// ── SET link-wise rates (super admin only) ─────────────────────────
+// PUT /api/link-settings/link-rates   body: { link1, link2, link3, link4 }
+linkSettingsRoutes.put('/link-rates', adminAuth, superAdminOnly, async (c) => {
+  try {
+    const body = await c.req.json()
+    const rates: Record<string, number> = {}
+    for (const n of [1, 2, 3, 4]) {
+      const v = body[`link${n}`]
+      if (typeof v !== 'number' || !isFinite(v) || v < 0) {
+        return c.json({ success: false, error: `link${n} must be a non-negative number` }, 400)
+      }
+      rates[`link${n}`] = v
+    }
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    await db.collection('linksettings').updateOne({}, { $set: { linkRates: rates } }, { upsert: true })
+    return c.json({ success: true, linkRates: rates })
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 500)
+  }
+})
+
+// GET /api/link-settings/count-mode
+linkSettingsRoutes.get('/count-mode', adminAuth, superAdminOnly, async (c) => {
+  try {
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const s: any = await db.collection('linksettings').findOne({})
+    return c.json({
+      success: true,
+      countEveryView: s?.countEveryView === true,
+      dedupeWindowSec: typeof s?.dedupeWindowSec === 'number' ? s.dedupeWindowSec : 86400,
+    })
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 500)
+  }
+})
+
+// PUT /api/link-settings/count-mode   body: { countEveryView?: boolean, dedupeWindowSec?: number }
+linkSettingsRoutes.put('/count-mode', adminAuth, superAdminOnly, async (c) => {
+  try {
+    const body = await c.req.json()
+    const $set: any = {}
+
+    if (body.countEveryView !== undefined) {
+      if (typeof body.countEveryView !== 'boolean') {
+        return c.json({ success: false, error: 'countEveryView must be true or false' }, 400)
+      }
+      $set.countEveryView = body.countEveryView
+    }
+    if (body.dedupeWindowSec !== undefined) {
+      const n = Number(body.dedupeWindowSec)
+      if (!Number.isFinite(n) || n < 1 || n > 172800) {
+        return c.json({ success: false, error: 'dedupeWindowSec must be between 1 second and 48 hours' }, 400)
+      }
+      $set.dedupeWindowSec = Math.round(n)
+    }
+    if (Object.keys($set).length === 0) {
+      return c.json({ success: false, error: 'Nothing to update' }, 400)
+    }
+
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    await db.collection('linksettings').updateOne({}, { $set }, { upsert: true })
+    return c.json({ success: true, ...$set })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
   }

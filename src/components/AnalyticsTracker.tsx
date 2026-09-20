@@ -1,4 +1,4 @@
-// src/components/AnalyticsTracker.tsx
+ // src/components/AnalyticsTracker.tsx
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 
@@ -41,12 +41,26 @@ function getSessionId(): string {
   return id;
 }
 
+// 🆕 24h dedupe ke liye stable visitor id
+function getVisitorId(): string {
+  try {
+    let id = localStorage.getItem('_ab_vid');
+    if (!id) {
+      id = crypto.randomUUID?.() || Math.random().toString(36).slice(2) + Date.now().toString(36);
+      localStorage.setItem('_ab_vid', id);
+    }
+    return id;
+  } catch {
+    return ''; // private mode: server IP+UA fallback use karega
+  }
+}
+
 // ─── Module-level guard: same render-cycle / StrictMode double-fire ─────
 let lastSentPath = '';
 
 function sendToBackend(path: string) {
-  const { pageType, slug } = getPageMeta(path);
-  const payload = { path, pageType, slug, sessionId: getSessionId() };
+  const { pageType, slug } = getPageMeta(path.split('?')[0]);   // ← query hata ke slug nikalo
+  const payload = { path, pageType, slug, sessionId: getSessionId(), visitorId: getVisitorId() };
 
   // StrictMode double-mount / re-render guard
   if (path === lastSentPath) return;
@@ -60,6 +74,20 @@ function sendToBackend(path: string) {
   }).catch(() => {});
 }
 
+// 🆕 ?l= aur ?ls= ko address bar se hata do (share karne par signed URL leak na ho)
+function stripLinkTagFromUrl() {
+  const p = new URLSearchParams(window.location.search);
+  if (!p.has('l') && !p.has('ls')) return;
+  p.delete('l');
+  p.delete('ls');
+  const q = p.toString();
+  window.history.replaceState(
+    window.history.state,
+    '',
+    window.location.pathname + (q ? `?${q}` : '') + window.location.hash
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────
 const AnalyticsTracker = () => {
   const location = useLocation();
@@ -67,8 +95,11 @@ const AnalyticsTracker = () => {
   useEffect(() => {
     const currentPath = location.pathname + location.search;
 
-    // ✅ हर रूट चेंज पर एक पेज व्यू भेजें
+    // ✅ हर रूट चेंज पर एक पेज व्यू भेजें (payload isi call mein ban jata hai, l/ls ke saath)
     sendToBackend(currentPath);
+
+    // 🆕 pageview bhejne ke BAAD address bar saaf karo
+    stripLinkTagFromUrl();
 
     // GA4
     if (typeof window.gtag === 'function') {

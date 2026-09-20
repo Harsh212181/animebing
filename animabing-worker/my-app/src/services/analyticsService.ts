@@ -23,6 +23,19 @@ export interface PageViewRecord {
   earningType?: EarningType
   animeId?: string
   subAdminId?: string
+  // 🆕 dedupe + rate snapshot support
+  visitorId?: string
+  userAgent?: string
+  linkUsed?: number        // 1-4, agar ?l= aaya
+  // 🆕 write-time rate snapshot ('normal' download views ke liye)
+  rateSnapshot?: number    // $ per 1000 views, us view ke waqt ka
+  activeLinks?: number[]
+  // 🆕 true = is download view se pehle same visitor/session ne isi anime ka
+  // detail/episode page dekha tha (funnel/journey attribution ke liye)
+  fromDetail?: boolean
+  // 🆕 true = ye view testing mode mein aaya tha (countEveryView ON).
+  // Dedupe/journey band the — baad mein filter karke delete kar sakte ho.
+  testMode?: boolean
 }
 
 // 🆕 EARNINGS: signals passed in from the route handler describing the
@@ -31,6 +44,8 @@ export interface PageViewRecord {
 export interface EarningContext {
   link5Active: boolean       // linksettings.link5 === true at time of view
   specialModeForcing: boolean // isForceLink5ModeActive() === true at time of view
+  countEveryView?: boolean   // 🆕 testing switch: dedupe/journey band, har view count
+  dedupeWindowSec?: number   // 🆕 recount window in seconds (1–172800). Default 86400 (24h)
 }
 
 // Helper: returns date string in Indian Standard Time (UTC+5:30)
@@ -187,21 +202,149 @@ async function enrichGeo(ip: string): Promise<{ country?: string; region?: strin
   }
 }
 
+// ─── 24h dedupe + write-time rate snapshot helpers ────────────────────────
+async function sha256(s: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s))
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+// _id ek baar claim hota hai; window ke baad phir claim ho sakta hai. Atomic (race-safe).
+async function claimOnce(col: any, _id: string, now: Date, cutoff: Date): Promise<boolean> {
+  const renewed = await col.updateOne({ _id, at: { $lt: cutoff } }, { $set: { at: now } })
+  if (renewed.modifiedCount === 1) return true
+  try {
+    await col.insertOne({ _id, at: now })
+    return true
+  } catch (e: any) {
+    if (e?.code === 11000) return false
+    throw e
+  }
+}
+
+// true = ye view COUNT hona chahiye
+// 🆕 window ab bahar se aati hai (dedupeWindowSec)
+async function registerDownloadView(
+  db: any, pageKey: string, visitorId: string | undefined, ip: string, ua: string | undefined,
+  windowSec: number
+): Promise<boolean> {
+  const col = db.collection('viewdedupe')
+  const now = new Date()
+  const cutoff = new Date(now.getTime() - windowSec * 1000)
+
+  // Layer 1: visitorId — window ke andar sirf 1
+  if (visitorId) {
+    const ok = await claimOnce(col, `v:${pageKey}:${await sha256(visitorId)}`, now, cutoff)
+    if (!ok) return false
+  }
+
+  // Layer 2: IP+UA — window ke andar max 3 (mobile shared-IP wale real users na katein)
+  const ipId = `i:${pageKey}:${await sha256(`${ip}|${ua || ''}`)}`
+  const expired = { $lt: [{ $ifNull: ['$windowStart', new Date(0)] }, cutoff] }
+  const r: any = await col.findOneAndUpdate(
+    { _id: ipId },
+    [{
+      $set: {
+        count: { $cond: [expired, 1, { $add: [{ $ifNull: ['$count', 0] }, 1] }] },
+        windowStart: { $cond: [expired, now, '$windowStart'] },
+        at: now,
+      },
+    }],
+    { upsert: true, returnDocument: 'after' }
+  )
+  const doc = r?.value ?? r   // driver v5 / v6 dono
+  return (doc?.count ?? 1) <= 3
+}
+
+// Is view ka rate: exact link (?l=) ho to wahi, warna active links ka average
+async function resolveViewRate(
+  db: any, animeId: string | undefined, linkUsed?: number
+): Promise<{ rate: number; activeLinks: number[] }> {
+  const settings: any = (await db.collection('linksettings').findOne({})) || {}
+  const rates = settings.linkRates || {}
+  const rateOf = (n: number) => (typeof rates[`link${n}`] === 'number' ? rates[`link${n}`] : 0)
+
+  if (linkUsed) return { rate: rateOf(linkUsed), activeLinks: [linkUsed] }
+
+  // anime kisi Anime Link Control group mein ho to us group ke flags, warna global
+  let flags: any = settings
+  if (animeId) {
+    // ⚠️ collection ka naam animeLinkControlRoutes.ts se check kar lena
+    const group = await db.collection('animelinkcontrols').findOne({ animeIds: animeId })
+    if (group) flags = group
+  }
+  const active = [1, 2, 3, 4].filter(n => flags[`link${n}`] !== false)
+  if (!active.length) return { rate: 0, activeLinks: [] }
+  const avg = active.reduce((s, n) => s + rateOf(n), 0) / active.length
+  return { rate: avg, activeLinks: active }
+}
+
+// 🆕 Journey attribution: is download view se pehle (last 6h mein) same
+// visitorId/sessionId ne isi anime ka detail/episode page dekha tha?
+async function hadDetailVisit(
+  db: any, animeId: string | undefined, visitorId?: string, sessionId?: string
+): Promise<boolean> {
+  if (!animeId || !ObjectId.isValid(animeId)) return false
+  const or: any[] = []
+  if (visitorId) or.push({ visitorId })
+  if (sessionId) or.push({ sessionId })
+  if (!or.length) return false
+
+  const anime: any = await db.collection('animes').findOne(
+    { _id: new ObjectId(animeId) }, { projection: { slug: 1 } }
+  )
+  if (!anime?.slug) return false
+
+  const since = new Date(Date.now() - 6 * 3600 * 1000)
+  const hit = await db.collection('pageviews').findOne(
+    { pageType: { $in: ['anime-detail', 'episode'] }, slug: anime.slug, timestamp: { $gte: since }, $or: or },
+    { projection: { _id: 1 } }
+  )
+  return !!hit
+}
+
 // Track single page view
 export async function trackPageView(
-  data: Omit<PageViewRecord, 'timestamp' | 'date' | 'earningType' | 'animeId' | 'subAdminId'>,
+  data: Omit<PageViewRecord, 'timestamp' | 'date' | 'earningType' | 'animeId' | 'subAdminId' | 'rateSnapshot' | 'activeLinks' | 'fromDetail' | 'testMode'>,
   mongoUri: string,
   dbName: string,
   earningContext?: EarningContext // 🆕 EARNINGS — only relevant when data.pageType === 'download'
-): Promise<void> {
+): Promise<{ counted: boolean }> {
   const db = await getDb(mongoUri, dbName)
   const now = new Date()
   const date = getISTDateStr(now)
 
+  // 🆕 testing switch: true hone par dedupe band, lekin journey combine chalu
+  const countEveryView = earningContext?.countEveryView === true
+  // 🆕 recount window: config se aati hai, 1s–48h ke beech clamp, default 24h
+  const windowSec = Math.min(Math.max(earningContext?.dedupeWindowSec ?? 86400, 1), 172800)
+
+  // Jin pages par recount window lagti hai (sirf tab jab "count every view" OFF ho)
+  const DEDUPED_TYPES = ['download', 'anime-detail', 'episode']
+
+  // ── dedupe (download / detail / episode) — geo lookup se PEHLE, taaki duplicate par kaam waste na ho
+  // countEveryView ON ho to dedupe skip karo (har view count hoga)
+  if (DEDUPED_TYPES.includes(data.pageType) && !countEveryView) {
+    // pageKey mein page type prefix — detail aur download ki keys mix na hon
+    const pageKey = `${data.pageType}:${data.slug || data.path.split('?')[0]}`
+    let isNew = true
+    try {
+      isNew = await registerDownloadView(db, pageKey, data.visitorId, data.ip, data.userAgent, windowSec)
+    } catch (e) {
+      console.error('dedupe failed (counting view anyway):', e)  // fail-open
+    }
+    if (!isNew) {
+      await db.collection('pageview_dupes_daily').updateOne(
+        { date, slug: pageKey },
+        { $inc: { count: 1 }, $setOnInsert: { date, slug: pageKey } },
+        { upsert: true }
+      )
+      return { counted: false }
+    }
+  }
+
   let country = data.country
   let region = data.region
   let city = data.city
-
   if (!country || !region) {
     const geo = await enrichGeo(data.ip)
     country = country || geo.country
@@ -215,6 +358,9 @@ export async function trackPageView(
   let earningType: EarningType | undefined
   let animeId: string | undefined
   let subAdminId: string | undefined
+  let rateSnapshot: number | undefined
+  let activeLinks: number[] | undefined
+  let fromDetail = false
 
   if (data.pageType === 'download') {
     const owner = await resolveAnimeOwnerForSlug(data.slug, mongoUri, dbName)
@@ -222,43 +368,44 @@ export async function trackPageView(
     subAdminId = owner.subAdminId
 
     if (earningContext) {
-      if (earningContext.specialModeForcing) {
-        earningType = 'special-mode'
-      } else if (earningContext.link5Active) {
-        earningType = 'link5-direct'
-      } else {
-        earningType = 'normal'
-      }
+      if (earningContext.specialModeForcing) earningType = 'special-mode'
+      else if (earningContext.link5Active) earningType = 'link5-direct'
+      else earningType = 'normal'
     }
+
+    if (earningType === 'normal') {
+      const r = await resolveViewRate(db, animeId, data.linkUsed)
+      rateSnapshot = r.rate
+      activeLinks = r.activeLinks
+    }
+
+    // 🆕 journey attribution — same visitor/session ne pehle detail dekha tha?
+    // journey combine hamesha chalega (switch ON ho ya OFF)
+    fromDetail = await hadDetailVisit(db, animeId, data.visitorId, data.sessionId)
   }
 
   await db.collection('pageviews').insertOne({
     ...data,
-    country,
-    region,
-    city,
-    timestamp: now,
-    date,
-    createdAt: now,
+    country, region, city,
+    timestamp: now, date, createdAt: now,
     ...(earningType ? { earningType } : {}),
     ...(animeId ? { animeId } : {}),
     ...(subAdminId ? { subAdminId } : {}),
+    ...(rateSnapshot !== undefined ? { rateSnapshot, activeLinks } : {}),
+    ...(fromDetail ? { fromDetail: true } : {}),
+    ...(countEveryView && data.pageType === 'download' ? { testMode: true } : {}),
   })
 
   await db.collection('pageview_daily').updateOne(
     { date, path: data.path },
     {
       $inc: { views: 1 },
-      $set: {
-        slug: data.slug,
-        animeTitle: data.animeTitle,
-        pageType: data.pageType,
-        updatedAt: now,
-      },
+      $set: { slug: data.slug, animeTitle: data.animeTitle, pageType: data.pageType, updatedAt: now },
       $setOnInsert: { date, path: data.path, createdAt: now },
     },
     { upsert: true }
   )
+  return { counted: true }
 }
 
 // Summary stats for admin
@@ -470,6 +617,18 @@ export async function getPageViewStats(
     } else {
       finalTopPages.push(row)
     }
+  }
+
+  // detail dekh kar download kholne wala = 1 count (double-count avoid)
+  const journeyRaw = await db.collection('pageviews').aggregate([
+    { $match: { ...baseMatch, pageType: 'download', fromDetail: true } },
+    { $group: { _id: '$animeId', n: { $sum: 1 } } },
+  ]).toArray()
+  const journeyByAnime = new Map<string, number>(journeyRaw.map((j: any) => [j._id, j.n]))
+
+  for (const entry of combinedByAnimeId.values()) {
+    const j = Math.min(journeyByAnime.get(entry.animeId) || 0, entry.detailViews, entry.downloadViews)
+    entry.views = entry.detailViews + entry.downloadViews - j
   }
 
   finalTopPages.sort((a, b) => b.views - a.views)
@@ -1964,23 +2123,19 @@ interface SubAdminRateDoc {
   ratePerThousandViews?: number | null
 }
 
-// Resolve the effective $/1000-views rate for a sub-admin: their own custom
-// rate if set, else the global default from linksettings.
-async function resolveEffectiveRate(
-  subAdmin: { ratePerThousandViews?: number | null } | null | undefined,
-  mongoUri: string,
-  dbName: string
-): Promise<{ rate: number; rateSource: 'custom' | 'global' }> {
-  const db = await getDb(mongoUri, dbName)
-  const settings = await db.collection('linksettings').findOne({})
-  const globalRate = typeof settings?.globalRatePerThousandViews === 'number'
-    ? settings.globalRatePerThousandViews
-    : 0
+interface RateBucket { count: number; snapSum: number; snapCount: number }
+const emptyBucket = (): RateBucket => ({ count: 0, snapSum: 0, snapCount: 0 })
 
-  if (subAdmin && typeof subAdmin.ratePerThousandViews === 'number') {
-    return { rate: subAdmin.ratePerThousandViews, rateSource: 'custom' }
-  }
-  return { rate: globalRate, rateSource: 'global' }
+function earningsOf(b: RateBucket, custom: number | null, globalRate: number): number {
+  if (custom !== null) return (b.count * custom) / 1000
+  const legacyViews = b.count - b.snapCount            // snapshot se pehle ke views
+  return (b.snapSum + legacyViews * globalRate) / 1000
+}
+
+const SNAP_GROUP = {
+  count: { $sum: 1 },
+  snapSum: { $sum: { $ifNull: ['$rateSnapshot', 0] } },
+  snapCount: { $sum: { $cond: [{ $isNumber: '$rateSnapshot' }, 1, 0] } },
 }
 
 // Earnings summary for ONE sub-admin: per-anime breakdown of the three
@@ -2000,74 +2155,54 @@ export async function getSubAdminEarnings(
   ) as SubAdminRateDoc | null
   if (!subAdmin) return null
 
-  const { rate, rateSource } = await resolveEffectiveRate(subAdmin, mongoUri, dbName)
+  const settings: any = await db.collection('linksettings').findOne({})
+  const globalRate = typeof settings?.globalRatePerThousandViews === 'number' ? settings.globalRatePerThousandViews : 0
+  const custom = typeof subAdmin.ratePerThousandViews === 'number' ? subAdmin.ratePerThousandViews : null
 
-  const raw = await db
-    .collection('pageviews')
-    .aggregate([
-      {
-        $match: {
-          subAdminId: subAdminId,
-          pageType: 'download',
-          earningType: { $exists: true },
-        },
-      },
-      {
-        $group: {
-          _id: { animeId: '$animeId', earningType: '$earningType' },
-          count: { $sum: 1 },
-        },
-      },
-    ])
-    .toArray()
+  const raw = await db.collection('pageviews').aggregate([
+    { $match: { subAdminId, pageType: 'download', earningType: { $exists: true } } },
+    { $group: { _id: { animeId: '$animeId', earningType: '$earningType' }, ...SNAP_GROUP } },
+  ]).toArray()
 
-  // Group by animeId
-  const byAnimeMap = new Map<string, { normal: number; link5Direct: number; specialMode: number }>()
+  const byAnimeMap = new Map<string, { normal: RateBucket; link5Direct: number; specialMode: number }>()
   for (const row of raw) {
     const animeId = row._id.animeId as string
     if (!animeId) continue
-    if (!byAnimeMap.has(animeId)) {
-      byAnimeMap.set(animeId, { normal: 0, link5Direct: 0, specialMode: 0 })
-    }
-    const bucket = byAnimeMap.get(animeId)!
-    if (row._id.earningType === 'normal') bucket.normal += row.count
-    else if (row._id.earningType === 'link5-direct') bucket.link5Direct += row.count
-    else if (row._id.earningType === 'special-mode') bucket.specialMode += row.count
+    if (!byAnimeMap.has(animeId)) byAnimeMap.set(animeId, { normal: emptyBucket(), link5Direct: 0, specialMode: 0 })
+    const b = byAnimeMap.get(animeId)!
+    if (row._id.earningType === 'normal') b.normal = { count: row.count, snapSum: row.snapSum, snapCount: row.snapCount }
+    else if (row._id.earningType === 'link5-direct') b.link5Direct += row.count
+    else if (row._id.earningType === 'special-mode') b.specialMode += row.count
   }
 
   const animeIds = Array.from(byAnimeMap.keys()).filter(isValidObjectIdSafe).map(toObjectIdSafe)
   const animeTitles = animeIds.length
-    ? await db.collection('animes')
-        .find({ _id: { $in: animeIds } }, { projection: { title: 1 } })
-        .toArray()
+    ? await db.collection('animes').find({ _id: { $in: animeIds } }, { projection: { title: 1 } }).toArray()
     : []
   const titleMap = new Map(animeTitles.map((a: any) => [a._id.toString(), a.title || 'Unknown']))
 
   const byAnime: ISubAdminAnimeEarning[] = Array.from(byAnimeMap.entries()).map(([animeId, b]) => ({
     animeId,
     animeTitle: titleMap.get(animeId) || 'Unknown',
-    normalViews: b.normal,
+    normalViews: b.normal.count,
     link5DirectViews: b.link5Direct,
     specialModeViews: b.specialMode,
-    earnings: parseFloat(((b.normal * rate) / 1000).toFixed(4)),
+    earnings: parseFloat(earningsOf(b.normal, custom, globalRate).toFixed(4)),
   })).sort((a, b) => b.normalViews - a.normalViews)
 
   const totalNormalViews = byAnime.reduce((s, a) => s + a.normalViews, 0)
   const totalLink5DirectViews = byAnime.reduce((s, a) => s + a.link5DirectViews, 0)
   const totalSpecialModeViews = byAnime.reduce((s, a) => s + a.specialModeViews, 0)
-  const totalEarnings = parseFloat(((totalNormalViews * rate) / 1000).toFixed(4))
+  const totalEarnings = parseFloat(byAnime.reduce((s, a) => s + a.earnings, 0).toFixed(4))
 
   return {
     subAdminId,
     username: subAdmin.username,
     realName: subAdmin.fullName || subAdmin.username,
-    rate,
-    rateSource,
-    totalNormalViews,
-    totalLink5DirectViews,
-    totalSpecialModeViews,
-    totalEarnings,
-    byAnime,
+    // effective (blended) rate — per-link mode mein ye average hai
+    rate: custom !== null ? custom : (totalNormalViews ? (totalEarnings * 1000) / totalNormalViews : globalRate),
+    rateSource: custom !== null ? 'custom' : 'per-link',
+    totalNormalViews, totalLink5DirectViews, totalSpecialModeViews, totalEarnings, byAnime,
   }
 }
 
@@ -2078,56 +2213,37 @@ export async function getAllSubAdminEarningsSummary(
   dbName: string
 ): Promise<Omit<ISubAdminEarningsSummary, 'byAnime'>[]> {
   const db = await getDb(mongoUri, dbName)
-  const settings = await db.collection('linksettings').findOne({})
-  const globalRate = typeof settings?.globalRatePerThousandViews === 'number'
-    ? settings.globalRatePerThousandViews
-    : 0
+  const settings: any = await db.collection('linksettings').findOne({})
+  const globalRate = typeof settings?.globalRatePerThousandViews === 'number' ? settings.globalRatePerThousandViews : 0
 
   const subAdmins = await db.collection('subadmins')
-    .find({}, { projection: { username: 1, fullName: 1, ratePerThousandViews: 1 } })
-    .toArray()
+    .find({}, { projection: { username: 1, fullName: 1, ratePerThousandViews: 1 } }).toArray()
 
   const results = await Promise.all(subAdmins.map(async (sa: any) => {
     const subAdminId = sa._id.toString()
-    const rate = typeof sa.ratePerThousandViews === 'number' ? sa.ratePerThousandViews : globalRate
-    const rateSource: 'custom' | 'global' = typeof sa.ratePerThousandViews === 'number' ? 'custom' : 'global'
+    const custom = typeof sa.ratePerThousandViews === 'number' ? sa.ratePerThousandViews : null
 
-    const raw = await db
-      .collection('pageviews')
-      .aggregate([
-        {
-          $match: {
-            subAdminId,
-            pageType: 'download',
-            earningType: { $exists: true },
-          },
-        },
-        {
-          $group: {
-            _id: '$earningType',
-            count: { $sum: 1 },
-          },
-        },
-      ])
-      .toArray()
+    const raw = await db.collection('pageviews').aggregate([
+      { $match: { subAdminId, pageType: 'download', earningType: { $exists: true } } },
+      { $group: { _id: '$earningType', ...SNAP_GROUP } },
+    ]).toArray()
 
-    let totalNormalViews = 0, totalLink5DirectViews = 0, totalSpecialModeViews = 0
+    let normal = emptyBucket(), totalLink5DirectViews = 0, totalSpecialModeViews = 0
     for (const row of raw) {
-      if (row._id === 'normal') totalNormalViews = row.count
+      if (row._id === 'normal') normal = { count: row.count, snapSum: row.snapSum, snapCount: row.snapCount }
       else if (row._id === 'link5-direct') totalLink5DirectViews = row.count
       else if (row._id === 'special-mode') totalSpecialModeViews = row.count
     }
 
+    const totalEarnings = parseFloat(earningsOf(normal, custom, globalRate).toFixed(4))
     return {
       subAdminId,
       username: sa.username,
       realName: sa.fullName || sa.username,
-      rate,
-      rateSource,
-      totalNormalViews,
-      totalLink5DirectViews,
-      totalSpecialModeViews,
-      totalEarnings: parseFloat(((totalNormalViews * rate) / 1000).toFixed(4)),
+      rate: custom !== null ? custom : (normal.count ? (totalEarnings * 1000) / normal.count : globalRate),
+      rateSource: (custom !== null ? 'custom' : 'per-link') as 'custom' | 'per-link',
+      totalNormalViews: normal.count,
+      totalLink5DirectViews, totalSpecialModeViews, totalEarnings,
     }
   }))
 

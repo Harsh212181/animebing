@@ -1,12 +1,13 @@
-import { Hono } from 'hono'
+ import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { findMany, findOne, insertOne, updateOne, deleteOne, deleteMany, countDocuments, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
 import { IEpisode } from '../models/types'
+import { adminAuth, superAdminOnly } from '../middleware/auth'
 
 const episodeRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
-// DELETE ALL
-episodeRoutes.delete('/all', async (c) => {
+// DELETE ALL — sirf main admin
+episodeRoutes.delete('/all', adminAuth, superAdminOnly, async (c) => {
   try {
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
     const result = await db.collection('episodes').deleteMany({})
@@ -16,7 +17,7 @@ episodeRoutes.delete('/all', async (c) => {
   }
 })
 
-// GET ALL
+// GET ALL — public
 episodeRoutes.get('/', async (c) => {
   try {
     const episodes = await findMany<IEpisode>('episodes', {}, { sort: { session: 1, episodeNumber: 1 } }, c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -26,8 +27,8 @@ episodeRoutes.get('/', async (c) => {
   }
 })
 
-// ADD EPISODE
-episodeRoutes.post('/', async (c) => {
+// ADD EPISODE — auth required
+episodeRoutes.post('/', adminAuth, async (c) => {
   try {
     const { animeId, title, episodeNumber, secureFileReference, mainLink, downloadLinks, session } = await c.req.json()
 
@@ -87,7 +88,7 @@ episodeRoutes.post('/', async (c) => {
   }
 })
 
-// GET EPISODES BY ANIME ID
+// GET EPISODES BY ANIME ID (download) — public
 episodeRoutes.get('/download/:animeId/:episodeNumber', async (c) => {
   try {
     const animeId = c.req.param('animeId')
@@ -116,7 +117,7 @@ episodeRoutes.get('/download/:animeId/:episodeNumber', async (c) => {
   }
 })
 
-// GET BY ANIME ID
+// GET BY ANIME ID — public
 episodeRoutes.get('/:animeId', async (c) => {
   try {
     const animeId = c.req.param('animeId')
@@ -136,8 +137,8 @@ episodeRoutes.get('/:animeId', async (c) => {
   }
 })
 
-// UPDATE EPISODE
-episodeRoutes.patch('/', async (c) => {
+// UPDATE EPISODE — auth required
+episodeRoutes.patch('/', adminAuth, async (c) => {
   try {
     const { animeId, episodeNumber, title, secureFileReference, mainLink, downloadLinks, session } = await c.req.json()
 
@@ -188,8 +189,8 @@ episodeRoutes.patch('/', async (c) => {
   }
 })
 
-// DELETE EPISODE
-episodeRoutes.delete('/', async (c) => {
+// DELETE EPISODE — auth required
+episodeRoutes.delete('/', adminAuth, async (c) => {
   try {
     const { animeId, episodeNumber, session } = await c.req.json()
 

@@ -1,4 +1,4 @@
-// src/components/admin/SubAdminEarningsManager.tsx — MAIN ADMIN ONLY
+ // src/components/admin/SubAdminEarningsManager.tsx — MAIN ADMIN ONLY
 // 🆕 EARNINGS: view→$ tracking per sub-admin. Only download-page views tagged
 // 'normal' (short link 1-4 was used) count toward $. Link5-direct and
 // special-mode-forced views are shown separately and never counted.
@@ -27,7 +27,7 @@ interface SummaryRow {
   username: string;
   realName: string;
   rate: number;
-  rateSource: 'custom' | 'global';
+  rateSource: 'custom' | 'global' | 'per-link';
   totalNormalViews: number;
   totalLink5DirectViews: number;
   totalSpecialModeViews: number;
@@ -37,6 +37,20 @@ interface SummaryRow {
 interface DetailData extends SummaryRow {
   byAnime: AnimeEarning[];
 }
+
+// 🆕 Recount window presets + helpers
+const WINDOW_PRESETS = [
+  { label: '10 sec', sec: 10 },
+  { label: '10 min', sec: 600 },
+  { label: '1 hour', sec: 3600 },
+  { label: '10 hours', sec: 36000 },
+  { label: '24 hours', sec: 86400 },
+];
+const UNIT_SEC = { sec: 1, min: 60, hour: 3600 } as const;
+
+const fmtWindow = (s: number) =>
+  s % 3600 === 0 ? `${s / 3600} hour${s / 3600 > 1 ? 's' : ''}` :
+  s % 60 === 0 ? `${s / 60} min` : `${s} sec`;
 
 const SvgIcon: React.FC<{ d: string; className?: string }> = ({ d, className = 'w-4 h-4' }) => (
   <svg className={className} fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
@@ -54,20 +68,38 @@ const ICONS = {
   save: 'M17 21v-8H7v8M7 3v5h8M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z',
 };
 
-const RateBadge: React.FC<{ source: 'custom' | 'global' }> = ({ source }) => (
+const RateBadge: React.FC<{ source: 'custom' | 'global' | 'per-link' }> = ({ source }) => (
   <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
     source === 'custom'
       ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+      : source === 'per-link'
+      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
       : 'bg-white/10 text-gray-400 border border-white/10'
   }`}>
-    {source === 'custom' ? 'Custom rate' : 'Global rate'}
+    {source === 'custom' ? 'Custom rate' : source === 'per-link' ? 'Per-link avg' : 'Global rate'}
   </span>
 );
+
+const LINK_LABELS = ['Cuty.io', 'Shrinkme', 'Linkjust', 'Gplinks'];
 
 const SubAdminEarningsManager: React.FC<SubAdminEarningsManagerProps> = ({ token }) => {
   const [globalRate, setGlobalRate] = useState<number>(0);
   const [globalRateInput, setGlobalRateInput] = useState<string>('0');
   const [savingGlobal, setSavingGlobal] = useState(false);
+
+  // 🆕 Per-link rates
+  const [linkRates, setLinkRates] = useState<string[]>(['0', '0', '0', '0']);
+  const [savingLinkRates, setSavingLinkRates] = useState(false);
+
+  // 🆕 Count-every-view test mode
+  const [countEveryView, setCountEveryView] = useState(false);
+  const [savingCountMode, setSavingCountMode] = useState(false);
+
+  // 🆕 Recount window (dedupeWindowSec)
+  const [windowSec, setWindowSec] = useState(86400);
+  const [customVal, setCustomVal] = useState('');
+  const [customUnit, setCustomUnit] = useState<'sec' | 'min' | 'hour'>('min');
+  const [savingWindow, setSavingWindow] = useState(false);
 
   const [rows, setRows] = useState<SummaryRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,6 +121,16 @@ const SubAdminEarningsManager: React.FC<SubAdminEarningsManagerProps> = ({ token
       setRows(data.data || []);
       setGlobalRate(data.globalRate || 0);
       setGlobalRateInput(String(data.globalRate ?? 0));
+      // 🆕 per-link rates
+      const lr = data.linkRates || {};
+      setLinkRates([lr.link1, lr.link2, lr.link3, lr.link4].map((v: any) => String(v ?? 0)));
+
+      // 🆕 count-every-view mode + recount window
+      try {
+        const r = await axios.get(`${API_BASE}/link-settings/count-mode`, authHeaders);
+        setCountEveryView(!!r.data?.countEveryView);
+        setWindowSec(r.data?.dedupeWindowSec ?? 86400);
+      } catch { /* ignore */ }
     } catch (err: any) {
       toast.error(err.response?.data?.error || 'Failed to load earnings summary');
     } finally {
@@ -114,6 +156,62 @@ const SubAdminEarningsManager: React.FC<SubAdminEarningsManagerProps> = ({ token
       toast.error(err.response?.data?.error || 'Failed to update global rate');
     } finally {
       setSavingGlobal(false);
+    }
+  };
+
+  // 🆕 Save per-link rates
+  const saveLinkRates = async () => {
+    const nums = linkRates.map(v => parseFloat(v));
+    if (nums.some(n => isNaN(n) || n < 0)) {
+      toast.error('Each rate must be valid (0 or greater)');
+      return;
+    }
+    setSavingLinkRates(true);
+    try {
+      await axios.put(
+        `${API_BASE}/link-settings/link-rates`,
+        { link1: nums[0], link2: nums[1], link3: nums[2], link4: nums[3] },
+        authHeaders
+      );
+      toast.success('Per-link rates saved');
+      fetchSummary();
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'Failed to save link rates');
+    } finally {
+      setSavingLinkRates(false);
+    }
+  };
+
+  // 🆕 Toggle count-every-view test mode
+  const toggleCountMode = async () => {
+    const next = !countEveryView;
+    setSavingCountMode(true);
+    try {
+      await axios.put(`${API_BASE}/link-settings/count-mode`, { countEveryView: next }, authHeaders);
+      setCountEveryView(next);
+      toast.success(next ? 'Test mode ON: every view will be counted' : 'Test mode OFF: normal counting');
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'Failed to change count mode');
+    } finally {
+      setSavingCountMode(false);
+    }
+  };
+
+  // 🆕 Save recount window
+  const saveWindow = async (sec: number) => {
+    if (!Number.isFinite(sec) || sec < 1 || sec > 172800) {
+      toast.error('Enter a time between 1 second and 48 hours');
+      return;
+    }
+    setSavingWindow(true);
+    try {
+      await axios.put(`${API_BASE}/link-settings/count-mode`, { dedupeWindowSec: Math.round(sec) }, authHeaders);
+      setWindowSec(Math.round(sec));
+      toast.success(`Recount window set to ${fmtWindow(Math.round(sec))}`);
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'Failed to save recount window');
+    } finally {
+      setSavingWindow(false);
     }
   };
 
@@ -154,7 +252,7 @@ const SubAdminEarningsManager: React.FC<SubAdminEarningsManagerProps> = ({ token
       toast.success(rate === null ? 'Reverted to global rate' : 'Custom rate saved');
       setEditingRateFor(null);
       fetchSummary();
-      // Agar is sub-admin ka detail panel khula hua hai, use fresh rate ke saath reload karo
+      // If this sub-admin's detail panel is open, reload it with the fresh rate
       if (expandedId === subAdminId) {
         setDetailLoading(true);
         try {
@@ -189,6 +287,79 @@ const SubAdminEarningsManager: React.FC<SubAdminEarningsManagerProps> = ({ token
         </div>
       </div>
 
+      {/* 🆕 Count every view (testing) */}
+      <div className={`rounded-xl p-4 border flex flex-wrap items-center gap-3 ${
+        countEveryView ? 'bg-amber-500/10 border-amber-500/30' : 'bg-white/[0.04] border-white/[0.06]'
+      }`}>
+        <div className="flex-1 min-w-[220px]">
+          <p className="text-xs font-semibold text-gray-300 uppercase tracking-wide">
+            Count every view (testing)
+          </p>
+          <p className="text-[11px] text-gray-500 mt-0.5">
+            {countEveryView
+              ? 'ON: Every download view is counted, including refreshes. Detail + download still counts as 1. Turn OFF after testing.'
+              : 'OFF: A visitor is counted once per recount window, and detail + download counts as 1.'}
+          </p>
+          {!countEveryView && (
+            <div className="w-full mt-3 space-y-2">
+              <p className="text-[11px] text-gray-400">
+                Recount window: <span className="text-white font-semibold">{fmtWindow(windowSec)}</span>
+                {' '}(same visitor is counted again only after this time)
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                {WINDOW_PRESETS.map(p => (
+                  <button
+                    key={p.sec}
+                    onClick={() => saveWindow(p.sec)}
+                    disabled={savingWindow}
+                    className={`px-3 py-1 text-xs rounded-lg border transition disabled:opacity-50 ${
+                      windowSec === p.sec
+                        ? 'bg-purple-600 border-purple-500 text-white'
+                        : 'bg-white/5 border-white/10 text-gray-300 hover:bg-white/10'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number" min={1} value={customVal}
+                  onChange={e => setCustomVal(e.target.value)}
+                  placeholder="Custom"
+                  className="w-24 px-2.5 py-1.5 text-xs bg-[#1c1b29] border border-white/10 rounded-lg text-white focus:outline-none focus:border-purple-500/50"
+                />
+                <select
+                  value={customUnit}
+                  onChange={e => setCustomUnit(e.target.value as 'sec' | 'min' | 'hour')}
+                  className="px-2 py-1.5 text-xs bg-[#1c1b29] border border-white/10 rounded-lg text-white"
+                >
+                  <option value="sec">seconds</option>
+                  <option value="min">minutes</option>
+                  <option value="hour">hours</option>
+                </select>
+                <button
+                  onClick={() => saveWindow(parseFloat(customVal) * UNIT_SEC[customUnit])}
+                  disabled={savingWindow || !customVal}
+                  className="px-3 py-1.5 text-xs font-medium rounded-lg bg-purple-600 hover:bg-purple-500 text-white transition disabled:opacity-50"
+                >
+                  Set
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+        <button
+          onClick={toggleCountMode}
+          disabled={savingCountMode}
+          className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition disabled:opacity-50 ${
+            countEveryView ? 'bg-amber-500 hover:bg-amber-400 text-black' : 'bg-white/10 hover:bg-white/20 text-gray-200'
+          }`}
+        >
+          {countEveryView ? 'ON: turn off' : 'OFF: turn on'}
+        </button>
+      </div>
+
       {/* Global rate control */}
       <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4 flex flex-wrap items-center gap-3">
         <div className="flex-1 min-w-[200px]">
@@ -215,6 +386,43 @@ const SubAdminEarningsManager: React.FC<SubAdminEarningsManagerProps> = ({ token
             Save
           </button>
         </div>
+      </div>
+
+      {/* 🆕 Per-link payout rate */}
+      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4 space-y-3">
+        <div>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Per-link payout rate</p>
+          <p className="text-[11px] text-gray-600 mt-0.5">
+            $ per 1000 views. The average of active links is used; if the link's ?l= was present, the exact rate is used.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {LINK_LABELS.map((label, i) => (
+            <div key={label}>
+              <p className="text-[11px] text-gray-500 mb-1">{label}</p>
+              <div className="flex items-center gap-1">
+                <span className="text-gray-500 text-sm">$</span>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={linkRates[i]}
+                  onChange={e =>
+                    setLinkRates(prev => prev.map((v, j) => (j === i ? e.target.value : v)))
+                  }
+                  className="w-full px-2.5 py-1.5 text-sm bg-[#1c1b29] border border-white/10 rounded-lg text-white focus:outline-none focus:border-purple-500/50"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+        <button
+          onClick={saveLinkRates}
+          disabled={savingLinkRates}
+          className="px-3 py-1.5 text-xs font-medium rounded-lg bg-purple-600 hover:bg-purple-500 text-white transition disabled:opacity-50"
+        >
+          Save link rates
+        </button>
       </div>
 
       {/* Overall totals */}

@@ -32,6 +32,8 @@ import {
 } from '../services/analyticsService'
 // 🆕 EARNINGS: reuse the existing "is a special mode forcing link5" check
 import { isForceLink5ModeActive } from './specialModeRoutes'
+// 🆕 Verify signed ?l= / ?ls= tags so linkUsed can't be spoofed
+import { signTag } from '../services/externalShortenerService'
 
 const analyticsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
@@ -144,9 +146,39 @@ function detectPageType(path: string): string {
 analyticsRoutes.post('/pageview', async (c) => {
   try {
     const body = await c.req.json()
-    const { path, slug, animeTitle, sessionId, timeOnPage, pageType: overridePageType } = body
+    const {
+      path: rawPath,
+      slug,
+      animeTitle,
+      sessionId,
+      visitorId,
+      timeOnPage,
+      pageType: overridePageType,
+    } = body
 
-    if (!path) return c.json({ error: 'path required' }, 400)
+    if (!rawPath) return c.json({ error: 'path required' }, 400)
+
+    // slug mein kabhi query nahi honi chahiye
+    const cleanSlug = typeof slug === 'string' ? slug.split('?')[0] : undefined
+
+    // ?l= / ?ls= alag nikalo, path saaf rakho
+    let path: string = rawPath
+    let linkUsed: number | undefined
+    try {
+      const u = new URL(rawPath, 'http://x')
+      const l = parseInt(u.searchParams.get('l') || '', 10)
+      const ls = u.searchParams.get('ls') || ''
+      // l sirf tab maano jab signature sahi ho
+      if (l >= 1 && l <= 4 && cleanSlug && ls === await signTag(c.env.JWT_SECRET, cleanSlug, l)) {
+        linkUsed = l
+      }
+      // l / ls hamesha hata do, taaki top-pages mein alag rows na banein
+      if (u.searchParams.has('l') || u.searchParams.has('ls')) {
+        u.searchParams.delete('l')
+        u.searchParams.delete('ls')
+        path = u.pathname + (u.search || '')
+      }
+    } catch { /* ignore */ }
 
     const ua = c.req.header('user-agent') || ''
     const botPattern = /bot|crawl|spider|slurp|mediapartners|googlebot|bingbot|yandex|baidu/i
@@ -168,24 +200,34 @@ analyticsRoutes.post('/pageview', async (c) => {
     // Allow the frontend to explicitly mark a path as 'not-found' (404 page)
     const pageType = overridePageType === 'not-found' ? 'not-found' : detectPageType(path)
 
-    // 🆕 EARNINGS: for download-page views, resolve the link-5 / special-mode
-    // state RIGHT NOW so trackPageView can tag the view's earning category
-    // at write-time (this state changes over time, so it must not be
-    // recomputed later from history).
-    let earningContext: { link5Active: boolean; specialModeForcing: boolean } | undefined
-    if (pageType === 'download') {
+    // 🆕 EARNINGS: for download / detail / episode views, read the current
+    // settings so trackPageView can decide at write-time whether to count
+    // and how to tag the view's earning category. Settings change over time,
+    // so they must not be recomputed later from history.
+    let earningContext:
+      | { link5Active: boolean; specialModeForcing: boolean; countEveryView: boolean; dedupeWindowSec: number }
+      | undefined
+
+    if (pageType === 'download' || pageType === 'anime-detail' || pageType === 'episode') {
       const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-      const linkSettings = await db.collection('linksettings').findOne({})
-      const link5Active = linkSettings?.link5 !== false
-      const specialModeForcing = await isForceLink5ModeActive(c.env.MONGODB_URI, c.env.MONGODB_DB)
-      earningContext = { link5Active, specialModeForcing }
+      const linkSettings: any = await db.collection('linksettings').findOne({})
+      const countEveryView = linkSettings?.countEveryView === true
+      const dedupeWindowSec = typeof linkSettings?.dedupeWindowSec === 'number' ? linkSettings.dedupeWindowSec : 86400
+
+      let link5Active = false
+      let specialModeForcing = false
+      if (pageType === 'download') {
+        link5Active = linkSettings?.link5 !== false
+        specialModeForcing = await isForceLink5ModeActive(c.env.MONGODB_URI, c.env.MONGODB_DB)
+      }
+      earningContext = { link5Active, specialModeForcing, countEveryView, dedupeWindowSec }
     }
 
-    await trackPageView(
+    const result = await trackPageView(
       {
         path,
         pageType,
-        slug,
+        slug: cleanSlug,
         animeTitle,
         ip,
         country,
@@ -196,13 +238,16 @@ analyticsRoutes.post('/pageview', async (c) => {
         referrer,
         sessionId,
         timeOnPage,
+        visitorId: typeof visitorId === 'string' ? visitorId.slice(0, 64) : undefined,
+        userAgent: ua.slice(0, 200),
+        linkUsed,
       },
       c.env.MONGODB_URI,
       c.env.MONGODB_DB,
       earningContext // 🆕 EARNINGS
     )
 
-    return c.json({ ok: true })
+    return c.json({ ok: true, ...(result.counted ? {} : { skipped: 'duplicate' }) })
   } catch (err: any) {
     console.error('Analytics track error:', err.message)
     return c.json({ error: err.message }, 500)

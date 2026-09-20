@@ -36,14 +36,24 @@ subAdminEarningsRoutes.get('/all-summary', adminAuth, superAdminOnly, async (c) 
   try {
     const data = await getAllSubAdminEarningsSummary(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    // Global rate bhi saath mein bhej do taaki UI mein editable field dikh sake
+    // Global rate + per-link rates bhi saath mein bhej do taaki UI mein editable fields dikh sakein
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const settings = await db.collection('linksettings').findOne({})
-    const globalRate = typeof settings?.globalRatePerThousandViews === 'number'
-      ? settings.globalRatePerThousandViews
-      : 0
+    const settings: any = await db.collection('linksettings').findOne({})
 
-    return c.json({ success: true, globalRate, data })
+    const globalRate =
+      typeof settings?.globalRatePerThousandViews === 'number'
+        ? settings.globalRatePerThousandViews
+        : 0
+
+    const r = settings?.linkRates || {}
+    const linkRates = {
+      link1: r.link1 ?? 0,
+      link2: r.link2 ?? 0,
+      link3: r.link3 ?? 0,
+      link4: r.link4 ?? 0,
+    }
+
+    return c.json({ success: true, globalRate, linkRates, data })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
   }

@@ -89,6 +89,10 @@ const BoltIcon = () => (
 const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isMainAdmin = false }) => {
   const getToken = () => tokenProp || localStorage.getItem('adminToken') || '';
 
+  // 🆕 Sub-admin ke liye links manually edit nahi karne — sirf ⚡ se generate karke aayenge
+  const restrictLinks = !isMainAdmin;
+  const [genToken, setGenToken] = useState('');
+
   const [animes, setAnimes] = useState<Anime[]>([]);
   const [selectedAnime, setSelectedAnime] = useState<Anime | null>(null);
   const [episodes, setEpisodes] = useState<Episode[]>([]);
@@ -270,6 +274,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
   const handleEditItem = (item: Episode | Chapter) => {
     if (editingItemId === (item as any)._id) {
       setEditingItemId(null);
+      setGenToken('');
     } else {
       setEditingItemId((item as any)._id);
       const itemData = item as any;
@@ -282,10 +287,14 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
         mainLink: mainLink,
         downloadLinks: downloadLinks.length > 0 ? downloadLinks : [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }]
       });
+      setGenToken('');
     }
   };
 
-  const handleCancelEdit = () => setEditingItemId(null);
+  const handleCancelEdit = () => {
+    setEditingItemId(null);
+    setGenToken('');
+  };
 
   const getNextAvailableNumber = () => {
     if (filteredItems.length === 0) return 1;
@@ -360,7 +369,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
   const handleAutoGenerateLinks = async (isEdit: boolean = false, externalLink?: string) => {
     const link = externalLink || (isEdit ? editForm.mainLink : newItem.mainLink);
     if (!link || !link.startsWith('http')) {
-      toast.error('Pehle valid Main Link daalo');
+      toast.error('Pehle valid link daalo');
       return;
     }
     setGeneratingLinks(true);
@@ -379,16 +388,22 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
         type: name === 'Link 5' ? 'direct' : 'server'
       }));
 
-      setNewItem(prev => ({
-        ...prev,
-        mainLink: link,
-        downloadLinks: newLinks
-      }));
+      if (newLinks.some(l => !l.url)) {
+        toast.error('Kuch shortener fail ho gaye, dobara generate karo');
+        return;
+      }
 
-      toast.success('4 short links + 1 direct link neeche form me add ho gaye!');
+      setGenToken(data.genToken || '');
+      // ⚡ card wala button (externalLink) add form bharta hai; form ke andar wala button apne form ko
+      if (isEdit && !externalLink) {
+        setEditForm(prev => ({ ...prev, mainLink: link, downloadLinks: newLinks }));
+      } else {
+        setNewItem(prev => ({ ...prev, mainLink: link, downloadLinks: newLinks }));
+      }
+      toast.success('4 short links + 1 direct link form me add ho gaye!');
     } catch (err: any) {
       console.error('Auto-generate error:', err.response?.data || err.message);
-      toast.error('Link generate karne me error aaya');
+      toast.error(err.response?.data?.error || 'Link generate karne me error aaya');
     } finally {
       setGeneratingLinks(false);
     }
@@ -429,6 +444,12 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
     }
     if (!validateDownloadLinks(newItem.downloadLinks)) return;
 
+    // 🆕 Sub-admin ko saare 5 links ⚡ se generate karne zaroori hain
+    if (restrictLinks && (!genToken || newItem.downloadLinks.length !== 5)) {
+      toast.error('Pehle download page ke ⚡ button se saare 5 links Auto-Generate karo');
+      return;
+    }
+
     setAddingItem(true);
     try {
       const token = getToken();
@@ -440,7 +461,8 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
             title: newItem.title || `Chapter ${newItem.number}`,
             session: newItem.session,
             mainLink: newItem.mainLink,
-            downloadLinks: newItem.downloadLinks
+            downloadLinks: newItem.downloadLinks,
+            ...(genToken ? { genToken } : {})
           }
         : {
             animeId: selectedAnime._id,
@@ -448,7 +470,8 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
             title: newItem.title || `Episode ${newItem.number}`,
             session: newItem.session,
             mainLink: newItem.mainLink,
-            downloadLinks: newItem.downloadLinks
+            downloadLinks: newItem.downloadLinks,
+            ...(genToken ? { genToken } : {})
           };
 
       const response = await axios.post(`${API_BASE}${endpoint}`, requestBody, {
@@ -474,6 +497,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
         mainLink: '',
         downloadLinks: [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }]
       });
+      setGenToken('');
     } catch (err: any) {
       console.error('Add error:', err.response?.data || err.message);
       toast.error(`Failed to add ${isManga ? 'chapter' : 'episode'}: ${err.response?.data?.error || err.message}`);
@@ -496,7 +520,8 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
             title: editForm.title || `Chapter ${editForm.number}`,
             session: editForm.session,
             mainLink: editForm.mainLink,
-            downloadLinks: editForm.downloadLinks
+            downloadLinks: editForm.downloadLinks,
+            ...(genToken ? { genToken } : {})
           }
         : {
             animeId: selectedAnime._id,
@@ -504,7 +529,8 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
             title: editForm.title || `Episode ${editForm.number}`,
             session: editForm.session,
             mainLink: editForm.mainLink,
-            downloadLinks: editForm.downloadLinks
+            downloadLinks: editForm.downloadLinks,
+            ...(genToken ? { genToken } : {})
           };
 
       await axios.patch(`${API_BASE}${endpoint}`, requestBody, {
@@ -516,6 +542,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
 
       toast.success(`${isManga ? 'Chapter' : 'Episode'} updated successfully!`);
       setEditingItemId(null);
+      setGenToken('');
       await fetchContent(selectedAnime._id);
     } catch (err: any) {
       console.error('Update error:', err.response?.data || err.message);
@@ -554,7 +581,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
     toast.success(message);
   };
 
-  // ✅ Shared edit form for an item — used in both desktop table row and mobile card
+  // Shared edit form for an item — used in both desktop table row and mobile card
   const renderEditForm = (item: any) => (
     <div className="border-l-4 border-yellow-500 pl-4 py-3">
       <h4 className="text-base sm:text-lg font-semibold text-white mb-3 flex items-center gap-2">
@@ -842,17 +869,15 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                       </svg>
                     </button>
 
-                    {/* Shorten button — main admin only */}
-                    {isMainAdmin && (
-                      <button
-                        onClick={() => handleAutoGenerateLinks(false, publicUrl)}
-                        disabled={generatingLinks}
-                        title="Generate 4 short links + direct for this page"
-                        className="p-2.5 bg-white/5 hover:bg-green-500/20 border border-white/10 hover:border-green-500/50 rounded-xl text-white/80 hover:text-green-300 transition-all"
-                      >
-                        {generatingLinks ? <Spinner size="sm" /> : <BoltIcon />}
-                      </button>
-                    )}
+                    {/* Shorten button — all admins */}
+                    <button
+                      onClick={() => handleAutoGenerateLinks(false, publicUrl)}
+                      disabled={generatingLinks}
+                      title="Generate 4 short links + direct for this page"
+                      className="p-2.5 bg-white/5 hover:bg-green-500/20 border border-white/10 hover:border-green-500/50 rounded-xl text-white/80 hover:text-green-300 transition-all"
+                    >
+                      {generatingLinks ? <Spinner size="sm" /> : <BoltIcon />}
+                    </button>
                   </div>
                 </div>
               </div>
@@ -986,18 +1011,25 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
 
           {/* Download Links */}
           <div>
+            {restrictLinks && (
+              <p className="text-xs text-amber-300 bg-amber-900/20 border border-amber-500/30 rounded px-3 py-2 mb-2">
+                Links khud add nahi kar sakte. Upar Download Page card ke ⚡ button se saare 5 links generate karo.
+              </p>
+            )}
             <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
               <label className="block text-sm font-medium text-slate-300">User Download Links (Required) *</label>
-              <button type="button" onClick={handleAddDownloadLink} disabled={newItem.downloadLinks.length >= 5} className="text-xs bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-2 py-1.5 rounded">
-                + Add Link (Max 5)
-              </button>
+              {!restrictLinks && (
+                <button type="button" onClick={handleAddDownloadLink} disabled={newItem.downloadLinks.length >= 5} className="text-xs bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-2 py-1.5 rounded">
+                  + Add Link (Max 5)
+                </button>
+              )}
             </div>
             <div className="space-y-3">
               {newItem.downloadLinks.map((link, idx) => (
                 <div key={idx} className="bg-slate-800/70 p-3 rounded-lg border border-slate-700">
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-slate-300 font-medium">{link.name}</span>
-                    {newItem.downloadLinks.length > 1 && (
+                    {!restrictLinks && newItem.downloadLinks.length > 1 && (
                       <button type="button" onClick={() => handleRemoveDownloadLink(idx)} className="text-xs bg-red-600 hover:bg-red-500 text-white px-2 py-1 rounded">
                         Remove
                       </button>
@@ -1006,20 +1038,20 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs text-slate-400">Link Name *</label>
-                      <input type="text" value={link.name} onChange={(e) => handleUpdateDownloadLink(idx, 'name', e.target.value)} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-2 py-2 text-sm" required />
+                      <input type="text" value={link.name} onChange={(e) => handleUpdateDownloadLink(idx, 'name', e.target.value)} readOnly={restrictLinks} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-2 py-2 text-sm disabled:opacity-70" required />
                     </div>
                     <div>
                       <label className="text-xs text-slate-400">Quality</label>
-                      <input type="text" value={link.quality || ''} onChange={(e) => handleUpdateDownloadLink(idx, 'quality', e.target.value)} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-2 py-2 text-sm" />
+                      <input type="text" value={link.quality || ''} onChange={(e) => handleUpdateDownloadLink(idx, 'quality', e.target.value)} readOnly={restrictLinks} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-2 py-2 text-sm disabled:opacity-70" />
                     </div>
                   </div>
                   <div className="mt-3">
                     <label className="text-xs text-slate-400">Download URL *</label>
-                    <input type="url" value={link.url} onChange={(e) => handleUpdateDownloadLink(idx, 'url', e.target.value)} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-2 py-2 text-sm" required />
+                    <input type="url" value={link.url} onChange={(e) => handleUpdateDownloadLink(idx, 'url', e.target.value)} readOnly={restrictLinks} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-2 py-2 text-sm disabled:opacity-70" required />
                   </div>
                   <div className="mt-3">
                     <label className="text-xs text-slate-400">Type</label>
-                    <select value={link.type || 'direct'} onChange={(e) => handleUpdateDownloadLink(idx, 'type', e.target.value)} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-2 py-2 text-sm">
+                    <select value={link.type || 'direct'} onChange={(e) => handleUpdateDownloadLink(idx, 'type', e.target.value)} disabled={restrictLinks} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-2 py-2 text-sm disabled:opacity-70">
                       <option value="direct">Direct Download</option>
                       <option value="server">Server Download</option>
                       <option value="google_drive">Google Drive</option>
@@ -1046,7 +1078,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
           <div className="flex gap-3">
             <button
               type="submit"
-              disabled={addingItem}
+              disabled={addingItem || (restrictLinks && !genToken)}
               className="w-full sm:w-auto justify-center bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-semibold py-2.5 px-6 rounded-lg transition-colors flex items-center gap-2"
             >
               {addingItem ? <><Spinner size="sm" /> Adding...</> : `Add ${isManga ? 'Chapter' : 'Episode'}`}
