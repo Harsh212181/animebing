@@ -1,4 +1,4 @@
- // src/components/admin/EpisodesManager.tsx - No emojis, custom SVG icons, mobile-friendly
+ // src/components/admin/EpisodesManager.tsx - Premium UI, no emojis, custom SVG icons
 import React, { useState, useEffect } from 'react';
 import type { Anime, Episode, Chapter } from '../../types';
 import axios from 'axios';
@@ -30,66 +30,93 @@ interface EpisodesManagerProps {
   isMainAdmin?: boolean;
 }
 
-// Inline SVG icon components to replace emojis
-const RefreshIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+// ── Icon primitive ───────────────────────────────────────────────────
+const SvgIcon: React.FC<{ d: string; className?: string }> = ({ d, className = 'w-4 h-4' }) => (
+  <svg className={className} fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+    <path d={d} />
   </svg>
 );
 
-const LinkIcon = () => (
-  <svg className="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-  </svg>
-);
+const ICONS = {
+  refresh:   'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15',
+  link:      'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1',
+  crown:     'M5 16l2-8 5 4 5-4 2 8H5z M3 20h18',
+  user:      'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z',
+  download:  'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4',
+  cancel:    'M6 18L18 6M6 6l12 12',
+  edit:      'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z',
+  trash:     'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16',
+  bolt:      'M13 10V3L4 14h7v7l9-11h-7z',
+  plus:      'M12 4v16m8-8H4',
+  open:      'M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14',
+  copy:      'M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z',
+  eye:       'M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z',
+  warning:   'M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z',
+  calendar:  'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z',
+  check:     'M5 13l4 4L19 7',
+  chevron:   'M19 9l-7 7-7-7',
+};
 
-const CrownIcon = () => (
-  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 16l2-8 5 4 5-4 2 8H5z" />
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 20h18" />
-  </svg>
-);
+// ── Confirm Modal ─────────────────────────────────────────────────────
+const ConfirmModal: React.FC<{
+  open: boolean;
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}> = ({ open, title, message, confirmLabel = 'Delete', cancelLabel = 'Cancel', danger = true, onConfirm, onCancel }) => {
+  if (!open) return null;
 
-const UserIcon = () => (
-  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-  </svg>
-);
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+      onClick={onCancel}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#151422] p-6 shadow-2xl shadow-black/40"
+      >
+        <div className="flex items-start gap-3">
+          <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${
+            danger ? 'bg-red-500/10 text-red-400' : 'bg-amber-500/10 text-amber-400'
+          }`}>
+            <SvgIcon d={ICONS.warning} className="h-5 w-5" />
+          </span>
+          <div className="min-w-0 flex-1 pt-1">
+            <h3 className="text-sm font-semibold text-white">{title}</h3>
+            <p className="mt-1.5 text-xs leading-relaxed text-white/50">{message}</p>
+          </div>
+        </div>
 
-const DownloadIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-  </svg>
-);
-
-const CancelIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-  </svg>
-);
-
-const EditIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-  </svg>
-);
-
-const TrashIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-  </svg>
-);
-
-const BoltIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-  </svg>
-);
+        <div className="mt-6 flex justify-end gap-2.5">
+          <button
+            onClick={onCancel}
+            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/70 transition-all hover:bg-white/10 hover:text-white"
+          >
+            {cancelLabel}
+          </button>
+          <button
+            onClick={onConfirm}
+            className={`rounded-xl px-4 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-95 ${
+              danger
+                ? 'bg-gradient-to-r from-red-600 to-red-700 shadow-red-500/25 hover:shadow-red-500/40'
+                : 'bg-gradient-to-r from-purple-600 to-pink-600 shadow-purple-500/25 hover:shadow-purple-500/40'
+            }`}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isMainAdmin = false }) => {
   const getToken = () => tokenProp || localStorage.getItem('adminToken') || '';
 
-  // 🆕 Sub-admin ke liye links manually edit nahi karne — sirf ⚡ se generate karke aayenge
   const restrictLinks = !isMainAdmin;
   const [genToken, setGenToken] = useState('');
 
@@ -394,7 +421,6 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
       }
 
       setGenToken(data.genToken || '');
-      // ⚡ card wala button (externalLink) add form bharta hai; form ke andar wala button apne form ko
       if (isEdit && !externalLink) {
         setEditForm(prev => ({ ...prev, mainLink: link, downloadLinks: newLinks }));
       } else {
@@ -444,7 +470,6 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
     }
     if (!validateDownloadLinks(newItem.downloadLinks)) return;
 
-    // 🆕 Sub-admin ko saare 5 links ⚡ se generate karne zaroori hain
     if (restrictLinks && (!genToken || newItem.downloadLinks.length !== 5)) {
       toast.error('Pehle download page ke ⚡ button se saare 5 links Auto-Generate karo');
       return;
@@ -552,7 +577,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
 
   const confirmDelete = async () => {
     if (!deleteConfirm || !selectedAnime) return;
-    const { itemId, itemNumber, session } = deleteConfirm;
+    const { itemNumber, session } = deleteConfirm;
     try {
       const token = getToken();
       const endpoint = isManga ? '/chapters' : '/episodes';
@@ -581,82 +606,110 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
     toast.success(message);
   };
 
-  // Shared edit form for an item — used in both desktop table row and mobile card
-  const renderEditForm = (item: any) => (
-    <div className="border-l-4 border-yellow-500 pl-4 py-3">
-      <h4 className="text-base sm:text-lg font-semibold text-white mb-3 flex items-center gap-2">
-        <EditIcon />
-        Edit {isManga ? 'Chapter' : 'Episode'} #{editForm.number}
-      </h4>
-      <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-3 sm:gap-4">
+  // ── Shared input style classes ──────────────────────────────────────
+  const inputCls = "w-full px-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-xs text-white placeholder-gray-500 outline-none transition-all focus:border-purple-500/50 focus:bg-white/[0.06] focus:ring-2 focus:ring-purple-500/20";
+
+  // ── Shared edit form ────────────────────────────────────────────────
+  const renderEditForm = (_item: any) => (
+    <div className="border-l-2 border-amber-400 pl-4 py-1 space-y-4">
+      <div className="flex items-center gap-2">
+        <span className="p-1.5 rounded-lg bg-amber-500/15 text-amber-300">
+          <SvgIcon d={ICONS.edit} className="w-3.5 h-3.5" />
+        </span>
+        <h4 className="text-sm font-bold text-white">
+          Edit {isManga ? 'Chapter' : 'Episode'} #{editForm.number}
+        </h4>
+      </div>
+
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-sm text-slate-300">Number *</label>
-            <input type="number" value={editForm.number} onChange={(e) => setEditForm({...editForm, number: Math.max(1, parseInt(e.target.value)||1)})} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-3 py-2.5 text-sm" />
+            <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1 block">Number *</label>
+            <input type="number" value={editForm.number} onChange={(e) => setEditForm({...editForm, number: Math.max(1, parseInt(e.target.value)||1)})} className={inputCls} />
           </div>
           <div>
-            <label className="text-sm text-slate-300">Session *</label>
-            <input type="number" value={editForm.session} onChange={(e) => setEditForm({...editForm, session: Math.max(1, parseInt(e.target.value)||1)})} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-3 py-2.5 text-sm" />
+            <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1 block">Session *</label>
+            <input type="number" value={editForm.session} onChange={(e) => setEditForm({...editForm, session: Math.max(1, parseInt(e.target.value)||1)})} className={inputCls} />
           </div>
         </div>
-        <div className="bg-slate-800/70 p-3 sm:p-4 rounded-lg border-l-4 border-yellow-500">
-          <label className="block text-sm font-medium text-yellow-300">Main Link (Admin)</label>
-          <input type="text" value={editForm.mainLink} onChange={(e) => setEditForm({...editForm, mainLink: e.target.value})} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-3 py-2.5 text-sm mt-2" />
+
+        {/* Main link (admin) */}
+        <div className="p-3 bg-amber-500/[0.06] border border-amber-500/20 rounded-xl space-y-2">
+          <div className="flex items-center gap-2">
+            <SvgIcon d={ICONS.link} className="w-3.5 h-3.5 text-amber-300" />
+            <label className="text-[11px] font-bold uppercase tracking-wider text-amber-300">Main Link (Admin)</label>
+          </div>
+          <input type="text" value={editForm.mainLink} onChange={(e) => setEditForm({...editForm, mainLink: e.target.value})} className={inputCls} />
           {isMainAdmin && (
             <button
               type="button"
               onClick={() => handleAutoGenerateLinks(true)}
               disabled={!editForm.mainLink || generatingLinks}
-              className="mt-2 w-full sm:w-auto justify-center bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-3 py-2 rounded text-sm flex items-center gap-1"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[11px] font-bold rounded-lg transition-all"
             >
-              {generatingLinks ? <Spinner size="sm" /> : <BoltIcon />} Auto-Generate 5 Links
+              {generatingLinks ? <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <SvgIcon d={ICONS.bolt} className="w-3 h-3" />}
+              Auto-Generate 5 Links
             </button>
           )}
         </div>
+
+        {/* Download links */}
         <div>
-          <div className="flex justify-between items-center">
-            <label className="text-sm text-slate-300">User Download Links</label>
-            <button type="button" onClick={handleEditAddDownloadLink} disabled={editForm.downloadLinks.length>=5} className="text-xs bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-2 py-1.5 rounded">+ Add</button>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">User Download Links</label>
+            <button type="button" onClick={handleEditAddDownloadLink} disabled={editForm.downloadLinks.length>=5}
+              className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 hover:bg-emerald-500/25 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+              <SvgIcon d={ICONS.plus} className="w-3 h-3" /> Add
+            </button>
           </div>
-          <div className="space-y-3 mt-2">
+          <div className="space-y-2">
             {editForm.downloadLinks.map((link, idx) => (
-              <div key={idx} className="bg-slate-900/70 p-3 rounded border border-slate-600">
-                <div className="flex justify-between mb-2">
-                  <span className="text-slate-300">{link.name}</span>
-                  {editForm.downloadLinks.length>1 && <button type="button" onClick={() => handleEditRemoveDownloadLink(idx)} className="text-xs bg-red-600 hover:bg-red-500 text-white px-2 py-1 rounded">Remove</button>}
+              <div key={idx} className="p-3 bg-white/[0.02] border border-white/[0.06] rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-purple-300">{link.name}</span>
+                  {editForm.downloadLinks.length>1 && (
+                    <button type="button" onClick={() => handleEditRemoveDownloadLink(idx)}
+                      className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-500/15 text-rose-300 border border-rose-500/25 hover:bg-rose-500/25 transition-all">
+                      Remove
+                    </button>
+                  )}
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs text-slate-400">Name</label>
-                    <input type="text" value={link.name} onChange={(e) => handleEditUpdateDownloadLink(idx, 'name', e.target.value)} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-2 py-2 text-sm" />
-                  </div>
-                  <div>
-                    <label className="text-xs text-slate-400">Quality</label>
-                    <input type="text" value={link.quality||''} onChange={(e) => handleEditUpdateDownloadLink(idx, 'quality', e.target.value)} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-2 py-2 text-sm" />
-                  </div>
+                <div>
+                  <label className="text-[10px] text-gray-500 mb-0.5 block">Name</label>
+                  <input type="text" value={link.name} onChange={(e) => handleEditUpdateDownloadLink(idx, 'name', e.target.value)} className={inputCls} />
                 </div>
-                <div className="mt-2">
-                  <label className="text-xs text-slate-400">URL</label>
-                  <input type="url" value={link.url} onChange={(e) => handleEditUpdateDownloadLink(idx, 'url', e.target.value)} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-2 py-2 text-sm" />
+                <div>
+                  <label className="text-[10px] text-gray-500 mb-0.5 block">URL</label>
+                  <input type="url" value={link.url} onChange={(e) => handleEditUpdateDownloadLink(idx, 'url', e.target.value)} className={inputCls} />
                 </div>
-                <div className="mt-2">
-                  <label className="text-xs text-slate-400">Type</label>
-                  <select value={link.type||'direct'} onChange={(e) => handleEditUpdateDownloadLink(idx, 'type', e.target.value)} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-2 py-2 text-sm">
-                    <option>direct</option><option>server</option><option>google_drive</option><option>mega</option><option>other</option>
+                <div>
+                  <label className="text-[10px] text-gray-500 mb-0.5 block">Type</label>
+                  <select value={link.type||'direct'} onChange={(e) => handleEditUpdateDownloadLink(idx, 'type', e.target.value)} className={inputCls}>
+                    <option className="bg-slate-900">direct</option>
+                    <option className="bg-slate-900">server</option>
+                    <option className="bg-slate-900">google_drive</option>
+                    <option className="bg-slate-900">mega</option>
+                    <option className="bg-slate-900">other</option>
                   </select>
                 </div>
               </div>
             ))}
           </div>
         </div>
+
         <div>
-          <label className="text-sm text-slate-300">Title</label>
-          <input type="text" value={editForm.title} onChange={(e) => setEditForm({...editForm, title: e.target.value})} className="w-full bg-slate-800 border border-slate-600 text-white rounded px-3 py-2.5 text-sm" />
+          <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1 block">Title</label>
+          <input type="text" value={editForm.title} onChange={(e) => setEditForm({...editForm, title: e.target.value})} className={inputCls} />
         </div>
-        <div className="flex gap-3">
-          <button type="button" onClick={handleUpdateItem} className="flex-1 sm:flex-none bg-green-600 hover:bg-green-500 text-white font-medium py-2.5 px-4 rounded text-sm">Save Changes</button>
-          <button type="button" onClick={handleCancelEdit} className="flex-1 sm:flex-none bg-slate-600 hover:bg-slate-500 text-white font-medium py-2.5 px-4 rounded text-sm flex items-center justify-center gap-1">
-            <CancelIcon /> Cancel
+
+        <div className="flex gap-2">
+          <button type="button" onClick={handleUpdateItem}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold rounded-lg shadow-lg shadow-emerald-500/20 transition-all">
+            <SvgIcon d={ICONS.check} className="w-3.5 h-3.5" /> Save Changes
+          </button>
+          <button type="button" onClick={handleCancelEdit}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-gray-300 text-xs font-bold rounded-lg transition-all">
+            <SvgIcon d={ICONS.cancel} className="w-3.5 h-3.5" /> Cancel
           </button>
         </div>
       </div>
@@ -664,47 +717,47 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Delete Confirmation Modal */}
-      {deleteConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-4">
-          <div className="bg-slate-800 rounded-lg p-6 max-w-md w-full shadow-xl border border-slate-700">
-            <h3 className="text-xl font-semibold text-white mb-4">Confirm Deletion</h3>
-            <p className="text-slate-300 mb-6">
-              Are you sure you want to delete {isManga ? 'chapter' : 'episode'} {deleteConfirm.itemNumber}?
+      <ConfirmModal
+        open={!!deleteConfirm}
+        title={`Delete ${isManga ? 'Chapter' : 'Episode'}?`}
+        message={`Are you sure you want to delete ${isManga ? 'chapter' : 'episode'} ${deleteConfirm?.itemNumber}? This action cannot be undone.`}
+        confirmLabel="Delete"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirm(null)}
+      />
+
+      {/* ─── Header ─────────────────────────────────────── */}
+      <div className="flex flex-wrap justify-between items-center gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="p-2 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/10 border border-purple-500/20">
+            <SvgIcon d={ICONS.download} className="w-5 h-5 text-purple-300" />
+          </div>
+          <div>
+            <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight">
+              Manage {isManga ? 'Chapters' : 'Episodes'}
+            </h2>
+            <p className="text-[11px] text-gray-500 mt-0.5">
+              {isManga ? 'Chapters' : 'Episodes'} aur download links manage karo
             </p>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setDeleteConfirm(null)}
-                className="px-4 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmDelete}
-                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors"
-              >
-                Delete
-              </button>
-            </div>
           </div>
         </div>
-      )}
-
-      <div className="flex flex-wrap justify-between items-center gap-3">
-        <h2 className="text-xl sm:text-2xl font-bold text-white">Manage {isManga ? 'Chapters' : 'Episodes'}</h2>
         <button
           onClick={handleRefresh}
           disabled={animesLoading}
-          className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm transition flex items-center gap-2"
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] disabled:opacity-50 text-gray-300 hover:text-white text-xs font-semibold rounded-xl transition-all"
         >
-          {animesLoading ? <><Spinner size="sm" /> Refreshing...</> : <><RefreshIcon /> Refresh Content</>}
+          {animesLoading
+            ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Refreshing...</>
+            : <><SvgIcon d={ICONS.refresh} className="w-3.5 h-3.5" /> Refresh</>}
         </button>
       </div>
 
-      {/* Content Selection */}
-      <div className="bg-slate-800/50 rounded-lg p-4 sm:p-6">
-        <label className="block text-sm font-medium text-slate-300 mb-3">
+      {/* ─── Content Selection ─────────────────────────── */}
+      <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4">
+        <label className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
+          <SvgIcon d={ICONS.eye} className="w-3 h-3" />
           Select {isManga ? 'Manga' : 'Anime/Movie'} *
         </label>
         <SearchableDropdown<Anime>
@@ -715,62 +768,67 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
         />
       </div>
 
-      {/* Selected Content Info with Creator Badge */}
+      {/* ─── Selected Content Info ────────────────────── */}
       {selectedAnime && (
-        <div className="bg-slate-800/30 rounded-lg p-4 border border-slate-700">
-          <div className="flex items-start sm:items-center gap-4">
+        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4">
+          <div className="flex items-start gap-3">
             {(selectedAnime.thumbnail || selectedAnime.posterImage || selectedAnime.coverImage) && (
               <img
                 src={selectedAnime.thumbnail || selectedAnime.posterImage || selectedAnime.coverImage}
                 alt={selectedAnime.title}
-                className="w-14 h-20 sm:w-16 sm:h-22 object-cover rounded-lg flex-shrink-0"
-                style={{ height: '88px' }}
+                className="w-12 h-16 object-cover rounded-lg flex-shrink-0 border border-white/10"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
               />
             )}
-            <div className="min-w-0">
-              <div className="flex items-center flex-wrap gap-2 mb-2">
-                <h3 className="text-base sm:text-lg font-semibold text-white break-words">
-                  Selected: {selectedAnime.title}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center flex-wrap gap-2 mb-1.5">
+                <h3 className="text-sm font-bold text-white break-words">
+                  {selectedAnime.title}
                 </h3>
                 {isMainAdmin && (
                   (!selectedAnime.createdBy || selectedAnime.createdBy === 'admin') ? (
-                    <span className="text-xs px-2 py-1 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/25 flex items-center gap-1">
-                      <CrownIcon /> Main Admin
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/25">
+                      <SvgIcon d={ICONS.crown} className="w-2.5 h-2.5" /> Admin
                     </span>
                   ) : (
                     <span
-                      className="text-xs px-2 py-1 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/25 flex items-center gap-1"
+                      className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/25"
                       title={`Created by sub-admin: ${selectedAnime.createdByUsername}`}
                     >
-                      <UserIcon /> {selectedAnime.createdByUsername || 'Sub-Admin'}
+                      <SvgIcon d={ICONS.user} className="w-2.5 h-2.5" /> {selectedAnime.createdByUsername || 'Sub-Admin'}
                     </span>
                   )
                 )}
               </div>
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-300">
-                <span>Type: {selectedAnime.contentType}</span>
-                <span>Status: {selectedAnime.status}</span>
-                <span>Total {isManga ? 'Chapters' : 'Episodes'}: {isManga ? chapters.length : episodes.length}</span>
+              <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-400">
+                <span>Type: <span className="text-white/70">{selectedAnime.contentType}</span></span>
+                <span>Status: <span className="text-white/70">{selectedAnime.status}</span></span>
+                <span>Total: <span className="text-purple-300 font-bold">{isManga ? chapters.length : episodes.length}</span></span>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Download Page(s) card */}
+      {/* ─── Download Pages ──────────────────────────── */}
       {selectedAnime && (
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-white/90 flex items-center gap-2 flex-wrap">
-            <span className="w-1.5 h-6 bg-purple-400 rounded-full"></span>
-            <DownloadIcon /> Download Page(s) for this Anime
-            {loadingDownloadPages && <Spinner size="sm" />}
-          </h3>
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="w-1 h-4 bg-purple-400 rounded-full" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-300 flex items-center gap-1.5">
+              <SvgIcon d={ICONS.download} className="w-3.5 h-3.5 text-purple-300" />
+              Download Pages
+            </h3>
+            {loadingDownloadPages && <span className="w-3.5 h-3.5 border-2 border-white/20 border-t-white/70 rounded-full animate-spin" />}
+          </div>
 
           {!loadingDownloadPages && downloadPages.length === 0 && (
-            <div className="text-center py-8 bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl px-4">
-              <DownloadIcon />
-              <p className="mt-3 text-white/60">Is anime ka koi download page nahi bana hai abhi tak.</p>
+            <div className="text-center py-8 bg-white/[0.02] border border-white/[0.06] rounded-2xl">
+              <div className="w-12 h-12 mx-auto mb-2.5 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center">
+                <SvgIcon d={ICONS.download} className="w-6 h-6 text-gray-600" />
+              </div>
+              <p className="text-xs text-gray-400 font-medium">No download page yet</p>
+              <p className="text-[10px] text-gray-600 mt-1">Is anime ka abhi tak koi download page nahi bana</p>
             </div>
           )}
 
@@ -782,101 +840,79 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
             const minEp = episodeNumbers.length ? Math.min(...episodeNumbers) : null;
             const maxEp = episodeNumbers.length ? Math.max(...episodeNumbers) : null;
             const episodeRange = minEp !== null
-              ? (minEp === maxEp ? `Episode ${minEp}` : `Episode ${minEp}-${maxEp}`)
+              ? (minEp === maxEp ? `Ep ${minEp}` : `Ep ${minEp}-${maxEp}`)
               : 'No episodes';
 
             return (
               <div
                 key={page._id}
-                className="group bg-white/5 backdrop-blur-sm border border-white/10 hover:border-white/20 rounded-2xl overflow-hidden shadow-xl transition-all hover:shadow-2xl transform-gpu"
-                style={{ willChange: 'transform' }}
+                className="relative bg-white/[0.03] border border-white/[0.06] hover:border-white/[0.1] rounded-2xl overflow-hidden transition-all"
               >
-                <div className="relative p-4 sm:p-5 flex flex-col gap-4">
-                  <div className="absolute left-0 top-0 bottom-0 w-1.5 rounded-l-2xl bg-gradient-to-b from-purple-400 to-pink-400"></div>
+                <span className="absolute left-0 top-3 bottom-3 w-0.5 bg-gradient-to-b from-purple-400 to-pink-400 rounded-r-full" />
 
-                  <div className="flex-1 pl-3">
-                    <div className="flex items-start gap-3 sm:gap-4">
-                      <div className="flex-shrink-0 w-14 h-18 sm:w-20 sm:h-24 rounded-lg overflow-hidden bg-gray-800/80 shadow-lg border border-white/10">
-                        {(selectedAnime.thumbnail || selectedAnime.posterImage || selectedAnime.coverImage) ? (
-                          <img
-                            src={selectedAnime.thumbnail || selectedAnime.posterImage || selectedAnime.coverImage}
-                            alt={selectedAnime.title}
-                            className="w-full h-full object-cover"
-                            loading="lazy"
-                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center bg-gray-700/50">
-                            <svg className="w-8 h-8 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                          </div>
-                        )}
+                <div className="p-4 pl-5 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-12 h-16 rounded-lg overflow-hidden bg-white/[0.04] border border-white/[0.08]">
+                      {(selectedAnime.thumbnail || selectedAnime.posterImage || selectedAnime.coverImage) ? (
+                        <img
+                          src={selectedAnime.thumbnail || selectedAnime.posterImage || selectedAnime.coverImage}
+                          alt={selectedAnime.title}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-gray-600">
+                          <SvgIcon d={ICONS.download} className="w-5 h-5" />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-sm font-bold text-white truncate">{selectedAnime.title}</h3>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+                        <span className="text-gray-400">Start Ep: <span className="text-purple-300 font-bold">{page.episodeNumber}</span></span>
+                        <span className="text-gray-400">Button: <span className="text-purple-300 font-semibold">{page.title || 'Download'}</span></span>
+                        <span className="text-gray-400"><span className="text-purple-300 font-bold">{episodeRange}</span></span>
+                        <span className="text-gray-400">Links: <span className="text-purple-300 font-bold">{(page.links || []).length}</span></span>
                       </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center flex-wrap gap-2">
-                          <h3 className="text-lg sm:text-xl font-bold text-white break-words">{selectedAnime.title}</h3>
-                        </div>
-
-                        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-                          <span className="text-white/70">
-                            <span className="text-purple-300 font-medium">Starting Ep:</span> {page.episodeNumber}
-                          </span>
-                          <span className="text-white/70">
-                            <span className="text-purple-300 font-medium">Button:</span> {page.title || 'Download'}
-                          </span>
-                          <span className="text-white/70">
-                            <span className="text-purple-300 font-medium">{episodeRange}</span>
-                          </span>
-                          <span className="text-white/70">
-                            <span className="text-purple-300 font-medium">Total Links:</span> {(page.links || []).length}
-                          </span>
-                        </div>
-
-                        <div className="mt-2 text-sm text-white/50 flex flex-wrap items-center gap-3">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l5 5a2 2 0 01.586 1.414V19a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z" />
-                          </svg>
-                          <span>Download: <span className="text-emerald-300 font-medium">{downloadCount}</span></span>
-                          <span>Watch: <span className="text-blue-300 font-medium">{watchCount}</span></span>
-                        </div>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-3 text-[11px]">
+                        <span className="inline-flex items-center gap-1 text-emerald-300">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                          Download: <span className="font-bold">{downloadCount}</span>
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-sky-300">
+                          <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+                          Watch: <span className="font-bold">{watchCount}</span>
+                        </span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex gap-2 items-center flex-wrap pl-3 sm:pl-0">
-                    {/* View / Test button */}
+                  <div className="flex gap-1.5 flex-wrap">
                     <button
                       onClick={() => window.open(publicUrl, '_blank', 'noopener,noreferrer')}
-                      title="View / test public download page"
-                      className="p-2.5 bg-white/5 hover:bg-emerald-500/20 border border-white/10 hover:border-emerald-500/50 rounded-xl text-white/80 hover:text-emerald-300 transition-all"
+                      title="View public page"
+                      className="p-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-gray-400 hover:bg-emerald-500/10 hover:border-emerald-500/25 hover:text-emerald-300 transition-all"
                     >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
+                      <SvgIcon d={ICONS.eye} className="w-4 h-4" />
                     </button>
-
-                    {/* Copy button */}
                     <button
                       onClick={() => copyToClipboard(publicUrl, 'Download page link copied!')}
-                      title="Copy download page link"
-                      className="p-2.5 bg-white/5 hover:bg-yellow-500/20 border border-white/10 hover:border-yellow-500/50 rounded-xl text-white/80 hover:text-yellow-300 transition-all"
+                      title="Copy link"
+                      className="p-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-gray-400 hover:bg-amber-500/10 hover:border-amber-500/25 hover:text-amber-300 transition-all"
                     >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
+                      <SvgIcon d={ICONS.copy} className="w-4 h-4" />
                     </button>
-
-                    {/* Shorten button — all admins */}
                     <button
                       onClick={() => handleAutoGenerateLinks(false, publicUrl)}
                       disabled={generatingLinks}
-                      title="Generate 4 short links + direct for this page"
-                      className="p-2.5 bg-white/5 hover:bg-green-500/20 border border-white/10 hover:border-green-500/50 rounded-xl text-white/80 hover:text-green-300 transition-all"
+                      title="Auto-generate 5 links"
+                      className="p-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-gray-400 hover:bg-emerald-500/10 hover:border-emerald-500/25 hover:text-emerald-300 disabled:opacity-40 transition-all"
                     >
-                      {generatingLinks ? <Spinner size="sm" /> : <BoltIcon />}
+                      {generatingLinks
+                        ? <span className="w-4 h-4 border-2 border-emerald-400/30 border-t-emerald-400 rounded-full animate-spin" />
+                        : <SvgIcon d={ICONS.bolt} className="w-4 h-4" />}
                     </button>
                   </div>
                 </div>
@@ -886,13 +922,14 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
         </div>
       )}
 
-      {/* Session Selector */}
+      {/* ─── Session Selector ───────────────────────── */}
       {selectedAnime && getAvailableSessions().length > 0 && (
-        <div className="bg-slate-700/50 rounded-lg p-4">
-          <label className="block text-sm font-medium text-slate-300 mb-2">
-            Select Session
+        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4">
+          <label className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
+            <SvgIcon d={ICONS.calendar} className="w-3 h-3" />
+            Session
           </label>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1.5">
             {getAvailableSessions().map(session => (
               <button
                 key={session}
@@ -901,10 +938,10 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                   setNewItem(prev => ({ ...prev, session }));
                   setEditingItemId(null);
                 }}
-                className={`px-4 py-2 rounded-lg transition-colors text-sm ${
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all border ${
                   selectedSession === session
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-slate-600 text-slate-300 hover:bg-slate-500'
+                    ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white border-blue-500/50 shadow-lg shadow-blue-500/20'
+                    : 'bg-white/[0.03] text-gray-400 border-white/[0.06] hover:bg-white/[0.08] hover:text-white'
                 }`}
               >
                 Session {session}
@@ -917,146 +954,159 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                 setNewItem(prev => ({ ...prev, session: newSession, number: 1 }));
                 setEditingItemId(null);
               }}
-              className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg transition-colors text-sm"
+              className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 rounded-lg text-[11px] font-bold hover:bg-emerald-500/25 transition-all"
             >
-              + New Session
+              <SvgIcon d={ICONS.plus} className="w-3 h-3" /> New
             </button>
           </div>
         </div>
       )}
 
-      {/* Add New Item Form */}
+      {/* ─── Add New Item Form ──────────────────────── */}
       {selectedAnime && (
-        <form onSubmit={handleAddItem} className="bg-slate-700/50 rounded-lg p-4 sm:p-6 space-y-4">
-          <h3 className="text-lg font-semibold text-white">
-            Add New {isManga ? 'Chapter' : 'Episode'} {getAvailableSessions().length > 1 && `(Session ${selectedSession})`}
-          </h3>
+        <form onSubmit={handleAddItem} className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 space-y-4">
+          <div className="flex items-center gap-2">
+            <span className="w-1 h-4 bg-emerald-400 rounded-full" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-300">
+              Add New {isManga ? 'Chapter' : 'Episode'}
+              {getAvailableSessions().length > 1 && <span className="text-purple-300 ml-1.5">· S{selectedSession}</span>}
+            </h3>
+          </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:gap-4">
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
+              <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1 block">
                 {isManga ? 'Chapter' : 'Episode'} Number *
               </label>
               <input
                 type="number"
                 value={newItem.number}
                 onChange={(e) => setNewItem({ ...newItem, number: Math.max(1, parseInt(e.target.value) || 1) })}
-                className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
+                className={inputCls}
                 min="1"
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                Session *
-              </label>
+              <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1 block">Session *</label>
               <input
                 type="number"
                 value={newItem.session}
                 onChange={(e) => setNewItem({ ...newItem, session: Math.max(1, parseInt(e.target.value) || 1) })}
-                className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
+                className={inputCls}
                 min="1"
                 required
               />
             </div>
           </div>
 
-          {/* Main Link (Admin only) */}
-          <div className="bg-slate-800/70 p-4 rounded-lg border-l-4 border-yellow-500">
-            <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-              <label className="block text-sm font-medium text-yellow-300"><LinkIcon /> Main Link (Admin Only - Optional)</label>
-              <span className="text-xs text-yellow-400 bg-yellow-900/30 px-2 py-1 rounded">Internal Use</span>
+          {/* Main link */}
+          <div className="p-3 bg-amber-500/[0.06] border border-amber-500/20 rounded-xl space-y-2">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <SvgIcon d={ICONS.link} className="w-3.5 h-3.5 text-amber-300" />
+                <label className="text-[11px] font-bold uppercase tracking-wider text-amber-300">Main Link (Admin Only)</label>
+              </div>
+              <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/25 px-2 py-0.5 rounded-md">
+                Internal
+              </span>
             </div>
-            <p className="text-slate-400 text-xs mb-3">This is for admin reference only. It won't be shown to users.</p>
+            <p className="text-[10px] text-gray-500">Only visible to admins, not shown to users</p>
             <div className="flex flex-col sm:flex-row gap-2">
               <input
                 type="text"
                 value={newItem.mainLink}
                 onChange={(e) => setNewItem({ ...newItem, mainLink: e.target.value })}
-                placeholder="https://example.com/original-source.mp4"
-                className="flex-1 bg-slate-900 border border-slate-600 text-white rounded-lg px-3 py-2.5 text-sm"
+                placeholder="https://example.com/original.mp4"
+                className={`${inputCls} flex-1`}
               />
-              <div className="flex gap-2 flex-wrap">
+              <div className="flex gap-1.5 flex-wrap">
                 <button
                   type="button"
                   onClick={() => openMainLink(newItem.mainLink)}
                   disabled={!newItem.mainLink}
-                  className="flex-1 sm:flex-none justify-center bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-3 py-2 rounded text-sm flex items-center gap-1"
+                  className="inline-flex items-center gap-1 px-3 py-2 bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/25 text-sky-300 text-[11px] font-bold rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                  Open
+                  <SvgIcon d={ICONS.open} className="w-3 h-3" /> Open
                 </button>
                 <button
                   type="button"
                   onClick={() => newItem.mainLink && copyToClipboard(newItem.mainLink)}
                   disabled={!newItem.mainLink}
-                  className="flex-1 sm:flex-none justify-center bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 text-white px-3 py-2 rounded text-sm flex items-center gap-1"
+                  className="inline-flex items-center gap-1 px-3 py-2 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/25 text-amber-300 text-[11px] font-bold rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-                  Copy
+                  <SvgIcon d={ICONS.copy} className="w-3 h-3" /> Copy
                 </button>
                 {isMainAdmin && (
                   <button
                     type="button"
                     onClick={() => handleAutoGenerateLinks(false)}
                     disabled={!newItem.mainLink || generatingLinks}
-                    className="w-full sm:w-auto justify-center bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-3 py-2 rounded text-sm flex items-center gap-1"
+                    className="inline-flex items-center gap-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                   >
-                    {generatingLinks ? <Spinner size="sm" /> : <BoltIcon />} Auto-Generate 5 Links
+                    {generatingLinks ? <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <SvgIcon d={ICONS.bolt} className="w-3 h-3" />}
+                    Auto-Generate
                   </button>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Download Links */}
+          {/* Download links */}
           <div>
             {restrictLinks && (
-              <p className="text-xs text-amber-300 bg-amber-900/20 border border-amber-500/30 rounded px-3 py-2 mb-2">
-                Links khud add nahi kar sakte. Upar Download Page card ke ⚡ button se saare 5 links generate karo.
-              </p>
+              <div className="flex items-start gap-2 text-[11px] text-amber-300 bg-amber-500/[0.06] border border-amber-500/20 rounded-lg px-3 py-2 mb-2">
+                <SvgIcon d={ICONS.warning} className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                <span>Links manually add nahi kar sakte — upar Download Page card ke ⚡ button se generate karo</span>
+              </div>
             )}
-            <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
-              <label className="block text-sm font-medium text-slate-300">User Download Links (Required) *</label>
+            <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+              <label className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                <SvgIcon d={ICONS.download} className="w-3 h-3" />
+                User Download Links *
+              </label>
               {!restrictLinks && (
-                <button type="button" onClick={handleAddDownloadLink} disabled={newItem.downloadLinks.length >= 5} className="text-xs bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-2 py-1.5 rounded">
-                  + Add Link (Max 5)
+                <button
+                  type="button"
+                  onClick={handleAddDownloadLink}
+                  disabled={newItem.downloadLinks.length >= 5}
+                  className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 hover:bg-emerald-500/25 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                >
+                  <SvgIcon d={ICONS.plus} className="w-3 h-3" /> Add (max 5)
                 </button>
               )}
             </div>
-            <div className="space-y-3">
+            <div className="space-y-2">
               {newItem.downloadLinks.map((link, idx) => (
-                <div key={idx} className="bg-slate-800/70 p-3 rounded-lg border border-slate-700">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-slate-300 font-medium">{link.name}</span>
+                <div key={idx} className="p-3 bg-white/[0.02] border border-white/[0.06] rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-purple-300">{link.name}</span>
                     {!restrictLinks && newItem.downloadLinks.length > 1 && (
-                      <button type="button" onClick={() => handleRemoveDownloadLink(idx)} className="text-xs bg-red-600 hover:bg-red-500 text-white px-2 py-1 rounded">
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveDownloadLink(idx)}
+                        className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-500/15 text-rose-300 border border-rose-500/25 hover:bg-rose-500/25 transition-all"
+                      >
                         Remove
                       </button>
                     )}
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs text-slate-400">Link Name *</label>
-                      <input type="text" value={link.name} onChange={(e) => handleUpdateDownloadLink(idx, 'name', e.target.value)} readOnly={restrictLinks} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-2 py-2 text-sm disabled:opacity-70" required />
-                    </div>
-                    <div>
-                      <label className="text-xs text-slate-400">Quality</label>
-                      <input type="text" value={link.quality || ''} onChange={(e) => handleUpdateDownloadLink(idx, 'quality', e.target.value)} readOnly={restrictLinks} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-2 py-2 text-sm disabled:opacity-70" />
-                    </div>
+                  <div>
+                    <label className="text-[10px] text-gray-500 mb-0.5 block">Link Name *</label>
+                    <input type="text" value={link.name} onChange={(e) => handleUpdateDownloadLink(idx, 'name', e.target.value)} readOnly={restrictLinks} className={`${inputCls} ${restrictLinks ? 'opacity-60' : ''}`} required />
                   </div>
-                  <div className="mt-3">
-                    <label className="text-xs text-slate-400">Download URL *</label>
-                    <input type="url" value={link.url} onChange={(e) => handleUpdateDownloadLink(idx, 'url', e.target.value)} readOnly={restrictLinks} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-2 py-2 text-sm disabled:opacity-70" required />
+                  <div>
+                    <label className="text-[10px] text-gray-500 mb-0.5 block">Download URL *</label>
+                    <input type="url" value={link.url} onChange={(e) => handleUpdateDownloadLink(idx, 'url', e.target.value)} readOnly={restrictLinks} className={`${inputCls} ${restrictLinks ? 'opacity-60' : ''}`} required />
                   </div>
-                  <div className="mt-3">
-                    <label className="text-xs text-slate-400">Type</label>
-                    <select value={link.type || 'direct'} onChange={(e) => handleUpdateDownloadLink(idx, 'type', e.target.value)} disabled={restrictLinks} className="w-full bg-slate-900 border border-slate-600 text-white rounded px-2 py-2 text-sm disabled:opacity-70">
-                      <option value="direct">Direct Download</option>
-                      <option value="server">Server Download</option>
-                      <option value="google_drive">Google Drive</option>
-                      <option value="mega">Mega.nz</option>
-                      <option value="other">Other</option>
+                  <div>
+                    <label className="text-[10px] text-gray-500 mb-0.5 block">Type</label>
+                    <select value={link.type || 'direct'} onChange={(e) => handleUpdateDownloadLink(idx, 'type', e.target.value)} disabled={restrictLinks} className={`${inputCls} ${restrictLinks ? 'opacity-60' : ''}`}>
+                      <option value="direct" className="bg-slate-900">Direct Download</option>
+                      <option value="server" className="bg-slate-900">Server Download</option>
+                      <option value="google_drive" className="bg-slate-900">Google Drive</option>
+                      <option value="mega" className="bg-slate-900">Mega.nz</option>
+                      <option value="other" className="bg-slate-900">Other</option>
                     </select>
                   </div>
                 </div>
@@ -1065,112 +1115,133 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">Title (optional)</label>
+            <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1 block">Title (optional)</label>
             <input
               type="text"
               value={newItem.title}
               onChange={(e) => setNewItem({ ...newItem, title: e.target.value })}
               placeholder={`Defaults to '${isManga ? 'Chapter' : 'Episode'} X'`}
-              className="w-full bg-slate-800 border border-slate-600 text-white rounded-lg px-3 py-2.5"
+              className={inputCls}
             />
           </div>
 
-          <div className="flex gap-3">
+          <div>
             <button
               type="submit"
               disabled={addingItem || (restrictLinks && !genToken)}
-              className="w-full sm:w-auto justify-center bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-semibold py-2.5 px-6 rounded-lg transition-colors flex items-center gap-2"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-purple-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
-              {addingItem ? <><Spinner size="sm" /> Adding...</> : `Add ${isManga ? 'Chapter' : 'Episode'}`}
+              {addingItem
+                ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Adding...</>
+                : <><SvgIcon d={ICONS.plus} className="w-3.5 h-3.5" /> Add {isManga ? 'Chapter' : 'Episode'}</>}
             </button>
           </div>
         </form>
       )}
 
-      {/* Items List */}
+      {/* ─── Items List ─────────────────────────────── */}
       {selectedAnime && (
-        <div className="bg-slate-800/50 rounded-lg p-4 sm:p-6">
-          <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
-            <h3 className="text-lg font-semibold text-white">
-              {isManga ? 'Chapters' : 'Episodes'} List {getAvailableSessions().length > 1 && `(Session ${selectedSession})`}
-              ({filteredItems.length})
-            </h3>
-            {loading && <Spinner size="sm" />}
+        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4">
+          <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <span className="w-1 h-4 bg-indigo-400 rounded-full" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-gray-300">
+                {isManga ? 'Chapters' : 'Episodes'} List
+                {getAvailableSessions().length > 1 && <span className="text-purple-300 ml-1.5">· S{selectedSession}</span>}
+              </h3>
+              <span className="text-[10px] font-bold text-indigo-300 bg-indigo-500/15 border border-indigo-500/25 px-1.5 py-0.5 rounded-md">
+                {filteredItems.length}
+              </span>
+            </div>
+            {loading && <span className="w-4 h-4 border-2 border-white/20 border-t-white/70 rounded-full animate-spin" />}
           </div>
 
           {loading ? (
             <div className="flex justify-center py-8"><Spinner size="md" text={`Loading...`} /></div>
           ) : filteredItems.length === 0 ? (
-            <div className="text-center py-8 text-slate-400">No {isManga ? 'chapters' : 'episodes'} added yet for Session {selectedSession}.</div>
+            <div className="text-center py-10">
+              <div className="w-12 h-12 mx-auto mb-2.5 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center">
+                <SvgIcon d={ICONS.download} className="w-6 h-6 text-gray-600" />
+              </div>
+              <p className="text-xs text-gray-400 font-medium">
+                No {isManga ? 'chapters' : 'episodes'} in Session {selectedSession}
+              </p>
+              <p className="text-[10px] text-gray-600 mt-1">Use the form above to add content</p>
+            </div>
           ) : (
             <>
-              {/* ============ MOBILE CARD VIEW (below lg) ============ */}
-              <div className="lg:hidden space-y-3">
+              {/* Mobile card view */}
+              <div className="lg:hidden space-y-2">
                 {filteredItems.map((item: any) => {
                   const isEditing = editingItemId === item._id;
                   const number = isManga ? item.chapterNumber : item.episodeNumber;
                   return (
-                    <div key={item._id} className={`bg-slate-700/30 rounded-lg overflow-hidden border ${isEditing ? 'border-yellow-500/50' : 'border-slate-700'}`}>
+                    <div key={item._id} className={`bg-white/[0.02] rounded-xl overflow-hidden border transition-all ${isEditing ? 'border-amber-500/40 bg-amber-500/[0.03]' : 'border-white/[0.06]'}`}>
                       <div className="p-3">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-mono text-white font-semibold">#{number}</span>
-                              <span className="text-blue-400 bg-blue-600/20 px-2 py-0.5 rounded text-xs">S{item.session || 1}</span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-mono text-white font-bold text-sm">#{number}</span>
+                              <span className="text-blue-300 bg-blue-500/15 border border-blue-500/25 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                                S{item.session || 1}
+                              </span>
                             </div>
-                            {item.title && <p className="text-white text-sm mt-1 break-words">{item.title}</p>}
+                            {item.title && <p className="text-white/80 text-xs mt-1 break-words">{item.title}</p>}
                           </div>
                         </div>
 
                         {item.mainLink && (
-                          <div className="mt-3">
-                            <p className="text-xs text-yellow-300/70 mb-1">Main Link (Admin)</p>
-                            <div className="text-xs text-yellow-300 truncate cursor-pointer" title={item.mainLink} onClick={() => copyToClipboard(item.mainLink)}>
+                          <div className="mt-2">
+                            <p className="text-[10px] text-amber-300/70 uppercase tracking-wide font-semibold mb-0.5">Main Link</p>
+                            <div className="text-[10px] text-amber-300 truncate cursor-pointer font-mono" title={item.mainLink} onClick={() => copyToClipboard(item.mainLink)}>
                               {item.mainLink.substring(0, 40)}...
                             </div>
-                            <div className="flex gap-2 mt-1.5">
-                              <button onClick={() => openMainLink(item.mainLink)} className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded">Open</button>
-                              <button onClick={() => copyToClipboard(item.mainLink)} className="text-xs bg-yellow-600 hover:bg-yellow-500 text-white px-2 py-1 rounded">Copy</button>
+                            <div className="flex gap-1.5 mt-1.5">
+                              <button onClick={() => openMainLink(item.mainLink)} className="text-[10px] font-bold px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/25">Open</button>
+                              <button onClick={() => copyToClipboard(item.mainLink)} className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/25">Copy</button>
                             </div>
                           </div>
                         )}
 
                         {item.downloadLinks?.length > 0 && (
-                          <div className="mt-3">
-                            <p className="text-xs text-slate-400 mb-1">User Links ({item.downloadLinks.length})</p>
-                            <div className="space-y-1">
+                          <div className="mt-2">
+                            <p className="text-[10px] text-gray-500 uppercase tracking-wide font-semibold mb-1">User Links ({item.downloadLinks.length})</p>
+                            <div className="space-y-0.5">
                               {item.downloadLinks.slice(0, 2).map((l: any, i: number) => (
-                                <div key={i} className="text-xs truncate">
-                                  <span className="text-blue-400">{l.name}:</span>{' '}
-                                  <a href={l.url} target="_blank" rel="noopener" className="text-blue-400 hover:text-blue-300">{l.url.substring(0, 30)}...</a>
+                                <div key={i} className="text-[10px] truncate">
+                                  <span className="text-purple-300 font-semibold">{l.name}:</span>{' '}
+                                  <a href={l.url} target="_blank" rel="noopener" className="text-sky-300 hover:text-sky-200 font-mono">{l.url.substring(0, 30)}...</a>
                                 </div>
                               ))}
-                              {item.downloadLinks.length > 2 && <div className="text-green-400 text-xs">+{item.downloadLinks.length - 2} more</div>}
+                              {item.downloadLinks.length > 2 && <div className="text-emerald-300 text-[10px] font-bold">+{item.downloadLinks.length - 2} more</div>}
                             </div>
                           </div>
                         )}
 
-                        <div className="flex gap-2 mt-3">
-                          <button onClick={() => handleEditItem(item)} className={`flex-1 justify-center px-3 py-2 rounded text-sm transition-colors ${isEditing ? 'bg-yellow-600 hover:bg-yellow-500' : 'bg-blue-600 hover:bg-blue-500'} text-white flex items-center gap-1`}>
-                            {isEditing ? <><CancelIcon /> Cancel</> : <><EditIcon /> Edit</>}
+                        <div className="flex gap-1.5 mt-3">
+                          <button
+                            onClick={() => handleEditItem(item)}
+                            className={`flex-1 inline-flex items-center justify-center gap-1 px-3 py-2 rounded-lg text-[11px] font-bold transition-all border ${
+                              isEditing
+                                ? 'bg-amber-500/15 text-amber-300 border-amber-500/25 hover:bg-amber-500/25'
+                                : 'bg-sky-500/15 text-sky-300 border-sky-500/25 hover:bg-sky-500/25'
+                            }`}
+                          >
+                            {isEditing ? <><SvgIcon d={ICONS.cancel} className="w-3 h-3" /> Cancel</> : <><SvgIcon d={ICONS.edit} className="w-3 h-3" /> Edit</>}
                           </button>
                           {!isEditing && (
                             <button
-                              onClick={() => setDeleteConfirm({
-                                itemId: item._id,
-                                itemNumber: number,
-                                session: item.session || 1
-                              })}
-                              className="flex-1 justify-center bg-red-600 hover:bg-red-500 text-white px-3 py-2 rounded text-sm flex items-center gap-1"
+                              onClick={() => setDeleteConfirm({ itemId: item._id, itemNumber: number, session: item.session || 1 })}
+                              className="flex-1 inline-flex items-center justify-center gap-1 px-3 py-2 rounded-lg bg-rose-500/15 text-rose-300 border border-rose-500/25 text-[11px] font-bold hover:bg-rose-500/25 transition-all"
                             >
-                              <TrashIcon /> Delete
+                              <SvgIcon d={ICONS.trash} className="w-3 h-3" /> Delete
                             </button>
                           )}
                         </div>
                       </div>
 
                       {isEditing && (
-                        <div className="border-t border-slate-700 p-3 bg-slate-800/70">
+                        <div className="border-t border-amber-500/20 p-3 bg-amber-500/[0.02]">
                           {renderEditForm(item)}
                         </div>
                       )}
@@ -1179,73 +1250,83 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                 })}
               </div>
 
-              {/* ============ DESKTOP TABLE VIEW (lg and up) ============ */}
-              <div className="hidden lg:block overflow-x-auto">
-                <table className="w-full bg-slate-700/30 rounded-lg overflow-hidden">
-                  <thead className="bg-slate-600/50">
+              {/* Desktop table view */}
+              <div className="hidden lg:block overflow-x-auto rounded-xl border border-white/[0.06]">
+                <table className="w-full text-xs">
+                  <thead className="bg-white/[0.03] border-b border-white/[0.06]">
                     <tr>
-                      <th className="p-3 text-left text-slate-300 font-medium">#</th>
-                      <th className="p-3 text-left text-slate-300 font-medium">Session</th>
-                      <th className="p-3 text-left text-slate-300 font-medium">Title</th>
-                      <th className="p-3 text-left text-slate-300 font-medium">Main Link (Admin)</th>
-                      <th className="p-3 text-left text-slate-300 font-medium">User Links</th>
-                      <th className="p-3 text-left text-slate-300 font-medium">Actions</th>
+                      <th className="p-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">#</th>
+                      <th className="p-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">Session</th>
+                      <th className="p-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">Title</th>
+                      <th className="p-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">Main Link</th>
+                      <th className="p-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">User Links</th>
+                      <th className="p-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-700">
+                  <tbody>
                     {filteredItems.map((item: any) => {
                       const isEditing = editingItemId === item._id;
                       return (
                         <React.Fragment key={item._id}>
-                          <tr className={`hover:bg-slate-600/30 transition-colors ${isEditing ? 'bg-slate-700/50' : ''}`}>
-                            <td className="p-3 font-mono">{isManga ? item.chapterNumber : item.episodeNumber}</td>
-                            <td className="p-3"><span className="text-blue-400 bg-blue-600/20 px-2 py-1 rounded text-xs">S{item.session || 1}</span></td>
-                            <td className="p-3 text-white">{item.title}</td>
-                            <td className="p-3">
+                          <tr className={`border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors ${isEditing ? 'bg-amber-500/[0.03]' : ''}`}>
+                            <td className="p-2.5 font-mono text-white font-bold">{isManga ? item.chapterNumber : item.episodeNumber}</td>
+                            <td className="p-2.5">
+                              <span className="text-blue-300 bg-blue-500/15 border border-blue-500/25 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                                S{item.session || 1}
+                              </span>
+                            </td>
+                            <td className="p-2.5 text-white/85">{item.title}</td>
+                            <td className="p-2.5">
                               {item.mainLink ? (
-                                <div className="space-y-2">
-                                  <div className="text-xs text-yellow-300 truncate max-w-xs cursor-pointer" title={item.mainLink} onClick={() => copyToClipboard(item.mainLink)}>
-                                    {item.mainLink.substring(0, 30)}...
+                                <div className="space-y-1">
+                                  <div className="text-[10px] font-mono text-amber-300 truncate max-w-[180px] cursor-pointer" title={item.mainLink} onClick={() => copyToClipboard(item.mainLink)}>
+                                    {item.mainLink.substring(0, 25)}...
                                   </div>
                                   <div className="flex gap-1">
-                                    <button onClick={() => openMainLink(item.mainLink)} className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded">Open</button>
-                                    <button onClick={() => copyToClipboard(item.mainLink)} className="text-xs bg-yellow-600 hover:bg-yellow-500 text-white px-2 py-1 rounded">Copy</button>
+                                    <button onClick={() => openMainLink(item.mainLink)} className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/25">Open</button>
+                                    <button onClick={() => copyToClipboard(item.mainLink)} className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/25">Copy</button>
                                   </div>
                                 </div>
-                              ) : <span className="text-slate-500 text-xs italic">None</span>}
+                              ) : <span className="text-gray-600 text-[10px] italic">None</span>}
                             </td>
-                            <td className="p-3">
+                            <td className="p-2.5">
                               {item.downloadLinks?.length ? (
-                                <div className="space-y-1">
+                                <div className="space-y-0.5">
                                   {item.downloadLinks.slice(0,2).map((l: any, i: number) => (
-                                    <div key={i} className="text-xs"><span className="text-blue-400">{l.name}:</span> <a href={l.url} target="_blank" rel="noopener" className="text-blue-400 hover:text-blue-300 truncate block max-w-xs">{l.url.substring(0,30)}...</a></div>
+                                    <div key={i} className="text-[10px]">
+                                      <span className="text-purple-300 font-semibold">{l.name}:</span>{' '}
+                                      <a href={l.url} target="_blank" rel="noopener" className="text-sky-300 hover:text-sky-200 truncate inline-block max-w-[140px] font-mono align-bottom">{l.url.substring(0,20)}...</a>
+                                    </div>
                                   ))}
-                                  {item.downloadLinks.length > 2 && <div className="text-green-400 text-xs">+{item.downloadLinks.length-2} more</div>}
+                                  {item.downloadLinks.length > 2 && <div className="text-emerald-300 text-[10px] font-bold">+{item.downloadLinks.length-2} more</div>}
                                 </div>
-                              ) : <span className="text-slate-500 text-sm">None</span>}
+                              ) : <span className="text-gray-600 text-[10px]">None</span>}
                             </td>
-                            <td className="p-3">
-                              <div className="flex gap-2">
-                                <button onClick={() => handleEditItem(item)} className={`px-3 py-1 rounded text-sm transition-colors ${isEditing ? 'bg-yellow-600 hover:bg-yellow-500' : 'bg-blue-600 hover:bg-blue-500'} text-white flex items-center gap-1`}>
-                                  {isEditing ? <><CancelIcon /> Cancel</> : <><EditIcon /> Edit</>}
+                            <td className="p-2.5">
+                              <div className="flex gap-1.5">
+                                <button
+                                  onClick={() => handleEditItem(item)}
+                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold transition-all border ${
+                                    isEditing
+                                      ? 'bg-amber-500/15 text-amber-300 border-amber-500/25 hover:bg-amber-500/25'
+                                      : 'bg-sky-500/15 text-sky-300 border-sky-500/25 hover:bg-sky-500/25'
+                                  }`}
+                                >
+                                  {isEditing ? <><SvgIcon d={ICONS.cancel} className="w-3 h-3" /> Cancel</> : <><SvgIcon d={ICONS.edit} className="w-3 h-3" /> Edit</>}
                                 </button>
                                 {!isEditing && (
                                   <button
-                                    onClick={() => setDeleteConfirm({
-                                      itemId: item._id,
-                                      itemNumber: isManga ? item.chapterNumber : item.episodeNumber,
-                                      session: item.session || 1
-                                    })}
-                                    className="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-sm flex items-center gap-1"
+                                    onClick={() => setDeleteConfirm({ itemId: item._id, itemNumber: isManga ? item.chapterNumber : item.episodeNumber, session: item.session || 1 })}
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded bg-rose-500/15 text-rose-300 border border-rose-500/25 text-[10px] font-bold hover:bg-rose-500/25 transition-all"
                                   >
-                                    <TrashIcon /> Delete
+                                    <SvgIcon d={ICONS.trash} className="w-3 h-3" /> Delete
                                   </button>
                                 )}
                               </div>
                             </td>
                           </tr>
                           {isEditing && (
-                            <tr className="bg-slate-800/70 border-b border-slate-700">
+                            <tr className="bg-amber-500/[0.02] border-b border-white/[0.06]">
                               <td colSpan={6} className="p-4">
                                 {renderEditForm(item)}
                               </td>

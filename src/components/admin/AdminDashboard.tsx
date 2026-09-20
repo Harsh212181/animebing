@@ -1,4 +1,4 @@
- // src/components/admin/AdminDashboard.tsx - Clean Sidebar with SVG Icons + Day display
+ // src/components/admin/AdminDashboard.tsx - Premium Colorful Sidebar (No Background Glow)
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Toaster, toast } from 'react-hot-toast';
 import AnimeListTable from './AnimeListTable';
@@ -20,11 +20,11 @@ import SpecialModeManager from './SpecialModeManager';
 import NotesManager from './NotesManager';
 import TrackListManager from './TrackListManager';
 import InstagramAutomationManager from './InstagramAutomationManager';
-import UserActivityManager from './UserActivityManager';   // ✅ NEW
-import FormBuilderManager from './FormBuilderManager'; // ✅ NEW
-import R2ProviderManager from './R2ProviderManager'; // ✅ NEW
-import VideoManager from './VideoManager'; // ✅ NEW — VideoUploader ki jagah
-import SubAdminEarningsManager from './SubAdminEarningsManager'; // 🆕 EARNINGS
+import UserActivityManager from './UserActivityManager';
+import FormBuilderManager from './FormBuilderManager';
+import R2ProviderManager from './R2ProviderManager';
+import VideoManager from './VideoManager';
+import SubAdminEarningsManager from './SubAdminEarningsManager';
 import Spinner from '../Spinner';
 import axios from 'axios';
 
@@ -90,12 +90,11 @@ const ICONS: Record<string, string> = {
   notes:           'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
   trackList:       'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z',
   instagram:       'M12 3l2.6 5.6 6.1.6-4.5 4.2 1.3 6-5.5-3-5.5 3 1.3-6-4.5-4.2 6.1-.6L12 3z',
-  userActivity:    'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m6-4a2 2 0 100-4 2 2 0 000 4zm0 0v4m0-4V9', // ✅ NEW — clock/eye style
-  forms:           'M9 12h6m-6 4h4m1 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', // ✅ NEW
-  r2providers:     'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4', // ✅ NEW — database/storage icon
-  videoUpload:     'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12', // ✅ NEW — upload arrow
-  earnings:        'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 10v2m0-14a9 9 0 100 18 9 9 0 000-18z', // 🆕 EARNINGS — dollar circle
-  // 🆕 Mobile icons
+  userActivity:    'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m6-4a2 2 0 100-4 2 2 0 000 4zm0 0v4m0-4V9',
+  forms:           'M9 12h6m-6 4h4m1 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
+  r2providers:     'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4',
+  videoUpload:     'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12',
+  earnings:        'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 10v2m0-14a9 9 0 100 18 9 9 0 000-18z',
   menu:            'M4 6h16M4 12h16M4 18h16',
   close:           'M6 18L18 6M6 6l12 12',
 };
@@ -120,12 +119,46 @@ const TAB_LABELS: Record<string, string> = {
   notes:           'Notes',
   trackList:       'Track List',
   instagram:       'Instagram Tool',
-  userActivity:    'User Activity',   // ✅ NEW
-  forms:           'Form Builder',     // ✅ NEW
-  r2providers:     'R2 Providers',     // ✅ NEW
-  videoUpload:     'Video Upload',     // ✅ NEW
-  earnings:        'Sub-Admin Earnings', // 🆕 EARNINGS
+  userActivity:    'User Activity',
+  forms:           'Form Builder',
+  r2providers:     'R2 Providers',
+  videoUpload:     'Video Upload',
+  earnings:        'Sub-Admin Earnings',
 };
+
+// ── Per-tab color identity ─────────────────────────────────────────
+const TAB_COLORS: Record<string, {
+  text: string; bg: string; ring: string; dot: string;
+  from: string; to: string; glow: string;
+}> = {
+  list:            { text: 'text-purple-200',  bg: 'bg-purple-500/15',  ring: 'bg-purple-400',  dot: 'bg-purple-400',  from: 'from-purple-500/25',  to: 'to-purple-500/5',  glow: 'shadow-purple-500/20' },
+  add:             { text: 'text-emerald-200', bg: 'bg-emerald-500/15', ring: 'bg-emerald-400', dot: 'bg-emerald-400', from: 'from-emerald-500/25', to: 'to-emerald-500/5', glow: 'shadow-emerald-500/20' },
+  episodes:        { text: 'text-blue-200',    bg: 'bg-blue-500/15',    ring: 'bg-blue-400',    dot: 'bg-blue-400',    from: 'from-blue-500/25',    to: 'to-blue-500/5',    glow: 'shadow-blue-500/20' },
+  'episode-status':{ text: 'text-cyan-200',    bg: 'bg-cyan-500/15',    ring: 'bg-cyan-400',    dot: 'bg-cyan-400',    from: 'from-cyan-500/25',    to: 'to-cyan-500/5',    glow: 'shadow-cyan-500/20' },
+  featured:        { text: 'text-amber-200',   bg: 'bg-amber-500/15',   ring: 'bg-amber-400',   dot: 'bg-amber-400',   from: 'from-amber-500/25',   to: 'to-amber-500/5',   glow: 'shadow-amber-500/20' },
+  reports:         { text: 'text-rose-200',    bg: 'bg-rose-500/15',    ring: 'bg-rose-400',    dot: 'bg-rose-400',    from: 'from-rose-500/25',    to: 'to-rose-500/5',    glow: 'shadow-rose-500/20' },
+  polls:           { text: 'text-violet-200',  bg: 'bg-violet-500/15',  ring: 'bg-violet-400',  dot: 'bg-violet-400',  from: 'from-violet-500/25',  to: 'to-violet-500/5',  glow: 'shadow-violet-500/20' },
+  social:          { text: 'text-pink-200',    bg: 'bg-pink-500/15',    ring: 'bg-pink-400',    dot: 'bg-pink-400',    from: 'from-pink-500/25',    to: 'to-pink-500/5',    glow: 'shadow-pink-500/20' },
+  downloadPages:   { text: 'text-indigo-200',  bg: 'bg-indigo-500/15',  ring: 'bg-indigo-400',  dot: 'bg-indigo-400',  from: 'from-indigo-500/25',  to: 'to-indigo-500/5',  glow: 'shadow-indigo-500/20' },
+  shortener:       { text: 'text-teal-200',    bg: 'bg-teal-500/15',    ring: 'bg-teal-400',    dot: 'bg-teal-400',    from: 'from-teal-500/25',    to: 'to-teal-500/5',    glow: 'shadow-teal-500/20' },
+  shortusers:      { text: 'text-orange-200',  bg: 'bg-orange-500/15',  ring: 'bg-orange-400',  dot: 'bg-orange-400',  from: 'from-orange-500/25',  to: 'to-orange-500/5',  glow: 'shadow-orange-500/20' },
+  partners:        { text: 'text-lime-200',    bg: 'bg-lime-500/15',    ring: 'bg-lime-400',    dot: 'bg-lime-400',    from: 'from-lime-500/25',    to: 'to-lime-500/5',    glow: 'shadow-lime-500/20' },
+  pageviews:       { text: 'text-cyan-200',    bg: 'bg-cyan-500/15',    ring: 'bg-cyan-400',    dot: 'bg-cyan-400',    from: 'from-cyan-500/25',    to: 'to-cyan-500/5',    glow: 'shadow-cyan-500/20' },
+  subadmins:       { text: 'text-fuchsia-200', bg: 'bg-fuchsia-500/15', ring: 'bg-fuchsia-400', dot: 'bg-fuchsia-400', from: 'from-fuchsia-500/25', to: 'to-fuchsia-500/5', glow: 'shadow-fuchsia-500/20' },
+  linkControl:     { text: 'text-sky-200',     bg: 'bg-sky-500/15',     ring: 'bg-sky-400',     dot: 'bg-sky-400',     from: 'from-sky-500/25',     to: 'to-sky-500/5',     glow: 'shadow-sky-500/20' },
+  specialModes:    { text: 'text-yellow-200',  bg: 'bg-yellow-500/15',  ring: 'bg-yellow-400',  dot: 'bg-yellow-400',  from: 'from-yellow-500/25',  to: 'to-yellow-500/5',  glow: 'shadow-yellow-500/20' },
+  notes:           { text: 'text-yellow-200',  bg: 'bg-yellow-500/15',  ring: 'bg-yellow-400',  dot: 'bg-yellow-400',  from: 'from-yellow-500/25',  to: 'to-yellow-500/5',  glow: 'shadow-yellow-500/20' },
+  trackList:       { text: 'text-red-200',     bg: 'bg-red-500/15',     ring: 'bg-red-400',     dot: 'bg-red-400',     from: 'from-red-500/25',     to: 'to-red-500/5',     glow: 'shadow-red-500/20' },
+  instagram:       { text: 'text-fuchsia-200', bg: 'bg-fuchsia-500/15', ring: 'bg-fuchsia-400', dot: 'bg-fuchsia-400', from: 'from-fuchsia-500/25', to: 'to-fuchsia-500/5', glow: 'shadow-fuchsia-500/20' },
+  userActivity:    { text: 'text-blue-200',    bg: 'bg-blue-500/15',    ring: 'bg-blue-400',    dot: 'bg-blue-400',    from: 'from-blue-500/25',    to: 'to-blue-500/5',    glow: 'shadow-blue-500/20' },
+  forms:           { text: 'text-emerald-200', bg: 'bg-emerald-500/15', ring: 'bg-emerald-400', dot: 'bg-emerald-400', from: 'from-emerald-500/25', to: 'to-emerald-500/5', glow: 'shadow-emerald-500/20' },
+  r2providers:     { text: 'text-slate-200',   bg: 'bg-slate-500/15',   ring: 'bg-slate-400',   dot: 'bg-slate-400',   from: 'from-slate-500/25',   to: 'to-slate-500/5',   glow: 'shadow-slate-500/20' },
+  videoUpload:     { text: 'text-sky-200',     bg: 'bg-sky-500/15',     ring: 'bg-sky-400',     dot: 'bg-sky-400',     from: 'from-sky-500/25',     to: 'to-sky-500/5',     glow: 'shadow-sky-500/20' },
+  earnings:        { text: 'text-green-200',   bg: 'bg-green-500/15',   ring: 'bg-green-400',   dot: 'bg-green-400',   from: 'from-green-500/25',   to: 'to-green-500/5',   glow: 'shadow-green-500/20' },
+};
+
+const getTabColor = (tabId: string) =>
+  TAB_COLORS[tabId] || TAB_COLORS.list;
 
 // ─── renderTab function ──────────────────────────────────────────────────────
 function renderTab(tabId: string, token: string) {
@@ -149,21 +182,16 @@ function renderTab(tabId: string, token: string) {
     case 'notes':          return <NotesManager token={token} apiBase={API_BASE} isSuperAdmin={true} />;
     case 'trackList':      return <TrackListManager />;
     case 'instagram':      return <InstagramAutomationManager token={token} apiBase={API_BASE} />;
-    case 'userActivity':   return <UserActivityManager token={token} />;   // ✅ NEW
-    case 'forms':          return <FormBuilderManager token={token} />;    // ✅ NEW
-    case 'r2providers':    return <R2ProviderManager token={token} />;     // ✅ NEW
-    case 'videoUpload':    return <VideoManager token={token} />;         // ✅ NEW — subAdminMode nahi diya, badge dikhega
-    case 'earnings':       return <SubAdminEarningsManager token={token} />; // 🆕 EARNINGS
+    case 'userActivity':   return <UserActivityManager token={token} />;
+    case 'forms':          return <FormBuilderManager token={token} />;
+    case 'r2providers':    return <R2ProviderManager token={token} />;
+    case 'videoUpload':    return <VideoManager token={token} />;
+    case 'earnings':       return <SubAdminEarningsManager token={token} />;
     default:               return <AnimeListTable token={token} isMainAdmin={true} />;
   }
 }
 
 // ─── TabContent ──────────────────────────────────────────────────────────────
-// ✅ FIX: each tab has its own version number in `tabRefreshVersions`. A tab's
-// key only changes when ITS OWN version changes (i.e. Refresh was clicked while
-// that tab was active). Switching tabs never touches any version, so no key
-// ever changes on switch → no remount → no refetch. Clicking Refresh bumps only
-// the active tab's version → only that tab remounts and refetches its data.
 const TabContent: React.FC<{ activeTab: string; visitedTabs: Set<string>; token: string; tabRefreshVersions: Record<string, number> }> =
   React.memo(({ activeTab, visitedTabs, token, tabRefreshVersions }) => (
     <>
@@ -191,7 +219,7 @@ const ScrollToTopButton: React.FC = () => {
   return (
     <button
       onClick={() => document.getElementById('main-scroll')?.scrollTo({ top: 0, behavior: 'smooth' })}
-      className={`fixed bottom-6 right-6 z-50 p-3 rounded-full bg-purple-600 text-white shadow-lg transition-all duration-300 hover:bg-purple-500 hover:scale-110 ${
+      className={`fixed bottom-6 right-6 z-50 p-3 rounded-full bg-gradient-to-br from-purple-600 to-fuchsia-600 text-white shadow-xl shadow-purple-500/40 transition-all duration-300 hover:scale-110 ${
         visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10 pointer-events-none'
       }`}
       aria-label="Scroll to top"
@@ -205,12 +233,30 @@ const ScrollToTopButton: React.FC = () => {
 
 // ─── Sidebar components ──────────────────────────────────────────────────────
 const BrandLogo: React.FC = () => (
-  <div className="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center text-white text-base font-bold select-none">
-    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor">
+  <div className="relative w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 via-purple-600 to-fuchsia-600 flex items-center justify-center text-white shadow-lg shadow-purple-500/40 select-none">
+    <svg viewBox="0 0 24 24" className="w-5 h-5 relative z-10" fill="currentColor">
       <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
     </svg>
+    <div className="absolute inset-0 rounded-xl bg-gradient-to-tr from-white/20 to-transparent opacity-60" />
   </div>
 );
+
+// ── User Avatar ──
+const UserAvatar: React.FC<{ username: string; size?: number; className?: string; onClick?: () => void }> = ({
+  username, size = 32, className = '', onClick,
+}) => {
+  const initial = (username || 'A').charAt(0).toUpperCase();
+  return (
+    <div
+      onClick={onClick}
+      className={`relative overflow-hidden rounded-xl bg-gradient-to-br from-purple-500 via-purple-600 to-fuchsia-600 flex items-center justify-center text-white font-bold select-none cursor-pointer transition-all hover:ring-2 hover:ring-purple-400/60 hover:scale-105 shadow-lg shadow-purple-500/30 ${className}`}
+      style={{ width: size, height: size, fontSize: Math.max(size * 0.42, 10) }}
+    >
+      <span className="relative z-10">{initial}</span>
+      <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
+    </div>
+  );
+};
 
 interface NavItemProps {
   tabId: string;
@@ -224,25 +270,37 @@ const NavItem: React.FC<NavItemProps> = ({ tabId, activeTab, collapsed, badge, o
   const isActive = activeTab === tabId;
   const label = TAB_LABELS[tabId] || tabId;
   const iconPath = ICONS[tabId] || ICONS.list;
+  const color = getTabColor(tabId);
 
   return (
     <button
       onClick={() => onClick(tabId)}
-      className={`relative w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-150 text-left
-        ${isActive ? 'bg-purple-900/60 text-purple-200' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'}
-      `}
+      className={`group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-left overflow-hidden
+        ${isActive
+          ? `bg-gradient-to-r ${color.from} ${color.to} ${color.text} shadow-lg ${color.glow}`
+          : 'text-gray-400 hover:bg-white/[0.04] hover:text-gray-100'
+        }`}
     >
       {isActive && (
-        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-purple-400 rounded-r-full" />
+        <span className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 ${color.ring} rounded-r-full shadow-lg`} />
       )}
-      <span className="flex-shrink-0 w-5 h-5">
+
+      <span className={`flex-shrink-0 w-5 h-5 transition-transform duration-200 ${isActive ? color.text : 'group-hover:scale-110'}`}>
         <SvgIcon d={iconPath} className="w-5 h-5" />
       </span>
-      <span className="text-sm font-medium truncate flex-1">{label}</span>
+
+      <span className={`text-sm font-medium truncate flex-1 ${isActive ? 'font-semibold' : ''}`}>
+        {label}
+      </span>
+
       {badge !== undefined && badge > 0 && (
-        <span className="ml-auto bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-          {badge}
+        <span className="ml-auto bg-gradient-to-br from-rose-500 to-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center shadow-md shadow-rose-500/30 ring-1 ring-white/10">
+          {badge > 9 ? '9+' : badge}
         </span>
+      )}
+
+      {isActive && (
+        <div className="absolute inset-0 bg-gradient-to-r from-white/[0.06] to-transparent pointer-events-none" />
       )}
     </button>
   );
@@ -250,8 +308,15 @@ const NavItem: React.FC<NavItemProps> = ({ tabId, activeTab, collapsed, badge, o
 
 const SidebarSection: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
   <div className="mb-1">
-    <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-widest text-gray-600 select-none">{label}</p>
-    <div className="space-y-0.5 px-2">{children}</div>
+    <p className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.15em] text-gray-500 select-none flex items-center gap-2">
+      <span className="h-px flex-1 bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+      <span className="flex items-center gap-1.5">
+        <span className="w-1 h-1 rounded-full bg-purple-400/60" />
+        {label}
+      </span>
+      <span className="h-px flex-1 bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+    </p>
+    <div className="space-y-1 px-2">{children}</div>
   </div>
 );
 
@@ -308,13 +373,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState('list');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [sidebarPinned, setSidebarPinned] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false); // 📱 mobile drawer state
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // ✅ per-tab refresh version map — bumping a tab's own entry forces just
-  // that tab to remount (and refetch); other tabs' entries stay untouched.
   const [tabRefreshVersions, setTabRefreshVersions] = useState<Record<string, number>>({});
-
-  // ✅ NEW: Track which tabs have actually been opened
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set(['list']));
 
   useEffect(() => {
@@ -336,13 +397,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     hoverTimeout.current = setTimeout(() => setSidebarCollapsed(true), 300);
   };
 
-  // 📱 Close mobile drawer when a tab is picked
   const handleMobileNavClick = (tabId: string) => {
     handleTabChange(tabId);
     setMobileMenuOpen(false);
   };
 
-  // 📱 Lock body scroll while the mobile drawer is open
   useEffect(() => {
     document.body.style.overflow = mobileMenuOpen ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
@@ -374,11 +433,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
   const currentDayName = useMemo(() => getCurrentDayInIndia(), []);
 
-  // 📌 Reports "seen" timestamp key
   const REPORTS_SEEN_KEY = 'adminReportsLastSeenAt';
   const getLastSeenReportsAt = () => localStorage.getItem(REPORTS_SEEN_KEY) || '';
 
-  // 📌 Fetch pending reports count, using `since` if we have a last-seen timestamp
   const fetchPendingReportsCount = async () => {
     try {
       const inst = axios.create({ timeout: 10000, headers: { Authorization: `Bearer ${token}` } });
@@ -391,7 +448,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     } catch { /* ignore */ }
   };
 
-  // 📌 Tab change handler: marks reports as seen
   const handleTabChange = (tabId: string) => {
     setActiveTab(tabId);
     if (tabId === 'reports') {
@@ -410,13 +466,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     fetchLinkSettings();
     fetchDownloadStats();
     fetchRestorePreview();
-    fetchPendingReportsCount(); // initial fetch with `since`
+    fetchPendingReportsCount();
   }, []);
 
   useEffect(() => {
     if (!token) return;
     const interval = setInterval(async () => {
-      // poll unread short messages & track updates
       try {
         const inst = axios.create({ timeout: 10000, headers: { Authorization: `Bearer ${token}` } });
         const res = await inst.get(`${API_BASE}/short-users/admin/messages-count`);
@@ -428,8 +483,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         const unread = (res.data?.total || 0) - (res.data?.completed || 0);
         setTrackUnreadCount(unread > 0 ? unread : 0);
       } catch { /* ignore */ }
-
-      // 📌 also refresh pending reports count periodically
       fetchPendingReportsCount();
     }, 30000);
     return () => clearInterval(interval);
@@ -451,7 +504,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       setUser(userRes.data);
       setAnalytics(analyticsRes.data);
 
-      // 📌 replaced inline report count with dedicated function
       fetchPendingReportsCount();
 
       try {
@@ -558,7 +610,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   }
 
   return (
-    <div className="relative h-screen bg-[#0f0e17] text-white overflow-hidden">
+    <div className="relative h-screen bg-[#0b0a14] text-white overflow-hidden">
       <Toaster
         position="top-right"
         toastOptions={{
@@ -569,64 +621,78 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         }}
       />
 
-      {/* Icon Strip (desktop/tablet only) */}
+      {/* ─── Icon Strip (collapsed rail) ──────────────────────────── */}
       <div
         onMouseEnter={handleSidebarMouseEnter}
         onMouseLeave={handleSidebarMouseLeave}
-        className="hidden sm:flex fixed top-0 left-0 h-full w-[52px] z-50 flex-col bg-[#13121e] border-r border-white/[0.06]"
+        className="hidden sm:flex fixed top-0 left-0 h-full w-[64px] z-50 flex-col bg-[#0f0e1a] border-r border-white/[0.06]"
       >
-        <div className="h-14 flex items-center justify-center border-b border-white/[0.06] flex-shrink-0">
+        <div className="h-16 flex items-center justify-center border-b border-white/[0.06] flex-shrink-0">
           <BrandLogo />
         </div>
-        <div className="flex-1 flex flex-col items-center py-3 gap-1 overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
-          {Object.keys(TAB_LABELS).map(tabId => (
-            <button
-              key={tabId}
-              onClick={() => handleTabChange(tabId)}
-              title={TAB_LABELS[tabId]}
-              className={`relative w-9 h-9 rounded-lg flex items-center justify-center transition-colors ${
-                activeTab === tabId ? 'bg-purple-900/60' : 'hover:bg-white/5'
-              }`}
-            >
-              <SvgIcon d={ICONS[tabId] || ICONS.list} className="w-5 h-5" />
-              {tabId === 'reports' && pendingReportsCount > 0 && (
-                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full ring-2 ring-[#13121e]" />
-              )}
-              {tabId === 'shortener' && unreadShortMessagesCount > 0 && (
-                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full ring-2 ring-[#13121e]" />
-              )}
-              {tabId === 'trackList' && trackUnreadCount > 0 && (
-                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full ring-2 ring-[#13121e]" />
-              )}
-            </button>
-          ))}
+        <div className="flex-1 flex flex-col items-center py-4 gap-1.5 overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
+          {Object.keys(TAB_LABELS).map(tabId => {
+            const color = getTabColor(tabId);
+            const isActive = activeTab === tabId;
+            return (
+              <button
+                key={tabId}
+                onClick={() => handleTabChange(tabId)}
+                title={TAB_LABELS[tabId]}
+                className={`group relative w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 ${
+                  isActive
+                    ? `bg-gradient-to-br ${color.from} ${color.to} shadow-lg ${color.glow}`
+                    : 'hover:bg-white/[0.06]'
+                }`}
+              >
+                {isActive && (
+                  <span className={`absolute -left-3 top-1/2 -translate-y-1/2 w-1 h-5 ${color.ring} rounded-r-full`} />
+                )}
+                <SvgIcon
+                  d={ICONS[tabId] || ICONS.list}
+                  className={`w-[18px] h-[18px] transition-all duration-200 ${
+                    isActive ? color.text : 'text-gray-500 group-hover:text-gray-200 group-hover:scale-110'
+                  }`}
+                />
+                {tabId === 'reports' && pendingReportsCount > 0 && (
+                  <span className="absolute top-1 right-1 w-2 h-2 bg-gradient-to-br from-rose-400 to-red-500 rounded-full ring-2 ring-[#0f0e1a] shadow-md shadow-rose-500/50" />
+                )}
+                {tabId === 'shortener' && unreadShortMessagesCount > 0 && (
+                  <span className="absolute top-1 right-1 w-2 h-2 bg-gradient-to-br from-rose-400 to-red-500 rounded-full ring-2 ring-[#0f0e1a] shadow-md shadow-rose-500/50" />
+                )}
+                {tabId === 'trackList' && trackUnreadCount > 0 && (
+                  <span className="absolute top-1 right-1 w-2 h-2 bg-gradient-to-br from-rose-400 to-red-500 rounded-full ring-2 ring-[#0f0e1a] shadow-md shadow-rose-500/50" />
+                )}
+              </button>
+            );
+          })}
         </div>
-        <div className="flex-shrink-0 border-t border-white/[0.06] h-14 flex items-center justify-center">
-          <div className="w-8 h-8 rounded-full bg-purple-700 flex items-center justify-center text-xs font-bold cursor-pointer hover:ring-2 hover:ring-purple-500 transition-all">
-            {(user.username || 'A').charAt(0).toUpperCase()}
-          </div>
+        <div className="flex-shrink-0 border-t border-white/[0.06] h-16 flex items-center justify-center">
+          <UserAvatar username={user.username} size={36} onClick={() => setSidebarCollapsed(false)} />
         </div>
       </div>
 
-      {/* Expanded Sidebar (desktop/tablet hover-out) */}
+      {/* ─── Expanded Sidebar (hover-out) ──────────────────────────── */}
       <aside
         onMouseEnter={handleSidebarMouseEnter}
         onMouseLeave={handleSidebarMouseLeave}
-        style={{ transition: 'transform 0.25s cubic-bezier(0.4,0,0.2,1), opacity 0.2s ease' }}
-        className={`hidden sm:flex fixed top-0 left-0 h-full z-50 flex-col w-[220px] bg-[#13121e] border-r border-white/[0.08] overflow-hidden shadow-2xl
+        style={{ transition: 'transform 0.28s cubic-bezier(0.4,0,0.2,1), opacity 0.22s ease' }}
+        className={`hidden sm:flex fixed top-0 left-0 h-full z-50 flex-col w-[260px] bg-[#0f0e1a] border-r border-white/[0.08] overflow-hidden shadow-2xl shadow-black/60
           ${sidebarCollapsed ? '-translate-x-full opacity-0 pointer-events-none' : 'translate-x-0 opacity-100'}
         `}
       >
-        <div className="flex items-center gap-3 h-14 px-3 border-b border-white/[0.06] flex-shrink-0">
+        <div className="flex items-center gap-3 h-16 px-4 border-b border-white/[0.06] flex-shrink-0">
           <BrandLogo />
           <div className="overflow-hidden flex-1">
-            <p className="text-sm font-semibold text-white leading-tight truncate">AnimaBing</p>
-            <p className="text-[10px] text-gray-500 truncate">Admin Panel</p>
+            <p className="text-[15px] font-bold text-white leading-tight truncate tracking-tight">AnimaBing</p>
+            <p className="text-[10px] text-purple-300/70 font-medium uppercase tracking-widest truncate mt-0.5">Admin Panel</p>
           </div>
           <button
             onClick={() => setSidebarPinned(v => !v)}
-            className={`flex-shrink-0 w-7 h-7 rounded-md flex items-center justify-center transition-colors ml-auto ${
-              sidebarPinned ? 'text-purple-400 bg-purple-500/20' : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
+            className={`flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+              sidebarPinned
+                ? 'text-purple-300 bg-purple-500/20 ring-1 ring-purple-500/40 shadow-md shadow-purple-500/20'
+                : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.06]'
             }`}
             title={sidebarPinned ? 'Unpin sidebar' : 'Pin sidebar open'}
           >
@@ -635,13 +701,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             </svg>
           </button>
         </div>
-        <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-4 [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-3 [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
           <SidebarSection label="Content">
             <NavItem tabId="list"            activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
             <NavItem tabId="add"             activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
             <NavItem tabId="episodes"        activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
             <NavItem tabId="episode-status"  activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
-            <NavItem tabId="videoUpload"     activeTab={activeTab} collapsed={false} onClick={handleTabChange} />  {/* ✅ NEW */}
+            <NavItem tabId="videoUpload"     activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
           </SidebarSection>
           <SidebarSection label="Manage">
             <NavItem tabId="featured"        activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
@@ -650,7 +716,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             <NavItem tabId="social"          activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
             <NavItem tabId="notes"           activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
             <NavItem tabId="trackList"       activeTab={activeTab} collapsed={false} onClick={handleTabChange} badge={trackUnreadCount} />
-            <NavItem tabId="forms"           activeTab={activeTab} collapsed={false} onClick={handleTabChange} />  {/* ✅ NEW */}
+            <NavItem tabId="forms"           activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
           </SidebarSection>
           <SidebarSection label="Downloads">
             <NavItem tabId="downloadPages"   activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
@@ -664,27 +730,27 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             <NavItem tabId="instagram"       activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
           </SidebarSection>
           <SidebarSection label="Analytics">
-            <NavItem tabId="pageviews" activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
-            <NavItem tabId="userActivity" activeTab={activeTab} collapsed={false} onClick={handleTabChange} />   {/* ✅ NEW */}
-            <NavItem tabId="earnings" activeTab={activeTab} collapsed={false} onClick={handleTabChange} />   {/* 🆕 EARNINGS */}
+            <NavItem tabId="pageviews"       activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
+            <NavItem tabId="userActivity"    activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
+            <NavItem tabId="earnings"        activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
           </SidebarSection>
           <SidebarSection label="Administration">
-            <NavItem tabId="subadmins" activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
-            <NavItem tabId="r2providers" activeTab={activeTab} collapsed={false} onClick={handleTabChange} />   {/* ✅ NEW */}
+            <NavItem tabId="subadmins"       activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
+            <NavItem tabId="r2providers"     activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
           </SidebarSection>
         </nav>
         <div className="flex-shrink-0 border-t border-white/[0.06] p-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full bg-purple-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
-              {(user.username || 'A').charAt(0).toUpperCase()}
-            </div>
+          <div className="flex items-center gap-3 rounded-xl bg-white/[0.03] hover:bg-white/[0.05] border border-white/[0.06] p-2.5 transition-colors">
+            <UserAvatar username={user.username} size={36} />
             <div className="overflow-hidden flex-1">
-              <p className="text-xs font-medium text-white truncate">{user.username || 'Admin'}</p>
-              <p className="text-[10px] text-gray-500">{window.location.hostname === 'localhost' ? 'Development' : 'Production'}</p>
+              <p className="text-[13px] font-semibold text-white truncate leading-tight">{user.username || 'Admin'}</p>
+              <p className="text-[10px] text-purple-300/70 font-medium uppercase tracking-wider mt-0.5">
+                {window.location.hostname === 'localhost' ? 'Development' : 'Production'}
+              </p>
             </div>
             <button
               onClick={handleLogout}
-              className="flex-shrink-0 p-1.5 rounded-md text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+              className="flex-shrink-0 p-2 rounded-lg text-gray-500 hover:text-rose-300 hover:bg-rose-500/15 transition-all"
               title="Logout"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -695,42 +761,40 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         </div>
       </aside>
 
-      {/* ─── 📱 Mobile Drawer (phones only) ─── */}
-      {/* Backdrop */}
+      {/* ─── 📱 Mobile Drawer ─── */}
       <div
         onClick={() => setMobileMenuOpen(false)}
-        className={`sm:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] transition-opacity duration-200 ${
+        className={`sm:hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-[60] transition-opacity duration-200 ${
           mobileMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
       />
-      {/* Drawer panel */}
       <aside
-        style={{ transition: 'transform 0.25s cubic-bezier(0.4,0,0.2,1)' }}
-        className={`sm:hidden fixed top-0 left-0 h-full z-[70] flex flex-col w-[260px] max-w-[80vw] bg-[#13121e] border-r border-white/[0.08] shadow-2xl
+        style={{ transition: 'transform 0.28s cubic-bezier(0.4,0,0.2,1)' }}
+        className={`sm:hidden fixed top-0 left-0 h-full z-[70] flex flex-col w-[280px] max-w-[82vw] bg-[#0f0e1a] border-r border-white/[0.08] shadow-2xl shadow-black/70
           ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
-        <div className="flex items-center gap-3 h-14 px-3 border-b border-white/[0.06] flex-shrink-0">
+        <div className="flex items-center gap-3 h-16 px-4 border-b border-white/[0.06] flex-shrink-0">
           <BrandLogo />
           <div className="overflow-hidden flex-1">
-            <p className="text-sm font-semibold text-white leading-tight truncate">AnimaBing</p>
-            <p className="text-[10px] text-gray-500 truncate">Admin Panel</p>
+            <p className="text-[15px] font-bold text-white leading-tight truncate tracking-tight">AnimaBing</p>
+            <p className="text-[10px] text-purple-300/70 font-medium uppercase tracking-widest truncate mt-0.5">Admin Panel</p>
           </div>
           <button
             onClick={() => setMobileMenuOpen(false)}
-            className="flex-shrink-0 w-8 h-8 rounded-md flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
+            className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/[0.06] transition-colors"
             aria-label="Close menu"
           >
             <SvgIcon d={ICONS.close} className="w-5 h-5" />
           </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-4 [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-3 [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
           <SidebarSection label="Content">
             <NavItem tabId="list"            activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
             <NavItem tabId="add"             activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
             <NavItem tabId="episodes"        activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
             <NavItem tabId="episode-status"  activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
-            <NavItem tabId="videoUpload"     activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />  {/* ✅ NEW */}
+            <NavItem tabId="videoUpload"     activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
           </SidebarSection>
           <SidebarSection label="Manage">
             <NavItem tabId="featured"        activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
@@ -739,7 +803,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             <NavItem tabId="social"          activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
             <NavItem tabId="notes"           activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
             <NavItem tabId="trackList"       activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} badge={trackUnreadCount} />
-            <NavItem tabId="forms"           activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />  {/* ✅ NEW */}
+            <NavItem tabId="forms"           activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
           </SidebarSection>
           <SidebarSection label="Downloads">
             <NavItem tabId="downloadPages"   activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
@@ -753,28 +817,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             <NavItem tabId="instagram"       activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
           </SidebarSection>
           <SidebarSection label="Analytics">
-            <NavItem tabId="pageviews" activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
-            <NavItem tabId="userActivity" activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />   {/* ✅ NEW */}
-            <NavItem tabId="earnings" activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />   {/* 🆕 EARNINGS */}
+            <NavItem tabId="pageviews"       activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+            <NavItem tabId="userActivity"    activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+            <NavItem tabId="earnings"        activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
           </SidebarSection>
           <SidebarSection label="Administration">
-            <NavItem tabId="subadmins" activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
-            <NavItem tabId="r2providers" activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />   {/* ✅ NEW */}
+            <NavItem tabId="subadmins"       activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+            <NavItem tabId="r2providers"     activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
           </SidebarSection>
         </nav>
 
         <div className="flex-shrink-0 border-t border-white/[0.06] p-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full bg-purple-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
-              {(user.username || 'A').charAt(0).toUpperCase()}
-            </div>
+          <div className="flex items-center gap-3 rounded-xl bg-white/[0.03] border border-white/[0.06] p-2.5">
+            <UserAvatar username={user.username} size={36} />
             <div className="overflow-hidden flex-1">
-              <p className="text-xs font-medium text-white truncate">{user.username || 'Admin'}</p>
-              <p className="text-[10px] text-gray-500">{window.location.hostname === 'localhost' ? 'Development' : 'Production'}</p>
+              <p className="text-[13px] font-semibold text-white truncate leading-tight">{user.username || 'Admin'}</p>
+              <p className="text-[10px] text-purple-300/70 font-medium uppercase tracking-wider mt-0.5">
+                {window.location.hostname === 'localhost' ? 'Development' : 'Production'}
+              </p>
             </div>
             <button
               onClick={handleLogout}
-              className="flex-shrink-0 p-1.5 rounded-md text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+              className="flex-shrink-0 p-2 rounded-lg text-gray-500 hover:text-rose-300 hover:bg-rose-500/15 transition-all"
               title="Logout"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -785,23 +849,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         </div>
       </aside>
 
-      {/* Main Content */}
-      <div id="main-scroll" className="h-full flex flex-col overflow-y-auto sm:pl-[52px] [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
-        <header className="sticky top-0 z-40 h-14 flex-shrink-0 flex items-center px-3 sm:px-5 gap-3 bg-[#13121e]/80 backdrop-blur border-b border-white/[0.06]">
-          {/* 📱 Hamburger – phones only */}
+      {/* ─── Main Content ─────────────────────────────────────────── */}
+      <div id="main-scroll" className="h-full flex flex-col overflow-y-auto sm:pl-[64px] [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
+        <header className="sticky top-0 z-40 h-16 flex-shrink-0 flex items-center px-4 sm:px-6 gap-3 bg-[#0f0e1a]/85 backdrop-blur-xl border-b border-white/[0.06]">
           <button
             onClick={() => setMobileMenuOpen(true)}
-            className="sm:hidden flex-shrink-0 w-9 h-9 -ml-1 rounded-lg flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/5 transition-colors"
+            className="sm:hidden flex-shrink-0 w-9 h-9 -ml-1 rounded-lg flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/[0.06] transition-colors"
             aria-label="Open menu"
           >
             <SvgIcon d={ICONS.menu} className="w-5 h-5" />
           </button>
 
-          <span className="hidden sm:inline-flex w-5 h-5">
+          <span className={`hidden sm:inline-flex w-5 h-5 ${getTabColor(activeTab).text}`}>
             <SvgIcon d={ICONS[activeTab] || ICONS.list} className="w-5 h-5" />
           </span>
-          <h1 className="text-sm font-semibold text-white">{TAB_LABELS[activeTab]}</h1>
-          <div className="ml-auto flex items-center gap-2">
+          <h1 className="text-[15px] font-semibold text-white truncate tracking-tight">{TAB_LABELS[activeTab]}</h1>
+          <div className="ml-auto flex items-center gap-2 sm:gap-3">
             <button
               onClick={() => {
                 loadInitialData(true);
@@ -811,17 +874,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                 }));
               }}
               disabled={isRefreshing}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition border border-white/[0.06] disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-400 hover:text-white bg-white/[0.03] hover:bg-white/[0.08] rounded-lg transition border border-white/[0.06] hover:border-white/[0.12] disabled:opacity-50"
             >
               <svg className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-              {isRefreshing ? 'Refreshing...' : 'Refresh'}
+              <span className="hidden sm:inline">{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
             </button>
+            <UserAvatar username={user.username} size={32} />
           </div>
         </header>
 
-        {/* Main content area – edge-to-edge on all screens */}
         <main className="flex-1 py-4 sm:py-6 px-0 space-y-4">
           {/* Analytics Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 px-3 sm:px-0">
@@ -841,7 +904,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             ))}
           </div>
 
-          {/* Download Link Control – without Auto Sunday toggle */}
+          {/* Download Link Control */}
           <div className="bg-white/[0.04] border-y sm:border border-white/[0.06] rounded-none sm:rounded-xl p-4">
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
               <div className="flex items-center gap-3 flex-wrap">
@@ -943,7 +1006,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             </p>
           </div>
 
-          {/* Active Tab Content – flush edges on all screens */}
+          {/* Active Tab Content */}
           <div className="bg-white/[0.04] border-y sm:border border-white/[0.06] rounded-none sm:rounded-xl p-0 min-h-[300px]">
             <TabContent activeTab={activeTab} visitedTabs={visitedTabs} token={token || ''} tabRefreshVersions={tabRefreshVersions} />
           </div>

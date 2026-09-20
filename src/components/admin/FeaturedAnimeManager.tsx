@@ -1,5 +1,4 @@
- // src/components/admin/FeaturedAnimeManager.tsx – BANNER + SECTIONS VERSION + HIDE/SHOW TOGGLES
-// FIXED: race condition on rapid add/remove clicks, added drag & drop reordering, improved UI
+ // src/components/admin/FeaturedAnimeManager.tsx – Premium UI, no emojis
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Anime } from '../../types';
 
@@ -15,6 +14,30 @@ const SECTIONS: { key: SectionType; label: string; contentType: string[] | null 
 ];
 
 interface FeaturedAnimeManagerProps {}
+
+// ── Icon primitive ───────────────────────────────────────────────────
+const SvgIcon: React.FC<{ d: string; className?: string; fill?: boolean }> = ({ d, className = 'w-4 h-4', fill = false }) => (
+  <svg className={className} fill={fill ? 'currentColor' : 'none'} stroke={fill ? 'none' : 'currentColor'} strokeWidth={1.8} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+    <path d={d} />
+  </svg>
+);
+
+const ICONS = {
+  star:       'M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z',
+  search:     'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z',
+  refresh:    'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15',
+  plus:       'M12 4v16m8-8H4',
+  close:      'M6 18L18 6M6 6l12 12',
+  check:      'M5 13l4 4L19 7',
+  drag:       'M4 8h16M4 16h16',
+  up:         'M5 15l7-7 7 7',
+  down:       'M19 9l-7 7-7-7',
+  eye:        'M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z',
+  eyeOff:     'M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21',
+  lightning:  'M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z',
+  info:       'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
+  empty:      'M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4',
+};
 
 const getOptimizedImageUrl = (url: string | undefined, width: number, height: number): string => {
   if (!url) return 'https://images.unsplash.com/photo-1518709268805-4e9042af2176?w=400&h=600&fit=crop';
@@ -49,20 +72,13 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
   const [forceRefresh, setForceRefresh] = useState(0);
   const [activeSection, setActiveSection] = useState<SectionType>('banner');
 
-  // ── Section visibility state ──
   const [sectionVisibility, setSectionVisibility] = useState<Record<string, boolean>>({});
-
-  // ── NEW: per-item "in flight" lock so rapid double clicks on the SAME card are ignored ──
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
 
-  // ── NEW: drag & drop state ──
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [savingOrder, setSavingOrder] = useState(false);
 
-  // ── NEW: a strictly-ordered queue for backend writes so rapid add/remove/reorder
-  // calls never land out of order and never stomp on each other. Every mutation is
-  // pushed onto this promise chain instead of firing independently. ──
   const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
   const enqueueWrite = useCallback((task: () => Promise<void>) => {
     writeQueueRef.current = writeQueueRef.current.then(task).catch((err) => {
@@ -71,8 +87,6 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
     return writeQueueRef.current;
   }, []);
 
-  // ── NEW: guards against a slow/late fetchFeaturedAnimes response overwriting
-  // newer local state (this was the root cause of removed items "coming back"). ──
   const fetchRequestIdRef = useRef(0);
 
   const markPending = (id: string) => {
@@ -94,12 +108,10 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
     fetchAnimes();
     fetchFeaturedAnimes(activeSection);
     fetchSectionVisibility();
-    // Reset drag state and clear the write queue's "logical" state when switching tabs
     setDragIndex(null);
     setDragOverIndex(null);
   }, [forceRefresh, activeSection]);
 
-  // ── Fetch section hide/show flags from backend ──
   const fetchSectionVisibility = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/anime/settings/section-visibility`);
@@ -110,7 +122,6 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
     }
   };
 
-  // ── Toggle a single section visibility ──
   const toggleSectionVisibility = async (section: SectionType) => {
     const currentlyHidden = sectionVisibility[section] ?? false;
     const token = getAdminToken();
@@ -131,17 +142,11 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
     }
   };
 
-  // ── FIXED: previously fetched a single page with a hardcoded limit=100,
-  // so anything beyond the 100th item never loaded. This now pages through
-  // results (page=1,2,3…) and keeps merging until the backend returns a
-  // page smaller than the page size (i.e. no more data), so all content
-  // shows regardless of how many items exist. PAGE_SIZE is kept at 100 per
-  // request to match what the backend is known to handle comfortably.
   const fetchAnimes = async (): Promise<void> => {
     setApiStatus('Fetching animes...');
     setLoading(true);
     const PAGE_SIZE = 100;
-    const MAX_PAGES = 50; // safety cap so a misbehaving API can't loop forever
+    const MAX_PAGES = 50;
     try {
       const endpointBuilders = [
         (page: number) => `${API_BASE}/api/anime?limit=${PAGE_SIZE}&page=${page}`,
@@ -171,25 +176,22 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
             if (!pageItems || pageItems.length === 0) break;
 
             allFetched = allFetched.concat(pageItems);
-            // Stop once the backend returns fewer items than we asked for —
-            // that means we've reached the last page.
             keepGoing = pageItems.length === PAGE_SIZE;
             page++;
           }
 
           if (allFetched.length > 0) {
-            // De-duplicate in case a paginated endpoint overlaps on the edges
             const seen = new Set<string>();
             const deduped = allFetched.filter(a => {
               const id = a._id || a.id || '';
-              if (!id) return true; // no id to dedupe by, keep as-is
+              if (!id) return true;
               if (seen.has(id)) return false;
               seen.add(id);
               return true;
             });
             setAllAnimes(deduped);
             localStorage.setItem('animeList', JSON.stringify(deduped));
-            setApiStatus(`✅ Loaded ${deduped.length} animes`);
+            setApiStatus(`Loaded ${deduped.length} animes`);
             return;
           }
         } catch (error) {
@@ -201,17 +203,17 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed) && parsed.length > 0) {
           setAllAnimes(parsed);
-          setApiStatus(`✅ Loaded ${parsed.length} animes from localStorage`);
+          setApiStatus(`Loaded ${parsed.length} animes from cache`);
           return;
         }
       }
       const sampleData = getSampleAnimes();
       setAllAnimes(sampleData);
       localStorage.setItem('animeList', JSON.stringify(sampleData));
-      setApiStatus('⚠️ Using sample data (no API connection)');
+      setApiStatus('Using sample data');
     } catch (error) {
       console.error('Error fetching animes:', error);
-      setApiStatus('❌ Error loading animes');
+      setApiStatus('Error loading animes');
     } finally {
       setLoading(false);
     }
@@ -219,17 +221,16 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
 
   const getSampleAnimes = (): Anime[] => {
     return [
-      { id: '1', _id: '1', title: 'Death Note', thumbnail: 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=400&h=600&fit=crop', releaseYear: 2006, subDubStatus: 'Hindi Dub', contentType: 'Anime', description: 'A high school student discovers a supernatural notebook that allows him to kill anyone by writing the victim\'s name.', genreList: ['Psychological', 'Thriller', 'Supernatural'] },
-      { id: '2', _id: '2', title: 'Naruto', thumbnail: 'https://images.unsplash.com/photo-1518709268805-4e9042af2176?w=400&h=600&fit=crop', releaseYear: 2002, subDubStatus: 'Hindi Sub', contentType: 'Anime', description: 'A young ninja seeks recognition from his peers and dreams of becoming the Hokage.', genreList: ['Action', 'Adventure', 'Fantasy'] },
-      { id: '3', _id: '3', title: 'Attack on Titan', thumbnail: 'https://images.unsplash.com/photo-1639322537228-f710d846310a?w=400&h=600&fit=crop', releaseYear: 2013, subDubStatus: 'English Sub', contentType: 'Anime', description: 'Humanity fights for survival against giant humanoid creatures known as Titans.', genreList: ['Action', 'Dark Fantasy', 'Drama'] },
-      { id: '4', _id: '4', title: 'One Piece', thumbnail: 'https://images.unsplash.com/photo-1541562232579-512a21360020?w=400&h=600&fit=crop', releaseYear: 1999, subDubStatus: 'Hindi Dub', contentType: 'Anime', description: 'Monkey D. Luffy and his pirate crew explore the Grand Line in search of the world\'s ultimate treasure.', genreList: ['Action', 'Adventure', 'Comedy'] },
-      { id: '5', _id: '5', title: 'Demon Slayer', thumbnail: 'https://images.unsplash.com/photo-1511984804822-e16ba72fcf0a?w=400&h=600&fit=crop', releaseYear: 2019, subDubStatus: 'Hindi Sub', contentType: 'Anime', description: 'A young boy becomes a demon slayer to avenge his family and cure his sister.', genreList: ['Action', 'Dark Fantasy', 'Supernatural'] },
-      { id: '6', _id: '6', title: 'My Hero Academia', thumbnail: 'https://images.unsplash.com/photo-1542204165-65bf26472b9b?w=400&h=600&fit=crop', releaseYear: 2016, subDubStatus: 'English Sub', contentType: 'Anime', description: 'A boy without powers in a super-powered world dreams of becoming a hero.', genreList: ['Action', 'Superhero', 'Comedy'] }
+      { id: '1', _id: '1', title: 'Death Note', thumbnail: 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=400&h=600&fit=crop', releaseYear: 2006, subDubStatus: 'Hindi Dub', contentType: 'Anime', description: 'A high school student discovers a supernatural notebook.', genreList: ['Psychological', 'Thriller'] },
+      { id: '2', _id: '2', title: 'Naruto', thumbnail: 'https://images.unsplash.com/photo-1518709268805-4e9042af2176?w=400&h=600&fit=crop', releaseYear: 2002, subDubStatus: 'Hindi Sub', contentType: 'Anime', description: 'A young ninja seeks recognition.', genreList: ['Action', 'Adventure'] },
+      { id: '3', _id: '3', title: 'Attack on Titan', thumbnail: 'https://images.unsplash.com/photo-1639322537228-f710d846310a?w=400&h=600&fit=crop', releaseYear: 2013, subDubStatus: 'English Sub', contentType: 'Anime', description: 'Humanity fights for survival.', genreList: ['Action', 'Dark Fantasy'] },
+      { id: '4', _id: '4', title: 'One Piece', thumbnail: 'https://images.unsplash.com/photo-1541562232579-512a21360020?w=400&h=600&fit=crop', releaseYear: 1999, subDubStatus: 'Hindi Dub', contentType: 'Anime', description: 'Pirate crew explores the Grand Line.', genreList: ['Action', 'Adventure'] },
+      { id: '5', _id: '5', title: 'Demon Slayer', thumbnail: 'https://images.unsplash.com/photo-1511984804822-e16ba72fcf0a?w=400&h=600&fit=crop', releaseYear: 2019, subDubStatus: 'Hindi Sub', contentType: 'Anime', description: 'A young boy becomes a demon slayer.', genreList: ['Action', 'Supernatural'] },
+      { id: '6', _id: '6', title: 'My Hero Academia', thumbnail: 'https://images.unsplash.com/photo-1542204165-65bf26472b9b?w=400&h=600&fit=crop', releaseYear: 2016, subDubStatus: 'English Sub', contentType: 'Anime', description: 'A boy without powers dreams of becoming a hero.', genreList: ['Action', 'Superhero'] }
     ];
   };
 
   const fetchFeaturedAnimes = async (section: SectionType): Promise<void> => {
-    // Tag this request so a late response from an older request can be discarded
     const requestId = ++fetchRequestIdRef.current;
     try {
       const endpoints = [
@@ -249,8 +250,6 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
           else if (result.data) fetchedFeatured = result.data;
           else if (result.featured) fetchedFeatured = result.featured;
           if (fetchedFeatured.length > 0) {
-            // Discard if a newer fetch (or a local mutation queued after this call
-            // started) has already superseded this response.
             if (requestId !== fetchRequestIdRef.current) return;
             setFeaturedAnimes(fetchedFeatured);
             localStorage.setItem(`featuredAnimes_${section}`, JSON.stringify(fetchedFeatured));
@@ -278,11 +277,6 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
 
   const getAnimeId = (anime: Anime): string => anime._id || anime.id || '';
 
-  // ── FIXED: uses functional state updates so it always builds on the latest
-  // state instead of a stale closure, and no longer re-fetches from the server
-  // after a successful write (that refetch was racing with subsequent clicks and
-  // is what caused removed items to "come back"). The backend write itself is
-  // pushed onto the sequential queue so out-of-order requests can't happen. ──
   const addToFeatured = (anime: Anime): void => {
     const animeId = getAnimeId(anime);
     if (!animeId || pendingIds.has(animeId)) return;
@@ -299,8 +293,6 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
 
     const section = activeSection;
     markPending(animeId);
-    // Bump the fetch guard so any in-flight fetchFeaturedAnimes response from
-    // before this action can't overwrite the optimistic update above.
     fetchRequestIdRef.current++;
 
     enqueueWrite(async () => {
@@ -315,13 +307,13 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
           }
         });
         if (response.ok) {
-          console.log('✅ Added to featured via API');
+          console.log('Added to featured via API');
         } else {
           const errorData = await response.json().catch(() => ({}));
-          console.log(`⚠️ API call failed (${response.status}): ${errorData.error || 'unknown error'}`);
+          console.log(`API call failed (${response.status}): ${errorData.error || 'unknown error'}`);
         }
       } catch (apiError) {
-        console.log('⚠️ API call failed, but stored locally');
+        console.log('API call failed, but stored locally');
       } finally {
         clearPending(animeId);
       }
@@ -352,19 +344,18 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
           }
         });
         if (response.ok) {
-          console.log('✅ Removed from featured via API');
+          console.log('Removed from featured via API');
         } else {
-          console.log('⚠️ API call failed, but removed locally');
+          console.log('API call failed, but removed locally');
         }
       } catch (apiError) {
-        console.log('⚠️ API call failed, but removed locally');
+        console.log('API call failed, but removed locally');
       } finally {
         clearPending(animeId);
       }
     });
   };
 
-  // ── Shared reorder logic used by both the ↑/↓ buttons and drag & drop ──
   const applyReorder = (fromIndex: number, toIndex: number): void => {
     if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return;
     const section = activeSection;
@@ -397,12 +388,12 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
           }),
         });
         if (response.ok) {
-          console.log('✅ Featured order updated via API');
+          console.log('Featured order updated via API');
         } else {
-          console.log('⚠️ Order update API failed, but stored locally');
+          console.log('Order update API failed, but stored locally');
         }
       } catch (error) {
-        console.log('⚠️ Order update API failed, but stored locally');
+        console.log('Order update API failed, but stored locally');
       } finally {
         setSavingOrder(false);
       }
@@ -411,37 +402,26 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
 
   const reorderFeatured = (fromIndex: number, toIndex: number): void => applyReorder(fromIndex, toIndex);
 
-  // ── NEW: Drag & drop handlers ──
   const handleDragStart = (index: number) => (e: React.DragEvent<HTMLDivElement>) => {
     setDragIndex(index);
     e.dataTransfer.effectAllowed = 'move';
-    try {
-      e.dataTransfer.setData('text/plain', String(index));
-    } catch {
-      // some browsers require this to enable dragging; ignore failures
-    }
+    try { e.dataTransfer.setData('text/plain', String(index)); } catch {}
   };
-
   const handleDragEnter = (index: number) => (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     if (dragIndex === null || index === dragIndex) return;
     setDragOverIndex(index);
   };
-
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
   };
-
   const handleDrop = (index: number) => (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    if (dragIndex !== null && dragIndex !== index) {
-      applyReorder(dragIndex, index);
-    }
+    if (dragIndex !== null && dragIndex !== index) applyReorder(dragIndex, index);
     setDragIndex(null);
     setDragOverIndex(null);
   };
-
   const handleDragEnd = () => {
     setDragIndex(null);
     setDragOverIndex(null);
@@ -479,55 +459,51 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
     setSearchTerm('');
   };
 
+  const sectionMeta = SECTIONS.find(s => s.key === activeSection);
+  const totalContent = activeSection === 'banner'
+    ? allAnimes.length
+    : allAnimes.filter(a => (sectionMeta?.contentType || []).includes(a.contentType)).length;
+
+  const getApiStatusColor = () => {
+    if (apiStatus.toLowerCase().includes('error')) return { bg: 'bg-rose-500/15', text: 'text-rose-300', ring: 'border-rose-500/25' };
+    if (apiStatus.toLowerCase().includes('sample') || apiStatus.toLowerCase().includes('fetching')) return { bg: 'bg-amber-500/15', text: 'text-amber-300', ring: 'border-amber-500/25' };
+    return { bg: 'bg-emerald-500/15', text: 'text-emerald-300', ring: 'border-emerald-500/25' };
+  };
+  const apiColors = getApiStatusColor();
+
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-purple-900/40 backdrop-blur-sm border border-purple-700/40 rounded-2xl">
-        <div className="relative">
-          <div className="w-16 h-16 border-4 border-amber-500/30 border-t-amber-500 rounded-full animate-spin"></div>
-          <div className="absolute inset-0 w-16 h-16 border-4 border-orange-500/30 border-b-orange-500 rounded-full animate-spin" style={{ animationDirection: 'reverse' }}></div>
-        </div>
-        <p className="mt-6 text-xl font-semibold text-white/90">Loading Anime Collection</p>
-        <p className="mt-2 text-white/60">{apiStatus}</p>
+      <div className="flex flex-col items-center justify-center min-h-[60vh] bg-[#0b0a14]">
+        <div className="w-10 h-10 border-3 border-amber-500/30 border-t-amber-500 rounded-full animate-spin" />
+        <p className="mt-3 text-xs text-gray-500 font-medium">Loading anime collection...</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Local keyframes for empty-state motion — scoped, no Tailwind config changes needed */}
-      <style>{`
-        @keyframes fam-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
-        @keyframes fam-fade-in-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .fam-float { animation: fam-float 3.2s ease-in-out infinite; }
-        .fam-fade-in-up { animation: fam-fade-in-up 0.35s ease-out; }
-      `}</style>
-      {/* Header */}
+    <div className="p-3 sm:p-6 space-y-4 min-h-screen bg-[#0b0a14] text-white">
+      {/* ─── Header ─────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-gradient-to-br from-amber-500/30 to-orange-500/30 rounded-xl">
-            <svg className="w-8 h-8 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
-            </svg>
+          <div className="p-2.5 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/10 border border-amber-500/20 shadow-lg shadow-amber-500/10">
+            <SvgIcon d={ICONS.star} className="w-6 h-6 text-amber-300" />
           </div>
           <div>
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-amber-300 to-orange-300 bg-clip-text text-transparent">
-              Featured Anime Manager
-            </h1>
-            <p className="text-white/50 text-sm mt-1">Manage your homepage carousel & sections</p>
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">Featured Manager</h1>
+            <p className="text-xs text-gray-500 mt-0.5">Manage homepage carousel & sections</p>
           </div>
         </div>
 
-        {/* NEW: subtle sync indicator so admins can see writes are still catching up */}
         {(pendingIds.size > 0 || savingOrder) && (
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-300 text-xs font-medium">
-            <span className="w-3 h-3 border-2 border-amber-400/40 border-t-amber-400 rounded-full animate-spin"></span>
-            Saving changes…
+          <div className="flex items-center gap-2 px-2.5 py-1.5 bg-amber-500/10 border border-amber-500/25 rounded-full text-amber-300 text-[10px] font-bold uppercase tracking-wider">
+            <span className="w-3 h-3 border-2 border-amber-400/40 border-t-amber-400 rounded-full animate-spin" />
+            Saving...
           </div>
         )}
       </div>
 
-      {/* ── Section Tabs + Hide/Show Toggles ── */}
-      <div className="flex flex-wrap items-center gap-3 bg-purple-950/30 p-2 rounded-2xl border border-purple-700/30">
+      {/* ─── Section Tabs ──────────────────────────────────── */}
+      <div className="flex flex-wrap gap-2 bg-white/[0.03] border border-white/[0.06] rounded-2xl p-2">
         {SECTIONS.map(sec => {
           const isHidden = sectionVisibility[sec.key] ?? false;
           const isActive = activeSection === sec.key;
@@ -535,34 +511,31 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
             <div
               key={sec.key}
               className={`flex items-stretch rounded-xl overflow-hidden border transition-all duration-200 ${
-                isActive ? 'border-amber-500/50 shadow-lg shadow-amber-600/10' : 'border-purple-700/30 hover:border-purple-600/50'
+                isActive ? 'border-amber-500/40 shadow-lg shadow-amber-500/10' : 'border-white/[0.06] hover:border-white/[0.12]'
               }`}
             >
               <button
                 onClick={() => setActiveSection(sec.key)}
-                className={`px-4 py-2.5 text-sm font-semibold tracking-wide transition-all duration-200 ${
+                className={`px-3.5 py-2 text-xs font-bold tracking-tight transition-all duration-200 ${
                   isActive
-                    ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white'
-                    : 'bg-purple-900/30 text-white/55 hover:text-white hover:bg-purple-800/40'
+                    ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-lg shadow-amber-500/20'
+                    : 'bg-white/[0.02] text-gray-400 hover:text-white hover:bg-white/[0.06]'
                 }`}
               >
                 {sec.label}
               </button>
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleSectionVisibility(sec.key);
-                }}
+                onClick={(e) => { e.stopPropagation(); toggleSectionVisibility(sec.key); }}
                 title={isHidden ? 'Hidden on site — click to show' : 'Visible on site — click to hide'}
-                className={`flex items-center gap-1.5 px-3 py-2.5 text-[11px] font-semibold tracking-wide border-l transition-all duration-200 ${
-                  isActive ? 'border-white/10' : 'border-purple-700/30'
+                className={`flex items-center gap-1.5 px-2.5 py-2 text-[10px] font-bold uppercase tracking-wider border-l transition-all duration-200 ${
+                  isActive ? 'border-white/10' : 'border-white/[0.06]'
                 } ${
                   isHidden
-                    ? 'bg-rose-950/50 text-rose-300 hover:bg-rose-900/60'
-                    : 'bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/50'
+                    ? 'bg-rose-500/15 text-rose-300 hover:bg-rose-500/25'
+                    : 'bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25'
                 }`}
               >
-                <span className={`w-1.5 h-1.5 rounded-full ${isHidden ? 'bg-rose-400' : 'bg-emerald-400 animate-pulse'}`}></span>
+                <span className={`w-1.5 h-1.5 rounded-full ${isHidden ? 'bg-rose-400' : 'bg-emerald-400 animate-pulse'}`} />
                 {isHidden ? 'Hidden' : 'Live'}
               </button>
             </div>
@@ -570,103 +543,81 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
         })}
       </div>
 
-      {/* Stats Dashboard */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-purple-900/40 backdrop-blur-sm border border-purple-700/40 rounded-xl p-5 flex items-center gap-4">
-          <div className="p-3 bg-amber-500/20 rounded-lg">
-            <svg className="w-6 h-6 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 6.878V6a2.25 2.25 0 012.25-2.25h7.5A2.25 2.25 0 0118 6v.878m-12 0c.235-.083.487-.128.75-.128h10.5c.263 0 .515.045.75.128m-12 0A2.25 2.25 0 004.5 6v.878m13.5 0A2.25 2.25 0 0119.5 6v.878m0 0a2.246 2.246 0 00-.75-.128H5.25c-.263 0-.515.045-.75.128m15 0A2.25 2.25 0 0121 9v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V9a2.25 2.25 0 012.25-2.25V6.878" />
-            </svg>
+      {/* ─── Stats Cards ──────────────────────────────── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {/* Total Content */}
+        <div className="group bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 hover:bg-white/[0.05] transition-colors">
+          <div className="flex items-center justify-between mb-3">
+            <div className="p-2 rounded-xl bg-amber-500/15">
+              <SvgIcon d={ICONS.star} className="w-4 h-4 text-amber-300" />
+            </div>
           </div>
-          <div>
-            <p className="text-white/50 text-xs">Total {SECTIONS.find(s => s.key === activeSection)?.contentType 
-              ? SECTIONS.find(s => s.key === activeSection)?.label 
-              : 'All Content'}</p>
-            <p className="text-2xl font-bold text-white">
-              {activeSection === 'banner'
-                ? allAnimes.length
-                : allAnimes.filter(a => (SECTIONS.find(s => s.key === activeSection)?.contentType || []).includes(a.contentType)).length
-              }
-            </p>
-          </div>
+          <p className="text-xl sm:text-2xl font-bold text-white tabular-nums">{totalContent}</p>
+          <p className="text-[10px] uppercase tracking-wider font-bold text-gray-500 mt-1">
+            Total {activeSection === 'banner' ? 'Content' : sectionMeta?.label}
+          </p>
         </div>
 
-        <div className="bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-purple-900/40 backdrop-blur-sm border border-purple-700/40 rounded-xl p-5 flex items-center gap-4">
-          <div className="p-3 bg-orange-500/20 rounded-lg">
-            <svg className="w-6 h-6 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
-            </svg>
+        {/* Featured */}
+        <div className="group bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 hover:bg-white/[0.05] transition-colors">
+          <div className="flex items-center justify-between mb-3">
+            <div className="p-2 rounded-xl bg-orange-500/15">
+              <SvgIcon d={ICONS.star} className="w-4 h-4 text-orange-300" />
+            </div>
+            <span className="text-[10px] font-bold text-orange-300 bg-orange-500/15 border border-orange-500/25 px-1.5 py-0.5 rounded-md">
+              / 24
+            </span>
           </div>
-          <div>
-            <p className="text-white/50 text-xs">Featured {activeSection}</p>
-            <p className="text-2xl font-bold text-white">{featuredAnimes.length} <span className="text-sm font-normal text-white/40">/ 24</span></p>
-          </div>
+          <p className="text-xl sm:text-2xl font-bold text-white tabular-nums">{featuredAnimes.length}</p>
+          <p className="text-[10px] uppercase tracking-wider font-bold text-gray-500 mt-1">
+            Featured {activeSection}
+          </p>
         </div>
 
-        <div className="bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-purple-900/40 backdrop-blur-sm border border-purple-700/40 rounded-xl p-5 flex items-center gap-4">
-          <div className={`p-3 rounded-lg ${
-            apiStatus.includes('✅') ? 'bg-emerald-500/20' : 
-            apiStatus.includes('❌') ? 'bg-rose-500/20' : 
-            'bg-amber-500/20'
-          }`}>
-            <svg className={`w-6 h-6 ${
-              apiStatus.includes('✅') ? 'text-emerald-400' : 
-              apiStatus.includes('❌') ? 'text-rose-400' : 
-              'text-amber-400'
-            }`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
-            </svg>
+        {/* API Status */}
+        <div className="group bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 hover:bg-white/[0.05] transition-colors">
+          <div className="flex items-center justify-between mb-3">
+            <div className={`p-2 rounded-xl ${apiColors.bg}`}>
+              <SvgIcon d={ICONS.lightning} className={`w-4 h-4 ${apiColors.text}`} />
+            </div>
           </div>
-          <div>
-            <p className="text-white/50 text-xs">API Status</p>
-            <p className={`text-sm font-medium ${
-              apiStatus.includes('✅') ? 'text-emerald-400' : 
-              apiStatus.includes('❌') ? 'text-rose-400' : 
-              'text-amber-400'
-            }`}>
-              {apiStatus}
-            </p>
-          </div>
+          <p className={`text-xs font-bold ${apiColors.text} truncate`}>{apiStatus}</p>
+          <p className="text-[10px] uppercase tracking-wider font-bold text-gray-500 mt-1">API Status</p>
         </div>
       </div>
 
-      {/* Current Featured Section */}
-      <div className="space-y-4">
-        <div className="flex items-center gap-3 flex-wrap">
-          <span className="w-1.5 h-7 bg-gradient-to-b from-amber-400 to-orange-400 rounded-full"></span>
-          <h2 className="text-xl font-bold text-white/90">{activeSection} Featured Collection</h2>
-          <span className="text-sm text-white/50 bg-white/5 px-3 py-1 rounded-full">
-            {featuredAnimes.length} items
+      {/* ─── Current Featured ─────────────────────────── */}
+      <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 space-y-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="w-1 h-4 bg-gradient-to-b from-amber-400 to-orange-400 rounded-full" />
+          <h2 className="text-xs font-bold uppercase tracking-wider text-gray-300">
+            {sectionMeta?.label} Featured
+          </h2>
+          <span className="text-[10px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/25 px-1.5 py-0.5 rounded-md">
+            {featuredAnimes.length}
           </span>
           {featuredAnimes.length > 1 && (
-            <span className="text-xs text-white/40 flex items-center gap-1">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 8h16M4 16h16" />
-              </svg>
-              Drag cards to reorder
+            <span className="text-[10px] text-gray-500 flex items-center gap-1 ml-auto">
+              <SvgIcon d={ICONS.drag} className="w-3 h-3" />
+              Drag to reorder
             </span>
           )}
         </div>
 
         {featuredAnimes.length === 0 ? (
-          <div className="fam-fade-in-up text-center py-14 bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-purple-900/40 backdrop-blur-sm border border-dashed border-purple-700/50 rounded-2xl">
-            <div className="relative w-20 h-20 mx-auto">
-              <div className="absolute inset-0 bg-amber-500/10 rounded-full blur-xl"></div>
-              <svg className="fam-float relative w-16 h-16 mx-auto mt-2 text-amber-400/40" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
-              </svg>
+          <div className="text-center py-10">
+            <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center">
+              <SvgIcon d={ICONS.star} className="w-7 h-7 text-amber-500/30" />
             </div>
-            <h3 className="mt-5 text-lg font-semibold text-white/85">
-              This section is empty
-            </h3>
-            <p className="mt-1.5 text-white/50 text-sm max-w-md mx-auto leading-relaxed">
-              Nothing is featured in <span className="text-white/70 font-medium">{activeSection === 'banner' ? 'the banner slider' : activeSection}</span> yet. Pick items from the library below to feature them here.
+            <h3 className="text-sm font-bold text-gray-300">This section is empty</h3>
+            <p className="text-[11px] text-gray-500 mt-1 max-w-md mx-auto">
+              Nothing is featured yet. Pick items from the library below.
             </p>
             <button
               onClick={() => document.getElementById('add-section')?.scrollIntoView({ behavior: 'smooth' })}
-              className="mt-6 px-6 py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white text-sm font-semibold rounded-xl shadow-lg shadow-amber-600/20 transition-all duration-200 hover:shadow-amber-600/40 hover:-translate-y-0.5"
+              className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-amber-500/20 transition-all"
             >
-              Browse the library
+              Browse library
             </button>
           </div>
         ) : (
@@ -688,24 +639,25 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
                   onDragOver={handleDragOver}
                   onDrop={handleDrop(index)}
                   onDragEnd={handleDragEnd}
-                  className={`group relative bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-purple-900/40 backdrop-blur-sm border rounded-xl overflow-hidden transition-all duration-200 cursor-grab active:cursor-grabbing hover:shadow-lg hover:shadow-amber-500/10 hover:-translate-y-0.5 ${
+                  className={`group relative bg-white/[0.03] border rounded-xl overflow-hidden transition-all duration-200 cursor-grab active:cursor-grabbing ${
                     isDragOver
-                      ? 'border-amber-400 ring-2 ring-amber-400/60 scale-[1.03]'
-                      : 'border-purple-700/40 hover:border-amber-500/50'
+                      ? 'border-amber-400 ring-2 ring-amber-400/40 scale-[1.03]'
+                      : 'border-white/[0.06] hover:border-amber-500/40 hover:-translate-y-0.5'
                   } ${isDragging ? 'opacity-40' : 'opacity-100'}`}
                 >
-                  <div className="absolute top-1.5 left-1.5 z-10 flex items-center gap-1">
-                    <div className="px-1.5 py-0.5 bg-gradient-to-r from-amber-600 to-orange-600 rounded-full text-[9px] font-bold tracking-wide shadow-lg">
+                  {/* Rank badge */}
+                  <div className="absolute top-1.5 left-1.5 z-10">
+                    <div className="px-1.5 py-0.5 bg-gradient-to-r from-amber-600 to-orange-600 rounded-md text-[9px] font-bold tracking-wide shadow-lg">
                       #{index + 1}
                     </div>
                   </div>
-                  <div className="absolute top-1 left-1/2 -translate-x-1/2 z-10 opacity-0 group-hover:opacity-70 transition-opacity">
-                    <svg className="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 24 24">
-                      <circle cx="9" cy="6" r="1.5" /><circle cx="15" cy="6" r="1.5" />
-                      <circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" />
-                      <circle cx="9" cy="18" r="1.5" /><circle cx="15" cy="18" r="1.5" />
-                    </svg>
+
+                  {/* Drag hint */}
+                  <div className="absolute top-1.5 left-1/2 -translate-x-1/2 z-10 opacity-0 group-hover:opacity-70 transition-opacity">
+                    <SvgIcon d={ICONS.drag} className="w-3 h-3 text-white" />
                   </div>
+
+                  {/* Image */}
                   <div className="relative aspect-[2/3] overflow-hidden">
                     <img
                       src={optimizedSrc}
@@ -719,53 +671,60 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
                         e.currentTarget.src = getOptimizedImageUrl(anime.thumbnail || '', 160, 240);
                       }}
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-transparent"></div>
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+
                     {isPending && (
-                      <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                        <span className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center">
+                        <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                       </div>
                     )}
-                    <div className="absolute top-1 right-1 flex gap-0.5">
+
+                    {/* Action buttons overlay (top-right) */}
+                    <div className="absolute top-1.5 right-1.5 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                       {index > 0 && (
                         <button
-                          onClick={() => reorderFeatured(index, index - 1)}
+                          onClick={(e) => { e.stopPropagation(); reorderFeatured(index, index - 1); }}
                           disabled={isPending}
-                          className="w-5 h-5 flex items-center justify-center bg-purple-900/80 hover:bg-amber-600 disabled:opacity-40 disabled:hover:bg-purple-900/80 rounded-md text-white/80 hover:text-white text-[10px] transition-all"
+                          className="w-6 h-6 flex items-center justify-center bg-black/60 hover:bg-amber-600 backdrop-blur-sm rounded-md text-white/80 hover:text-white transition-all disabled:opacity-40"
                           title="Move up"
                         >
-                          ↑
+                          <SvgIcon d={ICONS.up} className="w-3 h-3" />
                         </button>
                       )}
                       {index < featuredAnimes.length - 1 && (
                         <button
-                          onClick={() => reorderFeatured(index, index + 1)}
+                          onClick={(e) => { e.stopPropagation(); reorderFeatured(index, index + 1); }}
                           disabled={isPending}
-                          className="w-5 h-5 flex items-center justify-center bg-purple-900/80 hover:bg-amber-600 disabled:opacity-40 disabled:hover:bg-purple-900/80 rounded-md text-white/80 hover:text-white text-[10px] transition-all"
+                          className="w-6 h-6 flex items-center justify-center bg-black/60 hover:bg-amber-600 backdrop-blur-sm rounded-md text-white/80 hover:text-white transition-all disabled:opacity-40"
                           title="Move down"
                         >
-                          ↓
+                          <SvgIcon d={ICONS.down} className="w-3 h-3" />
                         </button>
                       )}
                       <button
-                        onClick={() => removeFromFeatured(animeId)}
+                        onClick={(e) => { e.stopPropagation(); removeFromFeatured(animeId); }}
                         disabled={isPending}
-                        className="w-5 h-5 flex items-center justify-center bg-purple-900/80 hover:bg-rose-600 disabled:opacity-40 disabled:hover:bg-purple-900/80 rounded-md text-white/80 hover:text-white text-[10px] transition-all"
+                        className="w-6 h-6 flex items-center justify-center bg-black/60 hover:bg-rose-600 backdrop-blur-sm rounded-md text-white/80 hover:text-white transition-all disabled:opacity-40"
                         title="Remove"
                       >
-                        ✕
+                        <SvgIcon d={ICONS.close} className="w-3 h-3" />
                       </button>
                     </div>
                   </div>
-                  <div className="px-2 py-2 border-t border-purple-800/30">
-                    <h3 className="font-semibold text-white text-[12px] leading-snug truncate" title={anime.title}>
+
+                  {/* Footer info */}
+                  <div className="p-2">
+                    <h3 className="font-bold text-white text-[11px] leading-snug truncate" title={anime.title}>
                       {anime.title}
                     </h3>
-                    <div className="flex items-center justify-between mt-1.5">
-                      <span className="text-white/45 text-[10px] font-medium tabular-nums">{anime.releaseYear || 'N/A'}</span>
-                      <span className={`px-1.5 py-0.5 rounded-md text-[8px] font-bold tracking-wider uppercase ${
-                        anime.subDubStatus?.includes('Dub') 
-                          ? 'bg-emerald-500/15 text-emerald-300' 
-                          : 'bg-amber-500/15 text-amber-300'
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-gray-500 text-[9px] font-medium tabular-nums">
+                        {anime.releaseYear || 'N/A'}
+                      </span>
+                      <span className={`px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider border ${
+                        anime.subDubStatus?.includes('Dub')
+                          ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/25'
+                          : 'bg-amber-500/15 text-amber-300 border-amber-500/25'
                       }`}>
                         {anime.subDubStatus?.includes('Dub') ? 'Dub' : 'Sub'}
                       </span>
@@ -778,48 +737,41 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
         )}
       </div>
 
-      {/* Add Anime Section */}
-      <div id="add-section" className="space-y-4">
-        <div className="flex items-center gap-3">
-          <span className="w-1.5 h-7 bg-gradient-to-b from-amber-400 to-orange-400 rounded-full"></span>
-          <h2 className="text-xl font-bold text-white/90">
-            Add {activeSection === 'banner' ? 'Content' : activeSection} to Featured
+      {/* ─── Add Section ─────────────────────────────── */}
+      <div id="add-section" className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <span className="w-1 h-4 bg-gradient-to-b from-amber-400 to-orange-400 rounded-full" />
+          <h2 className="text-xs font-bold uppercase tracking-wider text-gray-300">
+            Add {activeSection === 'banner' ? 'Content' : sectionMeta?.label} to Featured
           </h2>
         </div>
 
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="flex-1 relative group">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <svg className="w-5 h-5 text-white/40 group-focus-within:text-amber-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </div>
+        {/* Search + Actions */}
+        <div className="flex flex-col md:flex-row gap-2">
+          <div className="flex-1 relative">
+            <SvgIcon d={ICONS.search} className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
             <input
               type="text"
               placeholder={`Search ${activeSection === 'banner' ? 'all content' : activeSection} by title...`}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-10 py-3 bg-purple-800/40 border border-purple-700/50 rounded-xl text-white placeholder-purple-400 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition"
+              className="w-full pl-9 pr-9 py-2.5 bg-white/[0.04] border border-white/[0.08] rounded-xl text-xs text-white placeholder-gray-500 outline-none transition-all focus:border-amber-500/50 focus:bg-white/[0.06] focus:ring-2 focus:ring-amber-500/20"
             />
             {searchTerm && (
               <button
                 onClick={() => setSearchTerm('')}
-                className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
               >
-                <svg className="w-5 h-5 text-white/40 hover:text-white/80 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                <SvgIcon d={ICONS.close} className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
-          <div className="flex gap-3">
+          <div className="flex gap-2">
             <button
               onClick={handleForceRefresh}
-              className="px-5 py-3 bg-purple-800/40 hover:bg-amber-500/20 border border-purple-700/50 hover:border-amber-500/50 rounded-xl text-white/80 hover:text-amber-300 text-sm font-medium transition-all flex items-center gap-2"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] rounded-xl text-gray-300 hover:text-white text-xs font-bold transition-all"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
+              <SvgIcon d={ICONS.refresh} className="w-3.5 h-3.5" />
               Refresh
             </button>
             <button
@@ -827,39 +779,36 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
                 const sampleData = getSampleAnimes();
                 setAllAnimes(sampleData);
                 localStorage.setItem('animeList', JSON.stringify(sampleData));
-                setApiStatus('✅ Loaded sample data for testing');
+                setApiStatus(`Loaded sample data`);
               }}
-              className="px-5 py-3 bg-purple-800/40 hover:bg-emerald-500/20 border border-purple-700/50 hover:border-emerald-500/50 rounded-xl text-white/80 hover:text-emerald-300 text-sm font-medium transition-all flex items-center gap-2"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-white/[0.04] hover:bg-emerald-500/15 border border-white/[0.08] hover:border-emerald-500/25 rounded-xl text-gray-300 hover:text-emerald-300 text-xs font-bold transition-all"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-              Sample Data
+              <SvgIcon d={ICONS.plus} className="w-3.5 h-3.5" />
+              Sample
             </button>
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-3 text-xs">
-          <div className="px-3 py-1.5 bg-purple-800/30 rounded-lg text-white/70 flex items-center gap-2">
-            <span className="w-2 h-2 bg-amber-400 rounded-full"></span>
-            {activeSection === 'banner' ? 'All Content' : `Total ${SECTIONS.find(s => s.key === activeSection)?.label}`}:
-            <span className="text-white font-semibold">
-              {activeSection === 'banner'
-                ? allAnimes.length
-                : allAnimes.filter(a => (SECTIONS.find(s => s.key === activeSection)?.contentType || []).includes(a.contentType)).length
-              }
-            </span>
-          </div>
-          <div className="px-3 py-1.5 bg-purple-800/30 rounded-lg text-white/70 flex items-center gap-2">
-            <span className="w-2 h-2 bg-orange-400 rounded-full"></span>
-            Featured: <span className="text-white font-semibold">{featuredAnimes.length}</span>
-          </div>
-          <div className="px-3 py-1.5 bg-purple-800/30 rounded-lg text-white/70 flex items-center gap-2">
-            <span className="w-2 h-2 bg-emerald-400 rounded-full"></span>
-            Available: <span className="text-white font-semibold">{filteredAnimes.length}</span>
-          </div>
+        {/* Mini stats */}
+        <div className="flex flex-wrap gap-2 text-[10px]">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white/[0.03] border border-white/[0.06] rounded-full text-gray-400 font-medium">
+            <span className="w-1.5 h-1.5 bg-amber-400 rounded-full" />
+            {activeSection === 'banner' ? 'All Content' : sectionMeta?.label}:
+            <span className="text-white font-bold">{totalContent}</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white/[0.03] border border-white/[0.06] rounded-full text-gray-400 font-medium">
+            <span className="w-1.5 h-1.5 bg-orange-400 rounded-full" />
+            Featured:
+            <span className="text-white font-bold">{featuredAnimes.length}</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white/[0.03] border border-white/[0.06] rounded-full text-gray-400 font-medium">
+            <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full" />
+            Available:
+            <span className="text-white font-bold">{filteredAnimes.length}</span>
+          </span>
         </div>
 
+        {/* Content grid */}
         {filteredAnimes.length > 0 ? (
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 gap-2">
             {filteredAnimes.map(anime => {
@@ -868,10 +817,11 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
               const optimizedSrc = getOptimizedImageUrl(anime.thumbnail, imgWidth, imgHeight);
               const animeId = getAnimeId(anime);
               const isPending = pendingIds.has(animeId);
+              const atMax = featuredAnimes.length >= 24;
               return (
                 <div
                   key={animeId}
-                  className="group bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-purple-900/40 backdrop-blur-sm border border-purple-700/40 rounded-xl overflow-hidden hover:border-amber-500/50 transition-all duration-200 hover:shadow-lg hover:shadow-amber-500/10 hover:-translate-y-0.5"
+                  className="group bg-white/[0.03] border border-white/[0.06] rounded-xl overflow-hidden hover:border-amber-500/40 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-amber-500/10"
                 >
                   <div className="relative aspect-[2/3] overflow-hidden">
                     <img
@@ -885,47 +835,46 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
                         e.currentTarget.src = getOptimizedImageUrl(anime.thumbnail || '', 160, 240);
                       }}
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-transparent"></div>
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+
                     {isPending && (
-                      <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                        <span className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center">
+                        <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                       </div>
                     )}
+
                     <div className="absolute top-1.5 right-1.5">
-                      <span className={`px-1.5 py-0.5 text-[8px] font-bold tracking-wider uppercase rounded-md ${
+                      <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-md border ${
                         anime.subDubStatus?.includes('Dub')
-                          ? 'bg-emerald-500/20 text-emerald-300'
-                          : 'bg-amber-500/20 text-amber-300'
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                          : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
                       }`}>
                         {anime.subDubStatus?.includes('Dub') ? 'Dub' : 'Sub'}
                       </span>
                     </div>
                   </div>
-                  <div className="px-2 py-2 border-t border-purple-800/30">
-                    <h3 className="font-medium text-white text-[12px] leading-snug truncate mb-1.5" title={anime.title}>
+
+                  <div className="p-2 space-y-1.5">
+                    <h3 className="font-bold text-white text-[11px] leading-snug truncate" title={anime.title}>
                       {anime.title}
                     </h3>
                     <button
                       onClick={() => addToFeatured(anime)}
-                      disabled={featuredAnimes.length >= 24 || isPending}
-                      className={`w-full py-1.5 text-[10px] font-semibold tracking-wide rounded-lg transition-all duration-200 flex items-center justify-center gap-1 ${
-                        featuredAnimes.length >= 24 || isPending
-                          ? 'bg-white/10 text-white/40 cursor-not-allowed'
-                          : 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white shadow-lg hover:shadow-amber-600/30'
+                      disabled={atMax || isPending}
+                      className={`w-full inline-flex items-center justify-center gap-1 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all ${
+                        atMax || isPending
+                          ? 'bg-white/[0.04] text-gray-500 cursor-not-allowed border border-white/[0.06]'
+                          : 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white shadow-lg shadow-amber-500/20 hover:shadow-amber-500/30'
                       }`}
                     >
-                      {featuredAnimes.length >= 24 ? (
+                      {atMax ? (
                         <>
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
+                          <SvgIcon d={ICONS.info} className="w-3 h-3" />
                           Max
                         </>
                       ) : (
                         <>
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                          </svg>
+                          <SvgIcon d={ICONS.plus} className="w-3 h-3" />
                           Add
                         </>
                       )}
@@ -936,42 +885,35 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
             })}
           </div>
         ) : (
-          <div className="fam-fade-in-up text-center py-14 bg-gradient-to-br from-purple-900/40 via-purple-800/30 to-purple-900/40 backdrop-blur-sm border border-dashed border-purple-700/50 rounded-2xl">
-            <div className="relative w-20 h-20 mx-auto">
-              {searchTerm || allAnimes.length === 0 ? (
-                <>
-                  <div className="absolute inset-0 bg-amber-500/10 rounded-full blur-xl"></div>
-                  <svg className="fam-float relative w-16 h-16 mx-auto mt-2 text-amber-400/40" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                </>
-              ) : (
-                <>
-                  <div className="absolute inset-0 bg-emerald-500/10 rounded-full blur-xl"></div>
-                  <svg className="fam-float relative w-16 h-16 mx-auto mt-2 text-emerald-400/50" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </>
-              )}
+          <div className="text-center py-10">
+            <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center">
+              <SvgIcon
+                d={searchTerm || allAnimes.length === 0 ? ICONS.search : ICONS.check}
+                className={`w-7 h-7 ${searchTerm || allAnimes.length === 0 ? 'text-amber-500/40' : 'text-emerald-500/50'}`}
+              />
             </div>
-            <h3 className="mt-5 text-lg font-semibold text-white/85">
-              {searchTerm ? 'No matches found' : allAnimes.length === 0 ? 'No content available' : `Every ${activeSection === 'banner' ? 'item' : activeSection} is already featured`}
+            <h3 className="text-sm font-bold text-gray-300">
+              {searchTerm ? 'No matches found' : allAnimes.length === 0 ? 'No content available' : `Every item is already featured`}
             </h3>
-            <p className="mt-1.5 text-white/50 text-sm max-w-md mx-auto leading-relaxed">
-              {searchTerm ? <>Nothing matches <span className="text-white/70 font-medium">"{searchTerm}"</span> — try a different title.</> : allAnimes.length === 0 ? 'Your database is empty. Load sample data or refresh to try again.' : `You've featured everything available in ${activeSection === 'banner' ? 'content' : activeSection}. Nice and complete.`}
+            <p className="text-[11px] text-gray-500 mt-1 max-w-md mx-auto">
+              {searchTerm
+                ? <>Nothing matches <span className="text-white font-semibold">"{searchTerm}"</span> — try a different title.</>
+                : allAnimes.length === 0
+                ? 'Your database is empty. Load sample data or refresh to try again.'
+                : `You've featured everything available in this section.`}
             </p>
-            <div className="mt-6 flex gap-3 justify-center">
+            <div className="mt-4 flex gap-2 justify-center">
               {searchTerm && (
                 <button
                   onClick={() => setSearchTerm('')}
-                  className="px-5 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white text-sm font-medium transition-all duration-200"
+                  className="px-4 py-2 bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] rounded-xl text-gray-300 hover:text-white text-xs font-bold transition-all"
                 >
                   Clear search
                 </button>
               )}
               <button
                 onClick={handleForceRefresh}
-                className="px-5 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 rounded-lg text-white text-sm font-semibold transition-all duration-200 shadow-lg shadow-amber-600/20 hover:shadow-amber-600/40 hover:-translate-y-0.5"
+                className="px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 rounded-xl text-white text-xs font-bold shadow-lg shadow-amber-500/20 transition-all"
               >
                 Refresh
               </button>

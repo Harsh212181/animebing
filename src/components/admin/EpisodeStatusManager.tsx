@@ -1,4 +1,4 @@
- // src/components/admin/EpisodeStatusManager.tsx – Dropdown filters + mobile card view + Sub/Dub badge + Creator badge
+ // src/components/admin/EpisodeStatusManager.tsx – Premium UI, mobile cards, dropdown filters
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
@@ -45,7 +45,28 @@ interface EpisodeStatusManagerProps {
   isMainAdmin?: boolean;
 }
 
-// ============ CUSTOM STYLED DROPDOWN (reused pattern) ============
+// ── Icon primitive ───────────────────────────────────────────────────
+const SvgIcon: React.FC<{ d: string; className?: string }> = ({ d, className = 'w-4 h-4' }) => (
+  <svg className={className} fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+    <path d={d} />
+  </svg>
+);
+
+const ICONS = {
+  badge:     'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
+  chevronDown: 'M19 9l-7 7-7-7',
+  check:     'M5 13l4 4L19 7',
+  search:    'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z',
+  warning:   'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
+  save:      'M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4',
+  sync:      'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15',
+  refresh:   'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15',
+  crown:     'M5 16l2-8 5 4 5-4 2 8H5z M3 20h18',
+  user:      'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z',
+  empty:     'M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4',
+};
+
+// ============ CUSTOM STYLED DROPDOWN ============
 interface SelectOption {
   value: string;
   label: string;
@@ -72,22 +93,20 @@ const CustomSelect: React.FC<{
 
   return (
     <div ref={ref} className="relative">
-      <label className="block text-xs font-medium text-white/60 mb-1">{label}</label>
+      <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">{label}</label>
       <button
         type="button"
         onClick={() => setIsOpen(v => !v)}
-        className={`w-full bg-gray-800/60 border text-white rounded-lg px-3 py-2.5 text-sm text-left transition-all flex items-center justify-between gap-2 ${
-          isOpen ? 'border-purple-500/60 ring-1 ring-purple-500/30' : 'border-gray-700 hover:border-gray-600'
+        className={`w-full bg-white/[0.04] border text-white rounded-lg px-3 py-2 text-xs text-left transition-all flex items-center justify-between gap-2 ${
+          isOpen ? 'border-purple-500/50 ring-2 ring-purple-500/20' : 'border-white/[0.08] hover:border-white/[0.14]'
         }`}
       >
         <span className="truncate">{selected?.label || 'Select...'}</span>
-        <svg className={`w-4 h-4 text-slate-400 flex-shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
+        <SvgIcon d={ICONS.chevronDown} className={`w-3.5 h-3.5 text-gray-500 flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {isOpen && (
-        <div className="absolute z-30 mt-2 w-full bg-gray-800 border border-gray-700 rounded-lg shadow-2xl shadow-black/50 py-1.5 max-h-72 overflow-y-auto animate-fadeIn">
+        <div className="absolute z-30 mt-1.5 w-full bg-[#151422] border border-white/10 rounded-xl shadow-2xl shadow-black/60 py-1 max-h-72 overflow-y-auto">
           {options.map(opt => {
             const isSelected = opt.value === value;
             return (
@@ -95,22 +114,49 @@ const CustomSelect: React.FC<{
                 key={opt.value}
                 type="button"
                 onClick={() => { onChange(opt.value); setIsOpen(false); }}
-                className={`w-full text-left px-3 py-2.5 text-sm flex items-center justify-between gap-2 transition-colors ${
-                  isSelected ? 'bg-purple-600/20 text-purple-200' : 'text-slate-300 hover:bg-gray-700'
+                className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between gap-2 transition-colors ${
+                  isSelected ? 'bg-purple-500/15 text-purple-200' : 'text-gray-300 hover:bg-white/[0.05]'
                 }`}
               >
                 <span className="truncate">{opt.label}</span>
-                {isSelected && (
-                  <svg className="w-4 h-4 text-purple-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
+                {isSelected && <SvgIcon d={ICONS.check} className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />}
               </button>
             );
           })}
         </div>
       )}
     </div>
+  );
+};
+
+// ── Sub/Dub badge color helper ───────────────────────────────────────
+const getSubDubBadge = (status?: string) => {
+  if (!status) return null;
+  const map: Record<string, string> = {
+    'Hindi Dub':   'bg-red-500/15 text-red-300 border-red-500/25',
+    'Hindi Sub':   'bg-orange-500/15 text-orange-300 border-orange-500/25',
+    'English Sub': 'bg-sky-500/15 text-sky-300 border-sky-500/25',
+  };
+  const cls = map[status] || 'bg-purple-500/15 text-purple-300 border-purple-500/25';
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold border ${cls}`}>
+      {status}
+    </span>
+  );
+};
+
+// ── Status badge ─────────────────────────────────────────────────────
+const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
+  const isOngoing = status === 'Ongoing';
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+      isOngoing
+        ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/25'
+        : 'bg-blue-500/15 text-blue-300 border-blue-500/25'
+    }`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${isOngoing ? 'bg-emerald-400' : 'bg-blue-400'}`} />
+      {status}
+    </span>
   );
 };
 
@@ -305,60 +351,50 @@ const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: toke
     );
   };
 
+  const hasActiveFilters =
+    contentTypeFilter !== 'all' ||
+    statusFilter !== 'all' ||
+    subDubFilter !== 'all' ||
+    creatorFilter !== 'all';
+
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-        <div className="w-16 h-16 border-4 border-purple-500/30 border-t-purple-500 rounded-full animate-spin"></div>
-        <p className="mt-4 text-white/60 text-lg">Loading anime list...</p>
+      <div className="flex flex-col items-center justify-center min-h-[60vh] bg-[#0b0a14]">
+        <div className="w-10 h-10 border-3 border-purple-500/30 border-t-purple-500 rounded-full animate-spin" />
+        <p className="mt-3 text-xs text-gray-500 font-medium">Loading anime list...</p>
       </div>
     );
   }
 
+  const inputCls = "w-full px-2 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-xs text-white text-center outline-none transition-all focus:border-purple-500/50 focus:bg-white/[0.06] focus:ring-2 focus:ring-purple-500/20";
+
   return (
-    <div className="p-4 sm:p-6 space-y-6 sm:space-y-8 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 min-h-screen">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="p-2 bg-purple-500/20 rounded-xl">
-          <svg
-            className="w-7 h-7 sm:w-8 sm:h-8 text-purple-400"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-              d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
-            />
-          </svg>
+    <div className="p-3 sm:p-6 space-y-4 min-h-screen bg-[#0b0a14] text-white">
+      {/* ─── Header ─────────────────────────────────────── */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="p-2.5 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/10 border border-purple-500/20 shadow-lg shadow-purple-500/10">
+          <SvgIcon d={ICONS.badge} className="w-6 h-6 text-purple-300" />
         </div>
-        <h1 className="text-xl sm:text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-pink-300">
-          Episode Status Manager
-        </h1>
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">Episode Status Manager</h1>
+          <p className="text-xs text-gray-500 mt-0.5">Track and manage episode counts across all content</p>
+        </div>
+        {filteredList.length > 0 && (
+          <span className="text-[11px] font-semibold text-gray-400 bg-white/[0.04] border border-white/[0.08] px-3 py-1.5 rounded-full">
+            {filteredList.length} / {animeList.length}
+          </span>
+        )}
       </div>
 
       {error && (
-        <div className="relative p-4 bg-rose-500/10 border border-rose-500/30 rounded-2xl backdrop-blur-sm text-rose-200 flex items-center gap-3 shadow-lg shadow-rose-500/5">
-          <svg
-            className="w-5 h-5 text-rose-400 flex-shrink-0"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-            />
-          </svg>
+        <div className="flex items-center gap-2.5 p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-200 text-xs">
+          <SvgIcon d={ICONS.warning} className="w-4 h-4 text-rose-400 flex-shrink-0" />
           {error}
         </div>
       )}
 
-      {/* Filter bar – Dropdown style */}
-      <div className="bg-white/5 border border-white/10 rounded-2xl p-4 shadow-2xl">
+      {/* ─── Filter bar ────────────────────────────────── */}
+      <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4">
         <div className={`grid grid-cols-2 sm:grid-cols-3 ${isMainAdmin ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-3`}>
           <CustomSelect
             label="Type"
@@ -407,43 +443,26 @@ const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: toke
             />
           )}
 
-          {/* Search */}
           <div className="col-span-2 sm:col-span-1">
-            <label className="block text-xs font-medium text-white/60 mb-1">Search</label>
+            <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Search</label>
             <div className="relative">
               <input
                 type="text"
-                placeholder="Search..."
+                placeholder="Search title..."
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
-                className="w-full px-3 py-2.5 bg-gray-800/60 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-purple-500 pl-8"
+                className="w-full pl-8 pr-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-xs text-white placeholder-gray-500 outline-none transition-all focus:border-purple-500/50 focus:bg-white/[0.06] focus:ring-2 focus:ring-purple-500/20"
               />
-              <svg
-                className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                />
-              </svg>
+              <SvgIcon d={ICONS.search} className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
             </div>
           </div>
         </div>
 
-        {/* Clear filters & count */}
-        <div className="text-xs text-white/40 mt-3 flex items-center gap-2 flex-wrap">
-          <span>
-            {filteredList.length} / {animeList.length} anime
-          </span>
-          {(contentTypeFilter !== 'all' ||
-            statusFilter !== 'all' ||
-            subDubFilter !== 'all' ||
-            creatorFilter !== 'all') && (
+        {hasActiveFilters && (
+          <div className="mt-3 flex items-center justify-between flex-wrap gap-2">
+            <span className="text-[11px] text-gray-500">
+              Filters active
+            </span>
             <button
               onClick={() => {
                 setContentTypeFilter('all');
@@ -451,39 +470,28 @@ const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: toke
                 setSubDubFilter('all');
                 setCreatorFilter('all');
               }}
-              className="text-purple-400 hover:text-purple-300 underline"
+              className="text-[11px] font-semibold text-purple-300 hover:text-purple-200 transition-colors"
             >
-              Clear filters
+              Clear all filters
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {filteredList.length === 0 ? (
-        <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl px-6 py-12 text-center">
-          <svg
-            className="w-16 h-16 mx-auto text-white/20"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1}
-              d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
-            />
-          </svg>
-          <p className="mt-4 text-white/60 text-lg">
-            No anime match your filters.
-          </p>
+        <div className="text-center py-16 bg-white/[0.03] border border-white/[0.06] rounded-2xl">
+          <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center">
+            <SvgIcon d={ICONS.empty} className="w-7 h-7 text-gray-600" />
+          </div>
+          <p className="text-sm text-gray-400 font-medium">No anime match your filters</p>
+          <p className="text-[10px] text-gray-600 mt-1">Try clearing filters or changing search</p>
         </div>
       ) : (
         <>
-          {/* ============ MOBILE CARD VIEW (below lg) ============ */}
-          <div className="lg:hidden space-y-3">
+          {/* ─── Mobile Card View ─────────────────────── */}
+          <div className="lg:hidden space-y-2">
             {filteredList.map(anime => (
-              <div key={anime._id} className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden">
+              <div key={anime._id} className="bg-white/[0.03] border border-white/[0.06] rounded-2xl overflow-hidden">
                 <div className="flex gap-3 p-3">
                   <img
                     src={
@@ -491,56 +499,31 @@ const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: toke
                       'https://via.placeholder.com/72x96/1e293b/64748b?text=NA'
                     }
                     alt={anime.title}
-                    className="w-16 h-[86px] rounded-lg object-cover shadow-lg flex-shrink-0"
+                    className="w-14 h-[76px] rounded-lg object-cover border border-white/[0.08] flex-shrink-0"
                     loading="lazy"
                     onError={e => {
-                      e.currentTarget.src =
-                        'https://via.placeholder.com/72x96/1e293b/64748b?text=NA';
+                      e.currentTarget.src = 'https://via.placeholder.com/72x96/1e293b/64748b?text=NA';
                     }}
                   />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-white leading-snug break-words">{anime.title}</p>
-                    <div className="flex flex-wrap gap-1.5 mt-1.5">
-                      {anime.status && (
-                        <span
-                          className={`px-2 py-0.5 text-[11px] rounded-full ${
-                            anime.status === 'Ongoing'
-                              ? 'bg-green-500/20 text-green-300 border border-green-500/30'
-                              : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
-                          }`}
-                        >
-                          {anime.status}
-                        </span>
-                      )}
-                      <span className="px-2 py-0.5 text-[11px] rounded-full bg-purple-600/30 text-purple-200">
+                    <p className="text-sm font-bold text-white leading-snug break-words">{anime.title}</p>
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {anime.status && <StatusBadge status={anime.status} />}
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/25">
                         {anime.contentType || 'Anime'}
                       </span>
-                      {anime.subDubStatus && (
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
-                            anime.subDubStatus === 'Hindi Dub'
-                              ? 'bg-red-600/80 text-white'
-                              : anime.subDubStatus === 'Hindi Sub'
-                              ? 'bg-orange-600/80 text-white'
-                              : anime.subDubStatus === 'English Sub'
-                              ? 'bg-blue-600/80 text-white'
-                              : 'bg-purple-600/80 text-white'
-                          }`}
-                        >
-                          {anime.subDubStatus}
-                        </span>
-                      )}
+                      {getSubDubBadge(anime.subDubStatus)}
                       {isMainAdmin && (
                         (!anime.createdBy || anime.createdBy === 'admin') ? (
-                          <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/25">
-                            Main Admin
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/25">
+                            <SvgIcon d={ICONS.crown} className="w-2.5 h-2.5" /> Admin
                           </span>
                         ) : (
                           <span
-                            className="text-[11px] px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/25"
-                            title={`Created by sub-admin: ${anime.createdByUsername}`}
+                            className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/25"
+                            title={`Created by: ${anime.createdByUsername}`}
                           >
-                            {anime.createdByUsername || 'Sub-Admin'}
+                            <SvgIcon d={ICONS.user} className="w-2.5 h-2.5" /> {anime.createdByUsername || 'Sub'}
                           </span>
                         )
                       )}
@@ -548,94 +531,50 @@ const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: toke
                   </div>
                 </div>
 
-                {/* Total / Current inputs */}
-                <div className="grid grid-cols-2 gap-3 px-3 pb-3">
+                <div className="grid grid-cols-2 gap-2 px-3 pb-2">
                   <div>
-                    <label className="block text-[11px] text-white/50 mb-1">Total Episodes</label>
+                    <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Total Episodes</label>
                     <input
                       type="number"
                       min="0"
                       value={anime.totalEpisodes ?? 0}
                       onChange={e => updateLocalField(anime._id, 'totalEpisodes', parseInt(e.target.value) || 0)}
-                      className="w-full px-2 py-2 bg-gray-800/60 border border-gray-700/80 rounded-lg text-white text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+                      className={inputCls}
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] text-white/50 mb-1">Current Episode</label>
+                    <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Current Episode</label>
                     <input
                       type="number"
                       min="0"
                       value={anime.currentEpisode ?? 0}
                       onChange={e => updateLocalField(anime._id, 'currentEpisode', parseInt(e.target.value) || 0)}
-                      className="w-full px-2 py-2 bg-gray-800/60 border border-gray-700/80 rounded-lg text-white text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+                      className={inputCls}
                     />
                   </div>
                 </div>
 
-                {/* Actions */}
-                <div className="flex gap-2 px-3 pb-3">
+                <div className="flex gap-1.5 px-3 pb-3">
                   <button
-                    onClick={() =>
-                      handleUpdate(
-                        anime._id,
-                        anime.totalEpisodes,
-                        anime.currentEpisode
-                      )
-                    }
+                    onClick={() => handleUpdate(anime._id, anime.totalEpisodes, anime.currentEpisode)}
                     disabled={savingId === anime._id}
-                    className="flex-1 px-2 py-2.5 bg-indigo-500/20 hover:bg-indigo-500/40 border border-indigo-500/30 rounded-lg text-indigo-200 text-xs font-medium transition-all flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex-1 inline-flex items-center justify-center gap-1 px-3 py-2 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/25 text-indigo-300 text-[11px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {savingId === anime._id ? (
-                      <>
-                        <div className="animate-spin h-3 w-3 border-2 border-indigo-200 border-t-transparent rounded-full"></div>
-                        Saving...
-                      </>
+                      <><span className="w-3 h-3 border-2 border-indigo-300/30 border-t-indigo-300 rounded-full animate-spin" /> Saving...</>
                     ) : (
-                      <>
-                        <svg
-                          className="w-4 h-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"
-                          />
-                        </svg>
-                        Save
-                      </>
+                      <><SvgIcon d={ICONS.save} className="w-3 h-3" /> Save</>
                     )}
                   </button>
                   <button
                     onClick={() => handleSync(anime._id, anime.title)}
                     disabled={syncModalAnime?.id === anime._id && syncModalLoading}
-                    className="flex-1 px-2 py-2.5 bg-emerald-500/20 hover:bg-emerald-500/40 border border-emerald-500/30 rounded-lg text-emerald-200 text-xs font-medium transition-all flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex-1 inline-flex items-center justify-center gap-1 px-3 py-2 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/25 text-emerald-300 text-[11px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {syncModalAnime?.id === anime._id && syncModalLoading ? (
-                      <>
-                        <div className="animate-spin h-3 w-3 border-2 border-emerald-200 border-t-transparent rounded-full"></div>
-                        Loading...
-                      </>
+                      <><span className="w-3 h-3 border-2 border-emerald-300/30 border-t-emerald-300 rounded-full animate-spin" /> Loading...</>
                     ) : (
-                      <>
-                        <svg
-                          className="w-4 h-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                          />
-                        </svg>
-                        Sync
-                      </>
+                      <><SvgIcon d={ICONS.sync} className="w-3 h-3" /> Sync</>
                     )}
                   </button>
                 </div>
@@ -643,197 +582,110 @@ const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: toke
             ))}
           </div>
 
-          {/* ============ DESKTOP TABLE VIEW (lg and up) ============ */}
-          <div className="hidden lg:block bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+          {/* ─── Desktop Table View ───────────────────── */}
+          <div className="hidden lg:block bg-white/[0.03] border border-white/[0.06] rounded-2xl overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-white/10">
-                <thead className="bg-white/5">
+              <table className="min-w-full text-xs">
+                <thead className="bg-white/[0.03] border-b border-white/[0.06]">
                   <tr>
-                    <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
-                      Image
-                    </th>
-                    <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
-                      Title
-                    </th>
-                    <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
-                      Type
-                    </th>
-                    <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
-                      Sub/Dub
-                    </th>
+                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">Image</th>
+                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">Title</th>
+                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">Type</th>
+                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">Sub/Dub</th>
                     {isMainAdmin && (
-                      <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
-                        Creator
-                      </th>
+                      <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">Creator</th>
                     )}
-                    <th className="px-2 sm:px-3 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
-                      Total
-                    </th>
-                    <th className="px-2 sm:px-3 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
-                      Current
-                    </th>
-                    <th className="px-2 sm:px-6 py-4 text-left text-xs font-medium text-white/60 uppercase tracking-wider">
-                      Actions
-                    </th>
+                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">Total</th>
+                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">Current</th>
+                    <th className="px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/10">
+                <tbody>
                   {filteredList.map(anime => (
-                    <tr
-                      key={anime._id}
-                      className="hover:bg-white/5 transition"
-                    >
-                      <td className="px-2 sm:px-6 py-4 whitespace-nowrap">
+                    <tr key={anime._id} className="border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors">
+                      <td className="px-3 py-2.5">
                         <img
-                          src={
-                            anime.thumbnail ||
-                            'https://via.placeholder.com/96x128/1e293b/64748b?text=No+Image'
-                          }
+                          src={anime.thumbnail || 'https://via.placeholder.com/64x88/1e293b/64748b?text=NA'}
                           alt={anime.title}
-                          className="w-18 h-21 sm:w-20 sm:h-22 object-cover rounded-lg shadow-lg"
+                          className="w-12 h-16 object-cover rounded-lg border border-white/[0.08]"
                           loading="lazy"
                           onError={e => {
-                            e.currentTarget.src =
-                              'https://via.placeholder.com/96x128/1e293b/64748b?text=No+Image';
+                            e.currentTarget.src = 'https://via.placeholder.com/64x88/1e293b/64748b?text=NA';
                           }}
                         />
                       </td>
-                      <td className="px-2 sm:px-6 py-4">
+                      <td className="px-3 py-2.5 max-w-[220px]">
                         <div className="flex flex-col gap-1">
-                          <span className="text-sm font-medium text-white break-words">
+                          <span className="text-xs font-semibold text-white truncate" title={anime.title}>
                             {anime.title}
                           </span>
-                          {anime.status && (
-                            <span
-                              className={`self-start px-2 py-0.5 text-xs rounded-full ${
-                                anime.status === 'Ongoing'
-                                  ? 'bg-green-500/20 text-green-300 border border-green-500/30'
-                                  : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
-                              }`}
-                            >
-                              {anime.status}
-                            </span>
-                          )}
+                          {anime.status && <StatusBadge status={anime.status} />}
                         </div>
                       </td>
-                      <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-sm text-purple-300">
-                        {anime.contentType || 'Anime'}
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/25">
+                          {anime.contentType || 'Anime'}
+                        </span>
                       </td>
-                      <td className="px-2 sm:px-6 py-4 whitespace-nowrap">
-                        {anime.subDubStatus && (
-                          <span
-                            className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                              anime.subDubStatus === 'Hindi Dub'
-                                ? 'bg-red-600/80 text-white'
-                                : anime.subDubStatus === 'Hindi Sub'
-                                ? 'bg-orange-600/80 text-white'
-                                : anime.subDubStatus === 'English Sub'
-                                ? 'bg-blue-600/80 text-white'
-                                : 'bg-purple-600/80 text-white'
-                            }`}
-                          >
-                            {anime.subDubStatus}
-                          </span>
-                        )}
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        {anime.subDubStatus ? getSubDubBadge(anime.subDubStatus) : <span className="text-gray-600">—</span>}
                       </td>
                       {isMainAdmin && (
-                        <td className="px-2 sm:px-6 py-4 whitespace-nowrap">
+                        <td className="px-3 py-2.5 whitespace-nowrap">
                           {(!anime.createdBy || anime.createdBy === 'admin') ? (
-                            <span className="text-xs px-2 py-1 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/25 whitespace-nowrap">
-                              Main Admin
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/25">
+                              <SvgIcon d={ICONS.crown} className="w-2.5 h-2.5" /> Admin
                             </span>
                           ) : (
                             <span
-                              className="text-xs px-2 py-1 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/25 whitespace-nowrap"
-                              title={`Created by sub-admin: ${anime.createdByUsername}`}
+                              className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/25"
+                              title={`Created by: ${anime.createdByUsername}`}
                             >
-                            {anime.createdByUsername || 'Sub-Admin'}
+                              <SvgIcon d={ICONS.user} className="w-2.5 h-2.5" /> {anime.createdByUsername || 'Sub'}
                             </span>
                           )}
                         </td>
                       )}
-                      <td className="px-2 sm:px-3 py-4 whitespace-nowrap">
+                      <td className="px-3 py-2.5 whitespace-nowrap">
                         <input
                           type="number"
                           min="0"
                           value={anime.totalEpisodes ?? 0}
                           onChange={e => updateLocalField(anime._id, 'totalEpisodes', parseInt(e.target.value) || 0)}
-                          className="w-14 sm:w-16 px-1.5 py-2 bg-gray-800/60 border border-gray-700/80 rounded-lg text-white text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+                          className="w-16 px-2 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-xs text-white text-center outline-none transition-all focus:border-purple-500/50 focus:bg-white/[0.06] focus:ring-2 focus:ring-purple-500/20"
                         />
                       </td>
-                      <td className="px-2 sm:px-3 py-4 whitespace-nowrap">
+                      <td className="px-3 py-2.5 whitespace-nowrap">
                         <input
                           type="number"
                           min="0"
                           value={anime.currentEpisode ?? 0}
                           onChange={e => updateLocalField(anime._id, 'currentEpisode', parseInt(e.target.value) || 0)}
-                          className="w-14 sm:w-16 px-1.5 py-2 bg-gray-800/60 border border-gray-700/80 rounded-lg text-white text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+                          className="w-16 px-2 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-xs text-white text-center outline-none transition-all focus:border-purple-500/50 focus:bg-white/[0.06] focus:ring-2 focus:ring-purple-500/20"
                         />
                       </td>
-                      <td className="px-2 sm:px-6 py-4 whitespace-nowrap">
-                        <div className="flex flex-col sm:flex-row gap-2">
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <div className="flex gap-1.5">
                           <button
-                            onClick={() =>
-                              handleUpdate(
-                                anime._id,
-                                anime.totalEpisodes,
-                                anime.currentEpisode
-                              )
-                            }
+                            onClick={() => handleUpdate(anime._id, anime.totalEpisodes, anime.currentEpisode)}
                             disabled={savingId === anime._id}
-                            className="px-2 py-1.5 bg-indigo-500/20 hover:bg-indigo-500/40 border border-indigo-500/30 rounded-lg text-indigo-200 text-xs font-medium transition-all flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/25 text-indigo-300 text-[10px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             {savingId === anime._id ? (
-                              <>
-                                <div className="animate-spin h-3 w-3 border-2 border-indigo-200 border-t-transparent rounded-full"></div>
-                                <span className="hidden sm:inline">Saving...</span>
-                              </>
+                              <><span className="w-3 h-3 border-2 border-indigo-300/30 border-t-indigo-300 rounded-full animate-spin" /> Saving</>
                             ) : (
-                              <>
-                                <svg
-                                  className="w-4 h-4"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"
-                                  />
-                                </svg>
-                                <span className="hidden sm:inline">Save</span>
-                              </>
+                              <><SvgIcon d={ICONS.save} className="w-3 h-3" /> Save</>
                             )}
                           </button>
                           <button
                             onClick={() => handleSync(anime._id, anime.title)}
                             disabled={syncModalAnime?.id === anime._id && syncModalLoading}
-                            className="px-2 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/40 border border-emerald-500/30 rounded-lg text-emerald-200 text-xs font-medium transition-all flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/25 text-emerald-300 text-[10px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             {syncModalAnime?.id === anime._id && syncModalLoading ? (
-                              <>
-                                <div className="animate-spin h-3 w-3 border-2 border-emerald-200 border-t-transparent rounded-full"></div>
-                                <span className="hidden sm:inline">Loading...</span>
-                              </>
+                              <><span className="w-3 h-3 border-2 border-emerald-300/30 border-t-emerald-300 rounded-full animate-spin" /> Loading</>
                             ) : (
-                              <>
-                                <svg
-                                  className="w-4 h-4"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                                  />
-                                </svg>
-                                <span className="hidden sm:inline">Sync</span>
-                              </>
+                              <><SvgIcon d={ICONS.sync} className="w-3 h-3" /> Sync</>
                             )}
                           </button>
                         </div>
@@ -847,30 +699,31 @@ const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: toke
         </>
       )}
 
-      {filteredList.length > 0 && (
-        <div className="text-sm text-white/40 text-right">
-          Showing {filteredList.length} of {animeList.length} anime
-        </div>
-      )}
-
-      {/* Page-selection modal */}
+      {/* ─── Page-selection modal ──────────────────────── */}
       {syncModalAnime && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
           onClick={() => !syncModalLoading && setSyncModalAnime(null)}
         >
           <div
-            className="bg-gray-900 border border-white/10 rounded-2xl p-5 max-w-md w-full shadow-2xl"
+            className="w-full max-w-md rounded-3xl border border-white/10 bg-[#151422] p-5 shadow-2xl shadow-black/40"
             onClick={e => e.stopPropagation()}
           >
-            <h3 className="text-lg font-bold text-white mb-1">Kaunse Page Se Sync Karein?</h3>
-            <p className="text-xs text-white/50 mb-4">
-              <span className="text-white font-medium">"{syncModalAnime.title}"</span> ke {syncModalPages.length} download pages hain. Sirf usi page ka episode number use hoga jo aap select karoge.
-            </p>
+            <div className="flex items-start gap-3 mb-4">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-400">
+                <SvgIcon d={ICONS.sync} className="h-5 w-5" />
+              </span>
+              <div className="min-w-0 flex-1 pt-0.5">
+                <h3 className="text-sm font-bold text-white">Select Page to Sync</h3>
+                <p className="mt-1 text-[11px] text-white/50 leading-relaxed">
+                  <span className="text-white font-semibold">"{syncModalAnime.title}"</span> ke {syncModalPages.length} download pages hain. Sirf selected page ka max episode number use hoga.
+                </p>
+              </div>
+            </div>
 
             {syncModalLoading ? (
               <div className="flex justify-center py-8">
-                <div className="w-6 h-6 border-2 border-purple-500/30 border-t-purple-500 rounded-full animate-spin"></div>
+                <div className="w-7 h-7 border-3 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
               </div>
             ) : (
               <div className="space-y-2 max-h-80 overflow-y-auto">
@@ -882,21 +735,21 @@ const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: toke
                       key={page._id}
                       onClick={() => syncWithSpecificPage(syncModalAnime.id, page)}
                       disabled={confirmingPageId === page._id}
-                      className="w-full flex items-center justify-between bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl px-3 py-2.5 text-left transition disabled:opacity-50"
+                      className="w-full flex items-center justify-between gap-2 bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.08] hover:border-white/[0.14] rounded-xl px-3 py-2.5 text-left transition-all disabled:opacity-50"
                     >
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-white">Page {idx + 1}</p>
-                        <p className="text-[11px] text-white/40 truncate">{page.slug}</p>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold text-white">Page {idx + 1}</p>
+                        <p className="text-[10px] text-gray-500 truncate font-mono">{page.slug}</p>
                       </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
-                          {watchLinks.length} watch links
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
+                          {watchLinks.length} watch
                         </span>
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-white/60">
-                          Max Ep: {maxEp || '—'}
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/25">
+                          Max: {maxEp || '—'}
                         </span>
                         {confirmingPageId === page._id && (
-                          <div className="w-3 h-3 border-2 border-emerald-200 border-t-transparent rounded-full animate-spin"></div>
+                          <span className="w-3.5 h-3.5 border-2 border-emerald-300/30 border-t-emerald-300 rounded-full animate-spin" />
                         )}
                       </div>
                     </button>
@@ -905,24 +758,18 @@ const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: toke
               </div>
             )}
 
-            <button
-              onClick={() => setSyncModalAnime(null)}
-              disabled={syncModalLoading}
-              className="w-full mt-4 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white/80 text-sm font-medium transition disabled:opacity-50"
-            >
-              Cancel
-            </button>
+            <div className="mt-5 flex justify-end">
+              <button
+                onClick={() => setSyncModalAnime(null)}
+                disabled={syncModalLoading}
+                className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/70 hover:bg-white/10 hover:text-white transition-all disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
-
-      <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(-4px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fadeIn { animation: fadeIn 0.15s ease-out; }
-      `}</style>
     </div>
   );
 };

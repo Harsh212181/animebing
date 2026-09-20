@@ -1,10 +1,10 @@
- // src/components/admin/DownloadPageManager.tsx – FULL CODE WITH PLAYER MODE TOGGLE BUTTON (ICON ONLY) + PLAYER MODE FILTER
+ // src/components/admin/DownloadPageManager.tsx – Premium UI, mobile-friendly
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { DownloadPage, DownloadPageLink, ContentType, SubDubStatus } from '../../types';
 import SearchableDropdown from './SearchableDropdown';
 import Spinner from '../Spinner';
 import { CONTENT_TYPE_OPTIONS } from '../../utils/contentGroup';
-import { isYouTubeUrl } from '@components/utils/videoHelpers';   // ✅ NEW
+import { isYouTubeUrl } from '@components/utils/videoHelpers';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 
   'https://animabing-backend.animabingwatch.workers.dev/api';
@@ -12,6 +12,34 @@ const API_BASE = import.meta.env.VITE_API_BASE ||
 const getFrontendBase = () => {
   if (typeof window === 'undefined') return 'https://animebing.in';
   return window.location.origin;
+};
+
+// ── Icon primitive ───────────────────────────────────────────────────
+const SvgIcon: React.FC<{ d: string; className?: string; fill?: boolean }> = ({ d, className = 'w-4 h-4', fill = false }) => (
+  <svg className={className} fill={fill ? 'currentColor' : 'none'} stroke={fill ? 'none' : 'currentColor'} strokeWidth={1.8} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+    <path d={d} />
+  </svg>
+);
+
+const ICONS = {
+  download:    'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4',
+  plus:        'M12 4v16m8-8H4',
+  close:       'M6 18L18 6M6 6l12 12',
+  search:      'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z',
+  warning:     'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
+  check:       'M5 13l4 4L19 7',
+  star:        'M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z',
+  eye:         'M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z',
+  edit:        'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z',
+  trash:       'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16',
+  tag:         'M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l5 5a2 2 0 01.586 1.414V19a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z',
+  play:        'M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z',
+  target:      'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z',
+  youtube:     'M21.582 7.203a2.51 2.51 0 00-1.766-1.778C18.254 5 12 5 12 5s-6.254 0-7.816.425A2.51 2.51 0 002.418 7.203 26.14 26.14 0 002 12a26.14 26.14 0 00.418 4.797 2.51 2.51 0 001.766 1.778C5.746 19 12 19 12 19s6.254 0 7.816-.425a2.51 2.51 0 001.766-1.778A26.14 26.14 0 0022 12a26.14 26.14 0 00-.418-4.797zM10 15V9l5.196 3z',
+  save:        'M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4',
+  empty:       'M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4',
+  folder:      'M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4',
+  bolt:        'M13 10V3L4 14h7v7l9-11h-7z',
 };
 
 // ============ CUSTOM STYLED DROPDOWN ============
@@ -46,28 +74,26 @@ const CustomSelect: React.FC<{
 
   return (
     <div ref={ref} className={`relative ${className || ''}`}>
-      <label className="block text-[10px] font-medium text-slate-300 mb-0.5 flexl items-center gap-1.5">
+      <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1 flex items-center gap-1.5">
         {icon}
-        {label} {required && <span className="text-red-400">*</span>}
+        {label} {required && <span className="text-rose-400">*</span>}
       </label>
       <button
         type="button"
         onClick={() => setIsOpen(v => !v)}
-        className={`w-full bg-gray-800/60 border text-white rounded-lg px-2 py-1.5 text-sm text-left transition-all flex items-center justify-between gap-1.5 ${
-          isOpen ? 'border-purple-500/60 ring-1 ring-purple-500/30' : 'border-gray-700 hover:border-gray-600'
+        className={`w-full bg-white/[0.04] border text-white rounded-lg px-2.5 py-1.5 text-xs text-left transition-all flex items-center justify-between gap-1.5 ${
+          isOpen ? 'border-purple-500/50 ring-2 ring-purple-500/20' : 'border-white/[0.08] hover:border-white/[0.14]'
         }`}
       >
         <span className="flex items-center gap-1.5 truncate">
           {selected?.color && <span className={`w-2 h-2 rounded-full bg-gradient-to-r ${selected.color} flex-shrink-0`} />}
-          <span className="truncate">{selected?.label || 'Select...'}</span>
+          <span className="truncate font-medium">{selected?.label || 'Select...'}</span>
         </span>
-        <svg className={`w-3.5 h-3.5 text-slate-400 flex-shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
+        <SvgIcon d="M19 9l-7 7-7-7" className={`w-3.5 h-3.5 text-gray-500 flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {isOpen && (
-        <div className="absolute z-[999] mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg shadow-2xl shadow-black/50 py-1 max-h-72 overflow-y-auto animate-fadeIn">
+        <div className="absolute z-[999] mt-1 w-full bg-[#151422] border border-white/10 rounded-xl shadow-2xl shadow-black/60 py-1 max-h-72 overflow-y-auto">
           {options.map(opt => {
             const isSelected = opt.value === value;
             return (
@@ -75,22 +101,18 @@ const CustomSelect: React.FC<{
                 key={opt.value}
                 type="button"
                 onClick={() => { onChange(opt.value); setIsOpen(false); }}
-                className={`w-full text-left px-3 py-1.5 text-sm flex items-center justify-between gap-2 transition-colors ${
-                  isSelected ? 'bg-purple-600/20 text-purple-200' : 'text-slate-300 hover:bg-gray-700'
+                className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between gap-2 transition-colors ${
+                  isSelected ? 'bg-purple-500/15 text-purple-200' : 'text-gray-300 hover:bg-white/[0.05]'
                 }`}
               >
                 <span className="flex items-center gap-2 min-w-0">
                   {opt.color && <span className={`w-2 h-2 rounded-full bg-gradient-to-r ${opt.color} flex-shrink-0`} />}
                   <span className="flex flex-col min-w-0">
                     <span className="truncate font-medium">{opt.label}</span>
-                    {opt.hint && <span className="text-[10px] text-slate-500 truncate">{opt.hint}</span>}
+                    {opt.hint && <span className="text-[10px] text-gray-500 truncate">{opt.hint}</span>}
                   </span>
                 </span>
-                {isSelected && (
-                  <svg className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
+                {isSelected && <SvgIcon d={ICONS.check} className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />}
               </button>
             );
           })}
@@ -118,7 +140,7 @@ interface FormPage {
   title: string;
   episodeNumber: number;
   links: DownloadPageLink[];
-  defaultPlayerMode?: 'custom' | 'default';   // ✅ NEW
+  defaultPlayerMode?: 'custom' | 'default';
 }
 
 const getAnimeTitle = (page: DownloadPage): string => {
@@ -135,7 +157,6 @@ const isAnimeHidden = (page: DownloadPage): boolean => {
   return false;
 };
 
-// ✅ NEW — check karo ke is page mein koi YouTube watch link hai ya nahi
 const hasYouTubeWatchLink = (page: DownloadPage): boolean => {
   return (page.links || []).some(l => l.type === 'watch' && isYouTubeUrl(l.url));
 };
@@ -158,38 +179,24 @@ const Toast: React.FC<{ toast: ToastState; onClose: () => void }> = ({ toast, on
   if (!toast.visible) return null;
 
   const bgColor = {
-    success: 'bg-emerald-500/20 border-emerald-500/50 text-emerald-200',
-    error: 'bg-rose-500/20 border-rose-500/50 text-rose-200',
-    info: 'bg-blue-500/20 border-blue-500/50 text-blue-200',
+    success: 'bg-emerald-500/[0.12] border-emerald-500/30 text-emerald-200',
+    error: 'bg-rose-500/[0.12] border-rose-500/30 text-rose-200',
+    info: 'bg-sky-500/[0.12] border-sky-500/30 text-sky-200',
   }[toast.type];
 
-  const icon = {
-    success: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-      </svg>
-    ),
-    error: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-      </svg>
-    ),
-    info: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    ),
+  const iconPath = {
+    success: ICONS.check,
+    error: ICONS.close,
+    info: ICONS.warning,
   }[toast.type];
 
   return (
     <div className="fixed top-4 right-4 left-4 sm:left-auto z-[999] animate-in slide-in-from-top-2 fade-in duration-300">
       <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border backdrop-blur-md shadow-2xl ${bgColor}`}>
-        {icon}
-        <span className="text-sm font-medium">{toast.message}</span>
+        <SvgIcon d={iconPath} className="w-4 h-4 flex-shrink-0" />
+        <span className="text-xs font-semibold">{toast.message}</span>
         <button onClick={onClose} className="ml-2 opacity-70 hover:opacity-100">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <SvgIcon d={ICONS.close} className="w-3.5 h-3.5" />
         </button>
       </div>
     </div>
@@ -209,20 +216,34 @@ const ConfirmModal: React.FC<ConfirmModalProps> = ({ open, title, message, onCon
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 p-4">
-      <div className="bg-gray-900 border border-white/20 rounded-2xl p-6 max-w-md w-full shadow-2xl animate-in zoom-in-95 duration-200">
-        <h3 className="text-xl font-bold text-white mb-2">{title}</h3>
-        <p className="text-white/70 mb-6">{message}</p>
-        <div className="flex flex-col-reverse sm:flex-row justify-end gap-3">
+    <div
+      className="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+      onClick={onCancel}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#151422] p-6 shadow-2xl shadow-black/40"
+      >
+        <div className="flex items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-red-500/10 text-red-400">
+            <SvgIcon d={ICONS.warning} className="h-5 w-5" />
+          </span>
+          <div className="min-w-0 flex-1 pt-1">
+            <h3 className="text-sm font-semibold text-white">{title}</h3>
+            <p className="mt-1.5 text-xs leading-relaxed text-white/50">{message}</p>
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-end gap-2.5">
           <button
             onClick={onCancel}
-            className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white/80 font-medium transition"
+            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/70 transition-all hover:bg-white/10 hover:text-white"
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
-            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 rounded-lg text-white font-medium transition shadow-lg shadow-rose-600/20"
+            className="rounded-xl px-4 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-95 bg-gradient-to-r from-red-600 to-red-700 shadow-red-500/25 hover:shadow-red-500/40"
           >
             Delete
           </button>
@@ -258,9 +279,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
       if (res.ok) setPageLinksMap(await res.json());
-    } catch {
-      // silent — optional feature
-    }
+    } catch { /* silent */ }
   };
 
   const initialLinkCountsRef = useRef<{ download: number; watch: number }>({ download: 0, watch: 0 });
@@ -273,16 +292,13 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
 
   const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; id: string | null }>({ show: false, id: null });
   const [settingPrimaryId, setSettingPrimaryId] = useState<string | null>(null);
-  // ✅ NEW: player mode toggle loading state
   const [togglingPlayerModeId, setTogglingPlayerModeId] = useState<string | null>(null);
 
-  // ✅ Filters – now using CustomSelect
   const [contentTypeFilter, setContentTypeFilter] = useState<'all' | ContentType>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'ongoing' | 'complete'>('all');
   const [subDubFilter, setSubDubFilter] = useState<'all' | string>('all');
   const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'visible' | 'hidden'>('all');
   const [subAdminFilter, setSubAdminFilter] = useState<'all' | 'admin' | 'subadmin'>('all');
-  // ✅ NEW: Player mode filter
   const [playerModeFilter, setPlayerModeFilter] = useState<'all' | 'custom' | 'default'>('all');
 
   const fetchPages = async () => {
@@ -293,20 +309,16 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
       const res = await fetch(`${API_BASE}/download-pages`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       const data = await res.json();
       if (Array.isArray(data)) {
         setPages(data.map((p: any) => ({ ...p, links: Array.isArray(p.links) ? p.links : [] })));
       } else if (data.data && Array.isArray(data.data)) {
         setPages(data.data.map((p: any) => ({ ...p, links: Array.isArray(p.links) ? p.links : [] })));
       } else {
-        console.error('Unexpected response format:', data);
         setPages([]);
       }
     } catch (error) {
-      console.error('Failed to fetch pages:', error);
       setError(error instanceof Error ? error.message : 'Failed to fetch pages');
       setPages([]);
     } finally {
@@ -344,11 +356,9 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
         });
         setAnimeThumbnails(map);
       } else {
-        console.error('Expected array but got:', json);
         setAnimeOptions([]);
       }
-    } catch (error) {
-      console.error('Failed to fetch anime:', error);
+    } catch {
       setAnimeOptions([]);
     }
   };
@@ -370,8 +380,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
         });
       });
       return maxEpisode + 1;
-    } catch (error) {
-      console.error('Failed to fetch pages for anime:', error);
+    } catch {
       return 1;
     }
   };
@@ -388,7 +397,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
     slug: page.slug,
     title: page.title,
     episodeNumber: page.episodeNumber || 1,
-    defaultPlayerMode: page.defaultPlayerMode || 'default',   // ✅ NEW
+    defaultPlayerMode: page.defaultPlayerMode || 'default',
     links: (page.links || []).map(link => ({
       ...link,
       type: (link as any).type || 'download'
@@ -451,19 +460,11 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
   };
 
   const handleSave = async (pageToSave: FormPage) => {
-    if (!pageToSave.animeId) {
-      showToast('Please select an anime', 'error');
-      return;
-    }
-    if (!pageToSave.slug) {
-      showToast('Please enter a slug (e.g., naruto-eps-1-10)', 'error');
-      return;
-    }
+    if (!pageToSave.animeId) { showToast('Please select an anime', 'error'); return; }
+    if (!pageToSave.slug) { showToast('Please enter a slug', 'error'); return; }
     if (!pageToSave.episodeNumber || pageToSave.episodeNumber < 1) {
-      showToast('Please enter a valid episode number (minimum 1)', 'error');
-      return;
+      showToast('Please enter a valid episode number', 'error'); return;
     }
-    // ✅ Links are optional — allow saving page without any links
 
     const method = pageToSave._id ? 'PUT' : 'POST';
     const url = pageToSave._id
@@ -489,8 +490,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
         const err = await res.json().catch(() => ({ error: 'Unknown error' }));
         showToast(err.error || 'Save failed', 'error');
       }
-    } catch (error) {
-      console.error('Save error:', error);
+    } catch {
       showToast('Network error. Check console.', 'error');
     }
   };
@@ -513,8 +513,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
       } else {
         showToast('Delete failed', 'error');
       }
-    } catch (error) {
-      console.error('Delete error:', error);
+    } catch {
       showToast('Network error while deleting', 'error');
     } finally {
       setDeleteConfirm({ show: false, id: null });
@@ -539,8 +538,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
       } else {
         showToast('Set primary fail ho gaya', 'error');
       }
-    } catch (error) {
-      console.error('Set primary error:', error);
+    } catch {
       showToast('Network error', 'error');
     } finally {
       setSettingPrimaryId(null);
@@ -561,19 +559,17 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
       if (res.ok) {
         const data = await res.json();
         fetchPages();
-        showToast(`Primary hata diya. Ab badge episode ${data.currentEpisode} dikhayega (sabhi pages ka max).`, 'success');
+        showToast(`Primary hata diya. Ab badge episode ${data.currentEpisode} dikhayega.`, 'success');
       } else {
         showToast('Unset primary fail ho gaya', 'error');
       }
-    } catch (error) {
-      console.error('Unset primary error:', error);
+    } catch {
       showToast('Network error', 'error');
     } finally {
       setSettingPrimaryId(null);
     }
   };
 
-  // ✅ NEW: Player Mode toggle handler
   const handleTogglePlayerMode = async (pageId: string, currentMode: 'custom' | 'default') => {
     const nextMode = currentMode === 'custom' ? 'default' : 'custom';
     setTogglingPlayerModeId(pageId);
@@ -593,8 +589,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
       } else {
         showToast('Failed to update player mode', 'error');
       }
-    } catch (error) {
-      console.error('Toggle player mode error:', error);
+    } catch {
       showToast('Network error', 'error');
     } finally {
       setTogglingPlayerModeId(null);
@@ -635,7 +630,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
         type: 'watch',
         quality: '',
         language: ''
-        // ❌ playerMode line removed
       };
       return { ...prev, links: [...prev.links, newLink] };
     });
@@ -666,7 +660,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
         type: 'watch',
         quality: '',
         language: ''
-        // ❌ playerMode line removed
       };
       return { ...prev, links: [...prev.links, newDownloadLink, newWatchLink] };
     });
@@ -714,7 +707,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
     return pages.some(page => getAnimeDetails(page).isSubAdminCreated);
   }, [pages, subAdminMode]);
 
-  // ✅ NEW — filter dropdown ko conditionally dikhane ke liye
   const hasAnyYouTubeLinks = useMemo(() => {
     return pages.some(page => hasYouTubeWatchLink(page));
   }, [pages]);
@@ -722,9 +714,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
   const filteredPages = useMemo(() => {
     return pages.filter(page => {
       const details = getAnimeDetails(page);
-      if (subAdminMode && ownedAnimeIdSet && !ownedAnimeIdSet.has(details.animeId)) {
-        return false;
-      }
+      if (subAdminMode && ownedAnimeIdSet && !ownedAnimeIdSet.has(details.animeId)) return false;
       const animeTitle = getAnimeTitle(page).toLowerCase();
       const term = searchTerm.toLowerCase();
       if (!animeTitle.includes(term)) return false;
@@ -734,15 +724,11 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
         if (statusFilter === 'ongoing' && animeStatus !== 'ongoing') return false;
         if (statusFilter === 'complete' && animeStatus !== 'complete') return false;
       }
-      if (subDubFilter !== 'all') {
-        const subDub = details.subDubStatus;
-        if (subDub !== subDubFilter) return false;
-      }
+      if (subDubFilter !== 'all' && details.subDubStatus !== subDubFilter) return false;
       if (visibilityFilter === 'visible' && details.isHidden) return false;
       if (visibilityFilter === 'hidden' && !details.isHidden) return false;
       if (subAdminFilter === 'subadmin' && !details.isSubAdminCreated) return false;
       if (subAdminFilter === 'admin' && details.isSubAdminCreated) return false;
-      // ✅ NEW: player mode filter
       if (playerModeFilter !== 'all') {
         const pagePlayerMode = page.defaultPlayerMode || 'default';
         if (pagePlayerMode !== playerModeFilter) return false;
@@ -768,14 +754,18 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
     return groupEntries.flatMap(([, list]) => list);
   }, [filteredPages]);
 
+  const hasActiveFilters =
+    contentTypeFilter !== 'all' || statusFilter !== 'all' || subDubFilter !== 'all' ||
+    visibilityFilter !== 'all' || subAdminFilter !== 'all' || playerModeFilter !== 'all';
+
   if (loading) return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+    <div className="flex items-center justify-center min-h-screen bg-[#0b0a14]">
       <Spinner size="lg" text="Loading download pages..." />
     </div>
   );
 
   return (
-    <div className="p-3 sm:p-6 space-y-5 sm:space-y-8 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 min-h-screen">
+    <div className="p-3 sm:p-6 space-y-4 min-h-screen bg-[#0b0a14] text-white">
       <Toast toast={toast} onClose={closeToast} />
       <ConfirmModal
         open={deleteConfirm.show}
@@ -785,34 +775,38 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
         onCancel={() => setDeleteConfirm({ show: false, id: null })}
       />
 
-      {/* Header — wraps and shrinks on phone so it never overflows */}
+      {/* ─── Header ───────────────────────────────────── */}
       <div className="flex items-center gap-3 flex-wrap">
-        <div className="p-2 bg-purple-500/20 rounded-xl flex-shrink-0">
-          <svg className="w-6 h-6 sm:w-8 sm:h-8 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-          </svg>
+        <div className="p-2.5 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/10 border border-purple-500/20 shadow-lg shadow-purple-500/10">
+          <SvgIcon d={ICONS.download} className="w-6 h-6 text-purple-300" />
         </div>
-        <h1 className="text-xl sm:text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-pink-300">
-          Download Pages Manager
-        </h1>
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Download Pages</h1>
+          <p className="text-xs text-gray-500 mt-0.5">Manage download pages and links</p>
+        </div>
+        {pages.length > 0 && (
+          <span className="text-[11px] font-semibold text-gray-400 bg-white/[0.04] border border-white/[0.08] px-3 py-1.5 rounded-full">
+            {filteredPages.length} / {pages.length}
+          </span>
+        )}
       </div>
 
       {error && (
-        <div className="relative p-4 bg-rose-500/10 border border-rose-500/30 rounded-2xl backdrop-blur-sm text-rose-200 flex items-center gap-3 shadow-lg shadow-rose-500/5">
-          <svg className="w-5 h-5 text-rose-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <span className="text-sm">{error}</span>
+        <div className="flex items-start gap-2.5 p-3 bg-rose-500/[0.08] border border-rose-500/20 rounded-xl text-rose-200 text-xs">
+          <SvgIcon d={ICONS.warning} className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+          <span>{error}</span>
         </div>
       )}
 
-      {/* New Page Button and Form */}
-      <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-4 sm:p-6 shadow-2xl">
+      {/* ─── New Page Form Toggle ─────────────────────── */}
+      <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4">
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-          <h2 className="text-lg sm:text-xl font-semibold text-white/90 flex items-center gap-2">
-            <span className="w-1.5 h-6 bg-purple-400 rounded-full flex-shrink-0"></span>
-            Create New Download Page
-          </h2>
+          <div className="flex items-center gap-2">
+            <span className="w-1 h-4 bg-purple-400 rounded-full" />
+            <h2 className="text-xs font-bold uppercase tracking-wider text-gray-300">
+              Create New Download Page
+            </h2>
+          </div>
           <button
             onClick={() => {
               if (showNewForm && editingPage && !editingPage._id) {
@@ -824,28 +818,19 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
                 setShowNewForm(true);
               }
             }}
-            className="w-full sm:w-auto px-6 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-medium rounded-xl shadow-lg shadow-purple-600/20 transition-all flex items-center justify-center gap-2"
+            className={`inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold rounded-xl transition-all ${
+              showNewForm && editingPage && !editingPage._id
+                ? 'bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/25 text-rose-300'
+                : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white shadow-lg shadow-purple-500/20'
+            }`}
           >
-            {showNewForm && editingPage && !editingPage._id ? (
-              <>
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-                Cancel New Page
-              </>
-            ) : (
-              <>
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                </svg>
-                New Page
-              </>
-            )}
+            <SvgIcon d={showNewForm && editingPage && !editingPage._id ? ICONS.close : ICONS.plus} className="w-3.5 h-3.5" />
+            {showNewForm && editingPage && !editingPage._id ? 'Cancel' : 'New Page'}
           </button>
         </div>
 
         {showNewForm && editingPage && !editingPage._id && (
-          <div className="mt-6">
+          <div className="mt-4 pt-4 border-t border-white/[0.06]">
             <PageForm
               editingPage={editingPage}
               setEditingPage={setEditingPage}
@@ -866,8 +851,8 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
         )}
       </div>
 
-      {/* Filters Section – wraps into a tidy 2-per-row grid on phone, single compact row on larger screens */}
-      <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-2 space-y-2 relative z-20">
+      {/* ─── Filters ──────────────────────────────────── */}
+      <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-3 relative z-20">
         <div className="flex flex-wrap items-center gap-2">
           <CustomSelect
             label="Type"
@@ -930,7 +915,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
             className="w-[calc(50%-4px)] sm:w-28 shrink-0"
           />
 
-          {/* ✅ Player Mode filter – sirf tab dikhega jab kisi bhi page mein YouTube watch link ho */}
           {hasAnyYouTubeLinks && (
             <CustomSelect
               label="Player"
@@ -960,32 +944,20 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
           )}
 
           <div className="relative w-full sm:w-64 sm:ml-auto">
+            <SvgIcon d={ICONS.search} className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
             <input
               type="text"
               placeholder="Search..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full px-3 py-1.5 bg-gray-800/60 border border-gray-700/80 rounded-xl text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition pl-9"
+              className="w-full pl-8 pr-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-xs text-white placeholder-gray-500 outline-none transition-all focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20"
             />
-            <svg
-              className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
           </div>
         </div>
 
-        <div className="flex items-center justify-between text-xs text-white/40 px-1 mt-1 gap-2 flex-wrap">
-          <span>{filteredPages.length} / {pages.length} pages shown</span>
-          {(contentTypeFilter !== 'all' || statusFilter !== 'all' || subDubFilter !== 'all' || visibilityFilter !== 'all' || subAdminFilter !== 'all' || playerModeFilter !== 'all') && (
+        {hasActiveFilters && (
+          <div className="mt-3 flex items-center justify-between flex-wrap gap-2">
+            <span className="text-[11px] text-gray-500">Filters active</span>
             <button
               onClick={() => {
                 setContentTypeFilter('all');
@@ -993,28 +965,28 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
                 setSubDubFilter('all');
                 setVisibilityFilter('all');
                 setSubAdminFilter('all');
-                setPlayerModeFilter('all'); // ✅ RESET
+                setPlayerModeFilter('all');
               }}
-              className="text-purple-400 hover:text-purple-300 underline"
+              className="text-[11px] font-semibold text-purple-300 hover:text-purple-200 transition-colors"
             >
-              Clear filters
+              Clear all filters
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
-      {/* List of Pages */}
-      <div className="space-y-4">
+      {/* ─── Pages List ───────────────────────────────── */}
+      <div className="space-y-3">
         {sortedPages.length === 0 && !error ? (
-          <div className="text-center py-16 px-4 bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl">
-            <svg className="w-16 h-16 mx-auto text-white/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            <p className="mt-4 text-white/60 text-lg">
-              {searchTerm ? 'No download pages found for this anime.' : 'No download pages found.'}
+          <div className="text-center py-16 bg-white/[0.03] border border-white/[0.06] rounded-2xl">
+            <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center">
+              <SvgIcon d={ICONS.empty} className="w-7 h-7 text-gray-600" />
+            </div>
+            <p className="text-sm text-gray-400 font-medium">
+              {searchTerm ? 'No download pages found for this anime' : 'No download pages found'}
             </p>
-            <p className="text-white/40">
-              {searchTerm ? 'Try a different anime title.' : 'Create your first page above.'}
+            <p className="text-[11px] text-gray-600 mt-1">
+              {searchTerm ? 'Try a different anime title' : 'Create your first page above'}
             </p>
           </div>
         ) : (
@@ -1028,20 +1000,24 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
             const minEp = episodeNumbers.length ? Math.min(...episodeNumbers) : null;
             const maxEp = episodeNumbers.length ? Math.max(...episodeNumbers) : null;
             const episodeRange = minEp !== null 
-              ? (minEp === maxEp ? `Episode ${minEp}` : `Episode ${minEp}-${maxEp}`)
+              ? (minEp === maxEp ? `Ep ${minEp}` : `Ep ${minEp}-${maxEp}`)
               : 'No episodes';
 
             const isEditingThis = editingPage?._id === page._id;
 
             return (
               <React.Fragment key={page._id}>
-                <div className={`group bg-white/5 backdrop-blur-sm border rounded-2xl overflow-hidden shadow-xl transition-all hover:shadow-2xl ${hidden ? 'border-red-500/30' : 'border-white/10 hover:border-white/20'} ${isEditingThis ? 'border-purple-500/30' : ''}`}>
-                  <div className="relative p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className={`absolute left-0 top-0 bottom-0 w-1.5 rounded-l-2xl ${hidden ? 'bg-gradient-to-b from-red-500 to-rose-500' : 'bg-gradient-to-b from-purple-400 to-pink-400'}`}></div>
+                <div className={`relative bg-white/[0.03] border rounded-2xl overflow-hidden transition-all hover:border-white/[0.12] ${
+                  hidden ? 'border-rose-500/25' : 'border-white/[0.06]'
+                } ${isEditingThis ? 'border-purple-500/30' : ''}`}>
+                  <span className={`absolute left-0 top-3 bottom-3 w-0.5 rounded-r-full ${
+                    hidden ? 'bg-gradient-to-b from-rose-500 to-red-500' : 'bg-gradient-to-b from-purple-400 to-pink-400'
+                  }`} />
 
-                    <div className="flex-1 pl-3">
-                      <div className="flex items-start gap-3 sm:gap-4">
-                        <div className="flex-shrink-0 w-14 h-[72px] sm:w-20 sm:h-24 rounded-lg overflow-hidden bg-gray-800/80 shadow-lg border border-white/10">
+                  <div className="p-3 sm:p-4 pl-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start gap-3">
+                        <div className="flex-shrink-0 w-12 h-16 sm:w-16 sm:h-20 rounded-lg overflow-hidden bg-white/[0.04] border border-white/[0.08]">
                           {animeDetails.thumbnail ? (
                             <img
                               src={animeDetails.thumbnail}
@@ -1050,123 +1026,130 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
                               loading="lazy"
                               onError={(e) => {
                                 e.currentTarget.onerror = null;
-                                e.currentTarget.src = 'https://via.placeholder.com/96x128/1e293b/64748b?text=No+Image';
+                                e.currentTarget.src = 'https://via.placeholder.com/96x128/1e293b/64748b?text=NA';
                               }}
                             />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-gray-700/50">
-                              <svg className="w-8 h-8 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                              </svg>
+                            <div className="w-full h-full flex items-center justify-center text-gray-600">
+                              <SvgIcon d={ICONS.download} className="w-5 h-5" />
                             </div>
                           )}
                         </div>
 
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center flex-wrap gap-2">
-                            <h3 className="text-lg sm:text-xl font-bold text-white break-words">
+                          <div className="flex items-center flex-wrap gap-1.5">
+                            <h3 className="text-sm font-bold text-white truncate">
                               {animeDetails.title}
                             </h3>
                             {pageIndex > 0 && (
-                              <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-purple-600/30 text-purple-300 border border-purple-500/50">
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/25">
                                 Page {pageIndex}
                               </span>
                             )}
                             {animePageList.length > 1 && (page as any).isPrimaryForEpisodeCount && (
-                              <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-cyan-600/30 text-cyan-300 border border-cyan-500/50 flex items-center gap-1">
-                                ⭐ Primary (Episode Badge Source)
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-cyan-500/15 text-cyan-300 border border-cyan-500/25">
+                                <SvgIcon d={ICONS.star} className="w-2.5 h-2.5" fill />
+                                Primary
                               </span>
                             )}
                             {hidden ? (
-                              <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-red-600/30 text-red-300 border border-red-500/50">
+                              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-rose-500/15 text-rose-300 border border-rose-500/25">
                                 Hidden
                               </span>
                             ) : (
-                              <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-green-600/30 text-green-300 border border-green-500/50">
+                              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
                                 Visible
                               </span>
                             )}
                             {pageLinksMap[page._id] && (
                               <span
-                                className="text-xs px-2 py-0.5 rounded-full font-medium bg-cyan-600/30 text-cyan-300 border border-cyan-500/50"
+                                className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-cyan-500/15 text-cyan-300 border border-cyan-500/25"
                                 title={`Tracker: ${pageLinksMap[page._id].channelName} — ${pageLinksMap[page._id].keyword}`}
                               >
-                                🎯 Tracker Limit: {pageLinksMap[page._id].episodeLimit || 'Unlimited'}
+                                <SvgIcon d={ICONS.target} className="w-2.5 h-2.5" />
+                                Limit: {pageLinksMap[page._id].episodeLimit || '∞'}
                               </span>
                             )}
                             {animeDetails.contentType && (
-                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                              <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md border ${
                                 animeDetails.contentType === 'Movie'
-                                  ? 'bg-purple-600/30 text-purple-300 border border-purple-500/50'
+                                  ? 'bg-purple-500/15 text-purple-300 border-purple-500/25'
                                   : animeDetails.contentType === 'Manga'
-                                  ? 'bg-green-600/30 text-green-300 border border-green-500/50'
-                                  : 'bg-blue-600/30 text-blue-300 border border-blue-500/50'
+                                  ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/25'
+                                  : 'bg-blue-500/15 text-blue-300 border-blue-500/25'
                               }`}>
                                 {animeDetails.contentType}
                               </span>
                             )}
                             {animeDetails.subDubStatus && (
-                              <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-pink-600/30 text-pink-300 border border-pink-500/50">
+                              <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md border ${
+                                animeDetails.subDubStatus === 'Hindi Dub' ? 'bg-rose-500/15 text-rose-300 border-rose-500/25'
+                                  : animeDetails.subDubStatus === 'Hindi Sub' ? 'bg-orange-500/15 text-orange-300 border-orange-500/25'
+                                  : animeDetails.subDubStatus === 'English Sub' ? 'bg-sky-500/15 text-sky-300 border-sky-500/25'
+                                  : 'bg-purple-500/15 text-purple-300 border-purple-500/25'
+                              }`}>
                                 {animeDetails.subDubStatus}
                               </span>
                             )}
                             {animeDetails.status && (
-                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                              <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md border ${
                                 animeDetails.status.toLowerCase() === 'ongoing'
-                                  ? 'bg-yellow-600/30 text-yellow-300 border border-yellow-500/50'
+                                  ? 'bg-amber-500/15 text-amber-300 border-amber-500/25'
                                   : animeDetails.status.toLowerCase() === 'complete'
-                                  ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/50'
-                                  : 'bg-gray-600/30 text-gray-300 border border-gray-500/50'
+                                  ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/25'
+                                  : 'bg-gray-500/15 text-gray-300 border-gray-500/25'
                               }`}>
                                 {animeDetails.status}
                               </span>
                             )}
-                            {/* ✅ FIX: Sirf sub-admin pages ke liye creator name dikhao */}
                             {!subAdminMode && animeDetails.isSubAdminCreated && animeDetails.createdByUsername && (
-                              <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-amber-600/30 text-amber-300 border border-amber-500/50">
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/25">
                                 By: {animeDetails.createdByUsername}
                               </span>
                             )}
                           </div>
 
-                          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-                            {/* ✅ Slug hidden on mobile */}
-                            <span className="hidden sm:inline text-white/70">
-                              <span className="text-purple-300 font-medium">Slug:</span> {page.slug}
+                          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+                            <span className="hidden sm:inline text-gray-400">
+                              Slug: <span className="text-purple-300 font-mono font-semibold">{page.slug}</span>
                             </span>
-                            <span className="text-white/70">
-                              <span className="text-purple-300 font-medium">Links:</span> {(page.links || []).length}
+                            <span className="text-gray-400">
+                              Links: <span className="text-white font-bold">{(page.links || []).length}</span>
                             </span>
-                            <span className="text-white/70">
-                              <span className="text-purple-300 font-medium">Starting Ep:</span> {page.episodeNumber}
+                            <span className="text-gray-400">
+                              Start: <span className="text-white font-bold">{page.episodeNumber}</span>
                             </span>
                             {page.title && (
-                              <span className="text-white/70">
-                                <span className="text-purple-300 font-medium">Button:</span> {page.title}
+                              <span className="text-gray-400">
+                                Button: <span className="text-purple-300 font-semibold">{page.title}</span>
                               </span>
                             )}
-                            <span className="text-white/70">
-                              <span className="text-purple-300 font-medium">{episodeRange}</span>
-                            </span>
-                            {/* ✅ Player badge – sirf tab dikhega jab page mein YouTube watch link ho */}
+                            <span className="text-purple-300 font-bold">{episodeRange}</span>
                             {hasYouTubeWatchLink(page) && (
-                              <span className="text-white/70">
-                                <span className="text-purple-300 font-medium">Player:</span> {page.defaultPlayerMode || 'default'}
+                              <span className="text-gray-400">
+                                Player: <span className={`font-bold ${
+                                  (page.defaultPlayerMode || 'default') === 'custom' ? 'text-purple-300' : 'text-sky-300'
+                                }`}>
+                                  {page.defaultPlayerMode || 'default'}
+                                </span>
                               </span>
                             )}
                           </div>
 
-                          <div className="mt-2 text-sm text-white/50 flex items-center gap-2 flex-wrap">
-                            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l5 5a2 2 0 01.586 1.414V19a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z" />
-                            </svg>
+                          <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px]">
                             {(() => {
                               const downloadCount = (page.links || []).filter(l => l.type === 'download').length;
                               const watchCount = (page.links || []).filter(l => l.type === 'watch').length;
                               return (
                                 <>
-                                  <span>Download: <span className="text-emerald-300 font-medium">{downloadCount}</span></span>
-                                  <span>Watch: <span className="text-blue-300 font-medium">{watchCount}</span></span>
+                                  <span className="inline-flex items-center gap-1 text-emerald-300">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                    Download: <span className="font-bold">{downloadCount}</span>
+                                  </span>
+                                  <span className="inline-flex items-center gap-1 text-sky-300">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+                                    Watch: <span className="font-bold">{watchCount}</span>
+                                  </span>
                                 </>
                               );
                             })()}
@@ -1175,16 +1158,13 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex gap-2 items-center flex-wrap sm:flex-nowrap">
+                    <div className="flex gap-1.5 items-center flex-wrap sm:flex-nowrap pl-3 sm:pl-0">
                       <button
                         onClick={() => window.open(`${getFrontendBase()}/download/${page.slug}`, '_blank')}
                         title="View public page"
-                        className="p-2.5 bg-white/5 hover:bg-emerald-500/20 border border-white/10 hover:border-emerald-500/50 rounded-xl text-white/80 hover:text-emerald-300 transition-all"
+                        className="p-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-gray-400 hover:bg-emerald-500/10 hover:border-emerald-500/25 hover:text-emerald-300 transition-all"
                       >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                        </svg>
+                        <SvgIcon d={ICONS.eye} className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => {
@@ -1201,14 +1181,15 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
                           }
                         }}
                         title="Edit page"
-                        className="p-2.5 bg-white/5 hover:bg-indigo-500/20 border border-white/10 hover:border-indigo-500/50 rounded-xl text-white/80 hover:text-indigo-300 transition-all"
+                        className={`p-2 rounded-lg border transition-all ${
+                          isEditingThis
+                            ? 'bg-amber-500/15 border-amber-500/25 text-amber-300'
+                            : 'bg-white/[0.04] border-white/[0.08] text-gray-400 hover:bg-indigo-500/10 hover:border-indigo-500/25 hover:text-indigo-300'
+                        }`}
                       >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
+                        <SvgIcon d={ICONS.edit} className="w-4 h-4" />
                       </button>
                       
-                      {/* ✅ Player mode toggle button – sirf tab dikhega jab page mein YouTube watch link ho */}
                       {hasYouTubeWatchLink(page) && (
                         <button
                           onClick={() => handleTogglePlayerMode(page._id, page.defaultPlayerMode || 'default')}
@@ -1218,18 +1199,16 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
                               ? 'Custom Player active — click to switch to Default YouTube Player'
                               : 'Default YouTube Player active — click to switch to Custom Player'
                           }
-                          className={`p-2.5 border rounded-xl transition-all disabled:opacity-50 ${
+                          className={`p-2 rounded-lg border transition-all disabled:opacity-50 ${
                             (page.defaultPlayerMode || 'default') === 'custom'
-                              ? 'bg-purple-500/20 border-purple-500/50 text-purple-300 hover:bg-purple-500/30'
-                              : 'bg-white/5 hover:bg-red-500/20 border-white/10 hover:border-red-500/50 text-white/80 hover:text-red-300'
+                              ? 'bg-purple-500/15 border-purple-500/25 text-purple-300 hover:bg-purple-500/25'
+                              : 'bg-white/[0.04] border-white/[0.08] text-gray-400 hover:bg-rose-500/10 hover:border-rose-500/25 hover:text-rose-300'
                           }`}
                         >
                           {togglingPlayerModeId === page._id ? (
-                            <Spinner size="sm" />
+                            <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin block" />
                           ) : (
-                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                              <path d="M21.582 7.203a2.51 2.51 0 00-1.766-1.778C18.254 5 12 5 12 5s-6.254 0-7.816.425A2.51 2.51 0 002.418 7.203 26.14 26.14 0 002 12a26.14 26.14 0 00.418 4.797 2.51 2.51 0 001.766 1.778C5.746 19 12 19 12 19s6.254 0 7.816-.425a2.51 2.51 0 001.766-1.778A26.14 26.14 0 0022 12a26.14 26.14 0 00-.418-4.797zM10 15V9l5.196 3z" />
-                            </svg>
+                            <SvgIcon d={ICONS.youtube} className="w-4 h-4" fill />
                           )}
                         </button>
                       )}
@@ -1247,57 +1226,53 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
                               ? 'Primary hatao (wapas combined-max pe jao)'
                               : 'Is page ko Episode Badge ka source banao'
                           }
-                          className={`p-2.5 border rounded-xl transition-all disabled:opacity-50 ${
+                          className={`p-2 rounded-lg border transition-all disabled:opacity-50 ${
                             (page as any).isPrimaryForEpisodeCount
-                              ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300 hover:bg-cyan-500/30'
-                              : 'bg-white/5 hover:bg-cyan-500/20 border-white/10 hover:border-cyan-500/50 text-white/80 hover:text-cyan-300'
+                              ? 'bg-cyan-500/15 border-cyan-500/25 text-cyan-300 hover:bg-cyan-500/25'
+                              : 'bg-white/[0.04] border-white/[0.08] text-gray-400 hover:bg-cyan-500/10 hover:border-cyan-500/25 hover:text-cyan-300'
                           }`}
                         >
                           {settingPrimaryId === page._id ? (
-                            <Spinner size="sm" />
+                            <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin block" />
                           ) : (
-                            <svg className="w-5 h-5" fill={(page as any).isPrimaryForEpisodeCount ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.196-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.783-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-                            </svg>
+                            <SvgIcon d={ICONS.star} className="w-4 h-4" fill={(page as any).isPrimaryForEpisodeCount} />
                           )}
                         </button>
                       )}
                       <button
                         onClick={() => requestDelete(page._id)}
                         title="Delete page"
-                        className="p-2.5 bg-white/5 hover:bg-rose-500/20 border border-white/10 hover:border-rose-500/50 rounded-xl text-white/80 hover:text-rose-300 transition-all"
+                        className="p-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-gray-400 hover:bg-rose-500/10 hover:border-rose-500/25 hover:text-rose-300 transition-all"
                       >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
+                        <SvgIcon d={ICONS.trash} className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
 
                   {isEditingThis && (
-                    <div className="px-4 sm:px-5 pb-5">
-                      <div className="border-t border-white/10 pt-4">
-                        <h3 className="text-xl sm:text-2xl font-bold text-white mb-6 flex items-center gap-2">
-                          <span className="w-1.5 h-8 bg-purple-400 rounded-full flex-shrink-0"></span>
+                    <div className="px-3 sm:px-4 pb-4 border-t border-white/[0.06] pt-4 pl-5">
+                      <div className="flex items-center gap-2 mb-4">
+                        <span className="w-1 h-4 bg-purple-400 rounded-full" />
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-gray-300">
                           Editing Page {pageIndex}
                         </h3>
-                        <PageForm
-                          editingPage={editingPage}
-                          setEditingPage={setEditingPage}
-                          animeOptions={animeOptions}
-                          onAnimeChange={handleEditAnimeChange}
-                          onSave={() => handleSave(editingPage)}
-                          onCancel={() => setEditingPage(null)}
-                          calculatingNext={calculatingNext}
-                          addDownloadLink={addDownloadLink}
-                          addWatchLink={addWatchLink}
-                          addBothLinks={addBothLinks}
-                          updateLink={updateLink}
-                          removeLink={removeLink}
-                          watchCount={editingPage.links.filter(l => l.type === 'watch').length}
-                          downloadCount={editingPage.links.filter(l => l.type === 'download').length}
-                        />
                       </div>
+                      <PageForm
+                        editingPage={editingPage}
+                        setEditingPage={setEditingPage}
+                        animeOptions={animeOptions}
+                        onAnimeChange={handleEditAnimeChange}
+                        onSave={() => handleSave(editingPage)}
+                        onCancel={() => setEditingPage(null)}
+                        calculatingNext={calculatingNext}
+                        addDownloadLink={addDownloadLink}
+                        addWatchLink={addWatchLink}
+                        addBothLinks={addBothLinks}
+                        updateLink={updateLink}
+                        removeLink={removeLink}
+                        watchCount={editingPage.links.filter(l => l.type === 'watch').length}
+                        downloadCount={editingPage.links.filter(l => l.type === 'download').length}
+                      />
                     </div>
                   )}
                 </div>
@@ -1306,20 +1281,11 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
           })
         )}
       </div>
-
-      {/* Required CSS for CustomSelect animation */}
-      <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(-4px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fadeIn { animation: fadeIn 0.15s ease-out; }
-      `}</style>
     </div>
   );
 };
 
-// ---------- PAGE FORM (NO PAGE-LEVEL PLAYER MODE DROPDOWN) ----------
+// ---------- PAGE FORM ----------
 const PageForm: React.FC<{
   editingPage: FormPage;
   setEditingPage: React.Dispatch<React.SetStateAction<FormPage | null>>;
@@ -1351,7 +1317,6 @@ const PageForm: React.FC<{
   watchCount,
   downloadCount
 }) => {
-  // ✅ ADD: hostname suggestions state and effect
   const [hostnameSuggestions, setHostnameSuggestions] = useState<{ hostname: string; label: string }[]>([]);
 
   useEffect(() => {
@@ -1364,11 +1329,13 @@ const PageForm: React.FC<{
       .catch(() => {});
   }, []);
 
+  const inputCls = "w-full px-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-xs text-white placeholder-gray-500 outline-none transition-all focus:border-purple-500/50 focus:bg-white/[0.06] focus:ring-2 focus:ring-purple-500/20";
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-white/80 mb-2 flexl items-center gap-2">
-          <span className="w-1.5 h-5 bg-emerald-400 rounded-full"></span>
+        <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">
+          <span className="w-1 h-3.5 bg-emerald-400 rounded-full" />
           Anime *
         </label>
         <SearchableDropdown
@@ -1377,27 +1344,27 @@ const PageForm: React.FC<{
           onChange={onAnimeChange}
           placeholder="Search anime..."
         />
-        {calculatingNext && <Spinner size="sm" className="mt-2" />}
+        {calculatingNext && <div className="mt-2"><Spinner size="sm" /></div>}
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-white/80 mb-2 flexl items-center gap-2">
-          <span className="w-1.5 h-5 bg-indigo-400 rounded-full"></span>
+        <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">
+          <span className="w-1 h-3.5 bg-indigo-400 rounded-full" />
           Slug (unique) *
         </label>
         <input
           type="text"
           value={editingPage.slug || ''}
           onChange={e => setEditingPage(prev => prev ? { ...prev, slug: e.target.value } : null)}
-          className="w-full px-5 py-3 bg-gray-800/60 border border-gray-700/80 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+          className={`${inputCls} font-mono`}
           placeholder="e.g., naruto-eps-1-10"
         />
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-white/80 mb-2 flexl items-center gap-2">
-          <span className="w-1.5 h-5 bg-amber-400 rounded-full"></span>
-          Starting Episode Number (reference only) *
+        <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">
+          <span className="w-1 h-3.5 bg-amber-400 rounded-full" />
+          Starting Episode (reference only) *
         </label>
         <input
           type="number"
@@ -1405,85 +1372,80 @@ const PageForm: React.FC<{
           step="1"
           value={editingPage.episodeNumber || ''}
           onChange={e => setEditingPage(prev => prev ? { ...prev, episodeNumber: parseInt(e.target.value) || 1 } : null)}
-          className="w-full px-5 py-3 bg-gray-800/60 border border-gray-700/80 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+          className={inputCls}
           placeholder="e.g., 1"
         />
-        <p className="text-xs text-white/40 mt-1">
+        <p className="text-[10px] text-gray-500 mt-1">
           This is just a reference. It does NOT affect link numbering.
         </p>
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-white/80 mb-2 flexl items-center gap-2">
-          <span className="w-1.5 h-5 bg-pink-400 rounded-full"></span>
+        <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">
+          <span className="w-1 h-3.5 bg-pink-400 rounded-full" />
           Button Title
         </label>
         <input
           type="text"
           value={editingPage.title || ''}
           onChange={e => setEditingPage(prev => prev ? { ...prev, title: e.target.value } : null)}
-          className="w-full px-5 py-3 bg-gray-800/60 border border-gray-700/80 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+          className={inputCls}
           placeholder="Download"
         />
       </div>
 
-      {/* ❌ Page-level Player Mode dropdown REMOVED — ab card ke button se control hota hai */}
-
       <div>
-        <label className="block text-sm font-medium text-white/80 mb-3 flexl items-center gap-2">
-          <span className="w-1.5 h-5 bg-amber-400 rounded-full"></span>
+        <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-2">
+          <span className="w-1 h-3.5 bg-amber-400 rounded-full" />
           Links (unlimited)
         </label>
         {editingPage.links?.map((link, idx) => (
-          <div key={idx} className="bg-gray-800/40 border border-white/5 rounded-xl p-4 mb-3">
-            {/* 📱 Stacks into a single column on phone (grid-cols-1); becomes the
-                original compact 12-col row from sm: upward so nothing gets cramped. */}
+          <div key={idx} className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-3 mb-2.5">
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 mb-2">
               <div className="sm:col-span-1">
-                <label className="block text-[10px] text-gray-500 mb-1 sm:hidden">Start episode</label>
+                <label className="block text-[10px] text-gray-500 mb-0.5 sm:hidden">Start</label>
                 <input
                   type="number"
                   placeholder="Start"
                   value={link.episodeStart ?? ''}
                   onChange={e => updateLink(idx, 'episodeStart', e.target.value ? parseInt(e.target.value) : undefined)}
-                  className="w-full bg-gray-700/60 border border-gray-600/80 rounded-lg px-2 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  className={inputCls}
                   min="1"
-                  title="Range ka starting episode (optional, jaise 1-5 me 1)"
+                  title="Range ka starting episode"
                 />
               </div>
               <div className="sm:col-span-1">
-                <label className="block text-[10px] text-gray-500 mb-1 sm:hidden">Episode</label>
+                <label className="block text-[10px] text-gray-500 mb-0.5 sm:hidden">Ep</label>
                 <input
                   type="number"
                   placeholder="Ep"
                   value={link.episode}
                   onChange={e => updateLink(idx, 'episode', parseInt(e.target.value) || 1)}
-                  className="w-full bg-gray-700/60 border border-gray-600/80 rounded-lg px-2 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  className={inputCls}
                   min="1"
                 />
               </div>
               <div className="sm:col-span-1">
-                <label className="block text-[10px] text-gray-500 mb-1 sm:hidden">Type</label>
+                <label className="block text-[10px] text-gray-500 mb-0.5 sm:hidden">Type</label>
                 <select
                   value={link.type}
                   onChange={e => updateLink(idx, 'type', e.target.value as 'download' | 'watch')}
-                  className="w-full bg-gray-700/60 border border-gray-600/80 rounded-lg px-2 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  className={inputCls}
                 >
-                  <option value="download">Download</option>
-                  <option value="watch">Watch</option>
+                  <option value="download" className="bg-slate-900">Download</option>
+                  <option value="watch" className="bg-slate-900">Watch</option>
                 </select>
               </div>
               <div className="sm:col-span-6">
-                <label className="block text-[10px] text-gray-500 mb-1 sm:hidden">URL</label>
+                <label className="block text-[10px] text-gray-500 mb-0.5 sm:hidden">URL</label>
                 <input
                   type="url"
                   placeholder="URL (e.g. https://subadmin1-videos.internal/filename.mkv)"
                   value={link.url}
                   onChange={e => updateLink(idx, 'url', e.target.value)}
                   list="hostname-suggestions"
-                  className="w-full bg-gray-700/60 border border-gray-600/80 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  className={`${inputCls} font-mono`}
                 />
-                {/* ✅ ADD: datalist for hostname suggestions */}
                 <datalist id="hostname-suggestions">
                   {hostnameSuggestions.map(h => (
                     <option key={h.hostname} value={`https://${h.hostname}/`}>{h.label}</option>
@@ -1493,94 +1455,81 @@ const PageForm: React.FC<{
               <div className="sm:col-span-2 flex sm:justify-end">
                 <button
                   onClick={() => removeLink(idx)}
-                  className="w-full sm:w-auto justify-center bg-rose-500/20 hover:bg-rose-500/40 border border-rose-500/30 text-rose-200 px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1"
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1 px-3 py-2 bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/25 text-rose-300 rounded-lg text-[11px] font-bold transition-all"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
+                  <SvgIcon d={ICONS.trash} className="w-3 h-3" />
                   Remove
                 </button>
               </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <input
                 type="text"
                 placeholder="Quality (e.g., 1080p)"
                 value={link.quality || ''}
                 onChange={e => updateLink(idx, 'quality', e.target.value)}
-                className="bg-gray-700/60 border border-gray-600/80 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                className={inputCls}
               />
               <input
                 type="text"
                 placeholder="Language (e.g., English)"
                 value={link.language || ''}
                 onChange={e => updateLink(idx, 'language', e.target.value)}
-                className="bg-gray-700/60 border border-gray-600/80 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                className={inputCls}
               />
             </div>
-
-            {/* ❌ Per-link Player Mode dropdown removed */}
           </div>
         ))}
 
-        <div className="flex gap-3 mt-2 flex-wrap">
+        <div className="flex gap-2 mt-2 flex-wrap">
           <button
             onClick={addDownloadLink}
             disabled={calculatingNext}
-            className="px-4 py-2 bg-blue-600/20 hover:bg-blue-600/40 border border-blue-500/30 rounded-xl text-blue-200 text-sm font-medium transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/25 text-blue-300 text-[11px] font-bold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {calculatingNext ? (
-              <Spinner size="sm" />
+              <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
             ) : (
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
+              <SvgIcon d={ICONS.plus} className="w-3.5 h-3.5" />
             )}
-            + Add Download Link ({downloadCount})
+            Download ({downloadCount})
           </button>
           <button
             onClick={addWatchLink}
             disabled={calculatingNext}
-            className="px-4 py-2 bg-green-600/20 hover:bg-green-600/40 border border-green-500/30 rounded-xl text-green-200 text-sm font-medium transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/25 text-emerald-300 text-[11px] font-bold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {calculatingNext ? (
-              <Spinner size="sm" />
+              <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
             ) : (
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+              <SvgIcon d={ICONS.play} className="w-3.5 h-3.5" />
             )}
-            + Add Watch Link ({watchCount})
+            Watch ({watchCount})
           </button>
           <button
             onClick={addBothLinks}
             disabled={calculatingNext}
-            className="px-4 py-2 bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/30 rounded-xl text-purple-200 text-sm font-medium transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/25 text-purple-300 text-[11px] font-bold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-            </svg>
-            + Add Both (Download + Watch)
+            <SvgIcon d={ICONS.plus} className="w-3.5 h-3.5" />
+            Both
           </button>
         </div>
       </div>
 
-      <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4 border-t border-white/10">
+      <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-4 border-t border-white/[0.06]">
         <button
           onClick={onCancel}
-          className="px-6 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-white/80 font-medium transition-all"
+          className="inline-flex items-center justify-center gap-1.5 px-5 py-2.5 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] rounded-xl text-gray-300 text-xs font-bold transition-all"
         >
+          <SvgIcon d={ICONS.close} className="w-3.5 h-3.5" />
           Cancel
         </button>
         <button
           onClick={onSave}
-          className="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-medium rounded-xl shadow-lg shadow-purple-600/20 transition-all flex items-center justify-center gap-2"
+          className="inline-flex items-center justify-center gap-1.5 px-5 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-purple-500/20 transition-all"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-          </svg>
+          <SvgIcon d={ICONS.save} className="w-3.5 h-3.5" />
           Save
         </button>
       </div>

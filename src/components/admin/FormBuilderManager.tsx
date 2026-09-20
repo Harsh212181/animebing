@@ -122,6 +122,10 @@ const CheckIcon = () => (
 const InfoIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
 );
+// 🆕 Warning icon for confirm modal
+const WarningIcon = ({ className = 'w-5 h-5' }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>
+);
 
 const FIELD_TYPE_ICONS: Record<FieldType, React.ReactNode> = {
   text: <TextIcon />,
@@ -232,6 +236,63 @@ const CustomDropdown: React.FC<CustomDropdownProps> = ({ value, onChange }) => {
   );
 };
 
+// ---------- 🆕 Confirm Modal ----------
+const ConfirmModal: React.FC<{
+  open: boolean;
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}> = ({ open, title, message, confirmLabel = 'Delete', cancelLabel = 'Cancel', danger = true, onConfirm, onCancel }) => {
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+      onClick={onCancel}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#151422] p-6 shadow-2xl shadow-black/40"
+      >
+        <div className="flex items-start gap-3">
+          <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${
+            danger ? 'bg-red-500/10 text-red-400' : 'bg-amber-500/10 text-amber-400'
+          }`}>
+            <WarningIcon className="h-5 w-5" />
+          </span>
+          <div className="min-w-0 flex-1 pt-1">
+            <h3 className="text-sm font-semibold text-white">{title}</h3>
+            <p className="mt-1.5 text-xs leading-relaxed text-white/50">{message}</p>
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-end gap-2.5">
+          <button
+            onClick={onCancel}
+            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/70 transition-all hover:bg-white/10 hover:text-white"
+          >
+            {cancelLabel}
+          </button>
+          <button
+            onClick={onConfirm}
+            className={`rounded-xl px-4 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-95 ${
+              danger
+                ? 'bg-gradient-to-r from-red-600 to-red-700 shadow-red-500/25 hover:shadow-red-500/40'
+                : 'bg-gradient-to-r from-purple-600 to-pink-600 shadow-purple-500/25 hover:shadow-purple-500/40'
+            }`}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const FormBuilderManager: React.FC<{ token: string }> = ({ token }) => {
   const [forms, setForms] = useState<FormItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -247,6 +308,17 @@ const FormBuilderManager: React.FC<{ token: string }> = ({ token }) => {
   const [fields, setFields] = useState<FormField[]>([newField(0)]);
   const [saving, setSaving] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+
+  // 🆕 Confirm modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    onConfirm: () => void;
+  }>({ open: false, title: '', message: '', confirmLabel: 'Delete', onConfirm: () => {} });
+
+  const closeConfirmModal = () => setConfirmModal(prev => ({ ...prev, open: false }));
 
   const authHeaders = useCallback(() => ({ headers: { Authorization: `Bearer ${token}` } }), [token]);
 
@@ -364,15 +436,23 @@ const FormBuilderManager: React.FC<{ token: string }> = ({ token }) => {
     }
   };
 
-  const deleteForm = async (f: FormItem) => {
-    if (!confirm(`Delete "${f.title}" and all its responses? This cannot be undone.`)) return;
-    try {
-      await axios.delete(`${API_BASE}/forms/admin/${f._id}`, authHeaders());
-      toast.success('Form deleted');
-      fetchForms();
-    } catch (e: any) {
-      toast.error(e.response?.data?.error || 'Delete failed');
-    }
+  const deleteForm = (f: FormItem) => {
+    setConfirmModal({
+      open: true,
+      title: 'Delete This Form?',
+      message: `Delete "${f.title}" and all its responses? This action cannot be undone.`,
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        closeConfirmModal();
+        try {
+          await axios.delete(`${API_BASE}/forms/admin/${f._id}`, authHeaders());
+          toast.success('Form deleted');
+          fetchForms();
+        } catch (e: any) {
+          toast.error(e.response?.data?.error || 'Delete failed');
+        }
+      },
+    });
   };
 
   const copyLink = (f: FormItem) => {
@@ -822,6 +902,16 @@ const FormBuilderManager: React.FC<{ token: string }> = ({ token }) => {
           })}
         </div>
       )}
+
+      {/* 🆕 Confirm Modal */}
+      <ConfirmModal
+        open={confirmModal.open}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmLabel={confirmModal.confirmLabel}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={closeConfirmModal}
+      />
     </div>
   );
 };

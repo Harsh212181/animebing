@@ -9,6 +9,33 @@ interface MediaItem { key: string; size: number; lastModified: string; url: stri
 interface BucketOption { hostname: string; label: string; }
 interface Props { token?: string; refreshTrigger?: number; subAdminMode?: boolean; }
 
+// ── Icon primitive ───────────────────────────────────────────────────
+const SvgIcon: React.FC<{ d: string; className?: string }> = ({ d, className = 'w-4 h-4' }) => (
+  <svg className={className} fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+    <path d={d} />
+  </svg>
+);
+
+const ICONS = {
+  video:     'M15 10l4.55-2.27a1 1 0 011.45.9v6.74a1 1 0 01-1.45.9L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z',
+  image:     'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z',
+  play:      'M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
+  download:  'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4',
+  copy:      'M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z',
+  edit:      'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z',
+  trash:     'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16',
+  plus:      'M12 4v16m8-8H4',
+  close:     'M6 18L18 6M6 6l12 12',
+  check:     'M5 13l4 4L19 7',
+  star:      'M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z',
+  refresh:   'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15',
+  search:    'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z',
+  chevron:   'M19 9l-7 7-7-7',
+  warning:   'M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z',
+  folder:    'M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4',
+  checkbox:  'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
+};
+
 const formatSize = (bytes: number) => {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -16,12 +43,11 @@ const formatSize = (bytes: number) => {
   return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
 };
 
-// ✅ NEW — stable id for an item across the whole app (hostname + key)
 function itemId(item: MediaItem): string {
   return `${item.hostname}::${item.key}`;
 }
 
-// ✅ NEW — custom-styled checkbox (no native white browser checkbox) matching the dark/purple theme
+// ── Custom Checkbox ─────────────────────────────────────────────────
 const CustomCheckbox: React.FC<{
   checked: boolean;
   onChange: () => void;
@@ -38,24 +64,16 @@ const CustomCheckbox: React.FC<{
       className={`${dims} flex-shrink-0 rounded-md border flex items-center justify-center transition-all duration-150 ${
         checked
           ? 'bg-gradient-to-br from-purple-500 to-pink-500 border-purple-400 shadow-sm shadow-purple-500/40'
-          : 'bg-gray-800/80 border-gray-600 hover:border-purple-400/70'
+          : 'bg-white/[0.04] border-white/[0.14] hover:border-purple-400/60'
       } ${className}`}
     >
-      {checked && (
-        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-        </svg>
-      )}
+      {checked && <SvgIcon d={ICONS.check} className="w-3 h-3 text-white" />}
     </button>
   );
 };
 
 function normalizeKey(str: string): string {
-  return str
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-    .replace(/\s+/g, ' ');
+  return str.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
 }
 
 const TITLE_ALIASES: Record<string, string> = {
@@ -74,21 +92,15 @@ function pickBetterDisplayName(current: string, candidate: string): string {
 }
 
 function stripTags(str: string): string {
-  return str
-    .replace(/\[[^\]]*\]/g, ' ')
-    .replace(/\([^)]*\)/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return str.replace(/\[[^\]]*\]/g, ' ').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-// ✅ NEW — detect image files so they can be shown in their own section
 function isImageFile(key: string): boolean {
   return /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(key);
 }
 
 function parseEpisodeInfo(filename: string): { baseName: string; season: number | null; episode: number | null } {
   const name = stripTags(filename.replace(/\.(mp4|mkv|avi|mov|webm)$/i, ''));
-
   let baseName = name.trim();
   let season: number | null = null;
   let episode: number | null = null;
@@ -129,6 +141,7 @@ function parseEpisodeInfo(filename: string): { baseName: string; season: number 
   return { baseName: baseName || name.trim(), season, episode };
 }
 
+// ── EpisodeRow ───────────────────────────────────────────────────────
 interface EpisodeRowProps {
   item: MediaItem;
   episode: number | null;
@@ -138,9 +151,9 @@ interface EpisodeRowProps {
   busyKey: string | null;
   isPlaying: boolean;
   isAddingToPage: boolean;
-  selectMode: boolean;        // ✅ NEW
-  isSelected: boolean;        // ✅ NEW
-  onToggleSelect: () => void; // ✅ NEW
+  selectMode: boolean;
+  isSelected: boolean;
+  onToggleSelect: () => void;
   onWatch: () => void;
   onDownload: () => void;
   onCopy: () => void;
@@ -152,39 +165,24 @@ interface EpisodeRowProps {
 }
 
 const EpisodeRow: React.FC<EpisodeRowProps> = ({
-  item,
-  episode,
-  isRenaming,
-  renameValue,
-  setRenameValue,
-  busyKey,
-  isPlaying,
-  isAddingToPage,
-  selectMode,        // ✅ NEW
-  isSelected,         // ✅ NEW
-  onToggleSelect,     // ✅ NEW
-  onWatch,
-  onDownload,
-  onCopy,
-  onToggleAddToPage,
-  onRenameStart,
-  onRenameConfirm,
-  onRenameCancel,
-  onDelete
+  item, episode, isRenaming, renameValue, setRenameValue, busyKey, isPlaying, isAddingToPage,
+  selectMode, isSelected, onToggleSelect,
+  onWatch, onDownload, onCopy, onToggleAddToPage, onRenameStart, onRenameConfirm, onRenameCancel, onDelete,
 }) => {
+  const btn = "inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition-all";
+
   return (
-    <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 p-2.5 sm:p-3 transition-colors ${
+    <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 p-2.5 transition-colors ${
       isSelected ? 'bg-purple-500/10' : 'hover:bg-white/[0.02]'
     }`}>
       <div className="min-w-0 flex-1 flex items-start gap-2.5">
-        {/* ✅ NEW — selection checkbox */}
         {selectMode && (
           <CustomCheckbox checked={isSelected} onChange={onToggleSelect} size="sm" className="mt-1" />
         )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             {episode !== null && (
-              <span className="text-xs px-2 py-0.5 bg-purple-600/30 text-purple-200 border border-purple-500/40 rounded-full font-medium flex-shrink-0">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/25 flex-shrink-0">
                 Ep {episode}
               </span>
             )}
@@ -192,70 +190,67 @@ const EpisodeRow: React.FC<EpisodeRowProps> = ({
               <input
                 value={renameValue}
                 onChange={e => setRenameValue(e.target.value)}
-                className="flex-1 min-w-[150px] px-2 py-1 bg-gray-900 border border-purple-500/50 rounded text-white text-base sm:text-sm"
+                className="flex-1 min-w-[150px] px-2 py-1 bg-white/[0.04] border border-purple-500/50 rounded-lg text-white text-xs outline-none"
                 autoFocus
               />
             ) : (
-              <p className="text-sm text-white truncate">{item.key}</p>
+              <p className="text-xs text-white/90 truncate font-medium">{item.key}</p>
             )}
           </div>
-          <p className="text-xs text-white/40 mt-1">
+          <p className="text-[10px] text-gray-500 mt-1">
             {formatSize(item.size)} · {new Date(item.lastModified).toLocaleString()}
           </p>
-          <span className="inline-block mt-1 text-[10px] px-2 py-0.5 bg-blue-600/20 text-blue-300 border border-blue-500/30 rounded-full">
+          <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-sky-500/15 text-sky-300 border border-sky-500/25">
             {item.hostname}
           </span>
         </div>
       </div>
 
       {!selectMode && (
-        <div className="flex gap-1 sm:gap-1.5 flex-wrap w-full sm:w-auto">
+        <div className="flex gap-1.5 flex-wrap w-full sm:w-auto">
           {isRenaming ? (
             <>
               <button onClick={onRenameConfirm} disabled={busyKey === item.key + 'rename'}
-                className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 text-emerald-200 rounded-lg text-xs font-medium">
-                Save
+                className={`${btn} bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-500/25 text-emerald-300 disabled:opacity-40`}>
+                <SvgIcon d={ICONS.check} className="w-3 h-3" /> Save
               </button>
               <button onClick={onRenameCancel}
-                className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium">
-                Cancel
+                className={`${btn} bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-gray-300`}>
+                <SvgIcon d={ICONS.close} className="w-3 h-3" /> Cancel
               </button>
             </>
           ) : (
             <>
               <button onClick={onWatch} disabled={busyKey === item.key + 'watch'}
-                className={`px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg text-xs font-medium border ${
-                  isPlaying
-                    ? 'bg-rose-600/30 hover:bg-rose-600/50 border-rose-500/40 text-rose-200'
-                    : 'bg-blue-600/30 hover:bg-blue-600/50 border-blue-500/40 text-blue-200'
-                }`}>
+                className={`${btn} ${isPlaying
+                  ? 'bg-rose-500/15 hover:bg-rose-500/25 border-rose-500/25 text-rose-300'
+                  : 'bg-sky-500/15 hover:bg-sky-500/25 border-sky-500/25 text-sky-300'} disabled:opacity-40`}>
+                <SvgIcon d={ICONS.play} className="w-3 h-3" />
                 {busyKey === item.key + 'watch' ? '...' : isPlaying ? 'Close' : 'Watch'}
               </button>
               <button onClick={onDownload} disabled={busyKey === item.key + 'download'}
-                className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 text-emerald-200 rounded-lg text-xs font-medium">
-                {busyKey === item.key + 'download' ? '...' : 'Download'}
+                className={`${btn} bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-500/25 text-emerald-300 disabled:opacity-40`}>
+                <SvgIcon d={ICONS.download} className="w-3 h-3" />
+                {busyKey === item.key + 'download' ? '...' : 'DL'}
               </button>
               <button onClick={onCopy}
-                className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 text-purple-200 rounded-lg text-xs font-medium">
-                Copy Link
+                className={`${btn} bg-purple-500/15 hover:bg-purple-500/25 border-purple-500/25 text-purple-300`}>
+                <SvgIcon d={ICONS.copy} className="w-3 h-3" /> Copy
               </button>
-
               <button onClick={onToggleAddToPage}
-                className={`px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg text-xs font-medium border ${
-                  isAddingToPage
-                    ? 'bg-rose-600/30 hover:bg-rose-600/50 border-rose-500/40 text-rose-200'
-                    : 'bg-indigo-600/30 hover:bg-indigo-600/50 border-indigo-500/40 text-indigo-200'
-                }`}>
-                {isAddingToPage ? 'Close' : '+ Page'}
+                className={`${btn} ${isAddingToPage
+                  ? 'bg-rose-500/15 hover:bg-rose-500/25 border-rose-500/25 text-rose-300'
+                  : 'bg-indigo-500/15 hover:bg-indigo-500/25 border-indigo-500/25 text-indigo-300'}`}>
+                <SvgIcon d={ICONS.plus} className="w-3 h-3" />
+                {isAddingToPage ? 'Close' : 'Page'}
               </button>
-
               <button onClick={onRenameStart}
-                className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-amber-600/30 hover:bg-amber-600/50 border border-amber-500/40 text-amber-200 rounded-lg text-xs font-medium">
-                Rename
+                className={`${btn} bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/25 text-amber-300`}>
+                <SvgIcon d={ICONS.edit} className="w-3 h-3" />
               </button>
               <button onClick={onDelete} disabled={busyKey === item.key + 'delete'}
-                className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-rose-600/30 hover:bg-rose-600/50 border border-rose-500/40 text-rose-200 rounded-lg text-xs font-medium">
-                {busyKey === item.key + 'delete' ? '...' : 'Delete'}
+                className={`${btn} bg-rose-500/15 hover:bg-rose-500/25 border-rose-500/25 text-rose-300 disabled:opacity-40`}>
+                <SvgIcon d={ICONS.trash} className="w-3 h-3" />
               </button>
             </>
           )}
@@ -265,16 +260,16 @@ const EpisodeRow: React.FC<EpisodeRowProps> = ({
   );
 };
 
-// ✅ NEW — grid card for image files, with actual thumbnail preview
+// ── ImageCard ───────────────────────────────────────────────────────
 interface ImageCardProps {
   item: MediaItem;
   isRenaming: boolean;
   renameValue: string;
   setRenameValue: (val: string) => void;
   busyKey: string | null;
-  selectMode: boolean;        // ✅ NEW
-  isSelected: boolean;        // ✅ NEW
-  onToggleSelect: () => void; // ✅ NEW
+  selectMode: boolean;
+  isSelected: boolean;
+  onToggleSelect: () => void;
   onDownload: () => void;
   onCopy: () => void;
   onRenameStart: () => void;
@@ -284,29 +279,19 @@ interface ImageCardProps {
 }
 
 const ImageCard: React.FC<ImageCardProps> = ({
-  item,
-  isRenaming,
-  renameValue,
-  setRenameValue,
-  busyKey,
-  selectMode,        // ✅ NEW
-  isSelected,         // ✅ NEW
-  onToggleSelect,     // ✅ NEW
-  onDownload,
-  onCopy,
-  onRenameStart,
-  onRenameConfirm,
-  onRenameCancel,
-  onDelete
+  item, isRenaming, renameValue, setRenameValue, busyKey,
+  selectMode, isSelected, onToggleSelect,
+  onDownload, onCopy, onRenameStart, onRenameConfirm, onRenameCancel, onDelete,
 }) => {
+  const btn = "flex-1 inline-flex items-center justify-center gap-0.5 px-1.5 py-1 rounded text-[10px] font-bold border transition-all";
+
   return (
     <div
       onClick={() => selectMode && onToggleSelect()}
       className={`group relative rounded-xl overflow-hidden border bg-white/[0.03] transition-colors ${
-        isSelected ? 'border-purple-500 ring-2 ring-purple-500/40' : 'border-white/10 hover:border-purple-500/30'
+        isSelected ? 'border-purple-500 ring-2 ring-purple-500/40' : 'border-white/[0.06] hover:border-purple-500/30'
       } ${selectMode ? 'cursor-pointer' : ''}`}
     >
-      {/* ✅ NEW — selection checkbox */}
       {selectMode && (
         <CustomCheckbox
           checked={isSelected}
@@ -325,47 +310,49 @@ const ImageCard: React.FC<ImageCardProps> = ({
           <input
             value={renameValue}
             onChange={e => setRenameValue(e.target.value)}
-            className="w-full px-2 py-1 bg-gray-900 border border-purple-500/50 rounded text-white text-xs"
+            className="w-full px-1.5 py-1 bg-white/[0.04] border border-purple-500/50 rounded-md text-white text-[11px] outline-none"
             autoFocus
           />
         ) : (
-          <p className="text-xs text-white truncate" title={item.key}>{item.key}</p>
+          <p className="text-[11px] text-white/90 truncate font-medium" title={item.key}>{item.key}</p>
         )}
-        <p className="text-[10px] text-white/40">{formatSize(item.size)}</p>
-        <span className="inline-block text-[9px] px-1.5 py-0.5 bg-blue-600/20 text-blue-300 border border-blue-500/30 rounded-full">
-          {item.hostname}
-        </span>
+        <div className="flex items-center justify-between gap-1 flex-wrap">
+          <p className="text-[9px] text-gray-500">{formatSize(item.size)}</p>
+          <span className="text-[9px] px-1.5 py-0.5 rounded-md font-bold bg-sky-500/15 text-sky-300 border border-sky-500/25 truncate max-w-[80px]">
+            {item.hostname}
+          </span>
+        </div>
       </div>
 
       {!selectMode && (
-        <div className="absolute inset-x-0 bottom-0 translate-y-full group-hover:translate-y-0 focus-within:translate-y-0 transition-transform bg-black/85 backdrop-blur-sm p-1.5 flex gap-1 flex-wrap">
+        <div className="absolute inset-x-0 bottom-0 translate-y-full group-hover:translate-y-0 focus-within:translate-y-0 transition-transform bg-black/90 backdrop-blur-sm p-1.5 flex gap-1 flex-wrap">
           {isRenaming ? (
             <>
               <button onClick={onRenameConfirm} disabled={busyKey === item.key + 'rename'}
-                className="flex-1 px-2 py-1 bg-emerald-600/40 hover:bg-emerald-600/60 border border-emerald-500/40 text-emerald-200 rounded text-[10px] font-medium">
+                className={`${btn} bg-emerald-500/25 hover:bg-emerald-500/40 border-emerald-500/30 text-emerald-300`}>
                 Save
               </button>
               <button onClick={onRenameCancel}
-                className="flex-1 px-2 py-1 bg-white/10 hover:bg-white/20 text-white rounded text-[10px] font-medium">
+                className={`${btn} bg-white/[0.06] hover:bg-white/[0.12] border-white/[0.1] text-gray-300`}>
                 Cancel
               </button>
             </>
           ) : (
             <>
               <button onClick={onDownload} disabled={busyKey === item.key + 'download'}
-                className="flex-1 px-2 py-1 bg-emerald-600/40 hover:bg-emerald-600/60 border border-emerald-500/40 text-emerald-200 rounded text-[10px] font-medium">
-                {busyKey === item.key + 'download' ? '...' : 'Download'}
+                className={`${btn} bg-emerald-500/25 hover:bg-emerald-500/40 border-emerald-500/30 text-emerald-300`}>
+                {busyKey === item.key + 'download' ? '...' : 'DL'}
               </button>
               <button onClick={onCopy}
-                className="flex-1 px-2 py-1 bg-purple-600/40 hover:bg-purple-600/60 border border-purple-500/40 text-purple-200 rounded text-[10px] font-medium">
+                className={`${btn} bg-purple-500/25 hover:bg-purple-500/40 border-purple-500/30 text-purple-300`}>
                 Copy
               </button>
               <button onClick={onRenameStart}
-                className="flex-1 px-2 py-1 bg-amber-600/40 hover:bg-amber-600/60 border border-amber-500/40 text-amber-200 rounded text-[10px] font-medium">
-                Rename
+                className={`${btn} bg-amber-500/25 hover:bg-amber-500/40 border-amber-500/30 text-amber-300`}>
+                Edit
               </button>
               <button onClick={onDelete} disabled={busyKey === item.key + 'delete'}
-                className="flex-1 px-2 py-1 bg-rose-600/40 hover:bg-rose-600/60 border border-rose-500/40 text-rose-200 rounded text-[10px] font-medium">
+                className={`${btn} bg-rose-500/25 hover:bg-rose-500/40 border-rose-500/30 text-rose-300`}>
                 {busyKey === item.key + 'delete' ? '...' : 'Del'}
               </button>
             </>
@@ -376,6 +363,7 @@ const ImageCard: React.FC<ImageCardProps> = ({
   );
 };
 
+// ── Main Component ──────────────────────────────────────────────────
 const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAdminMode = false }) => {
   const resolveToken = () =>
     tokenProp || localStorage.getItem('adminToken') || sessionStorage.getItem('subAdminToken') || '';
@@ -398,12 +386,10 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
   const [bulkAddGroupKey, setBulkAddGroupKey] = useState<string | null>(null);
   const [imagesExpanded, setImagesExpanded] = useState(true);
 
-  // ✅ NEW — multi-select delete state
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
-  // ✅ NEW — themed confirm modal (replaces native window.confirm())
   const [confirmModal, setConfirmModal] = useState<{
     title: string;
     message: string;
@@ -414,11 +400,8 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
   const toggleGroup = (groupKey: string) => {
     setExpandedGroups(prev => {
       const next = new Set(prev);
-      if (next.has(groupKey)) {
-        next.delete(groupKey);
-      } else {
-        next.add(groupKey);
-      }
+      if (next.has(groupKey)) next.delete(groupKey);
+      else next.add(groupKey);
       return next;
     });
   };
@@ -477,7 +460,6 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
 
   const filteredItems = items.filter(i => i.key.toLowerCase().includes(search.toLowerCase()));
 
-  // ✅ NEW — split filtered items into images vs everything else (videos)
   const imageItems = useMemo(() => filteredItems.filter(i => isImageFile(i.key)), [filteredItems]);
   const videoOnlyItems = useMemo(() => filteredItems.filter(i => !isImageFile(i.key)), [filteredItems]);
 
@@ -530,7 +512,6 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
     return groupedSeries;
   }, [groupedSeries, markedKeys, markFilter]);
 
-  // ✅ NEW — every item currently visible on screen (images + videos inside filteredGroups)
   const allVisibleItems = useMemo(() => {
     const fromGroups = filteredGroups.flatMap(g => g.episodes.map(e => e.item));
     return [...imageItems, ...fromGroups];
@@ -559,13 +540,11 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
     }
   };
 
-  // ✅ UPDATED — guard against empty URL (public base URL not set)
   const handleCopyLink = (item: MediaItem) => {
     if (!item.url) { alert('Public URL set nahi hai. My Storage me set karo.'); return; }
     navigator.clipboard.writeText(item.url);
   };
 
-  // ✅ NEW — actual delete logic (called after custom confirm modal is accepted)
   const doDelete = async (item: MediaItem) => {
     setBusyKey(item.key + 'delete');
     try {
@@ -578,7 +557,6 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
     }
   };
 
-  // ✅ NEW — opens the themed confirm modal instead of the native browser confirm()
   const requestDelete = (item: MediaItem) => {
     setConfirmModal({
       title: 'Delete file?',
@@ -644,11 +622,9 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
     }
   };
 
-  // ─── ✅ NEW: multi-select helpers ───
-
   const toggleSelectMode = () => {
     setSelectMode(prev => {
-      if (prev) setSelectedIds(new Set()); // clear selection when leaving select mode
+      if (prev) setSelectedIds(new Set());
       return !prev;
     });
   };
@@ -668,14 +644,11 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
 
   const clearSelection = () => setSelectedIds(new Set());
 
-  // ✅ NEW — actual bulk-delete logic (called after custom confirm modal is accepted)
   const doBulkDelete = async () => {
     if (selectedIds.size === 0) return;
 
     const idToItem = new Map(allVisibleItems.map(i => [itemId(i), i]));
-    const targets = Array.from(selectedIds)
-      .map(id => idToItem.get(id))
-      .filter((i): i is MediaItem => !!i);
+    const targets = Array.from(selectedIds).map(id => idToItem.get(id)).filter((i): i is MediaItem => !!i);
 
     if (targets.length === 0) {
       setSelectedIds(new Set());
@@ -691,10 +664,8 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
         (result.deleted || []).map((d: { hostname: string; key: string }) => `${d.hostname}::${d.key}`)
       );
 
-      // Remove successfully deleted items from the list
       setItems(prev => prev.filter(i => !deletedIds.has(itemId(i))));
 
-      // Keep only the ones that failed still selected, so the user can retry/inspect
       setSelectedIds(prev => {
         const next = new Set(prev);
         deletedIds.forEach(id => next.delete(id));
@@ -714,7 +685,6 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
     }
   };
 
-  // ✅ NEW — opens the themed confirm modal instead of the native browser confirm()
   const requestBulkDelete = () => {
     if (selectedIds.size === 0) return;
     setConfirmModal({
@@ -729,126 +699,151 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
 
   return (
     <>
-    <div className="bg-white/5 border border-white/10 rounded-2xl p-3 sm:p-5 space-y-4">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-          <span className="w-1.5 h-5 bg-purple-400 rounded-full"></span>
-          Uploaded Videos ({videoOnlyItems.length})
-        </h3>
-        <div className="flex gap-2 flex-wrap items-center">
-          <div className="flex bg-white/10 rounded-lg p-1">
-            <button
-              onClick={() => setMarkFilter('all')}
-              className={`px-3 py-1.5 sm:px-3 sm:py-1 text-xs font-medium rounded-md transition-colors ${
-                markFilter === 'all' ? 'bg-white/20 text-white' : 'text-white/60 hover:text-white'
-              }`}
-            >
-              All
-            </button>
-            <button
-              onClick={() => setMarkFilter('marked')}
-              className={`px-3 py-1.5 sm:px-3 sm:py-1 text-xs font-medium rounded-md transition-colors ${
-                markFilter === 'marked' ? 'bg-amber-500/30 text-amber-200' : 'text-white/60 hover:text-white'
-              }`}
-            >
-              ⭐ Marked
-            </button>
-            <button
-              onClick={() => setMarkFilter('unmarked')}
-              className={`px-3 py-1.5 sm:px-3 sm:py-1 text-xs font-medium rounded-md transition-colors ${
-                markFilter === 'unmarked' ? 'bg-white/20 text-white' : 'text-white/60 hover:text-white'
-              }`}
-            >
-              ☆ Unmarked
-            </button>
+    <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-3 sm:p-4 space-y-3">
+      {/* ─── Header ───────────────────────────────────── */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <span className="w-1 h-4 bg-purple-400 rounded-full" />
+          <h3 className="text-xs font-bold uppercase tracking-wider text-gray-300">
+            Uploaded Videos
+          </h3>
+          <span className="text-[10px] font-bold text-purple-300 bg-purple-500/15 border border-purple-500/25 px-1.5 py-0.5 rounded-md">
+            {videoOnlyItems.length}
+          </span>
+        </div>
+        <div className="flex gap-1.5 flex-wrap items-center">
+          {/* Mark filter segmented */}
+          <div className="flex gap-0.5 bg-white/[0.03] border border-white/[0.06] rounded-lg p-0.5">
+            {([
+              { value: 'all', label: 'All' },
+              { value: 'marked', label: '★' },
+              { value: 'unmarked', label: '☆' },
+            ] as const).map(f => (
+              <button
+                key={f.value}
+                onClick={() => setMarkFilter(f.value)}
+                className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-all ${
+                  markFilter === f.value
+                    ? f.value === 'marked'
+                      ? 'bg-amber-500/20 text-amber-300 shadow-sm'
+                      : 'bg-white/[0.08] text-white'
+                    : 'text-gray-500 hover:text-gray-300'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
           </div>
 
-          {/* ✅ NEW — Select mode toggle */}
           <button
             onClick={toggleSelectMode}
-            className={`px-3 py-1.5 sm:px-3 sm:py-2 rounded-lg text-xs font-medium border transition-colors ${
+            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition-all ${
               selectMode
-                ? 'bg-rose-600/30 hover:bg-rose-600/50 border-rose-500/40 text-rose-200'
-                : 'bg-indigo-600/20 hover:bg-indigo-600/40 border-indigo-500/30 text-indigo-200'
+                ? 'bg-rose-500/15 hover:bg-rose-500/25 border-rose-500/25 text-rose-300'
+                : 'bg-indigo-500/15 hover:bg-indigo-500/25 border-indigo-500/25 text-indigo-300'
             }`}
           >
-            {selectMode ? 'Cancel Select' : '☑ Select'}
+            <SvgIcon d={ICONS.checkbox} className="w-3 h-3" />
+            {selectMode ? 'Cancel' : 'Select'}
           </button>
 
-          <button onClick={fetchItems} disabled={loading} className="px-3 py-1.5 sm:px-3 sm:py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium">
-            {loading ? 'Loading...' : 'Refresh'}
+          <button
+            onClick={fetchItems}
+            disabled={loading}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-gray-300 text-[10px] font-bold transition-all disabled:opacity-40"
+          >
+            <SvgIcon d={ICONS.refresh} className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+            {loading ? 'Loading' : 'Refresh'}
           </button>
         </div>
       </div>
 
-      {/* ✅ NEW — Bulk selection toolbar */}
+      {/* ─── Bulk toolbar ─────────────────────────────── */}
       {selectMode && (
-        <div className="flex items-center justify-between flex-wrap gap-3 p-3 bg-indigo-500/10 border border-indigo-500/30 rounded-xl">
-          <span className="text-sm text-indigo-200 font-medium">
-            {selectedIds.size} selected
+        <div className="flex items-center justify-between flex-wrap gap-2 p-3 bg-indigo-500/[0.06] border border-indigo-500/20 rounded-xl">
+          <span className="text-xs font-bold text-indigo-200">
+            <span className="text-indigo-300">{selectedIds.size}</span> selected
           </span>
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex gap-1.5 flex-wrap">
             <button
               onClick={allVisibleSelected ? clearSelection : selectAllVisible}
-              className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium"
+              className="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-gray-300 text-[10px] font-bold transition-all"
             >
               {allVisibleSelected ? 'Deselect All' : 'Select All'}
             </button>
             <button
               onClick={clearSelection}
               disabled={selectedIds.size === 0}
-              className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium disabled:opacity-40"
+              className="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-gray-300 text-[10px] font-bold transition-all disabled:opacity-40"
             >
               Clear
             </button>
             <button
               onClick={requestBulkDelete}
               disabled={selectedIds.size === 0 || bulkDeleting}
-              className="px-3 py-1.5 bg-rose-600/40 hover:bg-rose-600/60 border border-rose-500/50 text-rose-100 rounded-lg text-xs font-semibold disabled:opacity-40"
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/25 text-rose-300 text-[10px] font-bold transition-all disabled:opacity-40"
             >
-              {bulkDeleting ? 'Deleting...' : `Delete Selected (${selectedIds.size})`}
+              <SvgIcon d={ICONS.trash} className="w-3 h-3" />
+              {bulkDeleting ? 'Deleting...' : `Delete (${selectedIds.size})`}
             </button>
           </div>
         </div>
       )}
 
-      <div className="flex flex-col sm:flex-row gap-3 min-w-0">
-        <select
-          value={selectedHostname}
-          onChange={e => setSelectedHostname(e.target.value)}
-          className="w-full sm:w-64 max-w-full min-w-0 truncate px-3 py-2 sm:py-2 bg-gray-800/60 border border-gray-700/80 rounded-lg text-white text-base sm:text-sm min-h-[44px] sm:min-h-0 focus:outline-none focus:ring-2 focus:ring-purple-500"
-        >
-          <option value="all">All Buckets</option>
-          {buckets.map(b => <option key={b.hostname} value={b.hostname}>{b.label}</option>)}
-        </select>
-        <input
-          type="text"
-          placeholder="Filename se search karo..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="flex-1 px-3 py-2 bg-gray-800/60 border border-gray-700/80 rounded-lg text-white text-base sm:text-sm placeholder-gray-500 min-h-[44px] sm:min-h-0 focus:outline-none focus:ring-2 focus:ring-purple-500"
-        />
+      {/* ─── Bucket + Search ──────────────────────────── */}
+      <div className="flex flex-col sm:flex-row gap-2 min-w-0">
+        <div className="relative w-full sm:w-56 max-w-full">
+          <select
+            value={selectedHostname}
+            onChange={e => setSelectedHostname(e.target.value)}
+            className="w-full appearance-none truncate pl-8 pr-7 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-xs text-white outline-none transition-all focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20"
+          >
+            <option value="all" className="bg-slate-900">All Buckets</option>
+            {buckets.map(b => <option key={b.hostname} value={b.hostname} className="bg-slate-900">{b.label}</option>)}
+          </select>
+          <SvgIcon d={ICONS.folder} className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" />
+          <SvgIcon d={ICONS.chevron} className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" />
+        </div>
+        <div className="relative flex-1">
+          <input
+            type="text"
+            placeholder="Search by filename..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full pl-8 pr-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-xs text-white placeholder-gray-500 outline-none transition-all focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20"
+          />
+          <SvgIcon d={ICONS.search} className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
+        </div>
       </div>
 
-      {error && <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-200 text-sm">{error}</div>}
+      {error && (
+        <div className="flex items-start gap-2 p-2.5 bg-rose-500/[0.08] border border-rose-500/20 rounded-lg text-rose-200 text-xs">
+          <SvgIcon d={ICONS.warning} className="w-3.5 h-3.5 text-rose-400 flex-shrink-0 mt-0.5" />
+          {error}
+        </div>
+      )}
 
-      <div className="space-y-4 max-h-[650px] overflow-y-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
+      <div className="space-y-3 max-h-[650px] overflow-y-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
 
-        {/* Images section, separate from video groups, with real thumbnail previews */}
+        {/* Images section */}
         {imageItems.length > 0 && (
-          <div className="border border-white/5 rounded-xl overflow-hidden">
+          <div className="border border-white/[0.06] rounded-xl overflow-hidden">
             <button onClick={() => setImagesExpanded(v => !v)}
-              className="w-full flex items-center justify-between px-3 py-2.5 bg-white/[0.04] hover:bg-white/[0.06] transition-colors">
-              <span className="text-sm font-semibold text-blue-300 flex items-center gap-2">
-                <span className="w-1.5 h-5 bg-blue-400 rounded-full"></span>
-                Images ({imageItems.length})
+              className="w-full flex items-center justify-between px-3 py-2 bg-white/[0.03] hover:bg-white/[0.05] transition-colors">
+              <span className="flex items-center gap-2">
+                <span className="w-1 h-3.5 bg-sky-400 rounded-full" />
+                <SvgIcon d={ICONS.image} className="w-3.5 h-3.5 text-sky-300" />
+                <span className="text-xs font-bold uppercase tracking-wider text-sky-300">
+                  Images
+                </span>
+                <span className="text-[10px] font-bold text-sky-300 bg-sky-500/15 border border-sky-500/25 px-1.5 py-0.5 rounded-md">
+                  {imageItems.length}
+                </span>
               </span>
-              <svg className={`w-4 h-4 text-white/50 transition-transform ${imagesExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
+              <SvgIcon d={ICONS.chevron} className={`w-3.5 h-3.5 text-gray-500 transition-transform ${imagesExpanded ? 'rotate-180' : ''}`} />
             </button>
             {imagesExpanded && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 p-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5 p-2.5">
                 {imageItems.map(item => {
                   const id = itemId(item);
                   return (
@@ -877,12 +872,22 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
         )}
 
         {loading && items.length === 0 ? (
-          <p className="text-white/40 text-center py-6">Loading...</p>
+          <div className="flex items-center justify-center py-8 gap-2">
+            <span className="w-4 h-4 border-2 border-white/20 border-t-white/70 rounded-full animate-spin" />
+            <p className="text-xs text-gray-500 font-medium">Loading...</p>
+          </div>
         ) : filteredGroups.length === 0 ? (
           imageItems.length === 0 && (
-            <p className="text-white/40 text-center py-6">
-              {markFilter === 'marked' ? 'Koi marked show nahi hai.' : markFilter === 'unmarked' ? 'Sab shows marked hain.' : 'Koi video nahi mila.'}
-            </p>
+            <div className="text-center py-10">
+              <div className="w-12 h-12 mx-auto mb-2.5 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center">
+                <SvgIcon d={ICONS.video} className="w-6 h-6 text-gray-600" />
+              </div>
+              <p className="text-xs text-gray-400 font-medium">
+                {markFilter === 'marked' ? 'No marked videos'
+                  : markFilter === 'unmarked' ? 'All videos are marked'
+                  : 'No videos found'}
+              </p>
+            </div>
           )
         ) : (
           filteredGroups.map(group => renderGroupCard(group))
@@ -890,7 +895,7 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
       </div>
     </div>
 
-    {/* ✅ NEW — themed confirm modal, replaces native window.confirm() popups */}
+    {/* ─── Confirm Modal ──────────────────────────────── */}
     {confirmModal && (
       <div
         className="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
@@ -898,24 +903,22 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
       >
         <div
           onClick={e => e.stopPropagation()}
-          className="w-full max-w-sm bg-[#1a1a2e] border border-rose-500/30 rounded-2xl p-5 shadow-2xl shadow-black/50 animate-fadeIn"
+          className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#151422] p-6 shadow-2xl shadow-black/40"
         >
-          <div className="flex items-start gap-3 mb-1">
-            <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center">
-              <svg className="w-5 h-5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </div>
-            <div className="min-w-0">
-              <h4 className="text-white font-semibold text-sm">{confirmModal.title}</h4>
-              <p className="text-white/60 text-sm mt-1 leading-relaxed">{confirmModal.message}</p>
+          <div className="flex items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-red-500/10 text-red-400">
+              <SvgIcon d={ICONS.warning} className="h-5 w-5" />
+            </span>
+            <div className="min-w-0 flex-1 pt-1">
+              <h3 className="text-sm font-semibold text-white">{confirmModal.title}</h3>
+              <p className="mt-1.5 text-xs leading-relaxed text-white/50">{confirmModal.message}</p>
             </div>
           </div>
 
-          <div className="flex gap-2 justify-end mt-5">
+          <div className="mt-6 flex justify-end gap-2.5">
             <button
               onClick={() => setConfirmModal(null)}
-              className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-sm font-medium transition-colors"
+              className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/70 transition-all hover:bg-white/10 hover:text-white"
             >
               Cancel
             </button>
@@ -925,7 +928,7 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
                 setConfirmModal(null);
                 action();
               }}
-              className="px-4 py-2 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white rounded-xl text-sm font-semibold shadow-lg shadow-rose-600/20 transition-all"
+              className="rounded-xl px-4 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-95 bg-gradient-to-r from-red-600 to-red-700 shadow-red-500/25 hover:shadow-red-500/40"
             >
               {confirmModal.confirmLabel}
             </button>
@@ -940,34 +943,34 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
     const isExpanded = expandedGroups.has(group.groupKey);
     const isMarked = markedKeys.has(group.groupKey);
     return (
-      <div key={group.groupKey} className="border border-white/5 rounded-xl overflow-hidden">
-        <div className="w-full flex items-center bg-white/[0.04] border-b border-white/5">
+      <div key={group.groupKey} className="border border-white/[0.06] rounded-xl overflow-hidden">
+        <div className="w-full flex items-center bg-white/[0.03] border-b border-white/[0.06]">
           <button onClick={() => toggleGroup(group.groupKey)}
-            className="flex-1 min-w-0 hover:bg-white/[0.05] px-2.5 sm:px-3 py-2.5 flex items-center justify-between transition-colors text-left">
+            className="flex-1 min-w-0 hover:bg-white/[0.04] px-3 py-2.5 flex items-center justify-between transition-colors text-left">
             <div className="text-left flex-1 min-w-0">
-              <p className="text-sm font-semibold text-purple-300 truncate">{group.displayName}</p>
+              <p className="text-xs font-bold text-purple-300 truncate">{group.displayName}</p>
               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                 {group.epRange && (
-                  <span className="text-[10px] px-2 py-0.5 bg-purple-600/30 text-purple-200 border border-purple-500/40 rounded-full font-medium">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-md font-bold bg-purple-500/15 text-purple-300 border border-purple-500/25">
                     {group.epRange}
                   </span>
                 )}
-                <span className="text-[10px] text-white/40">
+                <span className="text-[10px] text-gray-500">
                   {group.episodes.length} episode{group.episodes.length !== 1 ? 's' : ''}
                 </span>
               </div>
             </div>
-            <svg className={`w-4 h-4 text-white/50 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
+            <SvgIcon d={ICONS.chevron} className={`w-3.5 h-3.5 text-gray-500 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`} />
           </button>
 
           {!selectMode && (
             <button
               onClick={() => setBulkAddGroupKey(bulkAddGroupKey === group.groupKey ? null : group.groupKey)}
-              title="Sab episodes ek sath Download Page me add karo"
-              className={`px-2.5 sm:px-3 py-2.5 flex-shrink-0 text-xs font-medium transition-all whitespace-nowrap ${
-                bulkAddGroupKey === group.groupKey ? 'text-rose-400' : 'text-indigo-300 hover:text-indigo-200'
+              title="Add all episodes to a Download Page"
+              className={`px-2.5 py-2.5 flex-shrink-0 text-[10px] font-bold transition-all whitespace-nowrap ${
+                bulkAddGroupKey === group.groupKey
+                  ? 'text-rose-400'
+                  : 'text-indigo-300 hover:text-indigo-200'
               }`}
             >
               {bulkAddGroupKey === group.groupKey ? 'Close' : '+ All to Page'}
@@ -979,17 +982,18 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
               onClick={() => toggleMark(group.groupKey, group.displayName)}
               disabled={markBusyKey === group.groupKey}
               title={isMarked ? 'Unmark' : 'Mark'}
-              className={`px-2.5 sm:px-3 py-2.5 flex-shrink-0 text-base sm:text-lg transition-all ${
+              className={`px-2.5 py-2.5 flex-shrink-0 transition-all ${
                 isMarked
                   ? 'text-amber-400 drop-shadow-[0_0_6px_rgba(251,191,36,0.9)]'
                   : 'text-white/25 hover:text-white/60'
               }`}
             >
-              {markBusyKey === group.groupKey ? '···' : isMarked ? '★' : '☆'}
+              {markBusyKey === group.groupKey
+                ? <span className="w-3.5 h-3.5 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin inline-block" />
+                : <SvgIcon d={ICONS.star} className={`w-3.5 h-3.5 ${isMarked ? 'fill-current' : ''}`} />}
             </button>
           )}
 
-          {/* ✅ NEW — select all episodes in this group, shown while in select mode */}
           {selectMode && (
             <button
               onClick={() => {
@@ -1001,9 +1005,9 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
                   return next;
                 });
               }}
-              className="px-2.5 sm:px-3 py-2.5 flex-shrink-0 text-xs font-medium text-indigo-300 hover:text-indigo-200 whitespace-nowrap"
+              className="px-2.5 py-2.5 flex-shrink-0 text-[10px] font-bold text-indigo-300 hover:text-indigo-200 whitespace-nowrap"
             >
-              {group.episodes.every(e => selectedIds.has(itemId(e.item))) ? 'Deselect Group' : 'Select Group'}
+              {group.episodes.every(e => selectedIds.has(itemId(e.item))) ? 'Deselect' : 'Select'}
             </button>
           )}
         </div>
@@ -1017,7 +1021,7 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
         )}
 
         {isExpanded && (
-          <div className="divide-y divide-white/5">
+          <div className="divide-y divide-white/[0.04]">
             {group.episodes.map(({ item, episode }) => {
               const rowId = `${item.hostname}-${item.key}`;
               const isPlaying = playingItem?.id === rowId;
@@ -1048,7 +1052,7 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
                     onDelete={() => requestDelete(item)}
                   />
                   {isPlaying && playingItem && (
-                    <div className="py-3 bg-black/40">
+                    <div className="py-3 bg-black/40 px-3">
                       <div className="rounded-lg overflow-hidden aspect-video bg-black">
                         <VideoPlayer key={playingItem.url} src={playingItem.url} title={item.key} />
                       </div>

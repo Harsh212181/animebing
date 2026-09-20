@@ -107,15 +107,15 @@ const AuthCallback: React.FC = () => {
               {isSubAdmin ? 'Sub-Admin login ho raha hai...' : 'Google se login ho raha hai...'}
             </p>
             <p style={{ color: subTextColor, fontSize: 13, marginTop: 6 }}>
-              Ek second rukiye ⏳
+              Wait for login..⏳
             </p>
           </>
         ) : (
           <>
             <div style={{ fontSize: 44, marginBottom: 12 }}>❌</div>
-            <p style={{ color: '#d85a30', fontWeight: 600 }}>Login fail hua</p>
+            <p style={{ color: '#d85a30', fontWeight: 600 }}>Login fail</p>
             <p style={{ color: subTextColor, fontSize: 13 }}>
-              Wapas ja rahe hain...
+              We’re going back…
             </p>
           </>
         )}

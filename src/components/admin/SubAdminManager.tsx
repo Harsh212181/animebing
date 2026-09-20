@@ -177,6 +177,7 @@ const ICONS = {
   heart: 'M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z',
   info: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
   instagram: 'M12 3l2.6 5.6 6.1.6-4.5 4.2 1.3 6-5.5-3-5.5 3 1.3-6-4.5-4.2 6.1-.6L12 3z',
+  warning: 'M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z',
 };
 
 // ── Custom styled checkbox component ─────────────────────────────────
@@ -251,6 +252,63 @@ const StyledSelect: React.FC<{
   );
 };
 
+// ── 🆕 Confirm Modal ─────────────────────────────────────────────────
+const ConfirmModal: React.FC<{
+  open: boolean;
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}> = ({ open, title, message, confirmLabel = 'Delete', cancelLabel = 'Cancel', danger = true, onConfirm, onCancel }) => {
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+      onClick={onCancel}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#151422] p-6 shadow-2xl shadow-black/40"
+      >
+        <div className="flex items-start gap-3">
+          <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${
+            danger ? 'bg-red-500/10 text-red-400' : 'bg-amber-500/10 text-amber-400'
+          }`}>
+            <SvgIcon d={ICONS.warning} className="h-5 w-5" />
+          </span>
+          <div className="min-w-0 flex-1 pt-1">
+            <h3 className="text-sm font-semibold text-white">{title}</h3>
+            <p className="mt-1.5 text-xs leading-relaxed text-white/50">{message}</p>
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-end gap-2.5">
+          <button
+            onClick={onCancel}
+            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/70 transition-all hover:bg-white/10 hover:text-white"
+          >
+            {cancelLabel}
+          </button>
+          <button
+            onClick={onConfirm}
+            className={`rounded-xl px-4 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-95 ${
+              danger
+                ? 'bg-gradient-to-r from-red-600 to-red-700 shadow-red-500/25 hover:shadow-red-500/40'
+                : 'bg-gradient-to-r from-purple-600 to-pink-600 shadow-purple-500/25 hover:shadow-purple-500/40'
+            }`}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── Main Component ───────────────────────────────────────────────────
 
 const SubAdminManager: React.FC = () => {
@@ -274,6 +332,17 @@ const SubAdminManager: React.FC = () => {
   const [animeSearch, setAnimeSearch] = useState('');
   const [assignLoading, setAssignLoading] = useState(false);
   const [assignSaving, setAssignSaving] = useState(false);
+
+  // 🆕 Confirm modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    onConfirm: () => void;
+  }>({ open: false, title: '', message: '', onConfirm: () => {} });
+
+  const closeConfirmModal = () => setConfirmModal(prev => ({ ...prev, open: false }));
 
   const [form, setForm] = useState({
     username: '',
@@ -437,17 +506,25 @@ const SubAdminManager: React.FC = () => {
     }
   };
 
-  const handleDelete = async (sa: SubAdmin) => {
-    if (!confirm(`Permanently delete "${sa.username}"?`)) return;
-    const toastId = toast.loading('Deleting...');
-    try {
-      await axios.delete(`${API_BASE}/sub-admin/${sa._id}`, authHeaders);
-      toast.success('Deleted', { id: toastId });
-      fetchSubAdmins();
-      fetchStats();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Delete failed', { id: toastId });
-    }
+  const handleDelete = (sa: SubAdmin) => {
+    setConfirmModal({
+      open: true,
+      title: 'Delete Sub‑Admin?',
+      message: `Permanently delete "${sa.username}"? This action cannot be undone and all associated data will be removed.`,
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        closeConfirmModal();
+        const toastId = toast.loading('Deleting...');
+        try {
+          await axios.delete(`${API_BASE}/sub-admin/${sa._id}`, authHeaders);
+          toast.success('Deleted', { id: toastId });
+          fetchSubAdmins();
+          fetchStats();
+        } catch (err: any) {
+          toast.error(err.response?.data?.error || 'Delete failed', { id: toastId });
+        }
+      },
+    });
   };
 
   const fetchAnimeForSubAdmin = async (id: string) => {
@@ -1314,6 +1391,16 @@ const SubAdminManager: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* 🆕 Confirm Modal */}
+      <ConfirmModal
+        open={confirmModal.open}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmLabel={confirmModal.confirmLabel}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={closeConfirmModal}
+      />
     </div>
   );
 };

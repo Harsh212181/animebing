@@ -27,6 +27,80 @@ interface LinkGroup {
 
 const LINK_NAMES: Record<number, string> = { 1: 'Cuty.io', 2: 'Shrinkme', 3: 'Linkjust.com', 4: 'Gplinks' };
 
+const WARNING_ICON = 'M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z';
+
+// ── SvgIcon helper ──────────────────────────────────────────────────
+const SvgIcon: React.FC<{ d: string; className?: string }> = ({ d, className = 'w-4 h-4' }) => (
+  <svg
+    className={className}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    viewBox="0 0 24 24"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d={d} />
+  </svg>
+);
+
+// ── 🆕 Confirm Modal ─────────────────────────────────────────────────
+const ConfirmModal: React.FC<{
+  open: boolean;
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}> = ({ open, title, message, confirmLabel = 'Delete', cancelLabel = 'Cancel', danger = true, onConfirm, onCancel }) => {
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+      onClick={onCancel}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#151422] p-6 shadow-2xl shadow-black/40"
+      >
+        <div className="flex items-start gap-3">
+          <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${
+            danger ? 'bg-red-500/10 text-red-400' : 'bg-amber-500/10 text-amber-400'
+          }`}>
+            <SvgIcon d={WARNING_ICON} className="h-5 w-5" />
+          </span>
+          <div className="min-w-0 flex-1 pt-1">
+            <h3 className="text-sm font-semibold text-white">{title}</h3>
+            <p className="mt-1.5 text-xs leading-relaxed text-white/50">{message}</p>
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-end gap-2.5">
+          <button
+            onClick={onCancel}
+            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/70 transition-all hover:bg-white/10 hover:text-white"
+          >
+            {cancelLabel}
+          </button>
+          <button
+            onClick={onConfirm}
+            className={`rounded-xl px-4 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-95 ${
+              danger
+                ? 'bg-gradient-to-r from-red-600 to-red-700 shadow-red-500/25 hover:shadow-red-500/40'
+                : 'bg-gradient-to-r from-purple-600 to-pink-600 shadow-purple-500/25 hover:shadow-purple-500/40'
+            }`}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 interface AnimeLinkControlManagerProps {
   token?: string;
   isMainAdmin?: boolean;
@@ -47,6 +121,17 @@ const AnimeLinkControlManager: React.FC<AnimeLinkControlManagerProps> = ({ token
   const [saving, setSaving] = useState(false);
 
   const [toggling, setToggling] = useState<Record<string, boolean>>({});
+
+  // 🆕 Confirm modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    onConfirm: () => void;
+  }>({ open: false, title: '', message: '', confirmLabel: 'Delete', onConfirm: () => {} });
+
+  const closeConfirmModal = () => setConfirmModal(prev => ({ ...prev, open: false }));
 
   const token = propToken || localStorage.getItem('adminToken');
   const authHeaders = () => ({ headers: { Authorization: `Bearer ${token}` } });
@@ -139,12 +224,23 @@ const AnimeLinkControlManager: React.FC<AnimeLinkControlManagerProps> = ({ token
     } finally { setSaving(false); }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Ye group delete karna hai? Anime global settings pe wapas chala jayega.')) return;
-    try {
-      await axios.delete(`${API_BASE}/anime-link-control/${id}`, authHeaders());
-      toast.success('Deleted!'); fetchGroups();
-    } catch (err: any) { toast.error(err.response?.data?.error || 'Delete failed'); }
+  const handleDelete = (id: string) => {
+    setConfirmModal({
+      open: true,
+      title: 'Delete This Group?',
+      message: 'Ye group delete karna hai? Anime global settings pe wapas chala jayega. This action cannot be undone.',
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        closeConfirmModal();
+        try {
+          await axios.delete(`${API_BASE}/anime-link-control/${id}`, authHeaders());
+          toast.success('Deleted!');
+          fetchGroups();
+        } catch (err: any) {
+          toast.error(err.response?.data?.error || 'Delete failed');
+        }
+      },
+    });
   };
 
   const toggleGroupLink = useCallback(async (groupId: string, linkNum: number, currentValue: boolean) => {
@@ -446,6 +542,16 @@ const AnimeLinkControlManager: React.FC<AnimeLinkControlManagerProps> = ({ token
           ))
         )}
       </div>
+
+      {/* 🆕 Confirm Modal */}
+      <ConfirmModal
+        open={confirmModal.open}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmLabel={confirmModal.confirmLabel}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={closeConfirmModal}
+      />
 
       <style>{`
         .custom-scroll::-webkit-scrollbar { width: 4px; }

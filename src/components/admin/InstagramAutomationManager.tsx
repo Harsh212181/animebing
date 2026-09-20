@@ -61,6 +61,7 @@ const Icons = {
   close: (c = 'w-4 h-4') => <svg className={c} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" /></svg>,
   clock: (c = 'w-4 h-4') => <svg className={c} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" strokeLinecap="round" strokeLinejoin="round" /></svg>,
   inbox: (c = 'w-4 h-4') => <svg className={c} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path d="M3 8l1.5-4.5A1 1 0 015.45 3h13.1a1 1 0 01.95.68L21 8m-18 0v10a2 2 0 002 2h14a2 2 0 002-2V8m-18 0h18m-13 4h8" strokeLinecap="round" strokeLinejoin="round" /></svg>,
+  warning: (c = 'w-5 h-5') => <svg className={c} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" strokeLinecap="round" strokeLinejoin="round" /></svg>,
 };
 
 // ============ HELPERS ============
@@ -351,6 +352,63 @@ const LogRow: React.FC<{ log: AutomationLog }> = ({ log }) => {
   );
 };
 
+// ============ CONFIRM MODAL ============
+const ConfirmModal: React.FC<{
+  open: boolean;
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}> = ({ open, title, message, confirmLabel = 'Delete', cancelLabel = 'Cancel', danger = true, onConfirm, onCancel }) => {
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+      onClick={onCancel}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#151422] p-6 shadow-2xl shadow-black/40"
+      >
+        <div className="flex items-start gap-3">
+          <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${
+            danger ? 'bg-red-500/10 text-red-400' : 'bg-amber-500/10 text-amber-400'
+          }`}>
+            {Icons.warning('h-5 w-5')}
+          </span>
+          <div className="min-w-0 flex-1 pt-1">
+            <h3 className="text-sm font-semibold text-white">{title}</h3>
+            <p className="mt-1.5 text-xs leading-relaxed text-white/50">{message}</p>
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-end gap-2.5">
+          <button
+            onClick={onCancel}
+            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/70 transition-all hover:bg-white/10 hover:text-white"
+          >
+            {cancelLabel}
+          </button>
+          <button
+            onClick={onConfirm}
+            className={`rounded-xl px-4 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-95 ${
+              danger
+                ? 'bg-gradient-to-r from-red-600 to-red-700 shadow-red-500/25 hover:shadow-red-500/40'
+                : 'bg-gradient-to-r from-purple-600 to-pink-600 shadow-purple-500/25 hover:shadow-purple-500/40'
+            }`}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ============ MAIN COMPONENT ============
 interface InstagramAutomationManagerProps {
   token?: string;
@@ -383,6 +441,17 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
   // Logs filtering
   const [logFilter, setLogFilter] = useState<'all' | 'sent' | 'failed'>('all');
   const [logSearch, setLogSearch] = useState('');
+
+  // 🆕 Confirm modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({ open: false, title: '', message: '', onConfirm: () => {} });
+
+  const closeConfirmModal = () => setConfirmModal(prev => ({ ...prev, open: false }));
+
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [, forceTick] = useState(0);
   const refreshInterval = useRef<NodeJS.Timeout | null>(null);
@@ -478,16 +547,23 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
     }
   };
 
-  const handleDeleteAccount = async (id: string) => {
-    if (!confirm('Remove this Instagram account? All its rules will be deleted.')) return;
-    const toastId = toast.loading('Removing...');
-    try {
-      await axios.delete(`${API}/instagram-automation/accounts/${id}`, authHeaders);
-      toast.success('Account removed', { id: toastId });
-      fetchAll();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Remove failed', { id: toastId });
-    }
+  const handleDeleteAccount = (id: string) => {
+    setConfirmModal({
+      open: true,
+      title: 'Remove Instagram Account?',
+      message: 'Remove this Instagram account? All its rules will be deleted. This action cannot be undone.',
+      onConfirm: async () => {
+        closeConfirmModal();
+        const toastId = toast.loading('Removing...');
+        try {
+          await axios.delete(`${API}/instagram-automation/accounts/${id}`, authHeaders);
+          toast.success('Account removed', { id: toastId });
+          fetchAll();
+        } catch (err: any) {
+          toast.error(err.response?.data?.error || 'Remove failed', { id: toastId });
+        }
+      },
+    });
   };
 
   const handleAddRule = async (e: React.FormEvent) => {
@@ -535,15 +611,22 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
     }
   };
 
-  const handleDeleteRule = async (id: string) => {
-    if (!confirm('Delete this rule?')) return;
-    try {
-      await axios.delete(`${API}/instagram-automation/rules/${id}`, authHeaders);
-      toast.success('Rule deleted');
-      fetchAll();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Delete failed');
-    }
+  const handleDeleteRule = (id: string) => {
+    setConfirmModal({
+      open: true,
+      title: 'Delete This Rule?',
+      message: 'This automation rule will be permanently deleted. This action cannot be undone.',
+      onConfirm: async () => {
+        closeConfirmModal();
+        try {
+          await axios.delete(`${API}/instagram-automation/rules/${id}`, authHeaders);
+          toast.success('Rule deleted');
+          fetchAll();
+        } catch (err: any) {
+          toast.error(err.response?.data?.error || 'Delete failed');
+        }
+      },
+    });
   };
 
   // Computed
@@ -891,6 +974,15 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
           </div>
         </div>
       )}
+
+      {/* 🆕 Confirm Modal */}
+      <ConfirmModal
+        open={confirmModal.open}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={closeConfirmModal}
+      />
     </div>
   );
 };
