@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 const BACKEND = 'https://animabing-backend.animabingwatch.workers.dev/api/auth'
@@ -10,6 +10,7 @@ const AuthCallback: React.FC = () => {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const code = params.get('code')
+    const state = params.get('state') || 'user' // 🆕 intent: 'user' ya 'subadmin'
 
     if (!code) {
       setStatus('error')
@@ -17,27 +18,39 @@ const AuthCallback: React.FC = () => {
       return
     }
 
-    fetch(`${BACKEND}/google/callback?code=${encodeURIComponent(code)}`)
+    // 🆕 state ko forward karo backend ko
+    fetch(`${BACKEND}/google/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`)
       .then(res => res.json())
       .then((data: any) => {
 
-        if (data.success && data.token) {
-          // ✅ User mila — login karo
+        if (data.success && data.token && data.role === 'subadmin') {
+          sessionStorage.setItem('subAdminToken', data.token)
+          sessionStorage.setItem('subAdminUsername', data.subAdmin.username)
+          sessionStorage.setItem('subAdminPermissions', JSON.stringify(data.subAdmin.permissions || []))
+          sessionStorage.setItem('subAdminAnimeAccess', data.subAdmin.animeAccess || 'own')
+          navigate('/sub-admin-dashboard')
+
+        } else if (data.success && data.token) {
           localStorage.setItem('shortUserToken', data.token)
           localStorage.setItem('shortUserName', data.user.realName)
           localStorage.setItem('shortUsername', data.user.username)
           navigate('/dashboard')
 
         } else if (data.error === 'no_account') {
-          // ⚠️ Gmail se account nahi mila — register pe bhejo
-          navigate(
-            `/dashboard?error=no_account&gmail=${encodeURIComponent(data.gmail)}`
-          )
+          if (state === 'subadmin') {
+            // subadmin intent tha par gmail subadmin me nahi mila
+            navigate(`/sub-admin-login?error=no_account&gmail=${encodeURIComponent(data.gmail)}`)
+          } else {
+            navigate(`/dashboard?error=no_account&gmail=${encodeURIComponent(data.gmail)}`)
+          }
+
+        } else if (data.error === 'blocked') {
+          setStatus('error')
+          setTimeout(() => navigate('/sub-admin-login'), 2500)
 
         } else {
-          // ❌ Koi aur error
           setStatus('error')
-          setTimeout(() => navigate('/dashboard'), 2000)
+          setTimeout(() => navigate(state === 'subadmin' ? '/sub-admin-login' : '/dashboard'), 2000)
         }
       })
       .catch(() => {
@@ -76,7 +89,7 @@ const AuthCallback: React.FC = () => {
             <div style={{ fontSize: 44, marginBottom: 12 }}>❌</div>
             <p style={{ color: '#d85a30', fontWeight: 600 }}>Login fail hua</p>
             <p style={{ color: '#9999bb', fontSize: 13 }}>
-              Dashboard pe wapas ja rahe hain...
+              Wapas ja rahe hain...
             </p>
           </>
         )}

@@ -36,6 +36,17 @@ const SubAdminLogin: React.FC<SubAdminLoginProps> = ({ onLogin }) => {
     }
   };
 
+  const handleGoogleLogin = async () => {
+    try {
+      const { data } = await axios.get(
+        `https://animabing-backend.animabingwatch.workers.dev/api/auth/google/url?intent=subadmin`
+      );
+      window.location.href = data.url;
+    } catch {
+      setError('Google login shuru nahi ho saka');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#0b1120] relative overflow-hidden flex items-center justify-center p-4">
       {/* Decorative background shapes */}
@@ -60,7 +71,7 @@ const SubAdminLogin: React.FC<SubAdminLoginProps> = ({ onLogin }) => {
               </svg>
             </div>
           </div>
-          
+
           {/* Title with decorative line */}
           <h1 className="text-2xl font-bold text-white mt-4">
             Sub-Admin Login
@@ -170,11 +181,33 @@ const SubAdminLogin: React.FC<SubAdminLoginProps> = ({ onLogin }) => {
             )}
           </button>
 
+          {/* Divider with "OR" */}
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+            <span className="text-xs text-slate-500 font-medium">OR</span>
+            <div className="flex-1 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+          </div>
+
+          {/* Google Login Button */}
+          <button
+            type="button"
+            onClick={handleGoogleLogin}
+            className="w-full flex items-center justify-center gap-2 bg-white/10 hover:bg-white/15 border border-white/10 text-white font-medium py-2.5 rounded-xl transition-all"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24">
+              <path fill="#EA4335" d="M12 10.8v3.6h5a4.9 4.9 0 01-2.1 3.2v2.7h3.4c2-1.8 3.1-4.5 3.1-7.7 0-.7-.1-1.4-.2-2.1H12z"/>
+              <path fill="#34A853" d="M12 22c2.7 0 5-.9 6.6-2.4l-3.4-2.7c-.9.6-2.1 1-3.2 1-2.5 0-4.6-1.7-5.3-4H3.2v2.8C4.9 19.9 8.2 22 12 22z"/>
+              <path fill="#4A90E2" d="M6.7 13.9a5.9 5.9 0 010-3.8V7.3H3.2a10 10 0 000 9.4l3.5-2.8z"/>
+              <path fill="#FBBC05" d="M12 6.6c1.5 0 2.8.5 3.8 1.5l2.9-2.9C16.9 3.5 14.6 2.5 12 2.5 8.2 2.5 4.9 4.6 3.2 7.3l3.5 2.8c.7-2.3 2.8-4 5.3-4z"/>
+            </svg>
+            Continue with Google
+          </button>
+
           {/* Decorative divider */}
           <div className="flex items-center gap-2">
             <div className="flex-1 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
           </div>
-          
+
           {/* Admin contact hint */}
           <p className="text-center text-slate-500 text-xs">
             <span className="flex items-center justify-center gap-1">

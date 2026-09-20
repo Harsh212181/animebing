@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+ import { Hono } from 'hono'
 import { getDb } from '../services/mongoService'
 import type { Env, Variables } from '../index'
 
@@ -60,60 +60,109 @@ auth.get('/google/callback', async (c) => {
       return c.json({ error: 'Gmail nahi mila Google se' }, 400)
     }
 
-    // Step 3: MongoDB mein Gmail se user dhundho
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    // Step 3: MongoDB mein Gmail se shortuser dhundho
     const user = await db.collection('shortusers').findOne({
       $or: [
         { 'profile.gmail': gmail },
         { gmail: gmail },
         { gmailLinked: gmail },
-      ]
+      ],
     })
 
-    // Step 4: User nahi mila
-    if (!user) {
+    // Step 3a: Shortuser mila → JWT banao
+    if (user) {
+      const jwt = await createJWT(
+        {
+          id: user._id.toString(),
+          username: user.username,
+          loginType: 'google',
+          role: 'shortuser', // ✅ FIX: yahi missing tha
+        },
+        c.env.JWT_SECRET
+      )
+
       return c.json({
-        error: 'no_account',
-        message: 'Is Gmail se koi account nahi mila. Pehle register karo.',
-        gmail: gmail,
-      }, 404)
+        success: true,
+        role: 'shortuser',
+        token: jwt,
+        user: {
+          username: user.username,
+          realName: user.realName,
+          picture: googleUser.picture,
+        },
+      })
     }
 
-    // Step 5: User mila → JWT banao
-    const jwt = await createJWT(
+    // 🆕 Step 3b: Sub-admin gmail se match check karo
+    const subAdmin = await db.collection('subadmins').findOne({ gmail })
+
+    if (subAdmin) {
+      if (subAdmin.isBlocked) {
+        return c.json(
+          { error: 'blocked', message: 'Your account has been blocked. Contact admin.' },
+          403
+        )
+      }
+
+      const subAdminJwt = await createSubAdminJWT(
+        {
+          id: subAdmin._id.toString(),
+          username: subAdmin.username,
+          role: 'subadmin',
+          permissions: subAdmin.permissions || [],
+          animeAccess: subAdmin.animeAccess || 'own',
+        },
+        c.env.JWT_SECRET
+      )
+
+      await db
+        .collection('subadmins')
+        .updateOne({ _id: subAdmin._id }, { $set: { lastLogin: new Date() } })
+
+      return c.json({
+        success: true,
+        role: 'subadmin',
+        token: subAdminJwt,
+        subAdmin: {
+          id: subAdmin._id,
+          username: subAdmin.username,
+          fullName: subAdmin.fullName,
+          permissions: subAdmin.permissions,
+          animeAccess: subAdmin.animeAccess,
+        },
+      })
+    }
+
+    // Step 4: Kahin bhi nahi mila
+    return c.json(
       {
-        id: user._id.toString(),
-        username: user.username,
-        loginType: 'google',
-        role: 'shortuser',  // ✅ FIX: yahi missing tha
+        error: 'no_account',
+        message: 'Is Gmail se koi account nahi mila. Pehle register karo.',
+        gmail,
       },
-      c.env.JWT_SECRET
+      404
     )
-
-    return c.json({
-      success: true,
-      token: jwt,
-      user: {
-        username: user.username,
-        realName: user.realName,
-        picture: googleUser.picture,
-      },
-    })
-
   } catch (err) {
     console.error('Google OAuth error:', err)
     return c.json({ error: 'OAuth failed' }, 500)
   }
 })
 
-// ─── JWT Helper ───────────────────────────────────────────────────────────────
+// ─── JWT Helper (shortuser — 7 days) ──────────────────────────────────────────
 async function createJWT(payload: Record<string, any>, secret: string): Promise<string> {
   const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
-    .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+    .replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
 
   const body = btoa(
     JSON.stringify({ ...payload, exp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60 })
-  ).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+  )
+    .replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
 
   const key = await crypto.subtle.importKey(
     'raw',
@@ -123,12 +172,58 @@ async function createJWT(payload: Record<string, any>, secret: string): Promise<
     ['sign']
   )
 
-  const sig = await crypto.subtle.sign('HMAC', key,
+  const sig = await crypto.subtle.sign(
+    'HMAC',
+    key,
     new TextEncoder().encode(`${header}.${body}`)
   )
 
   const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig)))
-    .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+    .replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+
+  return `${header}.${body}.${sigB64}`
+}
+
+// ─── Sub-Admin JWT Helper (12 hours) ──────────────────────────────────────────
+async function createSubAdminJWT(
+  payload: Record<string, any>,
+  secret: string
+): Promise<string> {
+  const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
+    .replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+
+  const body = btoa(
+    JSON.stringify({
+      ...payload,
+      exp: Math.floor(Date.now() / 1000) + 12 * 60 * 60, // 12hr, jaisa normal subadmin login
+    })
+  )
+    .replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  )
+
+  const sig = await crypto.subtle.sign(
+    'HMAC',
+    key,
+    new TextEncoder().encode(`${header}.${body}`)
+  )
+
+  const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig)))
+    .replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
 
   return `${header}.${body}.${sigB64}`
 }
