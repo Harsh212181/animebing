@@ -38,6 +38,9 @@ const SubAdminLogin: React.FC<SubAdminLoginProps> = ({ onLogin }) => {
 
   const handleGoogleLogin = async () => {
     try {
+      // ✅ FIX: intent turant save karo — AuthCallback ise turant read kar sake
+      sessionStorage.setItem('oauthIntent', 'subadmin');
+
       const { data } = await axios.get(
         `https://animabing-backend.animabingwatch.workers.dev/api/auth/google/url?intent=subadmin`
       );
