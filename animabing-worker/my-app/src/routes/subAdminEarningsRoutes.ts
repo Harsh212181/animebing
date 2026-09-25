@@ -17,6 +17,7 @@ import { getSubAdminEarnings, getAllSubAdminEarningsSummary } from '../services/
 const subAdminEarningsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
 // ============ GET /me — sub-admin apni earnings dekhe ============
+// (getSubAdminEarnings apne aap me already 1 connection use karta hai)
 subAdminEarningsRoutes.get('/me', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
@@ -32,12 +33,14 @@ subAdminEarningsRoutes.get('/me', adminAuth, async (c) => {
 })
 
 // ============ GET /all-summary — main admin: sab sub-admins ka summary ============
+// ✅ FIX: pehle `getAllSubAdminEarningsSummary()` apna alag connection kholta
+// tha, aur linksettings lookup ke liye ek aur alag `getDb()` = 2 connections.
+// Ab ek `db` khul ke dono ko pass hota hai.
 subAdminEarningsRoutes.get('/all-summary', adminAuth, superAdminOnly, async (c) => {
   try {
-    const data = await getAllSubAdminEarningsSummary(c.env.MONGODB_URI, c.env.MONGODB_DB)
-
-    // Global rate + per-link rates bhi saath mein bhej do taaki UI mein editable fields dikh sakein
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const data = await getAllSubAdminEarningsSummary(c.env.MONGODB_URI, c.env.MONGODB_DB, db) // ✅ db pass kiya
+
     const settings: any = await db.collection('linksettings').findOne({})
 
     const globalRate =
@@ -63,10 +66,6 @@ subAdminEarningsRoutes.get('/all-summary', adminAuth, superAdminOnly, async (c) 
 subAdminEarningsRoutes.get('/:subAdminId', adminAuth, superAdminOnly, async (c) => {
   try {
     const subAdminId = c.req.param('subAdminId')
-    // ✅ FIX: `!subAdminId ||` narrows the type from `string | undefined` to
-    // `string` for the rest of this handler — this is what removes the
-    // red-line at getSubAdminEarnings(subAdminId, ...) below, since that
-    // function's first parameter is typed as a strict `string`.
     if (!subAdminId || !isValidObjectId(subAdminId)) {
       return c.json({ success: false, error: 'Invalid ID' }, 400)
     }
@@ -79,11 +78,9 @@ subAdminEarningsRoutes.get('/:subAdminId', adminAuth, superAdminOnly, async (c) 
 })
 
 // ============ PUT /:subAdminId/rate — main admin: custom rate set/clear kare ============
-// body: { rate: number | null }  — null bhejne se sub-admin wapas global rate use karega
 subAdminEarningsRoutes.put('/:subAdminId/rate', adminAuth, superAdminOnly, async (c) => {
   try {
     const subAdminId = c.req.param('subAdminId')
-    // ✅ FIX: same narrowing guard as above, applied consistently here too.
     if (!subAdminId || !isValidObjectId(subAdminId)) {
       return c.json({ success: false, error: 'Invalid ID' }, 400)
     }

@@ -162,6 +162,31 @@ const SIDEBAR_SECTIONS = [
   { id: 'analytics',   label: 'Insights',        tabs: ['pageviews', 'useractivity', 'myEarnings'] },
 ];
 
+// ─── 🆕 Helper: element ko container ke andar smooth-scroll karke bring into view ──
+function scrollChildIntoContainer(
+  container: HTMLElement | null,
+  child: HTMLElement | null,
+  padding = 12
+) {
+  if (!container || !child) return;
+  const cRect = container.getBoundingClientRect();
+  const bRect = child.getBoundingClientRect();
+
+  if (bRect.top < cRect.top + padding) {
+    // upar cut gaya — upar scroll
+    container.scrollTo({
+      top: container.scrollTop - (cRect.top + padding - bRect.top),
+      behavior: 'smooth',
+    });
+  } else if (bRect.bottom > cRect.bottom - padding) {
+    // neeche cut gaya — neeche scroll
+    container.scrollTo({
+      top: container.scrollTop + (bRect.bottom - (cRect.bottom - padding)),
+      behavior: 'smooth',
+    });
+  }
+}
+
 // ─── User Avatar ─────────────────────────────────────────────────────
 const UserAvatar: React.FC<{ username: string; size?: number; className?: string; onClick?: () => void }> = ({
   username, size = 32, className = '', onClick,
@@ -243,9 +268,10 @@ interface NavItemProps {
   activeTab: string;
   onClick: (id: string) => void;
   badgeCount?: number;
+  itemRef?: (el: HTMLButtonElement | null) => void;   // 🆕
 }
 
-const NavItem: React.FC<NavItemProps> = ({ tabId, activeTab, onClick, badgeCount = 0 }) => {
+const NavItem: React.FC<NavItemProps> = ({ tabId, activeTab, onClick, badgeCount = 0, itemRef }) => {
   const isActive = activeTab === tabId;
   const label = TAB_LABELS[tabId] || tabId;
   const iconPath = ICONS[tabId] || ICONS.list;
@@ -253,6 +279,7 @@ const NavItem: React.FC<NavItemProps> = ({ tabId, activeTab, onClick, badgeCount
 
   return (
     <button
+      ref={itemRef}                                    // 🆕
       onClick={() => onClick(tabId)}
       className={`group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-left overflow-hidden
         ${isActive
@@ -403,6 +430,25 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // 🆕 Refs for auto-scroll to active tab in each nav
+  const iconRailRef = useRef<HTMLDivElement>(null);
+  const expandedNavRef = useRef<HTMLElement>(null);
+  const mobileNavRef = useRef<HTMLElement>(null);
+  const iconRailBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const expandedNavBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const mobileNavBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
+  // 🆕 Auto-scroll active tab into view — when tab changes, sidebar opens, mobile menu opens, or pin state changes
+  useEffect(() => {
+    // thoda delay, taaki transition/open animation ho jaaye
+    const id = window.setTimeout(() => {
+      scrollChildIntoContainer(iconRailRef.current, iconRailBtnRefs.current[activeTab], 10);
+      scrollChildIntoContainer(expandedNavRef.current, expandedNavBtnRefs.current[activeTab], 14);
+      scrollChildIntoContainer(mobileNavRef.current, mobileNavBtnRefs.current[activeTab], 14);
+    }, 60);
+    return () => window.clearTimeout(id);
+  }, [activeTab, sidebarCollapsed, sidebarPinned, mobileMenuOpen]);
+
   const handleSidebarMouseEnter = () => {
     if (sidebarPinned) return;
     if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
@@ -546,16 +592,20 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
         </div>
 
         {/* Icon rail */}
-        <div className="flex-1 flex flex-col items-center py-4 gap-1.5 overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
+        <div
+          ref={iconRailRef}                                  /* 🆕 */
+          className="flex-1 flex flex-col items-center py-4 gap-1.5 overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]"
+        >
           {visibleTabs.map(tabId => {
             const color = getTabColor(tabId);
             const isActive = activeTab === tabId;
             return (
               <button
                 key={tabId}
+                ref={el => { iconRailBtnRefs.current[tabId] = el; }}   /* 🆕 */
                 onClick={() => setActiveTab(tabId)}
                 title={TAB_LABELS[tabId]}
-                className={`group relative w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 ${
+                className={`group relative w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 flex-shrink-0 ${
                   isActive
                     ? `bg-gradient-to-br ${color.from} ${color.to} shadow-lg ${color.glow}`
                     : 'hover:bg-white/[0.06]'
@@ -619,7 +669,10 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
         </div>
 
         {/* Nav */}
-        <nav className="relative flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-3 [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
+        <nav
+          ref={expandedNavRef}                                /* 🆕 */
+          className="relative flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-3 [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]"
+        >
           {visibleSections.map(section => (
             <SidebarSection key={section.id} label={section.label}>
               {section.tabs.map(tabId => (
@@ -628,6 +681,7 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
                   tabId={tabId}
                   activeTab={activeTab}
                   onClick={setActiveTab}
+                  itemRef={el => { expandedNavBtnRefs.current[tabId] = el; }}   /* 🆕 */
                   badgeCount={
                     tabId === 'reports' ? pendingReportsCount :
                     tabId === 'shortenerLinks' ? unreadMessagesCount : 0
@@ -686,7 +740,10 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
           </button>
         </div>
 
-        <nav className="relative flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-3 [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
+        <nav
+          ref={mobileNavRef}                                  /* 🆕 */
+          className="relative flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-3 [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]"
+        >
           {visibleSections.map(section => (
             <SidebarSection key={section.id} label={section.label}>
               {section.tabs.map(tabId => (
@@ -695,6 +752,7 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
                   tabId={tabId}
                   activeTab={activeTab}
                   onClick={handleMobileNavClick}
+                  itemRef={el => { mobileNavBtnRefs.current[tabId] = el; }}   /* 🆕 */
                   badgeCount={
                     tabId === 'reports' ? pendingReportsCount :
                     tabId === 'shortenerLinks' ? unreadMessagesCount : 0

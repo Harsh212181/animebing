@@ -1,26 +1,38 @@
- import { Hono } from 'hono'
+import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
 import { findMany, insertOne, updateOne, deleteOne, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
 import { ISpecialMode } from '../models/types'
+import { Db } from 'mongodb'
 
 const specialModeRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
 const ALL_LOCATIONS: Array<'home' | 'detail' | 'downloadLink'> = ['home', 'detail', 'downloadLink']
 
-// ✅ purane mode jinme displayLocations save hi nahi hui, unke liye default = sabhi jagah
 const getModeLocations = (m: any): Array<'home' | 'detail' | 'downloadLink'> =>
   Array.isArray(m.displayLocations) && m.displayLocations.length > 0 ? m.displayLocations : ALL_LOCATIONS
 
-// ============ HELPER: aaj ke date/weekday se match karne wale SAARE enabled modes dhoondo ============
-// ✅ CHANGED: pehle sirf pehla match return hota tha (single mode). Ab saare matching
-// enabled modes ek array me return hote hain, taaki multiple modes ek saath active ho sakein.
-export async function getTodaysActiveModes(mongoUri: string, dbName: string): Promise<ISpecialMode[]> {
-  const db = await getDb(mongoUri, dbName)
+// ============================================================================
+// ✅ FIX: `getTodaysActiveModes`, `isForceLink5ModeActive`, aur
+// `syncSpecialModeLinks` ab EK OPTIONAL trailing `existingDb` param lete hain.
+//
+// Pehle: `isForceLink5ModeActive` khud apna connection kholta tha AUR andar
+// se `getTodaysActiveModes` ko call karta tha jo APNA ALAG connection kholta
+// tha — matlab 2 connections. Ye function `shortenerRoutes.ts` ke `/:code`
+// route se HAR REAL-USER CLICK pe chalta hai, isliye ye sabse zyada impact
+// wala fix hai is file me.
+//
+// `syncSpecialModeLinks` bhi wahi 2-connection pattern follow karta tha, aur
+// ye `linkSettingsRoutes.ts` ke `getSettings()` se chalta hai jo khud bahut
+// routes se call hota hai — is fix se wahan bhi connections kam honge.
+// ============================================================================
+
+export async function getTodaysActiveModes(mongoUri: string, dbName: string, existingDb?: Db): Promise<ISpecialMode[]> {
+  const db = existingDb || await getDb(mongoUri, dbName)
 
   const now = new Date()
   const indiaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
-  const todayWeekday = indiaTime.getDay() // 0=Sun...6=Sat
+  const todayWeekday = indiaTime.getDay()
   const todayDateOnly = new Date(indiaTime.getFullYear(), indiaTime.getMonth(), indiaTime.getDate())
 
   const modes = await db.collection('specialmodes').find({ isEnabled: true }).toArray() as ISpecialMode[]
@@ -50,33 +62,29 @@ export async function getTodaysActiveModes(mongoUri: string, dbName: string): Pr
   return active
 }
 
-// ✅ Backward-compat helper — agar kahin purana single-mode function use ho raha ho (cron/other files)
 export async function getTodaysActiveMode(mongoUri: string, dbName: string): Promise<ISpecialMode | null> {
   const modes = await getTodaysActiveModes(mongoUri, dbName)
   return modes[0] || null
 }
 
-// ============ NEW: kya kisi bhi active mode me forceLink5Only hai? ============
-export async function isForceLink5ModeActive(mongoUri: string, dbName: string): Promise<boolean> {
-  const db = await getDb(mongoUri, dbName)
+// ✅ FIX: 2 connections (apna + getTodaysActiveModes ka) → 1
+export async function isForceLink5ModeActive(mongoUri: string, dbName: string, existingDb?: Db): Promise<boolean> {
+  const db = existingDb || await getDb(mongoUri, dbName)
   const settings: any = (await db.collection('linksettings').findOne({})) || {}
   const masterEnabled = settings.autoModeEnabled !== false
   if (!masterEnabled) return false
 
-  const active = await getTodaysActiveModes(mongoUri, dbName)
+  const active = await getTodaysActiveModes(mongoUri, dbName, db) // ✅ db pass kiya
   return active.some(m => !!(m as any).forceLink5Only)
 }
 
-// ============ link settings ko active modes ke hisaab se sync karo ============
-// ✅ CHANGED: ab "kaunsa single mode force kar raha hai" track karne ke bajaye,
-// "in modes ki combined id-list force kar rahi hai" track karte hain (sorted, joined string).
-// Isse agar active-forcing-modes ka set change ho (koi naya add/remove ho jaaye), tabhi re-apply hota hai.
-export async function syncSpecialModeLinks(mongoUri: string, dbName: string) {
-  const db = await getDb(mongoUri, dbName)
+// ✅ FIX: 2 connections (apna + getTodaysActiveModes ka) → 1
+export async function syncSpecialModeLinks(mongoUri: string, dbName: string, existingDb?: Db) {
+  const db = existingDb || await getDb(mongoUri, dbName)
   const settings: any = (await db.collection('linksettings').findOne({})) || {}
   const masterEnabled = settings.autoModeEnabled !== false
 
-  const active = masterEnabled ? await getTodaysActiveModes(mongoUri, dbName) : []
+  const active = masterEnabled ? await getTodaysActiveModes(mongoUri, dbName, db) : [] // ✅ db pass kiya
   const forcingModes = active.filter(m => !!(m as any).forceLink5Only)
   const shouldForce = forcingModes.length > 0
 
@@ -87,7 +95,6 @@ export async function syncSpecialModeLinks(mongoUri: string, dbName: string) {
       .sort()
       .join(',')
 
-    // Isi combination ke liye pehle se apply ho chuka hai to dobara mat chhedo
     if (settings.specialModeAppliedId === combinedIdKey) return
 
     await db.collection('linksettings').updateOne({}, {
@@ -102,7 +109,6 @@ export async function syncSpecialModeLinks(mongoUri: string, dbName: string) {
       }
     }, { upsert: true })
   } else if (settings.specialModeAppliedId) {
-    // Koi bhi force-karne-wala mode ab active nahi → purani settings wapas laao
     await db.collection('linksettings').updateOne({}, {
       $set: {
         link1: settings.preModeLink1 !== false,
@@ -119,14 +125,12 @@ export async function syncSpecialModeLinks(mongoUri: string, dbName: string) {
   }
 }
 
-// ============ PUBLIC: kya abhi koi mode(s) active hai(n)? ============
-// ✅ CHANGED: ab ek "active" boolean + "modes" array deta hai (sabhi active modes,
-// unki displayLocations ke saath). Frontend apni jagah (home/detail/downloadLink) ke hisaab se filter karega.
+// ============ PUBLIC: kya abhi koi mode(s) active hai(n)? — 3 connections combined into 1 ============
 specialModeRoutes.get('/active', async (c) => {
   try {
-    await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB)
-
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB, db) // ✅ db pass kiya
+
     const settings = await db.collection('linksettings').findOne({})
     const masterEnabled = settings?.autoModeEnabled !== false
 
@@ -134,7 +138,7 @@ specialModeRoutes.get('/active', async (c) => {
       return c.json({ active: false, modes: [] })
     }
 
-    const activeModes = await getTodaysActiveModes(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const activeModes = await getTodaysActiveModes(c.env.MONGODB_URI, c.env.MONGODB_DB, db) // ✅ db pass kiya
 
     const modes = activeModes.map((m: any) => ({
       name: m.name,
@@ -159,7 +163,6 @@ specialModeRoutes.get('/', adminAuth, async (c) => {
   }
 })
 
-// ✅ helper: displayLocations body se validate/normalize karo
 function normalizeLocations(input: any): Array<'home' | 'detail' | 'downloadLink'> | undefined {
   if (input === undefined) return undefined
   if (!Array.isArray(input)) return ALL_LOCATIONS
@@ -167,7 +170,7 @@ function normalizeLocations(input: any): Array<'home' | 'detail' | 'downloadLink
   return valid.length > 0 ? valid : ALL_LOCATIONS
 }
 
-// ============ ADMIN: create mode ============
+// ============ ADMIN: create mode — 2 connections combined into 1 ============
 specialModeRoutes.post('/', adminAuth, async (c) => {
   try {
     const { name, type, weekday, weekdays, startDate, endDate, bannerText, isEnabled, forceLink5Only, displayLocations } = await c.req.json()
@@ -192,7 +195,7 @@ specialModeRoutes.post('/', adminAuth, async (c) => {
       bannerText: bannerText?.trim() || '',
       isEnabled: isEnabled !== false,
       forceLink5Only: Boolean(forceLink5Only),
-      displayLocations: normalizeLocations(displayLocations) || ALL_LOCATIONS, // ✅ NEW, default = sabhi jagah
+      displayLocations: normalizeLocations(displayLocations) || ALL_LOCATIONS,
       createdAt: new Date(),
       updatedAt: new Date()
     }
@@ -205,15 +208,16 @@ specialModeRoutes.post('/', adminAuth, async (c) => {
       mode.endDate = new Date(endDate)
     }
 
-    const result = await insertOne('specialmodes', mode, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const result = await db.collection('specialmodes').insertOne(mode)
+    await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB, db) // ✅ db pass kiya
     return c.json({ success: true, message: 'Mode created!', data: result })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
   }
 })
 
-// ============ ADMIN: update mode ============
+// ============ ADMIN: update mode — 2 connections combined into 1 ============
 specialModeRoutes.put('/:id', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
@@ -240,39 +244,43 @@ specialModeRoutes.put('/:id', adminAuth, async (c) => {
     if (body.startDate !== undefined) updateData.startDate = new Date(body.startDate)
     if (body.endDate !== undefined) updateData.endDate = new Date(body.endDate)
     if (body.forceLink5Only !== undefined) updateData.forceLink5Only = Boolean(body.forceLink5Only)
-    if (body.displayLocations !== undefined) updateData.displayLocations = normalizeLocations(body.displayLocations) // ✅ NEW
+    if (body.displayLocations !== undefined) updateData.displayLocations = normalizeLocations(body.displayLocations)
 
-    const updated = await updateOne('specialmodes', { _id: toObjectId(id) }, updateData, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const updated = await db.collection('specialmodes').findOneAndUpdate(
+      { _id: toObjectId(id) }, { $set: updateData }, { returnDocument: 'after' }
+    )
     if (!updated) return c.json({ success: false, error: 'Mode not found' }, 404)
 
-    await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB, db) // ✅ db pass kiya
     return c.json({ success: true, message: 'Updated!', data: updated })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
   }
 })
 
-// ============ ADMIN: delete mode ============
+// ============ ADMIN: delete mode — 2 connections combined into 1 ============
 specialModeRoutes.delete('/:id', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ success: false, error: 'Invalid ID' }, 400)
-    await deleteOne('specialmodes', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    await db.collection('specialmodes').deleteOne({ _id: toObjectId(id) })
+    await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB, db) // ✅ db pass kiya
     return c.json({ success: true, message: 'Mode deleted!' })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
   }
 })
 
-// ============ ADMIN: master switch toggle ============
+// ============ ADMIN: master switch toggle — 2 connections combined into 1 ============
 specialModeRoutes.put('/master-toggle', adminAuth, async (c) => {
   try {
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
     const settings = await db.collection('linksettings').findOne({})
     const newValue = !(settings?.autoModeEnabled !== false)
     await db.collection('linksettings').updateOne({}, { $set: { autoModeEnabled: newValue } }, { upsert: true })
-    await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB, db) // ✅ db pass kiya
     return c.json({ success: true, autoModeEnabled: newValue })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)

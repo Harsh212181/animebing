@@ -1,4 +1,4 @@
- import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
@@ -413,7 +413,7 @@ const ConfirmModal: React.FC<{
 interface InstagramAutomationManagerProps {
   token?: string;
   apiBase?: string;
-  subAdminMode?: boolean;   // 👈 naya
+  subAdminMode?: boolean;   // 👈 new
 }
 
 const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({ token: tokenProp, apiBase, subAdminMode = false }) => {

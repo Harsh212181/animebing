@@ -3,11 +3,21 @@ import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
 import { getDb } from '../services/mongoService'
 import { shortenWithAllProviders, signBundle } from '../services/externalShortenerService'
+import { ObjectId } from 'mongodb'
 
 const linkGeneratorRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
 const ALLOWED_HOSTS = ['animebing.in', 'www.animebing.in']
 
+// ✅ FIX: connection count pehle se hi 1 tha (db ek baar khul ke reuse ho raha
+// tha) — asli issue ye tha ki `new (await import('mongodb')).ObjectId(...)`
+// har request pe ek dynamic import chala raha tha, jo unnecessary overhead
+// hai (aur Workers bundling ke saath kabhi kabhi fragile bhi ho sakta hai).
+// Ab top-level static `import { ObjectId } from 'mongodb'` use kiya.
+//
+// Bonus: `page` lookup aur `sub` (subadmin) lookup ek dusre pe depend nahi
+// karte, isliye unhe Promise.all se parallel kar diya — same connection,
+// thoda kam wait time.
 linkGeneratorRoutes.post('/generate', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
@@ -28,13 +38,18 @@ linkGeneratorRoutes.post('/generate', adminAuth, async (c) => {
       }
 
       const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-      const page: any = await db.collection('downloadpages').findOne({ slug: m[1] }, { projection: { animeId: 1 } })
+
+      const [page, sub] = await Promise.all([
+        db.collection('downloadpages').findOne({ slug: m[1] }, { projection: { animeId: 1 } }) as Promise<any>,
+        db.collection('subadmins').findOne(
+          { _id: new ObjectId(admin.id) }, { projection: { assignedAnimeIds: 1 } }
+        ) as Promise<any>,
+      ])
+
       const anime: any = page
         ? await db.collection('animes').findOne({ _id: page.animeId }, { projection: { createdBy: 1 } })
         : null
-      const sub: any = await db.collection('subadmins').findOne(
-        { _id: new (await import('mongodb')).ObjectId(admin.id) }, { projection: { assignedAnimeIds: 1 } }
-      )
+
       const assigned: string[] = sub?.assignedAnimeIds || []
       const owns = anime && (anime.createdBy?.toString() === admin.id || assigned.includes(anime._id.toString()))
       if (!owns) {

@@ -1,4 +1,4 @@
- // src/context/AnimeContext.tsx
+// src/context/AnimeContext.tsx
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import type { Anime, FilterType, ContentTypeFilter } from '../types';
 import { getAnimePaginated, searchAnime, getFeaturedAnime } from '../../services/animeService';
@@ -6,6 +6,9 @@ import { getAnimePaginated, searchAnime, getFeaturedAnime } from '../../services
 interface AnimeContextType {
   animeList: Anime[];
   featuredAnimes: Anime[];
+  featuredSections: { banner: Anime[]; anime: Anime[]; manga: Anime[]; movie: Anime[] };
+  sectionVisibility: Record<string, boolean>;
+  featuredSectionsLoading: boolean;
   isLoading: boolean;
   error: string | null;
   currentPage: number;
@@ -31,7 +34,12 @@ export const useAnimeContext = () => {
   return ctx;
 };
 
-const ANIME_FIELDS = 'title,thumbnail,releaseYear,status,contentType,subDubStatus,description,genreList';
+// ✅ FIX: lastContentAdded add kiya — isi field se AnimeCard ka "NEW" badge
+// aur HomePage ka "naya content top par" sorting kaam karta hai.
+const ANIME_FIELDS = 'title,thumbnail,releaseYear,status,contentType,subDubStatus,description,genreList,lastContentAdded';
+
+// ✅ Backend base URL (bina /api ke) — featured sections fetch ke liye
+const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev';
 
 // ✅ MODULE-LEVEL CACHE — component re-mount par bhi survive karta hai
 // Jab React component unmount/remount hoti hai, yeh variables reset NAHI hote
@@ -54,6 +62,14 @@ export const AnimeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [filter, setFilter] = useState<FilterType>('All');
   const [contentType, setContentType] = useState<ContentTypeFilter>('All');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // ✅ NEW — featured carousel ka data ab yahan fetch hota hai, taaki HomePage
+  // ko pata rahe ki ye kab ready hai (grid ke saath sync karne ke liye)
+  const [featuredSections, setFeaturedSections] = useState({
+    banner: [] as Anime[], anime: [] as Anime[], manga: [] as Anime[], movie: [] as Anime[]
+  });
+  const [sectionVisibility, setSectionVisibility] = useState<Record<string, boolean>>({});
+  const [featuredSectionsLoading, setFeaturedSectionsLoading] = useState(true);
 
   const lastSearchQuery = useRef('');
 
@@ -89,6 +105,31 @@ export const AnimeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     } catch (err) {
       console.error('Featured fetch failed', err);
+    }
+  }, []);
+
+  // ✅ NEW — featured sections (banner / anime / manga / movie) + section visibility
+  const fetchFeaturedSections = useCallback(async () => {
+    setFeaturedSectionsLoading(true);
+    try {
+      const fetchSection = async (section: string) => {
+        try {
+          const res = await fetch(`${API_BASE}/api/anime/featured?section=${section}`);
+          const result = await res.json();
+          return result.data || [];
+        } catch { return []; }
+      };
+      const [visRes, banner, animeSec, mangaSec, movieSec] = await Promise.all([
+        fetch(`${API_BASE}/api/anime/settings/section-visibility`).then(r => r.json()).catch(() => null),
+        fetchSection('banner'),
+        fetchSection('anime'),
+        fetchSection('manga'),
+        fetchSection('movie'),
+      ]);
+      if (visRes?.success) setSectionVisibility(visRes.data);
+      setFeaturedSections({ banner, anime: animeSec, manga: mangaSec, movie: movieSec });
+    } finally {
+      setFeaturedSectionsLoading(false);
     }
   }, []);
 
@@ -160,6 +201,8 @@ export const AnimeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (_featuredCache.length === 0) {
       fetchFeatured();
     }
+    fetchFeaturedSections(); // ✅ NEW
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Reload on filter/contentType change
@@ -167,6 +210,7 @@ export const AnimeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (animeList.length > 0) {
       loadInitialAnime(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter, contentType]);
 
   // Search debounce
@@ -183,12 +227,14 @@ export const AnimeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     }, 500);
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery]);
 
   return (
     <AnimeContext.Provider
       value={{
-        animeList, featuredAnimes, isLoading, error, currentPage, hasMore,
+        animeList, featuredAnimes, featuredSections, sectionVisibility, featuredSectionsLoading,
+        isLoading, error, currentPage, hasMore,
         isLoadingMore, isSearching, filter, contentType, searchQuery,
         loadInitialAnime, loadMoreAnime, fetchFeatured,
         setFilter, setContentType, setSearchQuery,

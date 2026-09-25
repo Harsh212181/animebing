@@ -1,4 +1,4 @@
- import { Hono } from 'hono'
+import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth, requirePermission } from '../middleware/auth'
 import { insertOne, updateOne, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
@@ -16,10 +16,9 @@ function detectDevice(ua: string): 'mobile' | 'tablet' | 'desktop' | 'unknown' {
 }
 
 // ✅ PUBLIC — user watch/download shuru kare tabhi ek activity record banao
-// ✅ DEDUP FIX — agar same IP+anime+episode+type ka record 8 second ke andar
-// already bana hai aur abhi khatam (ended) nahi hua, to naya record mat banao,
-// purana hi reuse karo. Yeh double-fire (dev StrictMode, quick reopen) se
-// bachne ke liye hai.
+// ✅ FIX: dedup findOne + insertOne pehle 2 alag connections the (findOne
+// yahan seedha db.collection se tha, lekin insertOne helper apna alag
+// connection kholta tha). Ab dono usi ek `db` object se.
 watchActivityRoutes.post('/start', async (c) => {
   try {
     const body = await c.req.json()
@@ -34,7 +33,6 @@ watchActivityRoutes.post('/start', async (c) => {
 
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    // ✅ NEW — dedup check
     const dedupWindowMs = 8000
     const existing = await db.collection('watchactivities').findOne({
       ip,
@@ -49,6 +47,7 @@ watchActivityRoutes.post('/start', async (c) => {
       return c.json({ success: true, activityId: existing._id.toString(), reused: true })
     }
 
+    const now = new Date()
     const activity: IWatchActivity = {
       animeId: toObjectId(animeId),
       animeTitle,
@@ -64,10 +63,14 @@ watchActivityRoutes.post('/start', async (c) => {
       device: detectDevice(userAgent),
       country,
       watchDurationSec: 0,
-      startedAt: new Date(),
+      startedAt: now,
     }
 
-    const result = await insertOne('watchactivities', activity, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const result = await db.collection('watchactivities').insertOne({
+      ...activity,
+      createdAt: now,
+      updatedAt: now,
+    })
     return c.json({ success: true, activityId: result.insertedId.toString() }, 201)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -116,6 +119,10 @@ watchActivityRoutes.patch('/:id/end', async (c) => {
 })
 
 // ✅ ADMIN — activity list (filters + pagination + sub-admin scoping + badge)
+// ✅ FIX: `getOwnedAnimeIds`/`getAnimeIdsForSubAdmin` ab `db` object leते hain
+// (mongoUri/dbName nahi) — subAdminScope.ts ke naye signature ke mutabik.
+// Isse ye poori route SIRF EK connection (`db`) use karti hai, chahe kitni
+// bhi scoping/lookup calls ho rahi hon.
 watchActivityRoutes.get('/', adminAuth, requirePermission('useractivity'), async (c) => {
   try {
     const { animeId, activityType, ip, range, subAdminId, page = '1', limit = '50' } = c.req.query()
@@ -150,7 +157,7 @@ watchActivityRoutes.get('/', adminAuth, requirePermission('useractivity'), async
     }
 
     // 🔒 Sub-admin (animeAccess:'own') → sirf apne (created+assigned) anime ka activity
-    const ownedAnimeIds = await getOwnedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const ownedAnimeIds = await getOwnedAnimeIds(admin, db)
 
     if (ownedAnimeIds !== null) {
       if (ownedAnimeIds.length === 0) {
@@ -159,7 +166,7 @@ watchActivityRoutes.get('/', adminAuth, requirePermission('useractivity'), async
       filter.animeId = { $in: toObjectIds(ownedAnimeIds) }
     } else if (subAdminId && isValidObjectId(subAdminId)) {
       // ✅ Main admin — ek specific sub-admin ke anime ka activity dekhna chahta hai
-      const scopedIds = await getAnimeIdsForSubAdmin(subAdminId, c.env.MONGODB_URI, c.env.MONGODB_DB)
+      const scopedIds = await getAnimeIdsForSubAdmin(subAdminId, db)
       filter.animeId = { $in: toObjectIds(scopedIds) }
     }
 
@@ -207,13 +214,13 @@ watchActivityRoutes.get('/', adminAuth, requirePermission('useractivity'), async
 })
 
 // ✅ ADMIN — summary stats (with range filter + sub-admin scoping)
+// ✅ FIX: same subAdminScope signature update — ek hi `db` reuse hota hai
 watchActivityRoutes.get('/stats', adminAuth, requirePermission('useractivity'), async (c) => {
   try {
     const { range, subAdminId } = c.req.query()
     const admin = c.get('admin')
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    // Date filter
     const dateFilter: any = {}
     if (range) {
       const now = new Date()
@@ -240,12 +247,12 @@ watchActivityRoutes.get('/stats', adminAuth, requirePermission('useractivity'), 
     }
 
     // 🔒 scoping — sub-admin 'own' ya main-admin ka subAdminId filter
-    const ownedAnimeIds = await getOwnedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const ownedAnimeIds = await getOwnedAnimeIds(admin, db)
     let animeScope: string[] | null = null
     if (ownedAnimeIds !== null) {
       animeScope = ownedAnimeIds
     } else if (subAdminId && isValidObjectId(subAdminId)) {
-      animeScope = await getAnimeIdsForSubAdmin(subAdminId, c.env.MONGODB_URI, c.env.MONGODB_DB)
+      animeScope = await getAnimeIdsForSubAdmin(subAdminId, db)
     }
     if (animeScope !== null) {
       if (animeScope.length === 0) {
@@ -254,7 +261,6 @@ watchActivityRoutes.get('/stats', adminAuth, requirePermission('useractivity'), 
       dateFilter.animeId = { $in: toObjectIds(animeScope) }
     }
 
-    // Aggregations (now dateFilter may include animeId scope)
     const totalWatch = await db.collection('watchactivities').countDocuments({ ...dateFilter, activityType: 'watch' })
     const totalDownload = await db.collection('watchactivities').countDocuments({ ...dateFilter, activityType: 'download' })
 

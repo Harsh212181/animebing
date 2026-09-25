@@ -1,16 +1,16 @@
- import { Hono } from 'hono'
+import { Hono } from 'hono'
 import type { Env, Variables } from '../index'
 import { findMany, insertOne, updateOne, deleteOne, deleteMany, toObjectId, isValidObjectId } from '../services/mongoService'
 import { adminAuth } from '../middleware/auth'
 
 const instagramAutomationRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
-// Sirf logged-in admin/sub-admin hi in routes ko access kar sakta hai
+// Only logged-in admin/sub-admin can access these routes
 instagramAutomationRoutes.use('*', adminAuth)
 
-// 👇 Helper: Sub-admin ke owned instagram accounts ke igUserId nikaalne ke liye
+// 👇 Helper: To get the igUserId of instagram accounts owned by a sub-admin
 async function getOwnedIgUserIds(admin: any, mongoUri: string, dbName: string): Promise<string[] | null> {
-  if (!admin || admin.role !== 'subadmin') return null // null = restriction nahi (main admin)
+  if (!admin || admin.role !== 'subadmin') return null // null = no restriction (main admin)
   const accounts = await findMany<any>(
     'instagramAccounts', { createdBy: admin.id }, {}, mongoUri, dbName
   )
@@ -34,7 +34,7 @@ instagramAutomationRoutes.get('/accounts', async (c) => {
     connectedAt: a.connectedAt,
     profilePictureUrl: a.profilePictureUrl || null,
     createdBy: a.createdBy || null,
-    createdByUsername: a.createdByUsername || 'Admin',   // badge ke liye
+    createdByUsername: a.createdByUsername || 'Admin',   // for badge
   }))
   return c.json({ success: true, accounts: safeAccounts })
 })
@@ -45,7 +45,7 @@ instagramAutomationRoutes.post('/accounts', async (c) => {
   const { igUsername, igUserId, accessToken } = body
 
   if (!igUsername || !igUserId || !accessToken) {
-    return c.json({ success: false, error: 'igUsername, igUserId aur accessToken zaroori hain' }, 400)
+    return c.json({ success: false, error: 'igUsername, igUserId and accessToken are required' }, 400)
   }
 
   const result = await insertOne('instagramAccounts', {
@@ -71,7 +71,7 @@ instagramAutomationRoutes.put('/accounts/:id', async (c) => {
       'instagramAccounts', { _id: toObjectId(id), createdBy: admin.id }, { limit: 1 },
       c.env.MONGODB_URI, c.env.MONGODB_DB
     )
-    if (owned.length === 0) return c.json({ success: false, error: 'Ye account aapka nahi hai' }, 403)
+    if (owned.length === 0) return c.json({ success: false, error: 'This account is not yours' }, 403)
   }
 
   const body = await c.req.json()
@@ -91,7 +91,7 @@ instagramAutomationRoutes.delete('/accounts/:id', async (c) => {
   const account = accounts[0]
 
   if (admin?.role === 'subadmin' && account?.createdBy !== admin.id) {
-    return c.json({ success: false, error: 'Ye account aapka nahi hai' }, 403)
+    return c.json({ success: false, error: 'This account is not yours' }, 403)
   }
 
   await deleteOne('instagramAccounts', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -103,7 +103,7 @@ instagramAutomationRoutes.delete('/accounts/:id', async (c) => {
   return c.json({ success: true })
 })
 
-// ---------------- ACCOUNT KE POSTS (Instagram se live fetch) ----------------
+// ---------------- ACCOUNT'S POSTS (live fetch from Instagram) ----------------
 
 instagramAutomationRoutes.get('/accounts/:id/posts', async (c) => {
   const admin = c.get('admin')
@@ -115,10 +115,10 @@ instagramAutomationRoutes.get('/accounts/:id/posts', async (c) => {
     c.env.MONGODB_URI, c.env.MONGODB_DB
   )
   const account = accounts[0]
-  if (!account) return c.json({ success: false, error: 'Account nahi mila' }, 404)
+  if (!account) return c.json({ success: false, error: 'Account not found' }, 404)
 
   if (admin?.role === 'subadmin' && account.createdBy !== admin.id) {
-    return c.json({ success: false, error: 'Ye account aapka nahi hai' }, 403)
+    return c.json({ success: false, error: 'This account is not yours' }, 403)
   }
 
   const res = await fetch(
@@ -132,7 +132,7 @@ instagramAutomationRoutes.get('/accounts/:id/posts', async (c) => {
     console.error('Posts fetch failed', data)
     return c.json({
       success: false,
-      error: data?.error?.message || 'Instagram se posts fetch nahi ho paye',
+      error: data?.error?.message || 'Could not fetch posts from Instagram',
       igError: data?.error || null,
     }, 502)
   }
@@ -167,13 +167,13 @@ instagramAutomationRoutes.post('/rules', async (c) => {
   const { accountId, postId, postThumbnail, postCaption, keyword, matchType, dmMessage } = body
 
   if (!accountId || !keyword || !dmMessage) {
-    return c.json({ success: false, error: 'accountId, keyword aur dmMessage zaroori hain' }, 400)
+    return c.json({ success: false, error: 'accountId, keyword and dmMessage are required' }, 400)
   }
 
   if (admin?.role === 'subadmin') {
     const ownedIds = await getOwnedIgUserIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB) || []
     if (!ownedIds.includes(accountId)) {
-      return c.json({ success: false, error: 'Ye account aapka nahi hai' }, 403)
+      return c.json({ success: false, error: 'This account is not yours' }, 403)
     }
   }
 
@@ -204,7 +204,7 @@ instagramAutomationRoutes.put('/rules/:id', async (c) => {
     )
     const ownedIds = await getOwnedIgUserIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB) || []
     if (!existing[0] || !ownedIds.includes(existing[0].accountId)) {
-      return c.json({ success: false, error: 'Ye rule aapki nahi hai' }, 403)
+      return c.json({ success: false, error: 'This rule is not yours' }, 403)
     }
   }
 
@@ -232,7 +232,7 @@ instagramAutomationRoutes.delete('/rules/:id', async (c) => {
     )
     const ownedIds = await getOwnedIgUserIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB) || []
     if (!existing[0] || !ownedIds.includes(existing[0].accountId)) {
-      return c.json({ success: false, error: 'Ye rule aapki nahi hai' }, 403)
+      return c.json({ success: false, error: 'This rule is not yours' }, 403)
     }
   }
 

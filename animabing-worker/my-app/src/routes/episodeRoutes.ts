@@ -1,6 +1,6 @@
- import { Hono } from 'hono'
+import { Hono } from 'hono'
 import { Env, Variables } from '../index'
-import { findMany, findOne, insertOne, updateOne, deleteOne, deleteMany, countDocuments, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
+import { findMany, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
 import { IEpisode } from '../models/types'
 import { adminAuth, superAdminOnly } from '../middleware/auth'
 
@@ -27,7 +27,8 @@ episodeRoutes.get('/', async (c) => {
   }
 })
 
-// ADD EPISODE — auth required
+// ADD EPISODE — auth required. ✅ FIX: pehle anime-findOne + existing-findOne
+// + insertOne + anime-updateOne = 4 alag connections. Ab sab 1 `db` se.
 episodeRoutes.post('/', adminAuth, async (c) => {
   try {
     const { animeId, title, episodeNumber, secureFileReference, mainLink, downloadLinks, session } = await c.req.json()
@@ -46,22 +47,22 @@ episodeRoutes.post('/', adminAuth, async (c) => {
         return c.json({ error: `Download link ${i + 1} must have both name and url` }, 400)
       }
     }
-
     if (!isValidObjectId(animeId)) return c.json({ error: 'Invalid animeId' }, 400)
 
-    const anime = await findOne('animes', { _id: toObjectId(animeId) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const [anime, existing] = await Promise.all([
+      db.collection('animes').findOne({ _id: toObjectId(animeId) }),
+      db.collection('episodes').findOne({
+        animeId: toObjectId(animeId),
+        episodeNumber: Number(episodeNumber),
+        session: session || 1
+      }),
+    ])
     if (!anime) return c.json({ error: 'Anime not found' }, 404)
+    if (existing) return c.json({ error: `Episode ${episodeNumber} already exists in Session ${session || 1}` }, 409)
 
-    const existing = await findOne('episodes', {
-      animeId: toObjectId(animeId),
-      episodeNumber: Number(episodeNumber),
-      session: session || 1
-    }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-
-    if (existing) {
-      return c.json({ error: `Episode ${episodeNumber} already exists in Session ${session || 1}` }, 409)
-    }
-
+    const now = new Date()
     const newEpisode = {
       animeId: toObjectId(animeId),
       title: title || `Episode ${episodeNumber}`,
@@ -74,13 +75,13 @@ episodeRoutes.post('/', adminAuth, async (c) => {
         quality: link.quality || '',
         type: link.type || 'direct'
       })),
-      session: session || 1
+      session: session || 1,
+      createdAt: now,
+      updatedAt: now,
     }
 
-    await insertOne('episodes', newEpisode, c.env.MONGODB_URI, c.env.MONGODB_DB)
-
-    // Update anime lastContentAdded
-    await updateOne('animes', { _id: toObjectId(animeId) }, { lastContentAdded: new Date() }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    await db.collection('episodes').insertOne(newEpisode)
+    await db.collection('animes').updateOne({ _id: toObjectId(animeId) }, { $set: { lastContentAdded: new Date() } })
 
     return c.json({ message: 'Episode added successfully! This anime will now appear first on homepage.', episode: newEpisode })
   } catch (err: any) {
@@ -97,11 +98,12 @@ episodeRoutes.get('/download/:animeId/:episodeNumber', async (c) => {
 
     if (!isValidObjectId(animeId)) return c.json({ error: 'Invalid animeId' }, 400)
 
-    const episode = await findOne<IEpisode>('episodes', {
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const episode = await db.collection('episodes').findOne({
       animeId: toObjectId(animeId),
       episodeNumber: Number(episodeNumber),
       session
-    }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    }) as IEpisode | null
 
     if (!episode) return c.json({ error: 'Episode not found' }, 404)
 
@@ -137,7 +139,7 @@ episodeRoutes.get('/:animeId', async (c) => {
   }
 })
 
-// UPDATE EPISODE — auth required
+// UPDATE EPISODE — auth required. ✅ FIX: 3 connections combined into 1.
 episodeRoutes.patch('/', adminAuth, async (c) => {
   try {
     const { animeId, episodeNumber, title, secureFileReference, mainLink, downloadLinks, session } = await c.req.json()
@@ -147,10 +149,11 @@ episodeRoutes.patch('/', adminAuth, async (c) => {
     }
     if (!isValidObjectId(animeId)) return c.json({ error: 'Invalid animeId' }, 400)
 
-    const anime = await findOne('animes', { _id: toObjectId(animeId) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const anime = await db.collection('animes').findOne({ _id: toObjectId(animeId) })
     if (!anime) return c.json({ error: 'Anime not found' }, 404)
 
-    const update: any = { mainLink: mainLink || '' }
+    const update: any = { mainLink: mainLink || '', updatedAt: new Date() }
     if (typeof title !== 'undefined') update.title = title
     if (typeof secureFileReference !== 'undefined') update.secureFileReference = secureFileReference
     if (typeof session !== 'undefined') update.session = session
@@ -173,15 +176,14 @@ episodeRoutes.patch('/', adminAuth, async (c) => {
       }))
     }
 
-    const updated = await updateOne('episodes', {
-      animeId: toObjectId(animeId),
-      episodeNumber: Number(episodeNumber),
-      session: session || 1
-    }, update, c.env.MONGODB_URI, c.env.MONGODB_DB)
-
+    const updated = await db.collection('episodes').findOneAndUpdate(
+      { animeId: toObjectId(animeId), episodeNumber: Number(episodeNumber), session: session || 1 },
+      { $set: update },
+      { returnDocument: 'after' }
+    )
     if (!updated) return c.json({ error: 'Episode not found' }, 404)
 
-    await updateOne('animes', { _id: toObjectId(animeId) }, { lastContentAdded: new Date() }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    await db.collection('animes').updateOne({ _id: toObjectId(animeId) }, { $set: { lastContentAdded: new Date() } })
 
     return c.json({ message: '✅ Episode updated successfully!', episode: updated })
   } catch (err: any) {
@@ -189,7 +191,7 @@ episodeRoutes.patch('/', adminAuth, async (c) => {
   }
 })
 
-// DELETE EPISODE — auth required
+// DELETE EPISODE — auth required. ✅ FIX: 2 connections combined into 1.
 episodeRoutes.delete('/', adminAuth, async (c) => {
   try {
     const { animeId, episodeNumber, session } = await c.req.json()
@@ -208,7 +210,7 @@ episodeRoutes.delete('/', adminAuth, async (c) => {
 
     if (!removed) return c.json({ error: 'Episode not found' }, 404)
 
-    await updateOne('animes', { _id: toObjectId(animeId) }, { lastContentAdded: new Date() }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    await db.collection('animes').updateOne({ _id: toObjectId(animeId) }, { $set: { lastContentAdded: new Date() } })
 
     return c.json({ message: 'Episode deleted' })
   } catch (err: any) {

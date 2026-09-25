@@ -2,8 +2,7 @@ import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
 import {
-  findMany, findOne, insertOne, updateOne, deleteOne,
-  deleteMany, toObjectId, isValidObjectId, getDb
+  findMany, updateOne, deleteMany, toObjectId, isValidObjectId, getDb
 } from '../services/mongoService'
 import { IReport } from '../models/types'
 import { ObjectId } from 'mongodb'
@@ -22,6 +21,7 @@ reportRoutes.post('/', async (c) => {
       return c.json({ success: false, error: 'Description must be at least 10 characters' }, 400)
     }
 
+    const now = new Date()
     const report = {
       animeId: animeId ? toObjectId(animeId) : null,
       episodeId: episodeId ? toObjectId(episodeId) : null,
@@ -34,10 +34,13 @@ reportRoutes.post('/', async (c) => {
       type: 'episode',
       userIP: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || 'unknown',
       userAgent: c.req.header('user-agent') || 'Unknown',
-      status: 'Pending'
+      status: 'Pending',
+      createdAt: now,
+      updatedAt: now,
     }
 
-    await insertOne('reports', report, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    await db.collection('reports').insertOne(report)
 
     return c.json({ success: true, message: 'Report submitted! We will fix the issue soon.' })
   } catch (err: any) {
@@ -51,9 +54,6 @@ reportRoutes.get('/pending-count', adminAuth, async (c) => {
     const admin = c.get('admin')
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    // 🔒 Sirf 'admin' role ko full/unrestricted access.
-    // Baaki sab (subadmin ya role-string mismatch waale bhi) ko sirf apne
-    // anime ke episode reports ka pending count milega — contact form kabhi nahi.
     if (admin.role !== 'admin') {
       const ownAnimes = await db.collection('animes')
         .find({ createdBy: admin.id }, { projection: { _id: 1 } })
@@ -80,6 +80,8 @@ reportRoutes.get('/pending-count', adminAuth, async (c) => {
 })
 
 // ============ GET ALL REPORTS - anime thumbnail + role-based filter (admin) ============
+// ✅ Ye route already sirf 1 connection use karti thi (db upar khula, sab
+// operations wahi se) — koi change nahi chahiye tha.
 reportRoutes.get('/', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
@@ -122,7 +124,6 @@ reportRoutes.get('/', adminAuth, async (c) => {
       })
     }
 
-    // Enrich reports with anime data + sub-admin username
     let enrichedReports = reports.map((report: any) => {
       if (report.type === 'episode' && report.animeId) {
         const animeIdStr = report.animeId.toString()
@@ -133,22 +134,18 @@ reportRoutes.get('/', adminAuth, async (c) => {
             ? { _id: anime._id, title: anime.title, thumbnail: anime.thumbnail }
             : { _id: report.animeId, title: 'Unknown Anime', thumbnail: null },
           subAdminUsername: anime?.createdByUsername || null,
-          _createdBy: anime?.createdBy || null   // temp field for filtering
+          _createdBy: anime?.createdBy || null
         }
       }
       return { ...report, _createdBy: null }
     })
 
-    // 🔒 Sub-admin (ya koi bhi role jo 'admin' nahi hai): sirf apna add kiya hua
-    // anime ke EPISODE reports dikhao. Contact form reports kabhi nahi dikhenge,
-    // chahe role field ka exact naam/value kuch bhi ho — sirf 'admin' ko full access.
     if (admin.role !== 'admin') {
       enrichedReports = enrichedReports.filter(
         (r: any) => r.type === 'episode' && r._createdBy === admin.id
       )
     }
 
-    // temp field hatao response se pehle
     enrichedReports = enrichedReports.map((r: any) => {
       const { _createdBy, ...rest } = r
       return rest
@@ -183,7 +180,6 @@ reportRoutes.put('/:id', adminAuth, async (c) => {
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
 
     const body = await c.req.json()
-
     const updateData: any = { ...body }
 
     if (body.status === 'Fixed' && !body.resolvedAt) {
@@ -234,16 +230,17 @@ reportRoutes.post('/bulk-delete', adminAuth, async (c) => {
   }
 })
 
-// ============ DELETE SINGLE REPORT (admin) ============
+// ============ DELETE SINGLE REPORT (admin) — 2 connections combined into 1 ============
 reportRoutes.delete('/:id', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
 
-    const report = await findOne('reports', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const report = await db.collection('reports').findOne({ _id: toObjectId(id) })
     if (!report) return c.json({ error: 'Report not found' }, 404)
 
-    await deleteOne('reports', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    await db.collection('reports').deleteOne({ _id: toObjectId(id) })
 
     return c.json({ success: true, message: 'Report deleted successfully' })
   } catch (err: any) {

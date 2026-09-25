@@ -1,4 +1,4 @@
- import { ObjectId } from 'mongodb'
+import { ObjectId } from 'mongodb'
 
 // ============ ANIME ============
 export interface IVote {
@@ -497,6 +497,9 @@ export interface ITrackedTitle {
   id: string
   keyword: string
   lastKnownPart: number
+  // 🆕 OWNERSHIP: kis sub-admin ne ye title add kiya (multi-subadmin-per-channel ke liye zaroori)
+  createdBy?: string
+  createdByUsername?: string
   lastKnownVideoId?: string
   lastKnownVideoTitle?: string
   lastKnownThumbnail?: string

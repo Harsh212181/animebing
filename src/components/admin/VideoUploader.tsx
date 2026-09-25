@@ -1,4 +1,4 @@
- import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 
 const API_BASE = import.meta.env.VITE_API_BASE ||
@@ -275,7 +275,7 @@ const UploadRow: React.FC<{
     e.target.value = '';
     if (!f) return;
     if (f.name !== item.fileName || f.size !== item.fileSize) {
-      setMismatch(`Yeh file match nahi hui — "${item.fileName}" (${formatSize(item.fileSize)}) chuno.`);
+      setMismatch(`This file didn't match — choose "${item.fileName}" (${formatSize(item.fileSize)}).`);
       return;
     }
     setMismatch('');
@@ -310,7 +310,7 @@ const UploadRow: React.FC<{
       {item.status === 'needs-file' && (
         <div className="space-y-2">
           <p className="text-xs text-amber-200/80">
-            Interrupted upload — {item.progress}% already uploaded. Isi naam/size ki file dobara select karo to continue karne ke liye.
+            Interrupted upload — {item.progress}% already uploaded. Re-select the file with the same name/size to continue.
           </p>
           {mismatch && <p className="text-xs text-rose-300">{mismatch}</p>}
           <div className="w-full bg-gray-800 rounded-full h-2.5 overflow-hidden">
@@ -329,7 +329,7 @@ const UploadRow: React.FC<{
 
       {item.status === 'done' && !item.finalUrl && (
         <p className="text-xs text-amber-200/80">
-          Upload ho gaya, par Public URL set nahi hai. My Storage me jaake set karo.
+          Upload complete, but Public URL is not set. Go to My Storage and set it.
         </p>
       )}
 
@@ -525,9 +525,9 @@ const VideoUploader: React.FC<Props> = ({ token: tokenProp, onUploadComplete }) 
 
         const { url } = await apiCall('/part-url', { hostname: item.hostname, key: session.key, uploadId: session.uploadId, partNumber });
         const putRes = await fetch(url, { method: 'PUT', body: chunk });
-        if (!putRes.ok) throw new Error(`Part ${partNumber} upload fail ho gaya`);
+        if (!putRes.ok) throw new Error(`Part ${partNumber} upload failed`);
 
-        // ✅ NEW: cancel ho chuka hai to state dobara save mat karo
+        // ✅ NEW: if already cancelled, don't save state again
         if (cancelledRef.current.has(id)) return;
 
         const eTag = putRes.headers.get('ETag') || '';
@@ -552,7 +552,7 @@ const VideoUploader: React.FC<Props> = ({ token: tokenProp, onUploadComplete }) 
       updateItem(id, { status: 'done', progress: 100, finalUrl: completedUrl });
       onUploadComplete?.(completedUrl);
     } catch (err: any) {
-      updateItem(id, { status: 'error', error: err.message || 'Upload fail ho gaya' });
+      updateItem(id, { status: 'error', error: err.message || 'Upload failed' });
     } finally {
       activeRef.current.delete(id);
       pump();
@@ -597,7 +597,7 @@ const VideoUploader: React.FC<Props> = ({ token: tokenProp, onUploadComplete }) 
         if (dupe) return;
 
         if (!selectedHostname) {
-          setGlobalError('Pehle ek bucket select karo, phir video daalo.');
+          setGlobalError('Select a bucket first, then add a video.');
           return;
         }
 
@@ -629,17 +629,17 @@ const VideoUploader: React.FC<Props> = ({ token: tokenProp, onUploadComplete }) 
     const item = itemsRef.current.find(i => i.id === id);
     if (!item) return;
 
-    // 1) running loop ko rokne ka signal
+    // 1) signal to stop the running loop
     pauseFlagsRef.current.set(id, true);
     cancelledRef.current.add(id);
     activeRef.current.delete(id);
 
-    // 2) pehle localStorage + UI saaf karo (abort ka wait nahi)
+    // 2) clean up localStorage + UI first (don't wait for abort)
     clearPersistedState(item.fileName, item.fileSize);
-    localStorage.removeItem(item.id); // recovered items ki id hi storage key hoti hai
+    localStorage.removeItem(item.id); // recovered items' id is the storage key
     setItems(prev => prev.filter(it => it.id !== id));
 
-    // 3) R2 me incomplete multipart abort, background me
+    // 3) abort incomplete multipart in R2, in background
     if (item.uploadId && item.key && item.status !== 'done') {
       try { await apiCall('/abort', { hostname: item.hostname, key: item.key, uploadId: item.uploadId }); } catch {}
     }
@@ -692,9 +692,9 @@ const VideoUploader: React.FC<Props> = ({ token: tokenProp, onUploadComplete }) 
         {corsExpanded && (
           <div className="px-4 pb-4 pt-2 border-t border-amber-500/20 space-y-3">
             <ol className="list-decimal list-inside text-sm text-gray-300 space-y-1">
-              <li>Cloudflare Dashboard → R2 → apna bucket select karo (e.g., <code className="text-amber-300">animebing-videos</code>)</li>
+              <li>Cloudflare Dashboard → R2 → select your bucket (e.g., <code className="text-amber-300">animebing-videos</code>)</li>
               <li>Settings tab → <strong>CORS Policy</strong> section</li>
-              <li>Neeche diya JSON copy karke paste karo aur Save karo</li>
+              <li>Copy the JSON below, paste it, and Save</li>
             </ol>
             <pre className="bg-black/40 p-3 rounded-lg text-xs text-gray-300 overflow-x-auto whitespace-pre-wrap">{CORS_POLICY}</pre>
             <button

@@ -1,4 +1,4 @@
- import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import type { SubDubStatus } from '../../types';
 import Spinner from '../Spinner';
@@ -373,10 +373,8 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
 
   // 📱🖥️ Refs for the fields that must auto-grow to show their FULL text
   // (no more clipped 1-2 line boxes that need scrolling — on phone or PC)
-  const descriptionRef = useRef<HTMLTextAreaElement>(null);
   const seoDescriptionRef = useRef<HTMLTextAreaElement>(null);
   const seoKeywordsRef = useRef<HTMLTextAreaElement>(null);
-  useAutoResizeTextArea(descriptionRef, form.description);
   useAutoResizeTextArea(seoDescriptionRef, form.seoDescription);
   useAutoResizeTextArea(seoKeywordsRef, form.seoKeywords);
 
@@ -749,13 +747,12 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                     <Icons.Description className="w-4 h-4 text-slate-400" />
                     Description <span className="text-slate-500 text-xs font-normal">(optional)</span>
                   </label>
+                  {/* ✅ Fixed-height scrollable box — mobile 220px, PC 215px (half), scrollbar hidden but scroll works */}
                   <textarea
-                    ref={descriptionRef}
                     value={form.description}
                     onChange={(e) => setForm({ ...form, description: e.target.value })}
-                    className="w-full h-full bg-slate-900/80 border border-slate-700 text-white rounded-xl px-3 sm:px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all resize-none overflow-hidden placeholder:text-slate-500 min-h-[150px]"
+                    className="scrollbar-hide w-full bg-slate-900/80 border border-slate-700 text-white rounded-xl px-3 sm:px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all resize-none overflow-y-auto placeholder:text-slate-500 h-[220px] sm:h-[215px]"
                     placeholder="Write a brief description of the anime..."
-                    rows={4}
                   />
                 </div>
               </div>
@@ -1200,6 +1197,10 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
         .animate-slide-up { animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
         .line-clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
         .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+        /* ✅ Hide scrollbar but keep scroll functionality (works on Chrome, Firefox, Safari, Edge) */
+        .scrollbar-hide::-webkit-scrollbar { display: none; width: 0; height: 0; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
     </div>
   );

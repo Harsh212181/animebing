@@ -62,6 +62,31 @@ const getCurrentDayInIndia = (): string => {
   return indiaTime.toLocaleDateString('en-IN', { weekday: 'long' });
 };
 
+// 🆕 Auto-scroll helper — element ko container ke andar visible karvao
+function scrollChildIntoContainer(
+  container: HTMLElement | null,
+  child: HTMLElement | null,
+  padding = 12
+) {
+  if (!container || !child) return;
+  const cRect = container.getBoundingClientRect();
+  const bRect = child.getBoundingClientRect();
+
+  if (bRect.top < cRect.top + padding) {
+    // upar cut gaya — upar scroll
+    container.scrollTo({
+      top: container.scrollTop - (cRect.top + padding - bRect.top),
+      behavior: 'smooth',
+    });
+  } else if (bRect.bottom > cRect.bottom - padding) {
+    // neeche cut gaya — neeche scroll
+    container.scrollTo({
+      top: container.scrollTop + (bRect.bottom - (cRect.bottom - padding)),
+      behavior: 'smooth',
+    });
+  }
+}
+
 // SVG icon factory
 const SvgIcon: React.FC<{ d: string; className?: string }> = ({ d, className = 'w-4 h-4' }) => (
   <svg className={className} fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
@@ -264,9 +289,10 @@ interface NavItemProps {
   collapsed: boolean;
   badge?: number;
   onClick: (id: string) => void;
+  itemRef?: (el: HTMLButtonElement | null) => void;   // 🆕
 }
 
-const NavItem: React.FC<NavItemProps> = ({ tabId, activeTab, collapsed, badge, onClick }) => {
+const NavItem: React.FC<NavItemProps> = ({ tabId, activeTab, collapsed, badge, onClick, itemRef }) => {
   const isActive = activeTab === tabId;
   const label = TAB_LABELS[tabId] || tabId;
   const iconPath = ICONS[tabId] || ICONS.list;
@@ -274,6 +300,7 @@ const NavItem: React.FC<NavItemProps> = ({ tabId, activeTab, collapsed, badge, o
 
   return (
     <button
+      ref={itemRef}                                     /* 🆕 */
       onClick={() => onClick(tabId)}
       className={`group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-left overflow-hidden
         ${isActive
@@ -378,6 +405,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [tabRefreshVersions, setTabRefreshVersions] = useState<Record<string, number>>({});
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set(['list']));
 
+  // 🆕 Refs for auto-scroll to active tab
+  const iconRailRef = useRef<HTMLDivElement>(null);
+  const expandedNavRef = useRef<HTMLElement>(null);
+  const mobileNavRef = useRef<HTMLElement>(null);
+  const iconRailBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const expandedNavBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const mobileNavBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
   useEffect(() => {
     setVisitedTabs(prev => {
       if (prev.has(activeTab)) return prev;
@@ -386,6 +421,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       return next;
     });
   }, [activeTab]);
+
+  // 🆕 Auto-scroll active tab into view — jab bhi tab change ho, sidebar open ho, ya mobile menu khule
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      scrollChildIntoContainer(iconRailRef.current, iconRailBtnRefs.current[activeTab], 10);
+      scrollChildIntoContainer(expandedNavRef.current, expandedNavBtnRefs.current[activeTab], 14);
+      scrollChildIntoContainer(mobileNavRef.current, mobileNavBtnRefs.current[activeTab], 14);
+    }, 60);
+    return () => window.clearTimeout(id);
+  }, [activeTab, sidebarCollapsed, sidebarPinned, mobileMenuOpen]);
 
   const handleSidebarMouseEnter = () => {
     if (sidebarPinned) return;
@@ -630,16 +675,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         <div className="h-16 flex items-center justify-center border-b border-white/[0.06] flex-shrink-0">
           <BrandLogo />
         </div>
-        <div className="flex-1 flex flex-col items-center py-4 gap-1.5 overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
+        <div
+          ref={iconRailRef}                                /* 🆕 */
+          className="flex-1 flex flex-col items-center py-4 gap-1.5 overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]"
+        >
           {Object.keys(TAB_LABELS).map(tabId => {
             const color = getTabColor(tabId);
             const isActive = activeTab === tabId;
             return (
               <button
                 key={tabId}
+                ref={el => { iconRailBtnRefs.current[tabId] = el; }}   /* 🆕 */
                 onClick={() => handleTabChange(tabId)}
                 title={TAB_LABELS[tabId]}
-                className={`group relative w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 ${
+                className={`group relative w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 flex-shrink-0 ${
                   isActive
                     ? `bg-gradient-to-br ${color.from} ${color.to} shadow-lg ${color.glow}`
                     : 'hover:bg-white/[0.06]'
@@ -701,42 +750,45 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             </svg>
           </button>
         </div>
-        <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-3 [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
+        <nav
+          ref={expandedNavRef}                                  /* 🆕 */
+          className="flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-3 [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]"
+        >
           <SidebarSection label="Content">
-            <NavItem tabId="list"            activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
-            <NavItem tabId="add"             activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
-            <NavItem tabId="episodes"        activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
-            <NavItem tabId="episode-status"  activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
-            <NavItem tabId="videoUpload"     activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
+            <NavItem tabId="list"            activeTab={activeTab} collapsed={false} onClick={handleTabChange} itemRef={el => { expandedNavBtnRefs.current['list'] = el; }} />
+            <NavItem tabId="add"             activeTab={activeTab} collapsed={false} onClick={handleTabChange} itemRef={el => { expandedNavBtnRefs.current['add'] = el; }} />
+            <NavItem tabId="episodes"        activeTab={activeTab} collapsed={false} onClick={handleTabChange} itemRef={el => { expandedNavBtnRefs.current['episodes'] = el; }} />
+            <NavItem tabId="episode-status"  activeTab={activeTab} collapsed={false} onClick={handleTabChange} itemRef={el => { expandedNavBtnRefs.current['episode-status'] = el; }} />
+            <NavItem tabId="videoUpload"     activeTab={activeTab} collapsed={false} onClick={handleTabChange} itemRef={el => { expandedNavBtnRefs.current['videoUpload'] = el; }} />
           </SidebarSection>
           <SidebarSection label="Manage">
-            <NavItem tabId="featured"        activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
-            <NavItem tabId="reports"         activeTab={activeTab} collapsed={false} onClick={handleTabChange} badge={pendingReportsCount} />
-            <NavItem tabId="polls"           activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
-            <NavItem tabId="social"          activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
-            <NavItem tabId="notes"           activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
-            <NavItem tabId="trackList"       activeTab={activeTab} collapsed={false} onClick={handleTabChange} badge={trackUnreadCount} />
-            <NavItem tabId="forms"           activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
+            <NavItem tabId="featured"        activeTab={activeTab} collapsed={false} onClick={handleTabChange} itemRef={el => { expandedNavBtnRefs.current['featured'] = el; }} />
+            <NavItem tabId="reports"         activeTab={activeTab} collapsed={false} onClick={handleTabChange} badge={pendingReportsCount} itemRef={el => { expandedNavBtnRefs.current['reports'] = el; }} />
+            <NavItem tabId="polls"           activeTab={activeTab} collapsed={false} onClick={handleTabChange} itemRef={el => { expandedNavBtnRefs.current['polls'] = el; }} />
+            <NavItem tabId="social"          activeTab={activeTab} collapsed={false} onClick={handleTabChange} itemRef={el => { expandedNavBtnRefs.current['social'] = el; }} />
+            <NavItem tabId="notes"           activeTab={activeTab} collapsed={false} onClick={handleTabChange} itemRef={el => { expandedNavBtnRefs.current['notes'] = el; }} />
+            <NavItem tabId="trackList"       activeTab={activeTab} collapsed={false} onClick={handleTabChange} badge={trackUnreadCount} itemRef={el => { expandedNavBtnRefs.current['trackList'] = el; }} />
+            <NavItem tabId="forms"           activeTab={activeTab} collapsed={false} onClick={handleTabChange} itemRef={el => { expandedNavBtnRefs.current['forms'] = el; }} />
           </SidebarSection>
           <SidebarSection label="Downloads">
-            <NavItem tabId="downloadPages"   activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
-            <NavItem tabId="linkControl"     activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
-            <NavItem tabId="specialModes"    activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
-            <NavItem tabId="shortener"       activeTab={activeTab} collapsed={false} onClick={handleTabChange} badge={unreadShortMessagesCount} />
-            <NavItem tabId="shortusers"      activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
-            <NavItem tabId="partners"        activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
+            <NavItem tabId="downloadPages"   activeTab={activeTab} collapsed={false} onClick={handleTabChange} itemRef={el => { expandedNavBtnRefs.current['downloadPages'] = el; }} />
+            <NavItem tabId="linkControl"     activeTab={activeTab} collapsed={false} onClick={handleTabChange} itemRef={el => { expandedNavBtnRefs.current['linkControl'] = el; }} />
+            <NavItem tabId="specialModes"    activeTab={activeTab} collapsed={false} onClick={handleTabChange} itemRef={el => { expandedNavBtnRefs.current['specialModes'] = el; }} />
+            <NavItem tabId="shortener"       activeTab={activeTab} collapsed={false} onClick={handleTabChange} badge={unreadShortMessagesCount} itemRef={el => { expandedNavBtnRefs.current['shortener'] = el; }} />
+            <NavItem tabId="shortusers"      activeTab={activeTab} collapsed={false} onClick={handleTabChange} itemRef={el => { expandedNavBtnRefs.current['shortusers'] = el; }} />
+            <NavItem tabId="partners"        activeTab={activeTab} collapsed={false} onClick={handleTabChange} itemRef={el => { expandedNavBtnRefs.current['partners'] = el; }} />
           </SidebarSection>
           <SidebarSection label="Tools">
-            <NavItem tabId="instagram"       activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
+            <NavItem tabId="instagram"       activeTab={activeTab} collapsed={false} onClick={handleTabChange} itemRef={el => { expandedNavBtnRefs.current['instagram'] = el; }} />
           </SidebarSection>
           <SidebarSection label="Analytics">
-            <NavItem tabId="pageviews"       activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
-            <NavItem tabId="userActivity"    activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
-            <NavItem tabId="earnings"        activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
+            <NavItem tabId="pageviews"       activeTab={activeTab} collapsed={false} onClick={handleTabChange} itemRef={el => { expandedNavBtnRefs.current['pageviews'] = el; }} />
+            <NavItem tabId="userActivity"    activeTab={activeTab} collapsed={false} onClick={handleTabChange} itemRef={el => { expandedNavBtnRefs.current['userActivity'] = el; }} />
+            <NavItem tabId="earnings"        activeTab={activeTab} collapsed={false} onClick={handleTabChange} itemRef={el => { expandedNavBtnRefs.current['earnings'] = el; }} />
           </SidebarSection>
           <SidebarSection label="Administration">
-            <NavItem tabId="subadmins"       activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
-            <NavItem tabId="r2providers"     activeTab={activeTab} collapsed={false} onClick={handleTabChange} />
+            <NavItem tabId="subadmins"       activeTab={activeTab} collapsed={false} onClick={handleTabChange} itemRef={el => { expandedNavBtnRefs.current['subadmins'] = el; }} />
+            <NavItem tabId="r2providers"     activeTab={activeTab} collapsed={false} onClick={handleTabChange} itemRef={el => { expandedNavBtnRefs.current['r2providers'] = el; }} />
           </SidebarSection>
         </nav>
         <div className="flex-shrink-0 border-t border-white/[0.06] p-3">
@@ -788,42 +840,45 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-3 [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
+        <nav
+          ref={mobileNavRef}                                  /* 🆕 */
+          className="flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-3 [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]"
+        >
           <SidebarSection label="Content">
-            <NavItem tabId="list"            activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
-            <NavItem tabId="add"             activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
-            <NavItem tabId="episodes"        activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
-            <NavItem tabId="episode-status"  activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
-            <NavItem tabId="videoUpload"     activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+            <NavItem tabId="list"            activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} itemRef={el => { mobileNavBtnRefs.current['list'] = el; }} />
+            <NavItem tabId="add"             activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} itemRef={el => { mobileNavBtnRefs.current['add'] = el; }} />
+            <NavItem tabId="episodes"        activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} itemRef={el => { mobileNavBtnRefs.current['episodes'] = el; }} />
+            <NavItem tabId="episode-status"  activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} itemRef={el => { mobileNavBtnRefs.current['episode-status'] = el; }} />
+            <NavItem tabId="videoUpload"     activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} itemRef={el => { mobileNavBtnRefs.current['videoUpload'] = el; }} />
           </SidebarSection>
           <SidebarSection label="Manage">
-            <NavItem tabId="featured"        activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
-            <NavItem tabId="reports"         activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} badge={pendingReportsCount} />
-            <NavItem tabId="polls"           activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
-            <NavItem tabId="social"          activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
-            <NavItem tabId="notes"           activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
-            <NavItem tabId="trackList"       activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} badge={trackUnreadCount} />
-            <NavItem tabId="forms"           activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+            <NavItem tabId="featured"        activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} itemRef={el => { mobileNavBtnRefs.current['featured'] = el; }} />
+            <NavItem tabId="reports"         activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} badge={pendingReportsCount} itemRef={el => { mobileNavBtnRefs.current['reports'] = el; }} />
+            <NavItem tabId="polls"           activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} itemRef={el => { mobileNavBtnRefs.current['polls'] = el; }} />
+            <NavItem tabId="social"          activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} itemRef={el => { mobileNavBtnRefs.current['social'] = el; }} />
+            <NavItem tabId="notes"           activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} itemRef={el => { mobileNavBtnRefs.current['notes'] = el; }} />
+            <NavItem tabId="trackList"       activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} badge={trackUnreadCount} itemRef={el => { mobileNavBtnRefs.current['trackList'] = el; }} />
+            <NavItem tabId="forms"           activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} itemRef={el => { mobileNavBtnRefs.current['forms'] = el; }} />
           </SidebarSection>
           <SidebarSection label="Downloads">
-            <NavItem tabId="downloadPages"   activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
-            <NavItem tabId="linkControl"     activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
-            <NavItem tabId="specialModes"    activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
-            <NavItem tabId="shortener"       activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} badge={unreadShortMessagesCount} />
-            <NavItem tabId="shortusers"      activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
-            <NavItem tabId="partners"        activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+            <NavItem tabId="downloadPages"   activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} itemRef={el => { mobileNavBtnRefs.current['downloadPages'] = el; }} />
+            <NavItem tabId="linkControl"     activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} itemRef={el => { mobileNavBtnRefs.current['linkControl'] = el; }} />
+            <NavItem tabId="specialModes"    activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} itemRef={el => { mobileNavBtnRefs.current['specialModes'] = el; }} />
+            <NavItem tabId="shortener"       activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} badge={unreadShortMessagesCount} itemRef={el => { mobileNavBtnRefs.current['shortener'] = el; }} />
+            <NavItem tabId="shortusers"      activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} itemRef={el => { mobileNavBtnRefs.current['shortusers'] = el; }} />
+            <NavItem tabId="partners"        activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} itemRef={el => { mobileNavBtnRefs.current['partners'] = el; }} />
           </SidebarSection>
           <SidebarSection label="Tools">
-            <NavItem tabId="instagram"       activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+            <NavItem tabId="instagram"       activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} itemRef={el => { mobileNavBtnRefs.current['instagram'] = el; }} />
           </SidebarSection>
           <SidebarSection label="Analytics">
-            <NavItem tabId="pageviews"       activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
-            <NavItem tabId="userActivity"    activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
-            <NavItem tabId="earnings"        activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+            <NavItem tabId="pageviews"       activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} itemRef={el => { mobileNavBtnRefs.current['pageviews'] = el; }} />
+            <NavItem tabId="userActivity"    activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} itemRef={el => { mobileNavBtnRefs.current['userActivity'] = el; }} />
+            <NavItem tabId="earnings"        activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} itemRef={el => { mobileNavBtnRefs.current['earnings'] = el; }} />
           </SidebarSection>
           <SidebarSection label="Administration">
-            <NavItem tabId="subadmins"       activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
-            <NavItem tabId="r2providers"     activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} />
+            <NavItem tabId="subadmins"       activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} itemRef={el => { mobileNavBtnRefs.current['subadmins'] = el; }} />
+            <NavItem tabId="r2providers"     activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} itemRef={el => { mobileNavBtnRefs.current['r2providers'] = el; }} />
           </SidebarSection>
         </nav>
 

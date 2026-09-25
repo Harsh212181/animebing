@@ -1,28 +1,42 @@
- import { getContentGroup } from '../utils/contentGroup'
+import { Db } from 'mongodb'
+import { getContentGroup } from '../utils/contentGroup'
 import { getDb, toObjectId } from './mongoService'
+
+// ============================================================================
+// ✅ FIX: har exported function ab EK OPTIONAL `existingDb` trailing param
+// leti hai. Agar caller ke paas already khula hua `db` object hai (jaise
+// `syncPageDerivedData` ke andar), wahi reuse hota hai — naya connection
+// nahi khulta. Agar `existingDb` nahi diya jaata (jaisa downloadPageRoutes.ts
+// abhi bhi `syncAnimeEpisodeCountFromAnime(...)` ko akela call karta hai),
+// to purana behavior (apna connection khud kholna) waisa hi rehta hai —
+// isliye ye change fully backward-compatible hai, kisi caller ko todta nahi.
+// ============================================================================
 
 // ============ Download Page ke links se anime.currentEpisode sync (page ID se) ============
 export async function syncAnimeEpisodeCountFromPage(
   downloadPageId: string,
   mongoUri: string,
-  dbName: string
+  dbName: string,
+  existingDb?: Db
 ) {
-  const db = await getDb(mongoUri, dbName)
+  const db = existingDb || await getDb(mongoUri, dbName)
 
   const page = await db.collection('downloadpages').findOne({ _id: toObjectId(downloadPageId) })
   if (!page || !page.animeId) return null
 
-  return syncAnimeEpisodeCountFromAnime(page.animeId, mongoUri, dbName)
+  return syncAnimeEpisodeCountFromAnime(page.animeId, mongoUri, dbName, db)
 }
+
 export async function syncAnimeEpisodeCountFromAnime(
   animeId: any,
   mongoUri: string,
-  dbName: string
+  dbName: string,
+  existingDb?: Db
 ) {
-  const db = await getDb(mongoUri, dbName)
+  const db = existingDb || await getDb(mongoUri, dbName)
   const animeObjectId = typeof animeId === 'string' ? toObjectId(animeId) : animeId
 
-  // ✅ NEW — pehle current value nikaal lo taaki compare kar sakein
+  // ✅ pehle current value nikaal lo taaki compare kar sakein
   const currentAnime = await db.collection('animes').findOne(
     { _id: animeObjectId },
     { projection: { currentEpisode: 1 } }
@@ -44,8 +58,8 @@ export async function syncAnimeEpisodeCountFromAnime(
     })
   })
 
-  // ✅ FIX — sirf tab update karo jab value actually badli ho, taaki
-  // lastContentAdded galat trigger na ho aur NEW badge sahi rahe
+  // ✅ sirf tab update karo jab value actually badli ho, taaki lastContentAdded
+  // galat trigger na ho aur NEW badge sahi rahe
   if (maxEpisode !== previousEpisode) {
     await db.collection('animes').updateOne(
       { _id: animeObjectId },
@@ -56,9 +70,9 @@ export async function syncAnimeEpisodeCountFromAnime(
   return maxEpisode
 }
 
-// ✅ FIXED — ab yeh function sirf actual links ke numbers (episode / episodeStart) se
-// range nikalta hai. "Starting Episode Number (reference only)" field ab title
-// calculation ko override NAHI karega — jaisa UI pe likha hai waisa hi behavior hoga.
+// ✅ Ye function sirf actual links ke numbers (episode / episodeStart) se
+// range nikalta hai. "Starting Episode Number (reference only)" field ab
+// title calculation ko override NAHI karega.
 function computeEpisodeRangeTitle(page: any, label: 'Episode' | 'Chapter'): string {
   const links = page?.links || []
   const nums: number[] = []
@@ -77,9 +91,10 @@ function computeEpisodeRangeTitle(page: any, label: 'Episode' | 'Chapter'): stri
 export async function syncEpisodeTitleFromDownloadPage(
   downloadPageId: string,
   mongoUri: string,
-  dbName: string
+  dbName: string,
+  existingDb?: Db
 ) {
-  const db = await getDb(mongoUri, dbName)
+  const db = existingDb || await getDb(mongoUri, dbName)
   const page = await db.collection('downloadpages').findOne({ _id: toObjectId(downloadPageId) })
   if (!page || !page.animeId) return
   const anime = await db.collection('animes').findOne(
@@ -110,18 +125,22 @@ export async function syncEpisodeTitleFromDownloadPage(
   const rangeTitle = computeEpisodeRangeTitle(page, label)
   if (!rangeTitle) return
 
-  // ✅ sahi collection mein update karo
   await db.collection(collectionName).updateOne(
     { _id: targetItem._id },
     { $set: { title: rangeTitle, updatedAt: new Date() } }
   )
 }
+
+// ✅ FIX: ab EK connection khulti hai (poori chain — page lookup, anime
+// count sync, episode/chapter title sync — sab isi `db` se) instead of
+// pehle ke 3 alag connections.
 export async function syncPageDerivedData(
   downloadPageId: string,
   mongoUri: string,
   dbName: string
 ) {
-  const newCount = await syncAnimeEpisodeCountFromPage(downloadPageId, mongoUri, dbName)
-  await syncEpisodeTitleFromDownloadPage(downloadPageId, mongoUri, dbName)
+  const db = await getDb(mongoUri, dbName)
+  const newCount = await syncAnimeEpisodeCountFromPage(downloadPageId, mongoUri, dbName, db)
+  await syncEpisodeTitleFromDownloadPage(downloadPageId, mongoUri, dbName, db)
   return newCount
 }

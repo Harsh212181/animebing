@@ -1,9 +1,9 @@
- // src/routes/shortenerRoutes.ts - UPDATED VERSION
+// src/routes/shortenerRoutes.ts - UPDATED VERSION
 import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { getDb } from '../services/mongoService'
 import { adminAuth, requirePermission } from '../middleware/auth'
-import { ObjectId } from 'mongodb'
+import { ObjectId, Db } from 'mongodb'
 import { checkAndUnlockReferral, creditCommissionToReferrer } from './referralRoutes'
 import {
   getClickSettings, updateClickSettings,
@@ -11,7 +11,7 @@ import {
   createClickSession, advanceClickSession, completeClickSession,
   isFunnelBot
 } from '../services/clickVerificationService'
-import { isForceLink5ModeActive } from './specialModeRoutes' // ✅ NEW IMPORT
+import { isForceLink5ModeActive } from './specialModeRoutes'
 
 const shortenerRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
@@ -106,9 +106,13 @@ function buildMetaHTML(opts: {
 }
 
 // ============ ANIME META FETCHER — DIRECT DB ============
+// ✅ FIX: ab optional `existingDb` leta hai, taaki `/:code` route apna
+// pehle se khula connection reuse kare (bot-traffic path pe 2 connections
+// se 1 ho gaya).
 async function fetchAnimeMeta(
   targetUrl: string,
-  env: Env
+  env: Env,
+  existingDb?: Db
 ): Promise<{ title: string; description: string; image: string; slug: string } | null> {
   try {
     const match = targetUrl.match(/animebing\.in\/detail\/([^/?#]+)/)
@@ -116,7 +120,7 @@ async function fetchAnimeMeta(
 
     const slug = match[1]
 
-    const db = await getDb(env.MONGODB_URI, env.MONGODB_DB)
+    const db = existingDb || await getDb(env.MONGODB_URI, env.MONGODB_DB)
     const anime = await db.collection('animes').findOne({ slug })
 
     if (!anime) return null
@@ -151,12 +155,10 @@ async function fetchAnimeMeta(
 }
 
 // ============ PERMISSION HELPER ============
-// Updated: now async, checks both direct creator and ownership via shortuser
 async function canManageShortLink(link: any, admin: any, db: any): Promise<boolean> {
   if (!admin || admin.role !== 'subadmin') return true
   if (link?.createdByAdminId === admin.id) return true
 
-  // link.userId wale shortuser ko check karo — kya wo isi subadmin ne banaya tha?
   if (link?.userId) {
     const owner = await db.collection('shortusers').findOne({ _id: link.userId })
     return owner?.createdByAdminId === admin.id
@@ -206,7 +208,6 @@ async function creditClickForLink(link: any, c: any, db: any, opts: { skipDedup?
         await checkAndUnlockReferral(link.userId, db)
         if (earn > 0) await creditCommissionToReferrer(link.userId, earn, db)
 
-        // 🆕 Anomaly flag — 500+ clicks/day per user = just flag for review, no block
         const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
         const todayCount = await db.collection('shortclicks').countDocuments({ userId: link.userId, clickedAt: { $gte: todayStart } })
         if (todayCount > 500) {
@@ -230,7 +231,6 @@ shortenerRoutes.get('/admin/links', adminAuth, requirePermission('shortener'), a
 
     let filter: any = {}
     if (admin.role === 'subadmin') {
-      // ✅ Sub-admin ke banaye hue shortusers dhoondo
       const ownUsers = await db
         .collection('shortusers')
         .find({ createdByAdminId: admin.id }, { projection: { _id: 1 } })
@@ -239,8 +239,8 @@ shortenerRoutes.get('/admin/links', adminAuth, requirePermission('shortener'), a
 
       filter = {
         $or: [
-          { createdByAdminId: admin.id }, // sub-admin ne khud jo link banaya
-          { userId: { $in: ownUserIds } }, // sub-admin ke user ne khud-se (self) banaya link
+          { createdByAdminId: admin.id },
+          { userId: { $in: ownUserIds } },
         ],
       }
     }
@@ -280,7 +280,6 @@ shortenerRoutes.post('/admin/links', adminAuth, requirePermission('shortener'), 
       label: label || code,
       userId: userId ? new ObjectId(userId) : null,
       clicks: 0,
-      // ✅ creator tracking — same pattern as anime/shortusers
       createdByAdminId: admin.role === 'subadmin' ? admin.id : 'admin',
       createdByAdminUsername: admin.username,
       createdAt: new Date(),
@@ -303,7 +302,6 @@ shortenerRoutes.put('/admin/links/:code', adminAuth, requirePermission('shortene
     const admin = c.get('admin')
     const existingLink = await db.collection('shortlinks').findOne({ code })
     if (!existingLink) return c.json({ error: 'Link not found' }, 404)
-    // ✅ Updated: now async, passes db
     if (!(await canManageShortLink(existingLink, admin, db))) {
       return c.json({ error: 'You can only manage links you created.' }, 403)
     }
@@ -326,7 +324,6 @@ shortenerRoutes.delete('/admin/links/:code', adminAuth, requirePermission('short
     const admin = c.get('admin')
     const link = await db.collection('shortlinks').findOne({ code })
     if (!link) return c.json({ error: 'Link not found' }, 404)
-    // ✅ Updated: now async, passes db
     if (!(await canManageShortLink(link, admin, db))) {
       return c.json({ error: 'You can only manage links you created.' }, 403)
     }
@@ -398,19 +395,18 @@ shortenerRoutes.get('/dashboard', (c) => {
 // ============ MONTHLY CLICKS PER LINK (for month-wise view) ============
 shortenerRoutes.get('/admin/links/monthly-clicks', adminAuth, requirePermission('shortener'), async (c) => {
   try {
-    const month = parseInt(c.req.query('month') || '')  // 1-12
+    const month = parseInt(c.req.query('month') || '')
     const year = parseInt(c.req.query('year') || '')
     if (!month || !year || month < 1 || month > 12) {
       return c.json({ error: 'Valid month (1-12) and year are required' }, 400)
     }
 
     const start = new Date(year, month - 1, 1)
-    const end = new Date(year, month, 1) // exclusive — start of next month
+    const end = new Date(year, month, 1)
 
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
     const admin = c.get('admin')
 
-    // Scope to sub-admin's own links, same as /admin/links
     const linkFilter: any = {}
     if (admin.role === 'subadmin') linkFilter.createdByAdminId = admin.id
 
@@ -433,7 +429,19 @@ shortenerRoutes.get('/admin/links/monthly-clicks', adminAuth, requirePermission(
   }
 })
 
-// ============ REDIRECT — LAST ============
+// ============================================================================
+// ✅ REDIRECT — LAST — highest-traffic route in this file (every shortlink
+// click). Pehle isme requireFullCycle path pe: apna db(1) + fetchAnimeMeta
+// (bot path, +1) + getEffectiveClickSettings (+1, apna alag connection) +
+// createClickSession (+1, apna alag connection) = kul 4 connections per click.
+// Ab fetchAnimeMeta, getEffectiveClickSettings sab ek hi `db` reuse karte
+// hain. createClickSession abhi bhi apna khud ka connection kholta hai
+// (uska internal fix pehle hi ho chuka hai — ab wo khud sirf 1 connection
+// use karta hai), isliye total worst-case ab 2 connections hai (route ka
+// apna + createClickSession ka apna), jo pehle ke 4 se bahut behtar hai.
+// isForceLink5ModeActive (specialModeRoutes.ts) abhi bhi apna alag connection
+// khol sakta hai — us file ke bina wo fix nahi ho sakta.
+// ============================================================================
 shortenerRoutes.get('/:code', async (c) => {
   try {
     const code = c.req.param('code')
@@ -455,7 +463,7 @@ shortenerRoutes.get('/:code', async (c) => {
 
     // ============ BOT: Meta HTML serve karo ============
     if (isBot(userAgent)) {
-      const meta = await fetchAnimeMeta(link.url, c.env)
+      const meta = await fetchAnimeMeta(link.url, c.env, db) // ✅ db pass kiya
 
       const canonicalUrl = meta ? `https://animebing.in/detail/${meta.slug}` : link.url
 
@@ -478,15 +486,12 @@ shortenerRoutes.get('/:code', async (c) => {
     }
 
     // ============ REAL USER ============
-    // 🆕 Special mode (forceLink5Only) active hai — is din Link5 hi chalta hai (ad-free),
-    // isliye koi click count/credit nahi hona chahiye, seedha redirect kar do
-    const specialModeActive = await isForceLink5ModeActive(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const specialModeActive = await isForceLink5ModeActive(c.env.MONGODB_URI, c.env.MONGODB_DB, db) // ✅ db pass kiya
     if (specialModeActive) {
-      return c.redirect(link.url, 302) // ✅ koi tracking nahi, bas redirect
+      return c.redirect(link.url, 302)
     }
 
-    // Normal din — settings ke hisaab se (jo aapne OFF kar diya hai, isliye turant credit)
-    const settings = await getEffectiveClickSettings(link.userId || null, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const settings = await getEffectiveClickSettings(link.userId || null, c.env.MONGODB_URI, c.env.MONGODB_DB, db) // ✅ db pass kiya
 
     if (settings.requireFullCycle) {
       const ip = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || 'unknown'
@@ -495,8 +500,6 @@ shortenerRoutes.get('/:code', async (c) => {
         c.env.JWT_SECRET, c.env.MONGODB_URI, c.env.MONGODB_DB
       )
 
-      // 🆕 Rate-limited ho gaya — session nahi bana, seedha redirect kar do bina token ke
-      // (user ko normal experience milega, bas uska click count nahi hoga)
       if (!token) {
         return c.redirect(link.url, 302)
       }
@@ -506,7 +509,6 @@ shortenerRoutes.get('/:code', async (c) => {
       return c.redirect(redirectUrl.toString(), 302)
     }
 
-    // OLD MODE (setting OFF — chahe global ho ya user-specific)
     await creditClickForLink(link, c, db)
     return c.redirect(link.url, 302)
   } catch (err: any) {
@@ -517,7 +519,6 @@ shortenerRoutes.get('/:code', async (c) => {
 // ============ CLICK FUNNEL — STEP 2 ============
 shortenerRoutes.post('/click/advance', async (c) => {
   try {
-    // 🆕 Origin check — sirf animebing.in se aane wali requests allow
     if (!isValidFunnelOrigin(c)) return c.json({ success: false }, 200)
 
     const ua = c.req.header('User-Agent') || ''
@@ -536,16 +537,15 @@ shortenerRoutes.post('/click/advance', async (c) => {
 // ============ CLICK FUNNEL — STEP 3 ============
 shortenerRoutes.post('/click/complete', async (c) => {
   try {
-    // 🆕 Origin check
     if (!isValidFunnelOrigin(c)) return c.json({ success: false }, 200)
 
     const ua = c.req.header('User-Agent') || ''
     if (isFunnelBot(ua)) return c.json({ success: false }, 200)
 
-    const { token, animeId } = await c.req.json() // ✅ animeId nikala
+    const { token, animeId } = await c.req.json()
     if (!token) return c.json({ error: 'token required' }, 400)
 
-    const result = await completeClickSession(token, animeId, c.env.JWT_SECRET, c.env.MONGODB_URI, c.env.MONGODB_DB) // ✅ pass kiya
+    const result = await completeClickSession(token, animeId, c.env.JWT_SECRET, c.env.MONGODB_URI, c.env.MONGODB_DB)
     if (!result.success) return c.json({ success: false, error: result.error }, 400)
 
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -587,7 +587,6 @@ shortenerRoutes.put('/admin/click-settings', adminAuth, requirePermission('short
 shortenerRoutes.put('/admin/users/click-verification', adminAuth, requirePermission('shortener'), async (c) => {
   try {
     const { userIds, value } = await c.req.json()
-    // value: true | false | null (null = reset to global default)
     if (!Array.isArray(userIds) || userIds.length === 0) {
       return c.json({ error: 'userIds array required' }, 400)
     }
@@ -605,7 +604,6 @@ shortenerRoutes.put('/admin/users/click-verification', adminAuth, requirePermiss
 shortenerRoutes.get('/admin/users/:userId/click-verification', adminAuth, requirePermission('shortener'), async (c) => {
   try {
     const userId = c.req.param('userId')
-    // 🆕 pehle undefined check, phir ObjectId.isValid — taaki TypeScript ko pata chale userId ab string hai
     if (!userId || !ObjectId.isValid(userId)) return c.json({ error: 'Invalid userId' }, 400)
 
     const effective = await getEffectiveClickSettings(new ObjectId(userId), c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -614,6 +612,7 @@ shortenerRoutes.get('/admin/users/:userId/click-verification', adminAuth, requir
     return c.json({ error: err.message }, 500)
   }
 })
+
 // ============ ADMIN — FUNNEL ANALYTICS (7-day conversion) ============
 shortenerRoutes.get('/admin/click-funnel-stats', adminAuth, requirePermission('shortener'), async (c) => {
   try {

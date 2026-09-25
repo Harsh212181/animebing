@@ -1,9 +1,10 @@
- import { Hono } from 'hono'
+import { Hono } from 'hono'
 import { Env, Variables } from '../index'
-import { findOne, updateOne, insertOne, deleteMany, getDb } from '../services/mongoService'
+import { getDb } from '../services/mongoService'
 import { ILinkSettings } from '../models/types'
 import { getTodaysActiveMode, syncSpecialModeLinks } from './specialModeRoutes'
-import { adminAuth, superAdminOnly } from '../middleware/auth' // added for global rate endpoints
+import { adminAuth, superAdminOnly } from '../middleware/auth'
+import { Db } from 'mongodb'
 
 const linkSettingsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
@@ -13,7 +14,6 @@ function getIndiaWeekday(): number {
   return indiaTime.getDay()
 }
 
-// Link 5 master override rule (consumption-only display helper)
 function applyLink5Override<T extends { link1: boolean; link2: boolean; link3: boolean; link4: boolean; link5: boolean }>(s: T): T {
   if (s.link5) {
     return { ...s, link1: false, link2: false, link3: false, link4: false, link5: true }
@@ -21,11 +21,20 @@ function applyLink5Override<T extends { link1: boolean; link2: boolean; link3: b
   return s
 }
 
-// ✅ SINGLE SOURCE OF TRUTH — sirf syncSpecialModeLinks() hi link1-5 ko
-// force/restore karta hai, aur wo sirf forceLink5Only=true wale mode ke liye karta hai.
-// getSettings() ab sirf latest settings padhta hai, khud koi override apply nahi karta.
-async function getSettings(mongoUri: string, dbName: string): Promise<ILinkSettings> {
-  const db = await getDb(mongoUri, dbName)
+// ============================================================================
+// ✅ FIX: `getSettings` ab EK OPTIONAL trailing `existingDb` param leta hai.
+// Pehle: pehle ka `getSettings()` khud apna connection + `syncSpecialModeLinks`
+// (jo ab fix hone ke baad khud sirf 1 connection use karta hai, pehle 2 tha)
+// = 2 connections HAR CALL me. Aur `/toggle/:linkNumber` jaisi routes to
+// `getSettings()` ko 2 baar call karti thin (before/after) + apna alag
+// `getDb()` bhi — matlab ek single toggle action me ~5 connections!
+//
+// Ab: routes apna `db` ek baar kholte hain aur `getSettings(uri, dbName, db)`
+// ko wahi pass karte hain — chahe kitni baar call ho, sab EK connection
+// share karte hain.
+// ============================================================================
+async function getSettings(mongoUri: string, dbName: string, existingDb?: Db): Promise<ILinkSettings> {
+  const db = existingDb || await getDb(mongoUri, dbName)
   let settings = await db.collection('linksettings').findOne({}) as ILinkSettings | null
 
   if (!settings) {
@@ -37,14 +46,13 @@ async function getSettings(mongoUri: string, dbName: string): Promise<ILinkSetti
     settings = defaultSettings as ILinkSettings
   }
 
-  // ✅ Sirf ek jagah se sync — forceLink5Only respect karta hai
-  await syncSpecialModeLinks(mongoUri, dbName)
+  await syncSpecialModeLinks(mongoUri, dbName, db) // ✅ db pass kiya
   settings = await db.collection('linksettings').findOne({}) as ILinkSettings
 
   return settings!
 }
 
-// GET SETTINGS — RAW (admin dashboard ke liye, real toggle states + pre-mode snapshot dikhata hai)
+// GET SETTINGS — RAW
 linkSettingsRoutes.get('/', async (c) => {
   try {
     const settings = await getSettings(c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -54,7 +62,7 @@ linkSettingsRoutes.get('/', async (c) => {
   }
 })
 
-// GET EFFECTIVE SETTINGS (override-applied — frontend/download pages ke liye use karo)
+// GET EFFECTIVE SETTINGS
 linkSettingsRoutes.get('/effective', async (c) => {
   try {
     const settings = await getSettings(c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -64,7 +72,7 @@ linkSettingsRoutes.get('/effective', async (c) => {
   }
 })
 
-// UPDATE SETTINGS — 🔐 sirf super admin
+// UPDATE SETTINGS — 🔐 sirf super admin. ✅ FIX: getSettings() ab db reuse karta hai
 linkSettingsRoutes.put('/', adminAuth, superAdminOnly, async (c) => {
   try {
     const { link1, link2, link3, link4, link5, autoSundayMode } = await c.req.json()
@@ -79,7 +87,7 @@ linkSettingsRoutes.put('/', adminAuth, superAdminOnly, async (c) => {
     if (autoSundayMode !== undefined) updates.autoSundayMode = Boolean(autoSundayMode)
 
     await db.collection('linksettings').updateOne({}, { $set: updates }, { upsert: true })
-    const settings = await getSettings(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const settings = await getSettings(c.env.MONGODB_URI, c.env.MONGODB_DB, db) // ✅ db pass kiya
 
     return c.json({ success: true, message: 'Link settings updated!', settings })
   } catch (err: any) {
@@ -87,7 +95,7 @@ linkSettingsRoutes.put('/', adminAuth, superAdminOnly, async (c) => {
   }
 })
 
-// TOGGLE LINK — 🔐 sirf super admin
+// TOGGLE LINK — 🔐 sirf super admin. ✅ FIX: ~5 connections → 1
 linkSettingsRoutes.put('/toggle/:linkNumber', adminAuth, superAdminOnly, async (c) => {
   try {
     const linkNumber = parseInt(c.req.param('linkNumber') ?? '', 10)
@@ -96,20 +104,20 @@ linkSettingsRoutes.put('/toggle/:linkNumber', adminAuth, superAdminOnly, async (
     }
 
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const settings = await getSettings(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const settings = await getSettings(c.env.MONGODB_URI, c.env.MONGODB_DB, db) // ✅ db pass kiya
     const linkKey = `link${linkNumber}` as keyof ILinkSettings
     const newValue = !settings[linkKey]
 
     await db.collection('linksettings').updateOne({}, { $set: { [linkKey]: newValue, lastUpdated: new Date() } })
 
-    const updated = await getSettings(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const updated = await getSettings(c.env.MONGODB_URI, c.env.MONGODB_DB, db) // ✅ db pass kiya
     return c.json({ success: true, message: `Link ${linkNumber} ${newValue ? 'activated' : 'deactivated'}`, settings: updated })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// STATUS — override applied (consumer-facing summary)
+// STATUS — override applied
 linkSettingsRoutes.get('/status', async (c) => {
   try {
     const raw = await getSettings(c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -145,12 +153,11 @@ linkSettingsRoutes.get('/active', async (c) => {
   }
 })
 
-// ✅ NEW — jab koi forceLink5Only mode active hai, ye batata hai ki
-// mode khatam hone pe kaunse links restore honge (admin dashboard preview ke liye)
+// ✅ restore-preview — 2 connections combined into 1
 linkSettingsRoutes.get('/restore-preview', async (c) => {
   try {
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB, db) // ✅ db pass kiya
     const settings: any = await db.collection('linksettings').findOne({})
 
     const isForced = !!settings?.specialModeAppliedId
@@ -173,7 +180,7 @@ linkSettingsRoutes.get('/restore-preview', async (c) => {
   }
 })
 
-// RESET — 🔐 sirf super admin
+// RESET — 🔐 sirf super admin. ✅ FIX: getSettings() ab db reuse karta hai
 linkSettingsRoutes.post('/reset', adminAuth, superAdminOnly, async (c) => {
   try {
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -183,15 +190,14 @@ linkSettingsRoutes.post('/reset', adminAuth, superAdminOnly, async (c) => {
       autoSundayMode: false, _isSundayApplied: false,
       lastUpdated: new Date(), createdAt: new Date(), updatedAt: new Date()
     })
-    const settings = await getSettings(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const settings = await getSettings(c.env.MONGODB_URI, c.env.MONGODB_DB, db) // ✅ db pass kiya
     return c.json({ success: true, message: 'Reset to defaults', settings })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// ── GET current global rate (koi bhi adminAuth wala dekh sakta hai) ──
-// GET /api/link-settings/global-rate
+// ── GET current global rate ──
 linkSettingsRoutes.get('/global-rate', adminAuth, async (c) => {
   try {
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -206,7 +212,6 @@ linkSettingsRoutes.get('/global-rate', adminAuth, async (c) => {
 })
 
 // ── SET global rate (super admin only) ──────────────────────────────
-// PUT /api/link-settings/global-rate   body: { rate: number }
 linkSettingsRoutes.put('/global-rate', adminAuth, superAdminOnly, async (c) => {
   try {
     const { rate } = await c.req.json()
@@ -225,8 +230,7 @@ linkSettingsRoutes.put('/global-rate', adminAuth, superAdminOnly, async (c) => {
   }
 })
 
-// ── GET link-wise rates (link1..link4) — koi bhi adminAuth wala dekh sakta hai ──
-// GET /api/link-settings/link-rates
+// ── GET link-wise rates ──
 linkSettingsRoutes.get('/link-rates', adminAuth, async (c) => {
   try {
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -241,7 +245,6 @@ linkSettingsRoutes.get('/link-rates', adminAuth, async (c) => {
 })
 
 // ── SET link-wise rates (super admin only) ─────────────────────────
-// PUT /api/link-settings/link-rates   body: { link1, link2, link3, link4 }
 linkSettingsRoutes.put('/link-rates', adminAuth, superAdminOnly, async (c) => {
   try {
     const body = await c.req.json()
@@ -261,7 +264,7 @@ linkSettingsRoutes.put('/link-rates', adminAuth, superAdminOnly, async (c) => {
   }
 })
 
-// GET /api/link-settings/count-mode
+// GET count-mode
 linkSettingsRoutes.get('/count-mode', adminAuth, superAdminOnly, async (c) => {
   try {
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -276,7 +279,7 @@ linkSettingsRoutes.get('/count-mode', adminAuth, superAdminOnly, async (c) => {
   }
 })
 
-// PUT /api/link-settings/count-mode   body: { countEveryView?: boolean, dedupeWindowSec?: number }
+// PUT count-mode
 linkSettingsRoutes.put('/count-mode', adminAuth, superAdminOnly, async (c) => {
   try {
     const body = await c.req.json()

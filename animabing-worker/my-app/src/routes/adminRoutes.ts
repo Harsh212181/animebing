@@ -1,4 +1,4 @@
- import { Hono } from 'hono'
+import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth, requirePermission } from '../middleware/auth'
 import {
@@ -7,15 +7,19 @@ import {
   toObjectId, isValidObjectId, getDb
 } from '../services/mongoService'
 import { IAnime, IEpisode, IChapter, IReport, ISocialMedia } from '../models/types'
-import { ObjectId } from 'mongodb'
+import { ObjectId, Db } from 'mongodb'
 
 const adminRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
-// ============ HELPER: sub-admin (animeAccess:'own') ke owned anime IDs laao ============
-async function getOwnedAnimeIds(admin: any, mongoUri: string, dbName: string): Promise<string[] | null> {
+// ============================================================================
+// ✅ FIX: `getOwnedAnimeIds` ab apna alag connection nahi kholta — `db` object
+// accept karta hai. Jin routes me ye helper + khud ka `getDb()` dono the
+// (jaise `/reports`, `/reports/pending-count`), ab sirf EK connection khulta
+// hai poori route ke liye.
+// ============================================================================
+async function getOwnedAnimeIds(admin: any, db: Db): Promise<string[] | null> {
   // null = "koi restriction nahi" (super admin ya animeAccess:'all' wala sub-admin)
   if (admin.role !== 'subadmin' || admin.animeAccess !== 'own') return null
-  const db = await getDb(mongoUri, dbName)
   const animes = await db.collection('animes')
     .find({ createdBy: admin.id }, { projection: { _id: 1 } })
     .toArray()
@@ -76,7 +80,7 @@ adminRoutes.get('/user-info', adminAuth, (c) => {
   return c.json({ username: c.env.ADMIN_USER, email: '' })
 })
 
-// ============ ANIME LIST ============
+// ============ ANIME LIST — 2 connections combined into 1 ============
 adminRoutes.get('/anime-list', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
@@ -85,21 +89,24 @@ adminRoutes.get('/anime-list', adminAuth, async (c) => {
     const filter: any = {}
     if (status && status !== 'All') filter.status = status
     if (contentType && contentType !== 'All') filter.contentType = contentType
-    // Sub-admin with 'own' access → sirf apna anime dekhe (createdBy + assigned)
+
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
     if (admin.role === 'subadmin' && admin.animeAccess === 'own') {
-      const ownedIds = await getOwnedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+      const ownedIds = await getOwnedAnimeIds(admin, db)
       const objectIds = (ownedIds || []).filter(isValidObjectId).map((aid: string) => toObjectId(aid))
       filter._id = { $in: objectIds }
       delete filter.createdBy
     }
-    const animes = await findMany<IAnime>('animes', filter, { sort: { createdAt: -1 } }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const animes = await db.collection('animes').find(filter).sort({ createdAt: -1 }).toArray()
     return c.json(animes)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// ============ ADD ANIME (FIXED) ============
+// ============ ADD ANIME (FIXED) — 2 connections combined into 1 ============
 adminRoutes.post('/add-anime', adminAuth, requirePermission('add-anime'), async (c) => {
   try {
     const admin = c.get('admin')
@@ -108,22 +115,22 @@ adminRoutes.post('/add-anime', adminAuth, requirePermission('add-anime'), async 
       seoTitle, seoDescription, seoKeywords, slug: providedSlug
     } = await c.req.json()
 
-    const existing = await findOne('animes', { title }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const existing = await db.collection('animes').findOne({ title })
     if (existing) return c.json({ error: 'Anime/Movie already exists' }, 400)
 
     let slug = (providedSlug && providedSlug.trim())
       ? providedSlug.trim()
       : title.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').trim()
-    const slugExists = await findOne('animes', { slug }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const slugExists = await db.collection('animes').findOne({ slug })
     if (slugExists) slug = `${slug}-${Date.now()}`
 
     const finalSeoTitle = (seoTitle && seoTitle.trim()) || `Watch ${title} Online in ${subDubStatus} | AnimeBing`
     const finalSeoDescription = (seoDescription && seoDescription.trim()) || `Watch ${title} online in ${subDubStatus}. HD quality streaming and downloads.`
     const finalSeoKeywords = (seoKeywords && seoKeywords.trim()) || ''
 
-    // Random likes between 150 and 5000
     const randomLikes = getRandomLikes()
-    // Random dislikes between 0 and 50
     const randomDislikes = Math.floor(Math.random() * 51)
 
     const anime = {
@@ -145,10 +152,12 @@ adminRoutes.post('/add-anime', adminAuth, requirePermission('add-anime'), async 
       isHidden: false, lastContentAdded: new Date(),
       isBlocked: false,
       createdBy: admin.role === 'subadmin' ? admin.id : 'admin',
-      createdByUsername: admin.username
+      createdByUsername: admin.username,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     }
 
-    await insertOne('animes', anime, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    await db.collection('animes').insertOne(anime)
     return c.json({ success: true, message: `${contentType || 'Anime'} added!`, anime })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -162,8 +171,6 @@ adminRoutes.put('/edit-anime/:id', adminAuth, requirePermission('edit-anime'), a
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
     const body = await c.req.json()
 
-    // ✅ sirf allowed fields hi update honge, currentEpisode/totalEpisodes
-    // is route se kabhi touch nahi honge — wo sirf episode-status route se update hote hain
     const allowedFields = [
       'title', 'description', 'thumbnail', 'bannerImage', 'status', 'subDubStatus',
       'genreList', 'releaseYear', 'contentType', 'seoTitle', 'seoDescription',
@@ -182,29 +189,35 @@ adminRoutes.put('/edit-anime/:id', adminAuth, requirePermission('edit-anime'), a
   }
 })
 
-// ============ DELETE ANIME ============
+// ============ DELETE ANIME — 3 connections combined into 1 ============
 adminRoutes.delete('/delete-anime', adminAuth, requirePermission('delete-anime'), async (c) => {
   try {
     const { id } = await c.req.json()
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
-    await deleteOne('animes', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    await deleteMany('episodes', { animeId: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    await deleteMany('reports', { animeId: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    await db.collection('animes').deleteOne({ _id: toObjectId(id) })
+    await db.collection('episodes').deleteMany({ animeId: toObjectId(id) })
+    await db.collection('reports').deleteMany({ animeId: toObjectId(id) })
+
     return c.json({ success: true, message: 'Deleted successfully!' })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// ============ TOGGLE HIDE ============
+// ============ TOGGLE HIDE — 2 connections combined into 1 ============
 adminRoutes.patch('/toggle-hide/:id', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
-    const anime = await findOne<IAnime>('animes', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const anime = await db.collection('animes').findOne({ _id: toObjectId(id) }) as IAnime | null
     if (!anime) return c.json({ error: 'Anime not found' }, 404)
+
     const newHidden = !anime.isHidden
-    await updateOne('animes', { _id: toObjectId(id) }, { isHidden: newHidden }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    await db.collection('animes').updateOne({ _id: toObjectId(id) }, { $set: { isHidden: newHidden, updatedAt: new Date() } })
     return c.json({ success: true, message: `Anime ${newHidden ? 'hidden' : 'visible'} successfully`, isHidden: newHidden })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -228,13 +241,19 @@ adminRoutes.patch('/anime/:id/episode-status', adminAuth, async (c) => {
   }
 })
 
-// ============ SYNC EPISODE COUNT ============
+// ============ SYNC EPISODE COUNT — 2 connections combined into 1 ============
 adminRoutes.post('/anime/:id/sync-episode-count', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
-    const episodeCount = await countDocuments('episodes', { animeId: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const anime = await updateOne('animes', { _id: toObjectId(id) }, { currentEpisode: episodeCount, lastContentAdded: new Date() }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const episodeCount = await db.collection('episodes').countDocuments({ animeId: toObjectId(id) })
+    const anime = await db.collection('animes').findOneAndUpdate(
+      { _id: toObjectId(id) },
+      { $set: { currentEpisode: episodeCount, lastContentAdded: new Date(), updatedAt: new Date() } },
+      { returnDocument: 'after' }
+    )
     if (!anime) return c.json({ error: 'Anime not found' }, 404)
     return c.json({ success: true, message: `Synced to ${episodeCount} episodes`, anime })
   } catch (err: any) {
@@ -242,7 +261,7 @@ adminRoutes.post('/anime/:id/sync-episode-count', adminAuth, async (c) => {
   }
 })
 
-// ============ EDIT EPISODE ============
+// ============ EDIT EPISODE — 2 connections combined into 1 ============
 adminRoutes.put('/edit-episode/:id', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
@@ -257,7 +276,7 @@ adminRoutes.put('/edit-episode/:id', adminAuth, async (c) => {
       }
     }
 
-    const updateData: any = {}
+    const updateData: any = { updatedAt: new Date() }
     if (typeof title !== 'undefined') updateData.title = title
     if (typeof secureFileReference !== 'undefined') updateData.secureFileReference = secureFileReference
     if (typeof session !== 'undefined') updateData.session = session
@@ -268,16 +287,20 @@ adminRoutes.put('/edit-episode/:id', adminAuth, async (c) => {
       }))
     }
 
-    const episode = await updateOne('episodes', { _id: toObjectId(id) }, updateData, c.env.MONGODB_URI, c.env.MONGODB_DB) as IEpisode | null
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const episode = await db.collection('episodes').findOneAndUpdate(
+      { _id: toObjectId(id) }, { $set: updateData }, { returnDocument: 'after' }
+    ) as unknown as IEpisode | null
     if (!episode) return c.json({ error: 'Episode not found' }, 404)
-    await updateOne('animes', { _id: episode.animeId }, { lastContentAdded: new Date() }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    await db.collection('animes').updateOne({ _id: episode.animeId }, { $set: { lastContentAdded: new Date() } })
     return c.json({ success: true, message: 'Episode updated!', episode })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// ============ EDIT CHAPTER ============
+// ============ EDIT CHAPTER — 2 connections combined into 1 ============
 adminRoutes.put('/edit-chapter/:id', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
@@ -292,7 +315,7 @@ adminRoutes.put('/edit-chapter/:id', adminAuth, async (c) => {
       }
     }
 
-    const updateData: any = {}
+    const updateData: any = { updatedAt: new Date() }
     if (typeof title !== 'undefined') updateData.title = title
     if (typeof secureFileReference !== 'undefined') updateData.secureFileReference = secureFileReference
     if (typeof session !== 'undefined') updateData.session = session
@@ -303,9 +326,13 @@ adminRoutes.put('/edit-chapter/:id', adminAuth, async (c) => {
       }))
     }
 
-    const chapter = await updateOne('chapters', { _id: toObjectId(id) }, updateData, c.env.MONGODB_URI, c.env.MONGODB_DB) as IChapter | null
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const chapter = await db.collection('chapters').findOneAndUpdate(
+      { _id: toObjectId(id) }, { $set: updateData }, { returnDocument: 'after' }
+    ) as unknown as IChapter | null
     if (!chapter) return c.json({ error: 'Chapter not found' }, 404)
-    await updateOne('animes', { _id: chapter.mangaId }, { lastContentAdded: new Date() }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    await db.collection('animes').updateOne({ _id: chapter.mangaId }, { $set: { lastContentAdded: new Date() } })
     return c.json({ success: true, message: 'Chapter updated!', chapter })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -338,11 +365,7 @@ adminRoutes.get('/chapter/:id', adminAuth, async (c) => {
   }
 })
 
-// ============ REPORTS "UNSEEN" PENDING COUNT (red dot ke liye) ============
-// Query param `since` (ISO date string, optional): jab diya jaye to sirf us
-// waqt ke BAAD create hue Pending reports count hote hain — isse red dot
-// tab tak hi dikhta hai jab tak admin ne Reports tab open (seen) nahi kiya.
-// `since` na diya jaye to purana behaviour (sab Pending reports count) chalta hai.
+// ============ REPORTS "UNSEEN" PENDING COUNT — 2 connections combined into 1 ============
 adminRoutes.get('/reports/pending-count', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
@@ -352,25 +375,19 @@ adminRoutes.get('/reports/pending-count', adminAuth, async (c) => {
     const since = sinceParam ? new Date(sinceParam) : null
     const hasValidSince = !!(since && !isNaN(since.getTime()))
 
-    // ✅ Sub-admin (animeAccess:'own') → sirf apne anime ke pending episode reports count
-    const ownedAnimeIds = await getOwnedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const ownedAnimeIds = await getOwnedAnimeIds(admin, db)
 
     if (ownedAnimeIds !== null) {
       if (ownedAnimeIds.length === 0) {
         return c.json({ success: true, count: 0 })
       }
       const objectIds = ownedAnimeIds.map((id: string) => toObjectId(id))
-      const filter: any = {
-        type: 'episode',
-        status: 'Pending',
-        animeId: { $in: objectIds }
-      }
+      const filter: any = { type: 'episode', status: 'Pending', animeId: { $in: objectIds } }
       if (hasValidSince) filter.createdAt = { $gt: since }
       const count = await db.collection('reports').countDocuments(filter)
       return c.json({ success: true, count })
     }
 
-    // Super admin ya animeAccess:'all' wala sub-admin → sab pending reports
     const filter: any = { status: 'Pending' }
     if (hasValidSince) filter.createdAt = { $gt: since }
     const count = await db.collection('reports').countDocuments(filter)
@@ -380,22 +397,19 @@ adminRoutes.get('/reports/pending-count', adminAuth, async (c) => {
   }
 })
 
-// ============ REPORTS (role-based filter + sub-admin username) ============
+// ============ REPORTS (role-based filter + sub-admin username) — 3 connections combined into 1 ============
 adminRoutes.get('/reports', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    // ✅ Sub-admin (animeAccess:'own') → sirf apne anime ke reports
-    const ownedAnimeIds = await getOwnedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const ownedAnimeIds = await getOwnedAnimeIds(admin, db)
 
     const reports = await db.collection('reports')
       .find({})
       .sort({ createdAt: -1 })
       .toArray()
 
-    // 🔒 Sub-admin (own access) ke liye filter: SIRF apne anime ke EPISODE reports.
-    // Contact form reports ab kisi bhi sub-admin ko nahi dikhenge — sirf super admin ko.
     let filteredReports = reports
     if (ownedAnimeIds !== null) {
       const ownedIdSet = new Set(ownedAnimeIds)
@@ -441,7 +455,7 @@ adminRoutes.get('/reports', adminAuth, async (c) => {
           animeId: anime
             ? { _id: anime._id, title: anime.title, thumbnail: anime.thumbnail }
             : { _id: report.animeId, title: 'Unknown Anime', thumbnail: null },
-          subAdminUsername: anime?.createdByUsername || null   // 👈 main admin ke liye
+          subAdminUsername: anime?.createdByUsername || null
         }
       }
       return report
@@ -516,7 +530,12 @@ adminRoutes.put('/social-media/:platform', adminAuth, async (c) => {
   }
 })
 
-// ============ ANALYTICS ============
+// ============ ANALYTICS — already 1 connection (Promise.all doesn't open new ones here, each countDocuments call does though — see note) ============
+// ⚠️ NOTE: `countDocuments()` helper (from mongoService) still opens its own
+// connection per call — is route me 7 alag calls hain to 7 connections
+// khulte hain, chahe Promise.all se parallel chal rahe hon. In sab ko ek
+// `$facet` aggregation se combine kiya ja sakta hai agar chaho — filhaal
+// chhoda hai kyunki ye admin-panel-only route hai (public traffic nahi).
 adminRoutes.get('/analytics', adminAuth, async (c) => {
   try {
     const [totalAnimes, totalMovies, totalManga, totalEpisodes, totalChapters, totalReports, pendingReports] = await Promise.all([
@@ -541,7 +560,7 @@ adminRoutes.get('/analytics', adminAuth, async (c) => {
   }
 })
 
-// ============ PROTECTED ALIAS ROUTES ============
+// ============ PROTECTED ALIAS ROUTES — same fix as /anime-list ============
 adminRoutes.get('/protected/anime-list', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
@@ -550,14 +569,17 @@ adminRoutes.get('/protected/anime-list', adminAuth, async (c) => {
     const filter: any = {}
     if (status && status !== 'All') filter.status = status
     if (contentType && contentType !== 'All') filter.contentType = contentType
-    // Sub-admin with 'own' access → sirf apna anime dekhe (createdBy + assigned)
+
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
     if (admin.role === 'subadmin' && admin.animeAccess === 'own') {
-      const ownedIds = await getOwnedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+      const ownedIds = await getOwnedAnimeIds(admin, db)
       const objectIds = (ownedIds || []).filter(isValidObjectId).map((aid: string) => toObjectId(aid))
       filter._id = { $in: objectIds }
       delete filter.createdBy
     }
-    const animes = await findMany<IAnime>('animes', filter, { sort: { createdAt: -1 } }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const animes = await db.collection('animes').find(filter).sort({ createdAt: -1 }).toArray()
     return c.json(animes)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -568,24 +590,24 @@ adminRoutes.delete('/protected/delete-anime', adminAuth, requirePermission('dele
   try {
     const { id } = await c.req.json()
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
-    await deleteOne('animes', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    await deleteMany('episodes', { animeId: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    await deleteMany('reports', { animeId: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    await db.collection('animes').deleteOne({ _id: toObjectId(id) })
+    await db.collection('episodes').deleteMany({ animeId: toObjectId(id) })
+    await db.collection('reports').deleteMany({ animeId: toObjectId(id) })
+
     return c.json({ success: true, message: 'Deleted successfully!' })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// ============ PROTECTED EDIT ANIME (FIXED - WHITELIST APPROACH) ============
 adminRoutes.put('/protected/edit-anime/:id', adminAuth, requirePermission('edit-anime'), async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
     const body = await c.req.json()
 
-    // ✅ sirf allowed fields hi update honge, currentEpisode/totalEpisodes
-    // is route se kabhi touch nahi honge — wo sirf episode-status route se update hote hain
     const allowedFields = [
       'title', 'description', 'thumbnail', 'bannerImage', 'status', 'subDubStatus',
       'genreList', 'releaseYear', 'contentType', 'seoTitle', 'seoDescription',
@@ -608,10 +630,12 @@ adminRoutes.patch('/protected/toggle-hide/:id', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
-    const anime = await findOne<IAnime>('animes', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const anime = await db.collection('animes').findOne({ _id: toObjectId(id) }) as IAnime | null
     if (!anime) return c.json({ error: 'Anime not found' }, 404)
     const newHidden = !anime.isHidden
-    await updateOne('animes', { _id: toObjectId(id) }, { isHidden: newHidden }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    await db.collection('animes').updateOne({ _id: toObjectId(id) }, { $set: { isHidden: newHidden, updatedAt: new Date() } })
     return c.json({ success: true, message: `Anime ${newHidden ? 'hidden' : 'visible'} successfully`, isHidden: newHidden })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)

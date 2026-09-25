@@ -14,7 +14,7 @@ instagramAuthRoutes.get('/api/auth/instagram/connect', async (c) => {
       const payload: any = await verifyJWT(token, c.env.JWT_SECRET) // ✅ fixed
       creator = { role: payload.role, id: payload.id, username: payload.username }
     } catch {
-      // invalid/expired token — Admin fallback rahega
+      // invalid/expired token — keep Admin fallback
     }
   }
 
@@ -38,7 +38,7 @@ instagramAuthRoutes.get('/api/auth/instagram/connect', async (c) => {
 })
 
 // ============================================================
-// STEP 2: Meta yahan redirect karega login ke baad, ek 'code' ke saath
+// STEP 2: Meta will redirect here after login, with a 'code'
 // ============================================================
 instagramAuthRoutes.get('/api/auth/instagram/callback', async (c) => {
   const code = c.req.query('code')
@@ -63,7 +63,7 @@ instagramAuthRoutes.get('/api/auth/instagram/callback', async (c) => {
   try {
     const redirectUri = `${c.env.API_URL}/api/auth/instagram/callback`
 
-    // --- Short-lived token exchange karo ---
+    // --- Exchange for a short-lived token ---
     const tokenForm = new URLSearchParams()
     tokenForm.append('client_id', c.env.IG_APP_ID)
     tokenForm.append('client_secret', c.env.IG_APP_SECRET)
@@ -85,15 +85,15 @@ instagramAuthRoutes.get('/api/auth/instagram/callback', async (c) => {
     const shortLivedToken = shortTokenData.access_token
     const igUserId = shortTokenData.user_id // initial user id (maybe different from /me)
 
-    // --- Short-lived ko long-lived (60 din) token mein exchange karo ---
+    // --- Exchange the short-lived token for a long-lived (60 day) token ---
     const longTokenRes = await fetch(
       `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${c.env.IG_APP_SECRET}&access_token=${shortLivedToken}`
     )
     const longTokenData: any = await longTokenRes.json()
     const longLivedToken = longTokenData.access_token || shortLivedToken
-    const expiresInSeconds = longTokenData.expires_in || 5184000 // fallback ~60 din
+    const expiresInSeconds = longTokenData.expires_in || 5184000 // fallback ~60 days
 
-    // --- Username nikaalo profile info se (/me endpoint use karo) ---
+    // --- Fetch the username from profile info (use the /me endpoint) ---
     const profileRes = await fetch(
       `https://graph.instagram.com/v23.0/me?fields=user_id,username,profile_picture_url&access_token=${longLivedToken}`
     )
@@ -107,7 +107,7 @@ instagramAuthRoutes.get('/api/auth/instagram/callback', async (c) => {
     const resolvedIgUserId = String(profileData.user_id || igUserId)
     const profilePictureUrl = profileData.profile_picture_url || null
 
-    // --- Is account ko webhook ke liye subscribe karo — warna Meta comment events kabhi nahi bhejega ---
+    // --- Subscribe this account for webhooks — otherwise Meta will never send comment events ---
     const subscribeRes = await fetch(
       `https://graph.instagram.com/v23.0/${resolvedIgUserId}/subscribed_apps?subscribed_fields=comments&access_token=${longLivedToken}`,
       { method: 'POST' }
@@ -119,7 +119,7 @@ instagramAuthRoutes.get('/api/auth/instagram/callback', async (c) => {
       console.log('✅ Webhook subscribed successfully for', resolvedIgUserId)
     }
 
-    // --- Database mein save/update karo ---
+    // --- Save/update in the database ---
     const existing = await findMany<any>(
       'instagramAccounts', { igUserId: resolvedIgUserId }, { limit: 1 },
       c.env.MONGODB_URI, c.env.MONGODB_DB
@@ -152,7 +152,7 @@ instagramAuthRoutes.get('/api/auth/instagram/callback', async (c) => {
       <html>
         <body style="font-family: sans-serif; text-align: center; padding-top: 60px;">
           <h2>✅ Instagram account "@${igUsername}" connected!</h2>
-          <p>Ye tab band karke dashboard par wapas jao.</p>
+          <p>Close this tab and go back to the dashboard.</p>
           <script>
             if (window.opener) { window.opener.postMessage({ type: 'ig_connected', username: '${igUsername}' }, '*'); }
             setTimeout(() => window.close(), 2000);
@@ -167,11 +167,11 @@ instagramAuthRoutes.get('/api/auth/instagram/callback', async (c) => {
 })
 
 // ============================================================
-// Meta 'deauthorize' aur 'data-deletion' calls ek plain JSON body
-// NAHI bhejta — ye ek 'signed_request' naam ka base64url-encoded,
-// HMAC-SHA256 signed string bhejta hai (form-urlencoded body mein).
-// Isko decode + verify karna zaroori hai. Ye helper dono routes
-// mein use hoga.
+// Meta does NOT send a plain JSON body for 'deauthorize' and
+// 'data-deletion' calls — it sends a base64url-encoded,
+// HMAC-SHA256 signed string called 'signed_request' (in a
+// form-urlencoded body). It's essential to decode + verify it.
+// This helper will be used in both routes.
 // ============================================================
 function base64UrlDecode(input: string): Uint8Array {
   const padded = input.replace(/-/g, '+').replace(/_/g, '/')
@@ -274,7 +274,7 @@ instagramAuthRoutes.post('/api/auth/instagram/data-deletion', async (c) => {
   }
 })
 
-// Simple status page jo confirmation_code ka use karke dikhaya ja sakta hai
+// Simple status page that can be shown using the confirmation_code
 instagramAuthRoutes.get('/api/auth/instagram/data-deletion-status', (c) => {
   const id = c.req.query('id')
   return c.html(`<h3>Data deletion completed for request: ${id}</h3>`)

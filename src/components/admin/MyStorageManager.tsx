@@ -1,4 +1,4 @@
- // src/components/admin/MyStorageManager.tsx — Sub-admin self-service R2 connect (Premium UI)
+// src/components/admin/MyStorageManager.tsx — Sub-admin self-service R2 connect (Premium UI)
 import React, { useState, useEffect } from 'react';
 
 const API_BASE = import.meta.env.VITE_API_BASE ||
@@ -141,7 +141,7 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
       setStatus(data);
       setPublicUrl(data.publicBaseUrl || '');
     } catch {
-      setError('Status load nahi ho saka');
+      setError('Failed to load status');
     } finally {
       setLoading(false);
     }
@@ -151,7 +151,7 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
 
   const fetchBuckets = async () => {
     if (!form.accountId || !form.accessKeyId || !form.secretAccessKey) {
-      setError('Pehle Account ID, Access Key aur Secret Key bharo');
+      setError('Please fill Account ID, Access Key, and Secret Key first');
       return;
     }
     setError(''); setSuccess('');
@@ -176,10 +176,10 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
         if (data.buckets?.length) {
           setForm(prev => ({ ...prev, bucketName: data.buckets[0] }));
         } else {
-          setError('Is account mein koi bucket nahi mila');
+          setError('No buckets found in this account');
         }
       } else {
-        setError(data.error || 'Buckets fetch nahi ho sake — credentials check karo');
+        setError(data.error || 'Could not fetch buckets — please check your credentials');
       }
     } catch {
       setError('Network error');
@@ -196,7 +196,7 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
   const handleConnect = async () => {
     setError(''); setSuccess('');
     if (!form.bucketName || !form.accountId || !form.accessKeyId || !form.secretAccessKey) {
-      setError('Saare fields bharo aur bucket select karo');
+      setError('Please fill all fields and select a bucket');
       return;
     }
     setSaving(true);
@@ -212,12 +212,12 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
       });
       const data = await res.json();
       if (res.ok) {
-        setSuccess('Bucket connect ho gaya! Ab Video Upload page pe yeh dikhega.');
+        setSuccess('Bucket connected! It will now appear on the Video Upload page.');
         setForm({ bucketName: '', accountId: '', accessKeyId: '', secretAccessKey: '' });
         setBucketOptions([]);
         fetchStatus();
       } else {
-        setError(data.error || 'Connect nahi ho saka');
+        setError(data.error || 'Could not connect');
       }
     } catch {
       setError('Network error');
@@ -230,7 +230,7 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
     setConfirmModal({
       open: true,
       title: 'Disconnect Storage?',
-      message: 'Apna storage disconnect karna hai? Purani uploaded videos R2 mein rahengi, bas dropdown se hat jayega.',
+      message: 'Do you want to disconnect your storage? Previously uploaded videos will remain in R2, they will just be removed from the dropdown.',
       confirmLabel: 'Disconnect',
       onConfirm: async () => {
         closeConfirmModal();
@@ -242,7 +242,7 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
           });
           fetchStatus();
         } catch {
-          setError('Disconnect fail ho gaya');
+          setError('Disconnect failed');
         }
       },
     });
@@ -259,8 +259,8 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
         body: JSON.stringify({ publicBaseUrl: publicUrl.trim() }),
       });
       const data = await res.json();
-      if (res.ok) setSuccess('Public URL save ho gaya!');
-      else setError(data.error || 'Save nahi ho saka');
+      if (res.ok) setSuccess('Public URL saved!');
+      else setError(data.error || 'Could not save');
     } catch { setError('Network error'); }
     finally { setSavingPublicUrl(false); }
   };
@@ -287,7 +287,7 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
         <div className="min-w-0 flex-1">
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">My Storage</h1>
           <p className="text-xs text-gray-500 mt-0.5">
-            Apna Cloudflare R2 account connect karo — bucket khud detect ho jayega
+            Connect your own Cloudflare R2 account — your bucket will be detected automatically
           </p>
         </div>
         {status?.connected && (
@@ -340,7 +340,7 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
               <h3 className="text-xs font-bold uppercase tracking-wider text-gray-300">Public URL</h3>
             </div>
             <p className="text-[10px] text-gray-500">
-              r2.dev subdomain ya custom domain — iska use links banane ke liye hota hai
+              r2.dev subdomain or custom domain — this is used to generate links
             </p>
             <div className="flex flex-col sm:flex-row gap-2">
               <div className="relative flex-1">
@@ -373,7 +373,7 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
               <h3 className="text-xs font-bold uppercase tracking-wider text-gray-300">Danger Zone</h3>
             </div>
             <p className="text-[11px] text-gray-500 mb-3">
-              Storage disconnect karne se purani files R2 mein rahengi, bas dropdown se hat jayega
+              Disconnecting your storage will leave old files in R2, they will just be removed from the dropdown
             </p>
             <button
               onClick={handleDisconnect}
@@ -485,7 +485,7 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
           <div className="flex items-start gap-2 p-2.5 bg-amber-500/[0.06] border border-amber-500/20 rounded-xl">
             <SvgIcon d={ICONS.info} className="w-3.5 h-3.5 text-amber-300 flex-shrink-0 mt-0.5" />
             <p className="text-[10px] text-amber-200/90 leading-relaxed">
-              <span className="font-bold">Tip:</span> Cloudflare dashboard mein sirf apne bucket(s) ke liye scoped API token banao — poore account ki access wali key mat do.
+              <span className="font-bold">Tip:</span> In the Cloudflare dashboard, create a scoped API token for only your bucket(s) — don't use a key that has access to your whole account.
             </p>
           </div>
 

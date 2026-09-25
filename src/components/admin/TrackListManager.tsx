@@ -1,4 +1,4 @@
- // src/components/admin/TrackListManager.tsx
+// src/components/admin/TrackListManager.tsx
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
@@ -127,7 +127,7 @@ const TrackListManager: React.FC = () => {
 
   const [showChannelFeed, setShowChannelFeed] = useState<Record<string, boolean>>({});
 
-  // ✅ FIX — jis dashboard se khula hai uska sahi token use karo
+  // ✅ FIX — use the correct token based on which dashboard this was opened from
   // Super-admin dashboard → localStorage.adminToken
   // Sub-admin dashboard   → sessionStorage.subAdminToken
   const isSubAdminContext = !!sessionStorage.getItem('subAdminToken')
@@ -154,7 +154,7 @@ const TrackListManager: React.FC = () => {
       setLogs(logsRes.data || []);
       setConflicts(conflictsRes.data || []);
     } catch {
-      toast.error('Data load nahi ho saka');
+      toast.error('Could not load data');
     } finally {
       setLoading(false);
     }
@@ -207,14 +207,14 @@ const TrackListManager: React.FC = () => {
     try {
       const { data } = await axios.post(`${API_BASE}/track/run-all-now`, {}, authHeaders());
       toast.success(
-        `Test run complete! ${data.channelsChecked} channels check hue, ${data.updatesFound} updates mile${
+        `Test run complete! ${data.channelsChecked} channels checked, ${data.updatesFound} updates found${
           data.errorCount > 0 ? `, ${data.errorCount} error` : ''
         }`
       );
       setShowRunHistory(true);
       loadData();
     } catch {
-      toast.error('Test run fail ho gaya');
+      toast.error('Test run failed');
     } finally {
       setRunningAll(false);
     }
@@ -233,10 +233,10 @@ const TrackListManager: React.FC = () => {
     setDeletingNotification(true);
     try {
       const { data } = await axios.delete(`${API_BASE}/track/logs/clear-all`, authHeaders());
-      toast.success(`${data.count} logs clear ho gaye`);
+      toast.success(`${data.count} logs cleared`);
       loadData();
     } catch {
-      toast.error('Clear nahi ho saka');
+      toast.error('Could not clear');
     } finally {
       setDeletingNotification(false);
       setNotificationDeleteConfirm(null);
@@ -256,10 +256,10 @@ const TrackListManager: React.FC = () => {
     setDeletingNotification(true);
     try {
       const { data } = await axios.delete(`${API_BASE}/track/runs/clear-all`, authHeaders());
-      toast.success(`${data.count} runs clear ho gaye`);
+      toast.success(`${data.count} runs cleared`);
       loadData();
     } catch {
-      toast.error('Clear nahi ho saka');
+      toast.error('Could not clear');
     } finally {
       setDeletingNotification(false);
       setNotificationDeleteConfirm(null);
@@ -272,14 +272,14 @@ const TrackListManager: React.FC = () => {
     try {
       const { data } = await axios.post(`${API_BASE}/track/channel/add`, { handle: newHandle.trim() }, authHeaders());
       if (data.success) {
-        toast.success(`"${data.channelName}" add ho gaya`);
+        toast.success(`"${data.channelName}" added`);
         setNewHandle('');
         loadData();
       } else {
-        toast.error(data.error || 'Add nahi ho saka');
+        toast.error(data.error || 'Could not add');
       }
     } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Add nahi ho saka');
+      toast.error(err.response?.data?.error || 'Could not add');
     } finally {
       setAdding(false);
     }
@@ -294,11 +294,11 @@ const TrackListManager: React.FC = () => {
     setDeletingChannel(true);
     try {
       await axios.delete(`${API_BASE}/track/channel/${channelDeleteConfirm.channelId}`, authHeaders());
-      toast.success('Channel remove ho gaya');
+      toast.success('Channel removed');
       if (selectedChannelId === channelDeleteConfirm.channelId) setSelectedChannelId(null);
       loadData();
     } catch {
-      toast.error('Remove nahi ho saka');
+      toast.error('Could not remove');
     } finally {
       setDeletingChannel(false);
       setChannelDeleteConfirm(null);
@@ -309,10 +309,10 @@ const TrackListManager: React.FC = () => {
     setRefreshingInfo((prev) => ({ ...prev, [channelId]: true }));
     try {
       await axios.post(`${API_BASE}/track/channel/${channelId}/refresh-info`, {}, authHeaders());
-      toast.success('Logo/naam update ho gaya');
+      toast.success('Logo/name updated');
       loadData();
     } catch {
-      toast.error('Refresh nahi ho saka');
+      toast.error('Could not refresh');
     } finally {
       setRefreshingInfo((prev) => ({ ...prev, [channelId]: false }));
     }
@@ -322,10 +322,10 @@ const TrackListManager: React.FC = () => {
     setTogglingPause((prev) => ({ ...prev, [channelId]: true }));
     try {
       const { data } = await axios.post(`${API_BASE}/track/channel/${channelId}/toggle-pause`, {}, authHeaders());
-      toast.success(data.paused ? 'Channel pause ho gaya' : 'Channel resume ho gaya (error counter reset)');
+      toast.success(data.paused ? 'Channel paused' : 'Channel resumed (error counter reset)');
       loadData();
     } catch {
-      toast.error('Pause/Resume fail ho gaya');
+      toast.error('Pause/Resume failed');
     } finally {
       setTogglingPause((prev) => ({ ...prev, [channelId]: false }));
     }
@@ -335,10 +335,10 @@ const TrackListManager: React.FC = () => {
     setCheckingNow((prev) => ({ ...prev, [channelId]: true }));
     try {
       const { data } = await axios.post(`${API_BASE}/track/channel/${channelId}/check-now`, {}, authHeaders());
-      toast.success(data.updatesFound > 0 ? `${data.updatesFound} naya update mila!` : 'Koi naya update nahi mila');
+      toast.success(data.updatesFound > 0 ? `${data.updatesFound} new update(s) found!` : 'No new update found');
       loadData();
     } catch {
-      toast.error('Check fail ho gaya (agar ye baar baar ho raha hai, channel auto-pause ho sakta hai)');
+      toast.error('Check failed (if this keeps happening, the channel may get auto-paused)');
       loadData();
     } finally {
       setCheckingNow((prev) => ({ ...prev, [channelId]: false }));
@@ -349,7 +349,7 @@ const TrackListManager: React.FC = () => {
   const runPreview = async (channelId: string, depth?: number) => {
     const keyword = titleInputs[channelId]?.trim();
     if (!keyword) {
-      toast.error('Pehle keyword likho, fir Preview dabao');
+      toast.error('Write a keyword first, then press Preview');
       return;
     }
     const excludeKeywords = (excludeKeywordsInputs[channelId] || '').split(',').map((s) => s.trim()).filter(Boolean);
@@ -367,10 +367,10 @@ const TrackListManager: React.FC = () => {
       );
       setPreviewResults({ matchedCount: data.matchedCount, videos: data.videos });
       if (data.matchedCount === 0) {
-        toast('Is keyword se koi video match nahi hua — keyword badal ke dekho');
+        toast('No video matched this keyword — try changing the keyword');
       }
     } catch {
-      toast.error('Preview load nahi ho saka');
+      toast.error('Could not load preview');
     } finally {
       setPreviewLoading(false);
     }
@@ -430,11 +430,11 @@ const TrackListManager: React.FC = () => {
         { keyword, downloadPageId: previewBulkPageId, videoIds: Array.from(previewSelectedIds), episodeOverrides: overridesToSend },
         authHeaders()
       );
-      toast.success(`${data.added} episodes seedha add ho gaye!`);
+      toast.success(`${data.added} episodes added directly!`);
       setPreviewSelectedIds(new Set());
       setPreviewEpisodeOverrides({});
     } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Add nahi ho saka');
+      toast.error(err.response?.data?.error || 'Could not add');
     } finally {
       setPreviewAdding(false);
     }
@@ -450,14 +450,14 @@ const TrackListManager: React.FC = () => {
         { keyword: kw, currentKnownPart: 0, excludeKeywords, matchThreshold: matchThresholdInputs[channelId] ?? 0.7, autoInit: true },
         authHeaders()
       );
-      toast.success(`"${kw}" add ho gaya`);
+      toast.success(`"${kw}" added`);
       setTitleInputs({ ...titleInputs, [channelId]: '' });
       setExcludeKeywordsInputs({ ...excludeKeywordsInputs, [channelId]: '' });
       setPreviewResults(null);
       setPreviewForChannel(null);
       loadData();
     } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Title add nahi ho saka');
+      toast.error(err.response?.data?.error || 'Could not add title');
     }
   };
 
@@ -466,12 +466,12 @@ const TrackListManager: React.FC = () => {
     if (lines.length === 0) return;
     try {
       const { data } = await axios.post(`${API_BASE}/track/channel/${channelId}/title/bulk-add`, { keywords: lines }, authHeaders());
-      toast.success(`${data.added} titles add ho gaye${data.skipped?.length ? `, ${data.skipped.length} pehle se the` : ''}`);
+      toast.success(`${data.added} titles added${data.skipped?.length ? `, ${data.skipped.length} already existed` : ''}`);
       setBulkText('');
       setBulkModeChannel(null);
       loadData();
     } catch {
-      toast.error('Bulk add me kuch fail ho gaya');
+      toast.error('Something failed in bulk add');
     }
   };
 
@@ -488,21 +488,21 @@ const TrackListManager: React.FC = () => {
         { keyword: keyword.trim(), lastKnownPart: lastPart || 0 },
         authHeaders()
       );
-      toast.success('Title update ho gaya');
+      toast.success('Title updated');
       cancelEditTitle();
       loadData();
     } catch {
-      toast.error('Update nahi ho saka');
+      toast.error('Could not update');
     }
   };
 
   const removeTitle = async (channelId: string, titleId: string) => {
     try {
       await axios.delete(`${API_BASE}/track/channel/${channelId}/title/${titleId}`, authHeaders());
-      toast.success('Title remove ho gaya');
+      toast.success('Title removed');
       loadData();
     } catch {
-      toast.error('Remove nahi ho saka');
+      toast.error('Could not remove');
     }
   };
 
@@ -562,12 +562,12 @@ const TrackListManager: React.FC = () => {
       if (data.warning) {
         toast(data.warning, { duration: 6000 });
       } else {
-        toast.success('Page link ho gaya!');
+        toast.success('Page linked!');
       }
       closeLinkForm();
       loadData();
     } catch {
-      toast.error('Link save nahi ho saka');
+      toast.error('Could not save link');
     } finally {
       setSavingLink(false);
     }
@@ -580,10 +580,10 @@ const TrackListManager: React.FC = () => {
         { linkedAnimeId: null, linkedDownloadPageId: null, episodeLimit: 0, resetSeason: true },
         authHeaders()
       );
-      toast.success('Unlink ho gaya');
+      toast.success('Unlinked');
       loadData();
     } catch {
-      toast.error('Unlink fail ho gaya');
+      toast.error('Unlink failed');
     }
   };
 
@@ -620,10 +620,10 @@ const TrackListManager: React.FC = () => {
     return true;
   };
 
-  // ✅ NEW — Item 9: Quick Approve (Sequential) — bulk add + finalize ek saath
+  // ✅ NEW — Item 9: Quick Approve (Sequential) — bulk add + finalize together
   const quickApproveSequential = async () => {
     if (!browsingTitle || !bulkPageId || !browseData?.videos) {
-      toast.error('Pehle page select karo aur videos load karo');
+      toast.error('Select a page and load videos first');
       return;
     }
     const allIds = browseData.videos.map((v: any) => v.videoId);
@@ -649,11 +649,11 @@ const TrackListManager: React.FC = () => {
         {},
         authHeaders()
       );
-      toast.success('Quick Approve ho gaya — sab episodes add + auto-tracking ON!');
+      toast.success('Quick Approve done — all episodes added + auto-tracking ON!');
       closeBrowseTitle();
       loadData();
     } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Quick approve fail ho gaya');
+      toast.error(err.response?.data?.error || 'Quick approve failed');
     } finally {
       setFinalizing(false);
     }
@@ -674,7 +674,7 @@ const TrackListManager: React.FC = () => {
       setSelectedVideoIds(new Set());
       setEpisodeOverrides({});
 
-      // ✅ NEW — pehle se linked anime/page ho toh auto-select karo
+      // ✅ NEW — if already linked anime/page, auto-select it
       const ch = channels.find((c) => c._id === channelId);
       const t = ch?.titles.find((tt: any) => tt.id === titleId) as any;
       if (t?.linkedAnimeId && t?.linkedDownloadPageId) {
@@ -695,7 +695,7 @@ const TrackListManager: React.FC = () => {
       const res = await axios.get(`${API_BASE}/track/channel/${channelId}/title/${titleId}/all-videos?depth=${useDepth}`, authHeaders());
       setBrowseData(res.data);
     } catch {
-      toast.error('Videos load nahi ho sake');
+      toast.error('Could not load videos');
     } finally {
       setBrowseLoading(false);
     }
@@ -756,12 +756,12 @@ const TrackListManager: React.FC = () => {
         { downloadPageId: bulkPageId, videoIds: Array.from(selectedVideoIds), episodeOverrides: overridesToSend },
         authHeaders()
       );
-      toast.success(`${data.added} episodes add ho gaye!`);
+      toast.success(`${data.added} episodes added!`);
       setSelectedVideoIds(new Set());
       setEpisodeOverrides({});
       openBrowseTitle(browsingTitle.channelId, browsingTitle.titleId, browsingTitle.keyword);
     } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Add nahi ho saka');
+      toast.error(err.response?.data?.error || 'Could not add');
     } finally {
       setFinalizing(false);
     }
@@ -771,10 +771,10 @@ const TrackListManager: React.FC = () => {
     if (!browsingTitle) return;
     try {
       await axios.post(`${API_BASE}/track/channel/${browsingTitle.channelId}/title/${browsingTitle.titleId}/ignore-video`, { videoId }, authHeaders());
-      toast.success('Video ignore ho gaya, ab kabhi nahi dikhega');
+      toast.success('Video ignored, it will never show again');
       openBrowseTitle(browsingTitle.channelId, browsingTitle.titleId, browsingTitle.keyword);
     } catch {
-      toast.error('Ignore fail ho gaya');
+      toast.error('Ignore failed');
     }
   };
 
@@ -788,12 +788,12 @@ const TrackListManager: React.FC = () => {
         { videoIds: ids },
         authHeaders()
       );
-      toast.success(`${ids.length} video(s) ignore ho gaye`);
+      toast.success(`${ids.length} video(s) ignored`);
       setSelectedVideoIds(new Set());
       setEpisodeOverrides({});
       openBrowseTitle(browsingTitle.channelId, browsingTitle.titleId, browsingTitle.keyword);
     } catch {
-      toast.error('Bulk ignore me kuch fail ho gaya');
+      toast.error('Something failed in bulk ignore');
     } finally {
       setBulkIgnoring(false);
     }
@@ -804,11 +804,11 @@ const TrackListManager: React.FC = () => {
     setFinalizing(true);
     try {
       await axios.post(`${API_BASE}/track/channel/${browsingTitle.channelId}/title/${browsingTitle.titleId}/finalize-initial`, {}, authHeaders());
-      toast.success('Approve ho gaya! Ab naye episodes automatically add honge.');
+      toast.success('Approved! New episodes will now be added automatically.');
       closeBrowseTitle();
       loadData();
     } catch {
-      toast.error('Finalize fail ho gaya');
+      toast.error('Finalize failed');
     } finally {
       setFinalizing(false);
     }
@@ -826,7 +826,7 @@ const TrackListManager: React.FC = () => {
       await axios.post(`${API_BASE}/track/notifications/${id}/read`, {}, authHeaders());
       loadData();
     } catch {
-      toast.error('Mark nahi ho saka');
+      toast.error('Could not mark');
     }
   };
 
@@ -846,10 +846,10 @@ const TrackListManager: React.FC = () => {
     setDeletingNotification(true);
     try {
       await axios.delete(`${API_BASE}/track/notifications/${notificationDeleteConfirm.notificationId}`, authHeaders());
-      toast.success('Remove ho gaya');
+      toast.success('Removed');
       loadData();
     } catch {
-      toast.error('Remove nahi ho saka');
+      toast.error('Could not remove');
     } finally {
       setDeletingNotification(false);
       setNotificationDeleteConfirm(null);
@@ -861,10 +861,10 @@ const TrackListManager: React.FC = () => {
     if (unread.length === 0) return;
     try {
       await Promise.all(unread.map((n) => axios.post(`${API_BASE}/track/notifications/${n._id}/read`, {}, authHeaders())));
-      toast.success(`${unread.length} updates "Done" mark ho gaye`);
+      toast.success(`${unread.length} updates marked "Done"`);
       loadData();
     } catch {
-      toast.error('Mark all fail ho gaya');
+      toast.error('Mark all failed');
     }
   };
 
@@ -887,10 +887,10 @@ const TrackListManager: React.FC = () => {
     try {
       const currentList = pendingBulkDeleteRef.current;
       await Promise.all(currentList.map((n) => axios.delete(`${API_BASE}/track/notifications/${n._id}`, authHeaders())));
-      toast.success(`${currentList.length} updates remove ho gaye`);
+      toast.success(`${currentList.length} updates removed`);
       loadData();
     } catch {
-      toast.error('Clear all fail ho gaya');
+      toast.error('Clear all failed');
     } finally {
       setDeletingNotification(false);
       setNotificationDeleteConfirm(null);
@@ -901,28 +901,28 @@ const TrackListManager: React.FC = () => {
   const shareVideo = async (url: string) => {
     try {
       await navigator.clipboard.writeText(url);
-      toast.success('Link copy ho gaya!');
+      toast.success('Link copied!');
     } catch {
-      toast.error('Copy nahi ho saka');
+      toast.error('Could not copy');
     }
   };
 
   const resolveSeasonChange = async (notif: TrackNotification) => {
-    const slug = prompt('Naye season ke page ka slug likho (jaise: series-name-season-2):');
+    const slug = prompt('Enter the new season page slug (e.g. series-name-season-2):');
     if (!slug) return;
     const channel = channels.find((ch) => (ch.titles || []).some((t: any) => t.keyword === notif.titleKeyword));
     const title = channel?.titles.find((t: any) => t.keyword === notif.titleKeyword) as any;
     if (!title || !channel) {
-      toast.error('Title/channel nahi mila');
+      toast.error('Title/channel not found');
       return;
     }
     try {
       await axios.post(`${API_BASE}/track/channel/${channel._id}/title/${title.id}/resolve-season`, { newSlug: slug }, authHeaders());
-      toast.success('Naya page ban gaya, season change resolve ho gaya!');
+      toast.success('New page created, season change resolved!');
       markDone(notif._id);
       loadData();
     } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Fail ho gaya');
+      toast.error(err.response?.data?.error || 'Failed');
     }
   };
 
@@ -947,10 +947,10 @@ const TrackListManager: React.FC = () => {
     setDeletingNotification(true);
     try {
       await axios.post(`${API_BASE}/track/notifications/${n._id}/undo`, {}, authHeaders());
-      toast.success('Undo ho gaya — link page se hata diya gaya');
+      toast.success('Undone — link removed from page');
       loadData();
     } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Undo fail ho gaya');
+      toast.error(err.response?.data?.error || 'Undo failed');
     } finally {
       setDeletingNotification(false);
       setNotificationDeleteConfirm(null);
@@ -1026,11 +1026,11 @@ const TrackListManager: React.FC = () => {
           <div className="bg-slate-900 border border-red-500/30 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl">
             <div className="flex items-center gap-3 mb-3">
               <div className="p-2.5 bg-red-500/20 rounded-xl">{Icon.trash('w-5 h-5 text-red-300')}</div>
-              <h3 className="text-lg font-bold text-white">Channel Remove Karo</h3>
+              <h3 className="text-lg font-bold text-white">Remove Channel</h3>
             </div>
             <p className="text-sm text-slate-400 mb-6">
-              <span className="text-white font-semibold">"{channelDeleteConfirm.channelName}"</span> aur uske saare tracked titles hamesha ke liye
-              remove ho jayenge. Ye action wapas nahi ho sakta.
+              <span className="text-white font-semibold">"{channelDeleteConfirm.channelName}"</span> and all its tracked titles will be
+              permanently removed. This action cannot be undone.
             </p>
             <div className="flex justify-end gap-3">
               <button
@@ -1046,7 +1046,7 @@ const TrackListManager: React.FC = () => {
                 className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 rounded-lg text-white font-medium transition shadow-lg shadow-red-600/20 flex items-center gap-2"
               >
                 {deletingChannel && Icon.spinner('w-3.5 h-3.5')}
-                Remove Karo
+                Remove
               </button>
             </div>
           </div>
@@ -1060,19 +1060,19 @@ const TrackListManager: React.FC = () => {
             <div className="flex items-center gap-3 mb-3">
               <div className="p-2.5 bg-red-500/20 rounded-xl">{Icon.trash('w-5 h-5 text-red-300')}</div>
               <h3 className="text-lg font-bold text-white">
-                {notificationDeleteConfirm.isBulk ? 'Sabhi Remove Karo' : 'Update Remove Karo'}
+                {notificationDeleteConfirm.isBulk ? 'Remove All' : 'Remove Update'}
               </h3>
             </div>
             <p className="text-sm text-slate-400 mb-6">
               {notificationDeleteConfirm.isBulk ? (
                 <>
-                  <span className="text-white font-semibold">{notificationDeleteConfirm.count}</span> updates hamesha ke liye remove ho jayenge. Ye
-                  action wapas nahi ho sakta.
+                  <span className="text-white font-semibold">{notificationDeleteConfirm.count}</span> updates will be permanently removed. This
+                  action cannot be undone.
                 </>
               ) : (
                 <>
-                  <span className="text-white font-semibold">"{notificationDeleteConfirm.title}"</span> ka ye update hamesha ke liye remove ho
-                  jayega. Ye action wapas nahi ho sakta.
+                  <span className="text-white font-semibold">"{notificationDeleteConfirm.title}"</span> this update will be permanently removed.
+                  This action cannot be undone.
                 </>
               )}
             </p>
@@ -1102,7 +1102,7 @@ const TrackListManager: React.FC = () => {
                 className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 rounded-lg text-white font-medium transition shadow-lg shadow-red-600/20 flex items-center gap-2"
               >
                 {deletingNotification && Icon.spinner('w-3.5 h-3.5')}
-                {notificationDeleteConfirm.notificationId.startsWith('undo-') ? 'Undo Karo' : 'Remove Karo'}
+                {notificationDeleteConfirm.notificationId.startsWith('undo-') ? 'Undo' : 'Remove'}
               </button>
             </div>
           </div>
@@ -1114,7 +1114,7 @@ const TrackListManager: React.FC = () => {
         <span className="text-red-500">{Icon.youtube('w-8 h-8')}</span>
         <div>
           <h3 className="text-xl font-bold text-white">YouTube Track Manager</h3>
-          <p className="text-sm text-slate-400 mt-0.5">Channels aur series select karo – naye episode upload hote hi notification milegi.</p>
+          <p className="text-sm text-slate-400 mt-0.5">Select channels and series — get notified as soon as a new episode is uploaded.</p>
         </div>
       </div>
 
@@ -1138,7 +1138,7 @@ const TrackListManager: React.FC = () => {
           <div className="p-2.5 bg-emerald-500/20 rounded-xl">{Icon.bell('w-5 h-5 text-emerald-300')}</div>
           <div>
             <p className="text-2xl font-bold text-white">{todayUpdatesCount}</p>
-            <p className="text-xs text-slate-400">Aaj Ke Updates</p>
+            <p className="text-xs text-slate-400">Today's Updates</p>
           </div>
         </div>
       </div>
@@ -1294,7 +1294,7 @@ const TrackListManager: React.FC = () => {
           <div className="mt-3 bg-slate-800/30 backdrop-blur-xl border border-white/10 rounded-2xl p-4 max-h-[400px] overflow-y-auto">
             {conflicts.length === 0 ? (
               <p className="text-sm text-slate-500 text-center py-4 flex items-center justify-center gap-1.5">
-                {Icon.checkAll('w-4 h-4 text-emerald-400')} Koi conflict nahi
+                {Icon.checkAll('w-4 h-4 text-emerald-400')} No conflicts
               </p>
             ) : (
               <div className="space-y-2">

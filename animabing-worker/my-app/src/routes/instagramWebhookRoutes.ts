@@ -1,11 +1,11 @@
- import { Hono } from 'hono'
+import { Hono } from 'hono'
 import type { Env, Variables } from '../index'
 import { withDb } from '../services/mongoService'
 
 const instagramWebhookRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
 const DAILY_DM_LIMIT_PER_USER_PER_RULE = 4
-export const HOURLY_SEND_LIMIT = 700 // Meta ka cap 750/hour hai, 700 par safety buffer rakha
+export const HOURLY_SEND_LIMIT = 700 // Meta's cap is 750/hour, 700 provides a safety buffer
 
 instagramWebhookRoutes.get('/webhook/instagram', (c) => {
   const mode = c.req.query('hub.mode')
@@ -63,7 +63,7 @@ function getHourBucket(date: Date = new Date()): string {
 }
 
 // ============================================================
-// ✅ COMMENT EVENT — daily limit + hourly (Meta) limit dono check
+// ✅ COMMENT EVENT — check both daily limit and hourly (Meta) limit
 // ============================================================
 async function handleCommentEvent(value: any, igAccountId: string, env: Env) {
   const commentId: string = value.id
@@ -119,14 +119,14 @@ async function handleCommentEvent(value: any, igAccountId: string, env: Env) {
       return
     }
 
-    // ✅ 🆕 Meta ka hourly (750/hr) budget check karo
+    // ✅ 🆕 Check Meta's hourly (750/hr) budget
     const hourBucket = getHourBucket()
     const hourlyKey = `${igAccountId}_${hourBucket}`
     const hourlyDoc = await db.collection('igHourlyUsage').findOne({ key: hourlyKey })
     const hourlyUsed = hourlyDoc?.count || 0
 
     if (hourlyUsed >= HOURLY_SEND_LIMIT) {
-      // ✅ Budget khatam — turant nahi bhej sakte, queue me daal do (FIFO ke liye createdAt use hoga)
+      // ✅ Budget exhausted — cannot send immediately, put in queue (createdAt will be used for FIFO)
       await db.collection('igDmQueue').insertOne({
         igAccountId, senderId, ruleId,
         dmMessage: matchedRule.dmMessage,
@@ -145,9 +145,9 @@ async function handleCommentEvent(value: any, igAccountId: string, env: Env) {
       return
     }
 
-    // ⚠️ FIX: 'v23.0' hata diya — graph.instagram.com (Instagram Login API)
-    // unversioned calls expect karta hai, warna Meta "Unsupported request"
-    // jaisa misleading error deta hai.
+    // ⚠️ FIX: Removed 'v23.0' — graph.instagram.com (Instagram Login API)
+    // expects unversioned calls, otherwise Meta gives a misleading error
+    // like "Unsupported request".
     const sendResult = await fetch(
       `https://graph.instagram.com/${igAccountId}/messages`,
       {
@@ -254,7 +254,7 @@ async function handleDirectMessageEvent(msgEvent: any, igAccountId: string, env:
       return
     }
 
-    // ⚠️ FIX: yahan bhi 'v23.0' hata diya — same reason
+    // ⚠️ FIX: Removed 'v23.0' here too — same reason
     const sendResult = await fetch(
       `https://graph.instagram.com/${igAccountId}/messages`,
       {
@@ -293,9 +293,9 @@ async function handleDirectMessageEvent(msgEvent: any, igAccountId: string, env:
 }
 
 // ============================================================
-// ✅ 🆕 INTERNAL ROUTE — queue chain continuation ke liye.
-// Sirf apna backend hi ise call karta hai (secret header se protected),
-// public users iska access nahi kar sakte.
+// ✅ 🆕 INTERNAL ROUTE — for queue chain continuation.
+// Only our own backend calls this (protected by secret header),
+// public users cannot access it.
 // ============================================================
 instagramWebhookRoutes.post('/internal/instagram-dm-queue/continue', async (c) => {
   const secret = c.req.header('x-internal-secret')

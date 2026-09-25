@@ -213,6 +213,12 @@ const TrackNotificationsPanel: React.FC<TrackNotificationsPanelProps> = ({
 }) => {
   const pendingGlobalNotifs = showAllUpdates ? notifications : notifications.filter((n) => !n.isRead);
 
+  // ✅ NEW — inline YouTube player: kis notification ka video abhi play ho raha hai
+  const [playingNotifId, setPlayingNotifId] = useState<string | null>(null);
+
+  // ✅ NEW — browse panel ke andar bhi inline player ke liye
+  const [playingBrowseVideoId, setPlayingBrowseVideoId] = useState<string | null>(null);
+
   // ============ ✅ NEW — inline browse/approve panel (channel section jump nahi karta) ============
   const renderBrowsePanel = () => {
     if (!browsingTitle) return null;
@@ -385,15 +391,16 @@ const TrackNotificationsPanel: React.FC<TrackNotificationsPanelProps> = ({
                         >
                           {expandedInfoId === v.videoId ? 'Less' : 'More'}
                         </button>
-                        <a
-                          href={v.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
+                        {/* ✅ NEW — inline player toggle button (pehle "Watch" <a> tha) */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPlayingBrowseVideoId((prev) => (prev === v.videoId ? null : v.videoId));
+                          }}
                           className="text-[10px] text-sky-400 hover:text-sky-300 flex-shrink-0"
                         >
-                          Watch
-                        </a>
+                          {playingBrowseVideoId === v.videoId ? 'Close' : 'Watch'}
+                        </button>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -404,6 +411,22 @@ const TrackNotificationsPanel: React.FC<TrackNotificationsPanelProps> = ({
                           Ignore
                         </button>
                       </div>
+
+                      {/* ✅ NEW — inline YouTube player (redirect nahi karta) */}
+                      {playingBrowseVideoId === v.videoId && (
+                        <div
+                          className="mt-2 aspect-video rounded-lg overflow-hidden border border-white/10 bg-black"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <iframe
+                            className="w-full h-full"
+                            src={`https://www.youtube-nocookie.com/embed/${v.videoId}?autoplay=1&rel=0`}
+                            title={v.videoTitle}
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                            allowFullScreen
+                          />
+                        </div>
+                      )}
 
                       {expandedInfoId === v.videoId && (
                         <div className="mt-2 pt-2 border-t border-white/10 text-[10px] text-slate-300 pl-7">
@@ -586,15 +609,14 @@ const TrackNotificationsPanel: React.FC<TrackNotificationsPanelProps> = ({
                     <div className="flex items-center gap-1.5 flex-wrap mt-2.5 pt-2.5 border-t border-white/5">
                       {/* Contextual primary action(s) */}
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        {n.newVideoUrl && (
-                          <a
-                            href={n.newVideoUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                        {/* ✅ NEW — inline YouTube player toggle (pehle "Watch" <a> tha) */}
+                        {n.newVideoUrl && n.newVideoId && (
+                          <button
+                            onClick={() => setPlayingNotifId((prev) => (prev === n._id ? null : n._id))}
                             className="text-[11px] px-2.5 py-1 rounded-lg bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30 transition flex items-center gap-1"
                           >
-                            {Icon.play('w-3 h-3')} Watch
-                          </a>
+                            {Icon.play('w-3 h-3')} {playingNotifId === n._id ? 'Close Player' : 'Watch'}
+                          </button>
                         )}
                         {n.newVideoUrl && (
                           <button
@@ -681,6 +703,19 @@ const TrackNotificationsPanel: React.FC<TrackNotificationsPanelProps> = ({
                         </button>
                       </div>
                     </div>
+
+                    {/* ✅ NEW — inline YouTube player (redirect nahi karta) */}
+                    {playingNotifId === n._id && n.newVideoId && (
+                      <div className="mt-2.5 aspect-video rounded-xl overflow-hidden border border-white/10 bg-black">
+                        <iframe
+                          className="w-full h-full"
+                          src={`https://www.youtube-nocookie.com/embed/${n.newVideoId}?autoplay=1&rel=0`}
+                          title={n.newVideoTitle || 'YouTube video player'}
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                          allowFullScreen
+                        />
+                      </div>
+                    )}
 
                     {/* ✅ NEW — isi notification ke neeche inline browse/approve panel */}
                     {isThisOneBrowsing && renderBrowsePanel()}

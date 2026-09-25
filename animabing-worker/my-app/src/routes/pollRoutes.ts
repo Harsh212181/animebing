@@ -1,14 +1,13 @@
- import { Hono } from 'hono'
+import { Hono } from 'hono'
 import { Env, Variables } from '../index'
-import { findMany, findOne, insertOne, updateOne, deleteOne, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
-import { ObjectId } from 'mongodb'
+import { getDb, toObjectId, isValidObjectId } from '../services/mongoService'
+import { ObjectId, Db } from 'mongodb'
 import { IPoll } from '../models/types'
 
 const pollRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
 const ALL_LOCATIONS: Array<'home' | 'detail' | 'downloadLink'> = ['home', 'detail', 'downloadLink']
 
-// ✅ purane polls jinme displayLocations save nahi hui, unke liye default = sabhi jagah
 const getPollLocations = (p: any): Array<'home' | 'detail' | 'downloadLink'> =>
   Array.isArray(p.displayLocations) && p.displayLocations.length > 0 ? p.displayLocations : ALL_LOCATIONS
 
@@ -18,10 +17,10 @@ function normalizeLocations(input: any): Array<'home' | 'detail' | 'downloadLink
   return valid.length > 0 ? valid : ALL_LOCATIONS
 }
 
-// AUTO DEACTIVATE EXPIRED
-async function autoDeactivateExpired(mongoUri: string, dbName: string) {
+// ✅ FIX: ab `db` accept karta hai — caller apna already khula connection
+// pass karta hai, ye khud alag connection nahi kholta.
+async function autoDeactivateExpired(db: Db) {
   try {
-    const db = await getDb(mongoUri, dbName)
     await db.collection('polls').updateMany(
       { expiresAt: { $lt: new Date() }, isActive: true },
       { $set: { isActive: false } }
@@ -31,14 +30,15 @@ async function autoDeactivateExpired(mongoUri: string, dbName: string) {
 
 // ============ USER ROUTES ============
 
-// GET ACTIVE POLL(S)
+// GET ACTIVE POLL(S) — pehle autoDeactivateExpired + apna getDb = 2 connections. Ab 1.
 pollRoutes.get('/active', async (c) => {
   try {
-    await autoDeactivateExpired(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    await autoDeactivateExpired(db)
+
     const deviceId = c.req.query('deviceId')
     const location = c.req.query('location') as 'home' | 'detail' | 'downloadLink' | undefined
 
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
     const pollsRaw = await db.collection('polls').find({
       isActive: true,
       expiresAt: { $gt: new Date() }
@@ -63,7 +63,7 @@ pollRoutes.get('/active', async (c) => {
         userHasVoted: hasVoted,
         userVoteOption,
         displayLocations: getPollLocations(poll),
-        hideVoteCounts: !!(poll as any).hideVoteCounts   // ✅ NEW
+        hideVoteCounts: !!(poll as any).hideVoteCounts
       }
 
       if (pollObj.options) {
@@ -85,6 +85,12 @@ pollRoutes.get('/active', async (c) => {
 })
 
 // VOTE
+// ✅ FIX: pehle "findOne(check hasVoted) → updateOne" me race window tha —
+// 2 requests same deviceId se ek saath aayein to dono findOne pass kar sakte
+// the isse pehle ki koi updateOne commit ho, matlab double vote ban sakta
+// tha. Ab ek hi atomic `findOneAndUpdate` hai jiska FILTER khud check karta
+// hai ki `voters.deviceId` abhi tak nahi hai — MongoDB is check-and-set ko
+// ek hi operation me atomically karta hai, koi race window nahi bachta.
 pollRoutes.post('/vote', async (c) => {
   try {
     const { pollId, optionId, deviceId, deviceType } = await c.req.json()
@@ -92,35 +98,55 @@ pollRoutes.post('/vote', async (c) => {
     if (!pollId || !optionId || !deviceId) {
       return c.json({ success: false, message: 'pollId, optionId, and deviceId are required' }, 400)
     }
+    if (!isValidObjectId(pollId) || !isValidObjectId(optionId)) {
+      return c.json({ success: false, message: 'Invalid pollId or optionId' }, 400)
+    }
 
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const poll = await db.collection('polls').findOne({
-      _id: toObjectId(pollId),
-      isActive: true,
-      expiresAt: { $gt: new Date() }
-    }) as IPoll | null
 
-    if (!poll) return c.json({ success: false, message: 'Poll not found or expired' }, 400)
-
-    const hasVoted = poll.voters?.some((v: any) => v.deviceId === deviceId)
-    if (hasVoted) return c.json({ success: false, message: 'Already voted', userHasVoted: true }, 400)
-
-    await db.collection('polls').updateOne(
-      { _id: toObjectId(pollId), 'options._id': toObjectId(optionId) },
+    const updated = await db.collection('polls').findOneAndUpdate(
       {
-        $inc: { 'options.$.votes': 1, totalVotes: 1 },
+        _id: toObjectId(pollId),
+        isActive: true,
+        expiresAt: { $gt: new Date() },
+        'voters.deviceId': { $ne: deviceId }, // ✅ atomic guard — already voted to match hi nahi hoga
+      },
+      {
+        $inc: { 'options.$[opt].votes': 1, totalVotes: 1 },
         $push: {
           voters: {
             deviceId,
             deviceType: deviceType || 'unknown',
             votedAt: new Date(),
-            optionId: toObjectId(optionId)
-          }
-        } as any
+            optionId: toObjectId(optionId),
+          },
+        } as any,
+      },
+      {
+        arrayFilters: [{ 'opt._id': toObjectId(optionId) }],
+        returnDocument: 'after',
       }
     )
 
-    return c.json({ success: true, totalVotes: (poll.totalVotes || 0) + 1, userHasVoted: true, userVoteOption: optionId })
+    if (updated) {
+      return c.json({
+        success: true,
+        totalVotes: updated.totalVotes,
+        userHasVoted: true,
+        userVoteOption: optionId,
+      })
+    }
+
+    // Update match nahi hua — pata karo kyun (poll missing/expired ya already voted)
+    const poll = await db.collection('polls').findOne({ _id: toObjectId(pollId) }) as IPoll | null
+    if (!poll || !poll.isActive || new Date(poll.expiresAt) <= new Date()) {
+      return c.json({ success: false, message: 'Poll not found or expired' }, 400)
+    }
+    const alreadyVoted = poll.voters?.some((v: any) => v.deviceId === deviceId)
+    if (alreadyVoted) {
+      return c.json({ success: false, message: 'Already voted', userHasVoted: true }, 400)
+    }
+    return c.json({ success: false, message: 'Vote failed' }, 400)
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500)
   }
@@ -213,7 +239,9 @@ pollRoutes.post('/admin/create', async (c) => {
       }
     })
 
-    await insertOne('polls', {
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const now = new Date()
+    await db.collection('polls').insertOne({
       question: question.trim(),
       options: validatedOptions,
       expiresAt: expiryDate,
@@ -221,8 +249,10 @@ pollRoutes.post('/admin/create', async (c) => {
       totalVotes: 0,
       voters: [],
       displayLocations: normalizeLocations(displayLocations),
-      hideVoteCounts: Boolean(hideVoteCounts)   // ✅ NEW
-    }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+      hideVoteCounts: Boolean(hideVoteCounts),
+      createdAt: now,
+      updatedAt: now,
+    })
 
     return c.json({ success: true, message: 'Poll created successfully' })
   } catch (err: any) {
@@ -230,11 +260,12 @@ pollRoutes.post('/admin/create', async (c) => {
   }
 })
 
-// GET ALL POLLS
+// GET ALL POLLS — pehle autoDeactivateExpired + apna getDb = 2 connections. Ab 1.
 pollRoutes.get('/admin/all', async (c) => {
   try {
-    await autoDeactivateExpired(c.env.MONGODB_URI, c.env.MONGODB_DB)
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    await autoDeactivateExpired(db)
+
     const polls = await db.collection('polls').find({}).sort({ createdAt: -1 }).toArray()
 
     const processed = polls.map((poll: any) => ({
@@ -243,7 +274,7 @@ pollRoutes.get('/admin/all', async (c) => {
       isExpired: new Date(poll.expiresAt) < new Date(),
       votersCount: poll.voters?.length || 0,
       displayLocations: getPollLocations(poll),
-      hideVoteCounts: !!poll.hideVoteCounts,   // ✅ NEW
+      hideVoteCounts: !!poll.hideVoteCounts,
       options: poll.options?.map((opt: any) => ({
         ...opt,
         _id: opt._id?.toString(),
@@ -275,7 +306,7 @@ pollRoutes.get('/admin/:id', async (c) => {
         isExpired: new Date(poll.expiresAt) < new Date(),
         votersCount: poll.voters?.length || 0,
         displayLocations: getPollLocations(poll),
-        hideVoteCounts: !!poll.hideVoteCounts,   // ✅ NEW
+        hideVoteCounts: !!poll.hideVoteCounts,
         options: poll.options?.map((opt: any) => ({
           ...opt,
           _id: opt._id?.toString(),
@@ -288,7 +319,7 @@ pollRoutes.get('/admin/:id', async (c) => {
   }
 })
 
-// UPDATE POLL
+// UPDATE POLL — findOne + updateOne combined into 1 connection
 pollRoutes.put('/admin/:id', async (c) => {
   try {
     const id = c.req.param('id')
@@ -299,7 +330,7 @@ pollRoutes.put('/admin/:id', async (c) => {
     const poll = await db.collection('polls').findOne({ _id: toObjectId(id) }) as any
     if (!poll) return c.json({ success: false, message: 'Poll not found' }, 404)
 
-    const updateData: any = {}
+    const updateData: any = { updatedAt: new Date() }
     if (question !== undefined) updateData.question = question.trim()
     if (expiresAt !== undefined) {
       const expiryDate = new Date(expiresAt)
@@ -317,7 +348,7 @@ pollRoutes.put('/admin/:id', async (c) => {
     }
     if (isActive !== undefined) updateData.isActive = isActive
     if (displayLocations !== undefined) updateData.displayLocations = normalizeLocations(displayLocations)
-    if (hideVoteCounts !== undefined) updateData.hideVoteCounts = Boolean(hideVoteCounts)   // ✅ NEW
+    if (hideVoteCounts !== undefined) updateData.hideVoteCounts = Boolean(hideVoteCounts)
 
     await db.collection('polls').updateOne({ _id: toObjectId(id) }, { $set: updateData })
     return c.json({ success: true, message: 'Poll updated successfully' })
@@ -326,7 +357,7 @@ pollRoutes.put('/admin/:id', async (c) => {
   }
 })
 
-// TOGGLE POLL
+// TOGGLE POLL — findOne + updateOne combined into 1 connection
 pollRoutes.put('/admin/:id/toggle', async (c) => {
   try {
     const id = c.req.param('id')
@@ -339,7 +370,7 @@ pollRoutes.put('/admin/:id/toggle', async (c) => {
     const isExpired = new Date(poll.expiresAt) < new Date()
     if (isExpired && !poll.isActive) return c.json({ success: false, message: 'Cannot activate expired poll' }, 400)
 
-    await db.collection('polls').updateOne({ _id: toObjectId(id) }, { $set: { isActive: !poll.isActive } })
+    await db.collection('polls').updateOne({ _id: toObjectId(id) }, { $set: { isActive: !poll.isActive, updatedAt: new Date() } })
     return c.json({ success: true, isActive: !poll.isActive, message: `Poll ${!poll.isActive ? 'activated' : 'deactivated'}` })
   } catch (err: any) {
     return c.json({ success: false, message: 'Server error' }, 500)

@@ -1,6 +1,6 @@
- // src/services/analyticsService.ts
+// src/services/analyticsService.ts
 import { getDb } from './mongoService'
-import { ObjectId } from 'mongodb'
+import { ObjectId, Db } from 'mongodb'
 import { EarningType, ISubAdminAnimeEarning, ISubAdminEarningsSummary } from '../models/types'
 
 export interface PageViewRecord {
@@ -19,36 +19,25 @@ export interface PageViewRecord {
   timeOnPage?: number
   timestamp: Date
   date: string
-  // 🆕 EARNINGS fields — only populated for pageType === 'download'
   earningType?: EarningType
   animeId?: string
   subAdminId?: string
-  // 🆕 dedupe + rate snapshot support
   visitorId?: string
   userAgent?: string
-  linkUsed?: number        // 1-4, agar ?l= aaya
-  // 🆕 write-time rate snapshot ('normal' download views ke liye)
-  rateSnapshot?: number    // $ per 1000 views, us view ke waqt ka
+  linkUsed?: number
+  rateSnapshot?: number
   activeLinks?: number[]
-  // 🆕 true = is download view se pehle same visitor/session ne isi anime ka
-  // detail/episode page dekha tha (funnel/journey attribution ke liye)
   fromDetail?: boolean
-  // 🆕 true = ye view testing mode mein aaya tha (countEveryView ON).
-  // Dedupe/journey band the — baad mein filter karke delete kar sakte ho.
   testMode?: boolean
 }
 
-// 🆕 EARNINGS: signals passed in from the route handler describing the
-// link-5 / special-mode state AT THE MOMENT the pageview happened. Must be
-// resolved write-time — we can't reconstruct "what was link5's state" later.
 export interface EarningContext {
-  link5Active: boolean       // linksettings.link5 === true at time of view
-  specialModeForcing: boolean // isForceLink5ModeActive() === true at time of view
-  countEveryView?: boolean   // 🆕 testing switch: dedupe/journey band, har view count
-  dedupeWindowSec?: number   // 🆕 recount window in seconds (1–172800). Default 86400 (24h)
+  link5Active: boolean
+  specialModeForcing: boolean
+  countEveryView?: boolean
+  dedupeWindowSec?: number
 }
 
-// Helper: returns date string in Indian Standard Time (UTC+5:30)
 function getISTDateStr(d: Date = new Date()): string {
   const IST_OFFSET = 5.5 * 60 * 60 * 1000
   const istDate = new Date(d.getTime() + IST_OFFSET)
@@ -66,8 +55,14 @@ function creatorFilter(creatorId?: string | null): Record<string, any> {
   return { createdByAdminId: creatorId }
 }
 
-// ─── Sub-admin name attribution (for main admin's view) ───────────────────
-// List of all sub-admins — powers the "Filter by Sub-Admin" dropdown.
+// ============================================================================
+// ✅ FIX: `getSubAdminNameMap` aur `getSlugMetaMap` ab EK OPTIONAL trailing
+// `existingDb` param lete hain (episodeSyncService.ts wala pattern). Jahan
+// caller ke paas already khula `db` hai, wahi reuse hota hai — naya connection
+// nahi khulta. Backward-compatible: param na diya jaaye to purana behavior
+// (apna connection khud kholna) waisa hi rehta hai.
+// ============================================================================
+
 export async function getSubAdminsList(mongoUri: string, dbName: string) {
   const db = await getDb(mongoUri, dbName)
   const subs = await db.collection('subadmins')
@@ -80,26 +75,22 @@ export async function getSubAdminsList(mongoUri: string, dbName: string) {
   }))
 }
 
-// admin _id (string) -> display name
-async function getSubAdminNameMap(mongoUri: string, dbName: string): Promise<Map<string, string>> {
-  const db = await getDb(mongoUri, dbName)
+async function getSubAdminNameMap(mongoUri: string, dbName: string, existingDb?: Db): Promise<Map<string, string>> {
+  const db = existingDb || await getDb(mongoUri, dbName)
   const subs = await db.collection('subadmins')
     .find({}, { projection: { username: 1, realName: 1 } })
     .toArray()
   return new Map(subs.map((s: any) => [s._id.toString(), s.realName || s.username]))
 }
 
-// slug -> { animeId, animeTitle, creatorUsername } — covers BOTH anime
-// slugs (detail/episode) AND download-page slugs (via their animeId link).
-// creatorUsername sirf tab compute hota hai jab includeCreator=true (main
-// admin ka unrestricted view) — sub-admin ko iski zarurat nahi.
 async function getSlugMetaMap(
   mongoUri: string,
   dbName: string,
-  includeCreator: boolean
+  includeCreator: boolean,
+  existingDb?: Db
 ): Promise<Map<string, { animeId?: string; animeTitle?: string; creatorUsername?: string | null }>> {
-  const db = await getDb(mongoUri, dbName)
-  const nameMap = includeCreator ? await getSubAdminNameMap(mongoUri, dbName) : null
+  const db = existingDb || await getDb(mongoUri, dbName)
+  const nameMap = includeCreator ? await getSubAdminNameMap(mongoUri, dbName, db) : null
 
   const animes = await db.collection('animes')
     .find({}, { projection: { slug: 1, title: 1, createdBy: 1 } })
@@ -117,7 +108,6 @@ async function getSlugMetaMap(
     if (a.slug) map.set(a.slug, { animeId, ...info })
   }
 
-  // ─── Download pages inherit animeId/title/creator from their parent anime ──
   const downloadPages = await db.collection('downloadpages')
     .find({}, { projection: { slug: 1, animeId: 1 } })
     .toArray()
@@ -132,18 +122,20 @@ async function getSlugMetaMap(
   return map
 }
 
-// 🆕 EARNINGS: resolve { animeId, subAdminId (createdBy) } for a download-page
-// (or anime-detail) slug. Cached per-call via getDb; cheap enough for the
-// pageview write path since it's just two small indexed-ish lookups.
+// ✅ FIX: ab `db` optional 4th param leta hai — trackPageView isse pass
+// karega taaki dusra connection na khule (pehle ye function trackPageView
+// ke andar se apna ALAG getDb() khol raha tha, matlab HAR download pageview
+// pe 2 MongoDB connections khulte the — is fix ka sabse bada impact yahi hai
+// kyunki trackPageView har single pageview pe chalta hai).
 async function resolveAnimeOwnerForSlug(
   slug: string | undefined,
   mongoUri: string,
-  dbName: string
+  dbName: string,
+  existingDb?: Db
 ): Promise<{ animeId?: string; subAdminId?: string }> {
   if (!slug) return {}
-  const db = await getDb(mongoUri, dbName)
+  const db = existingDb || await getDb(mongoUri, dbName)
 
-  // Try as a direct anime slug first
   const anime = await db.collection('animes').findOne(
     { slug },
     { projection: { createdBy: 1 } }
@@ -155,7 +147,6 @@ async function resolveAnimeOwnerForSlug(
     }
   }
 
-  // Fall back to download-page slug -> parent anime
   const dp = await db.collection('downloadpages').findOne(
     { slug },
     { projection: { animeId: 1 } }
@@ -176,14 +167,12 @@ async function resolveAnimeOwnerForSlug(
   return {}
 }
 
-// ─── GeoIP response type ─────────────────────────────────────────────────
 interface GeoIPResponse {
   countryCode?: string
   regionName?: string
   city?: string
 }
 
-// ─── Free GeoIP enrichment (ip-api.com) ──────────────────────────────────
 async function enrichGeo(ip: string): Promise<{ country?: string; region?: string; city?: string }> {
   try {
     if (ip === '0.0.0.0' || ip.startsWith('127.') || ip.startsWith('10.') || ip.startsWith('192.168.')) {
@@ -202,13 +191,11 @@ async function enrichGeo(ip: string): Promise<{ country?: string; region?: strin
   }
 }
 
-// ─── 24h dedupe + write-time rate snapshot helpers ────────────────────────
 async function sha256(s: string): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s))
   return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
-// _id ek baar claim hota hai; window ke baad phir claim ho sakta hai. Atomic (race-safe).
 async function claimOnce(col: any, _id: string, now: Date, cutoff: Date): Promise<boolean> {
   const renewed = await col.updateOne({ _id, at: { $lt: cutoff } }, { $set: { at: now } })
   if (renewed.modifiedCount === 1) return true
@@ -221,8 +208,6 @@ async function claimOnce(col: any, _id: string, now: Date, cutoff: Date): Promis
   }
 }
 
-// true = ye view COUNT hona chahiye
-// 🆕 window ab bahar se aati hai (dedupeWindowSec)
 async function registerDownloadView(
   db: any, pageKey: string, visitorId: string | undefined, ip: string, ua: string | undefined,
   windowSec: number
@@ -231,13 +216,11 @@ async function registerDownloadView(
   const now = new Date()
   const cutoff = new Date(now.getTime() - windowSec * 1000)
 
-  // Layer 1: visitorId — window ke andar sirf 1
   if (visitorId) {
     const ok = await claimOnce(col, `v:${pageKey}:${await sha256(visitorId)}`, now, cutoff)
     if (!ok) return false
   }
 
-  // Layer 2: IP+UA — window ke andar max 3 (mobile shared-IP wale real users na katein)
   const ipId = `i:${pageKey}:${await sha256(`${ip}|${ua || ''}`)}`
   const expired = { $lt: [{ $ifNull: ['$windowStart', new Date(0)] }, cutoff] }
   const r: any = await col.findOneAndUpdate(
@@ -251,11 +234,10 @@ async function registerDownloadView(
     }],
     { upsert: true, returnDocument: 'after' }
   )
-  const doc = r?.value ?? r   // driver v5 / v6 dono
+  const doc = r?.value ?? r
   return (doc?.count ?? 1) <= 3
 }
 
-// Is view ka rate: exact link (?l=) ho to wahi, warna active links ka average
 async function resolveViewRate(
   db: any, animeId: string | undefined, linkUsed?: number
 ): Promise<{ rate: number; activeLinks: number[] }> {
@@ -265,10 +247,8 @@ async function resolveViewRate(
 
   if (linkUsed) return { rate: rateOf(linkUsed), activeLinks: [linkUsed] }
 
-  // anime kisi Anime Link Control group mein ho to us group ke flags, warna global
   let flags: any = settings
   if (animeId) {
-    // ⚠️ collection ka naam animeLinkControlRoutes.ts se check kar lena
     const group = await db.collection('animelinkcontrols').findOne({ animeIds: animeId })
     if (group) flags = group
   }
@@ -278,8 +258,6 @@ async function resolveViewRate(
   return { rate: avg, activeLinks: active }
 }
 
-// 🆕 Journey attribution: is download view se pehle (last 6h mein) same
-// visitorId/sessionId ne isi anime ka detail/episode page dekha tha?
 async function hadDetailVisit(
   db: any, animeId: string | undefined, visitorId?: string, sessionId?: string
 ): Promise<boolean> {
@@ -303,34 +281,30 @@ async function hadDetailVisit(
 }
 
 // Track single page view
+// ✅ FIX: `resolveAnimeOwnerForSlug` ko ab `db` pass karte hain (upar dekho) —
+// isse ye poora function guaranteed SIRF EK connection use karta hai.
 export async function trackPageView(
   data: Omit<PageViewRecord, 'timestamp' | 'date' | 'earningType' | 'animeId' | 'subAdminId' | 'rateSnapshot' | 'activeLinks' | 'fromDetail' | 'testMode'>,
   mongoUri: string,
   dbName: string,
-  earningContext?: EarningContext // 🆕 EARNINGS — only relevant when data.pageType === 'download'
+  earningContext?: EarningContext
 ): Promise<{ counted: boolean }> {
   const db = await getDb(mongoUri, dbName)
   const now = new Date()
   const date = getISTDateStr(now)
 
-  // 🆕 testing switch: true hone par dedupe band, lekin journey combine chalu
   const countEveryView = earningContext?.countEveryView === true
-  // 🆕 recount window: config se aati hai, 1s–48h ke beech clamp, default 24h
   const windowSec = Math.min(Math.max(earningContext?.dedupeWindowSec ?? 86400, 1), 172800)
 
-  // Jin pages par recount window lagti hai (sirf tab jab "count every view" OFF ho)
   const DEDUPED_TYPES = ['download', 'anime-detail', 'episode']
 
-  // ── dedupe (download / detail / episode) — geo lookup se PEHLE, taaki duplicate par kaam waste na ho
-  // countEveryView ON ho to dedupe skip karo (har view count hoga)
   if (DEDUPED_TYPES.includes(data.pageType) && !countEveryView) {
-    // pageKey mein page type prefix — detail aur download ki keys mix na hon
     const pageKey = `${data.pageType}:${data.slug || data.path.split('?')[0]}`
     let isNew = true
     try {
       isNew = await registerDownloadView(db, pageKey, data.visitorId, data.ip, data.userAgent, windowSec)
     } catch (e) {
-      console.error('dedupe failed (counting view anyway):', e)  // fail-open
+      console.error('dedupe failed (counting view anyway):', e)
     }
     if (!isNew) {
       await db.collection('pageview_dupes_daily').updateOne(
@@ -352,9 +326,6 @@ export async function trackPageView(
     city = city || geo.city
   }
 
-  // 🆕 EARNINGS: only download-page views are earnings-relevant. Category is
-  // decided from the link-5 / special-mode state AT THE TIME of this view —
-  // never recomputed later, since that state changes over time.
   let earningType: EarningType | undefined
   let animeId: string | undefined
   let subAdminId: string | undefined
@@ -363,7 +334,7 @@ export async function trackPageView(
   let fromDetail = false
 
   if (data.pageType === 'download') {
-    const owner = await resolveAnimeOwnerForSlug(data.slug, mongoUri, dbName)
+    const owner = await resolveAnimeOwnerForSlug(data.slug, mongoUri, dbName, db) // ✅ db pass kiya
     animeId = owner.animeId
     subAdminId = owner.subAdminId
 
@@ -379,8 +350,6 @@ export async function trackPageView(
       activeLinks = r.activeLinks
     }
 
-    // 🆕 journey attribution — same visitor/session ne pehle detail dekha tha?
-    // journey combine hamesha chalega (switch ON ho ya OFF)
     fromDetail = await hadDetailVisit(db, animeId, data.visitorId, data.sessionId)
   }
 
@@ -409,6 +378,10 @@ export async function trackPageView(
 }
 
 // Summary stats for admin
+// ✅ FIX: `getSlugMetaMap` ko ab `db` pass karte hain — pehle ye alag
+// connection kholta tha (aur andar se `getSubAdminNameMap` bhi ek aur
+// alag connection khol sakta tha) — matlab ek `/stats` call 1+2 = 3
+// connections tak khol sakti thi. Ab guaranteed 1.
 export async function getPageViewStats(
   mongoUri: string,
   dbName: string,
@@ -477,7 +450,6 @@ export async function getPageViewStats(
     dailyChart.push({ date: dateStr, views: dailyMap.get(dateStr) || 0 })
   }
 
-  // Top pages
   let topPages: any[]
   if (device) {
     topPages = await db
@@ -521,7 +493,6 @@ export async function getPageViewStats(
       .toArray()
   }
 
-  // Views by page type
   const byType = await db
     .collection('pageviews')
     .aggregate([
@@ -531,7 +502,6 @@ export async function getPageViewStats(
     ])
     .toArray()
 
-  // Device breakdown
   const byDevice = await db
     .collection('pageviews')
     .aggregate([
@@ -541,13 +511,11 @@ export async function getPageViewStats(
     ])
     .toArray()
 
-  // Unique visitors (selected period)
   const uniqueVisitors = await db
     .collection('pageviews')
     .distinct('ip', baseMatch)
     .then((arr: string[]) => arr.length)
 
-  // Geo stats — views by country
   const byCountryRaw = await db
     .collection('pageviews')
     .aggregate([
@@ -562,12 +530,10 @@ export async function getPageViewStats(
     .filter((c: any) => c._id && c._id !== 'XX')
     .map((c: any) => ({ country: c._id as string, views: c.views as number }))
 
-  // ─── Slug metadata: animeId + animeTitle (always) + creator name (main
-  // admin view only) — powers both the missing-animeTitle fix and the
-  // anime-detail/download combining below.
   const slugMeta = await getSlugMetaMap(
     mongoUri, dbName,
-    ownedSlugs === null || ownedSlugs === undefined
+    ownedSlugs === null || ownedSlugs === undefined,
+    db // ✅ db pass kiya
   )
 
   const rawTopPages = topPages.map((p: any) => {
@@ -584,10 +550,6 @@ export async function getPageViewStats(
     }
   })
 
-  // ─── Combine anime-detail + episode + download rows for the SAME anime
-  // into a single row. This lets admins see, at a glance, how many of an
-  // anime's detail-page visitors continued on to its download page —
-  // instead of two separate, hard-to-compare rows.
   const COMBINABLE_TYPES = new Set(['anime-detail', 'episode', 'download'])
   const combinedByAnimeId = new Map<string, any>()
   const finalTopPages: any[] = []
@@ -604,8 +566,8 @@ export async function getPageViewStats(
           slug: row.slug,
           animeId: row.animeId,
           createdByUsername: row.createdByUsername,
-          detailViews: 0,   // anime-detail + episode combined
-          downloadViews: 0, // download page only
+          detailViews: 0,
+          downloadViews: 0,
         }
         combinedByAnimeId.set(row.animeId, entry)
         finalTopPages.push(entry)
@@ -619,7 +581,6 @@ export async function getPageViewStats(
     }
   }
 
-  // detail dekh kar download kholne wala = 1 count (double-count avoid)
   const journeyRaw = await db.collection('pageviews').aggregate([
     { $match: { ...baseMatch, pageType: 'download', fromDetail: true } },
     { $group: { _id: '$animeId', n: { $sum: 1 } } },
@@ -649,7 +610,6 @@ export async function getPageViewStats(
   }
 }
 
-// ─── Geo detail — groups by region (state) and city ───────────────────────
 export async function getGeoDetail(
   country: string,
   mongoUri: string,
@@ -704,7 +664,6 @@ export async function getGeoDetail(
   }
 }
 
-// ─── Country breakdown by period ──────────────────────────────────────────
 export async function getByCountryStats(
   mongoUri: string,
   dbName: string,
@@ -736,7 +695,6 @@ export async function getByCountryStats(
   return { byCountry }
 }
 
-// ─── Funnel: Home → Detail → Download per session ─────────────────────────
 export async function getFunnelStats(
   mongoUri: string,
   dbName: string,
@@ -806,7 +764,6 @@ export async function getFunnelStats(
   }
 }
 
-// ─── Referrer / traffic source breakdown ───────────────────────────────────
 function classifyReferrer(referrer?: string): string {
   if (!referrer) return 'Direct'
   try {
@@ -861,7 +818,6 @@ export async function getReferrerStats(
   return { byReferrer }
 }
 
-// ─── Browser breakdown ─────────────────────────────────────────────────────
 export async function getBrowserStats(
   mongoUri: string,
   dbName: string,
@@ -886,7 +842,6 @@ export async function getBrowserStats(
   }
 }
 
-// ─── Average time on page ──────────────────────────────────────────────────
 export async function getTimeOnPageStats(
   mongoUri: string,
   dbName: string,
@@ -926,7 +881,6 @@ export async function getTimeOnPageStats(
   }
 }
 
-// ─── Real-time / live visitors (active in last 5 minutes) ──────────────────
 export async function getLiveVisitors(
   mongoUri: string,
   dbName: string
@@ -973,7 +927,6 @@ export async function getLiveVisitors(
   }
 }
 
-// ─── Top anime overall ─────────────────────────────────────────────────────
 export async function getTopAnimeOverall(
   mongoUri: string,
   dbName: string,
@@ -1021,7 +974,6 @@ export async function getTopAnimeOverall(
   }
 }
 
-// ─── Hourly heatmap (IST) ──────────────────────────────────────────────────
 export async function getHourlyHeatmap(
   mongoUri: string,
   dbName: string,
@@ -1059,7 +1011,6 @@ export async function getHourlyHeatmap(
   return { hourly }
 }
 
-// ─── 404 / not-found page tracking ─────────────────────────────────────────
 export async function get404Stats(
   mongoUri: string,
   dbName: string,
@@ -1100,7 +1051,6 @@ export async function get404Stats(
   }
 }
 
-// ─── New vs returning visitors ─────────────────────────────────────────────
 export async function getNewVsReturning(
   mongoUri: string,
   dbName: string,
@@ -1126,7 +1076,6 @@ export async function getNewVsReturning(
       date: { $lt: sinceStr },
     })
 
-  const priorSet = new Set(priorIps)
   const returningVisitors = priorIps.length
   const newVisitors = periodIps.length - returningVisitors
 
@@ -1137,7 +1086,6 @@ export async function getNewVsReturning(
   }
 }
 
-// Per-page detail for drill-down modal
 export async function getPageDetail(
   path: string,
   mongoUri: string,
@@ -1172,7 +1120,8 @@ export async function getPageDetail(
   return { path, total, daily }
 }
 
-// ─── User Link Analytics ──────────────────────────────────────────────────
+// ✅ FIX: getSubAdminNameMap ko ab `db` pass karte hain (jo upar already
+// khula hai) instead of alag connection kholne ke.
 export async function getUserLinkAnalytics(
   mongoUri: string,
   dbName: string,
@@ -1185,7 +1134,7 @@ export async function getUserLinkAnalytics(
   since.setHours(0, 0, 0, 0)
 
   const users = await db.collection('shortusers').find(creatorFilter(creatorId)).toArray()
-  const nameMap = !creatorId ? await getSubAdminNameMap(mongoUri, dbName) : null
+  const nameMap = !creatorId ? await getSubAdminNameMap(mongoUri, dbName, db) : null
 
   const result = await Promise.all(users.map(async (user: any) => {
     const userId = user._id
@@ -1285,7 +1234,6 @@ export async function getUserLinkAnalytics(
   }
 }
 
-// ─── Earnings Timeline + Link Health ───────────────────────────────────────
 export async function getEarningsAndLinkHealth(
   mongoUri: string,
   dbName: string,
@@ -1294,7 +1242,7 @@ export async function getEarningsAndLinkHealth(
   const db = await getDb(mongoUri, dbName)
 
   const users = await db.collection('shortusers').find(creatorFilter(creatorId)).toArray()
-  const nameMap = !creatorId ? await getSubAdminNameMap(mongoUri, dbName) : null
+  const nameMap = !creatorId ? await getSubAdminNameMap(mongoUri, dbName, db) : null
 
   const result = await Promise.all(users.map(async (user: any) => {
     const userId = user._id
@@ -1380,7 +1328,6 @@ export async function getEarningsAndLinkHealth(
   return { users: result.filter(Boolean) }
 }
 
-// ─── Fraud/Bot Detection ───────────────────────────────────────────────────
 export async function getFraudDetection(
   mongoUri: string,
   dbName: string,
@@ -1392,7 +1339,7 @@ export async function getFraudDetection(
   since.setDate(since.getDate() - days)
 
   const users = await db.collection('shortusers').find(creatorFilter(creatorId)).toArray()
-  const nameMap = !creatorId ? await getSubAdminNameMap(mongoUri, dbName) : null
+  const nameMap = !creatorId ? await getSubAdminNameMap(mongoUri, dbName, db) : null
 
   const alerts = await Promise.all(users.map(async (user: any) => {
     const userId = user._id
@@ -1477,7 +1424,6 @@ export async function getFraudDetection(
   }
 }
 
-// ─── Leaderboard + Streaks ─────────────────────────────────────────────────
 export async function getLeaderboard(
   mongoUri: string,
   dbName: string,
@@ -1493,7 +1439,7 @@ export async function getLeaderboard(
 
   const userFilter: any = { isActive: true, ...creatorFilter(creatorId) }
   const users = await db.collection('shortusers').find(userFilter).toArray()
-  const nameMap = !creatorId ? await getSubAdminNameMap(mongoUri, dbName) : null
+  const nameMap = !creatorId ? await getSubAdminNameMap(mongoUri, dbName, db) : null
 
   const board = await Promise.all(users.map(async (user: any) => {
     const userId = user._id
@@ -1560,7 +1506,6 @@ export async function getLeaderboard(
   }
 }
 
-// ─── Payment Analytics ─────────────────────────────────────────────────────
 export async function getPaymentAnalytics(
   mongoUri: string,
   dbName: string
@@ -1643,7 +1588,6 @@ export async function getPaymentAnalytics(
   }
 }
 
-// ─── User Cohort Analysis ──────────────────────────────────────────────────
 export async function getCohortAnalysis(
   mongoUri: string,
   dbName: string,
@@ -1692,7 +1636,6 @@ export async function getCohortAnalysis(
   return { cohorts: cohortList }
 }
 
-// ─── Link Journey – Per User + Per Link ────────────────────────────────────
 export async function getLinkJourney(
   mongoUri: string,
   dbName: string,
@@ -1825,7 +1768,6 @@ export async function getLinkJourneyByLink(
   return { links: result.sort((a, b) => b.totalClicks - a.totalClicks) }
 }
 
-// ─── User Self Analytics ───────────────────────────────────────────────────
 export async function getUserSelfAnalytics(
   userId: string,
   mongoUri: string,
@@ -1992,7 +1934,6 @@ export async function getUserSelfAnalytics(
   }
 }
 
-// ─── Monthly Overview: har month ka total (start se ab tak) ───────────────
 export async function getMonthlyOverview(
   mongoUri: string,
   dbName: string,
@@ -2007,7 +1948,7 @@ export async function getMonthlyOverview(
       { $match: scope },
       {
         $group: {
-          _id: { $substrCP: ['$date', 0, 7] }, // "YYYY-MM"
+          _id: { $substrCP: ['$date', 0, 7] },
           views: { $sum: 1 },
           animeViews: {
             $sum: { $cond: [{ $in: ['$pageType', ['anime-detail', 'episode']] }, 1, 0] }
@@ -2031,11 +1972,10 @@ export async function getMonthlyOverview(
   }
 }
 
-// ─── Monthly Detail: ek month ke andar har din ka breakdown ───────────────
 export async function getMonthlyDetail(
   mongoUri: string,
   dbName: string,
-  month: string, // "YYYY-MM"
+  month: string,
   ownedSlugs?: string[] | null
 ) {
   const db = await getDb(mongoUri, dbName)
@@ -2108,14 +2048,9 @@ export async function getMonthlyDetail(
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// 🆕 SUB-ADMIN EARNINGS (view → $ tracking, per anime, split by earningType)
+// SUB-ADMIN EARNINGS (view → $ tracking, per anime, split by earningType)
 // ══════════════════════════════════════════════════════════════════════════
 
-// Minimal shape we actually read off a `subadmins` document for earnings
-// calculations. Explicitly casting findOne()'s result to this interface
-// (instead of leaving it as the driver's loosely-typed Document) is what
-// fixes the "not assignable" red-line at resolveEffectiveRate(subAdmin, ...)
-// and at the subAdmin.username / subAdmin.fullName reads below.
 interface SubAdminRateDoc {
   _id: ObjectId
   username: string
@@ -2128,7 +2063,7 @@ const emptyBucket = (): RateBucket => ({ count: 0, snapSum: 0, snapCount: 0 })
 
 function earningsOf(b: RateBucket, custom: number | null, globalRate: number): number {
   if (custom !== null) return (b.count * custom) / 1000
-  const legacyViews = b.count - b.snapCount            // snapshot se pehle ke views
+  const legacyViews = b.count - b.snapCount
   return (b.snapSum + legacyViews * globalRate) / 1000
 }
 
@@ -2138,8 +2073,6 @@ const SNAP_GROUP = {
   snapCount: { $sum: { $cond: [{ $isNumber: '$rateSnapshot' }, 1, 0] } },
 }
 
-// Earnings summary for ONE sub-admin: per-anime breakdown of the three
-// earningType buckets, plus total $ (only 'normal' views count toward $).
 export async function getSubAdminEarnings(
   subAdminId: string,
   mongoUri: string,
@@ -2147,9 +2080,6 @@ export async function getSubAdminEarnings(
 ): Promise<ISubAdminEarningsSummary | null> {
   const db = await getDb(mongoUri, dbName)
 
-  // ✅ FIX: explicit cast to SubAdminRateDoc — the raw driver return type
-  // doesn't guarantee ratePerThousandViews/username/fullName shapes, which
-  // is what caused the red-line type mismatch below.
   const subAdmin = await db.collection('subadmins').findOne(
     { _id: toObjectIdSafe(subAdminId) }
   ) as SubAdminRateDoc | null
@@ -2199,20 +2129,18 @@ export async function getSubAdminEarnings(
     subAdminId,
     username: subAdmin.username,
     realName: subAdmin.fullName || subAdmin.username,
-    // effective (blended) rate — per-link mode mein ye average hai
     rate: custom !== null ? custom : (totalNormalViews ? (totalEarnings * 1000) / totalNormalViews : globalRate),
     rateSource: custom !== null ? 'custom' : 'per-link',
     totalNormalViews, totalLink5DirectViews, totalSpecialModeViews, totalEarnings, byAnime,
   }
 }
 
-// Lightweight summary across ALL sub-admins — powers the main-admin overview
-// table (no per-anime breakdown here, just totals per sub-admin).
 export async function getAllSubAdminEarningsSummary(
   mongoUri: string,
-  dbName: string
+  dbName: string,
+  existingDb?: Db
 ): Promise<Omit<ISubAdminEarningsSummary, 'byAnime'>[]> {
-  const db = await getDb(mongoUri, dbName)
+  const db = existingDb || await getDb(mongoUri, dbName)
   const settings: any = await db.collection('linksettings').findOne({})
   const globalRate = typeof settings?.globalRatePerThousandViews === 'number' ? settings.globalRatePerThousandViews : 0
 
@@ -2250,8 +2178,6 @@ export async function getAllSubAdminEarningsSummary(
   return results.sort((a, b) => b.totalEarnings - a.totalEarnings)
 }
 
-// Small local helpers so this file doesn't need a top-level import that could
-// clash with existing ObjectId usage patterns in mongoService.ts
 function toObjectIdSafe(id: string): ObjectId {
   return new ObjectId(id)
 }

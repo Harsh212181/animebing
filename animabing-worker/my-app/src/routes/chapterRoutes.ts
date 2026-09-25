@@ -1,6 +1,6 @@
- import { Hono } from 'hono'
+import { Hono } from 'hono'
 import { Env, Variables } from '../index'
-import { findMany, findOne, insertOne, updateOne, deleteOne, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
+import { findMany, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
 import { IChapter } from '../models/types'
 import { adminAuth, superAdminOnly } from '../middleware/auth'
 
@@ -27,7 +27,8 @@ chapterRoutes.get('/', async (c) => {
   }
 })
 
-// ADD CHAPTER — auth required
+// ADD CHAPTER — auth required. ✅ FIX: pehle manga-findOne + existing-findOne
+// + insertOne + anime-updateOne = 4 alag connections. Ab sab 1 `db` se.
 chapterRoutes.post('/', adminAuth, async (c) => {
   try {
     const { mangaId, title, chapterNumber, secureFileReference, mainLink, downloadLinks, session } = await c.req.json()
@@ -46,22 +47,22 @@ chapterRoutes.post('/', adminAuth, async (c) => {
         return c.json({ error: `Download link ${i + 1} must have both name and url` }, 400)
       }
     }
-
     if (!isValidObjectId(mangaId)) return c.json({ error: 'Invalid mangaId' }, 400)
 
-    const manga = await findOne('animes', { _id: toObjectId(mangaId) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const [manga, existing] = await Promise.all([
+      db.collection('animes').findOne({ _id: toObjectId(mangaId) }),
+      db.collection('chapters').findOne({
+        mangaId: toObjectId(mangaId),
+        chapterNumber: Number(chapterNumber),
+        session: session || 1
+      }),
+    ])
     if (!manga) return c.json({ error: 'Manga not found' }, 404)
+    if (existing) return c.json({ error: `Chapter ${chapterNumber} already exists in Session ${session || 1}` }, 409)
 
-    const existing = await findOne('chapters', {
-      mangaId: toObjectId(mangaId),
-      chapterNumber: Number(chapterNumber),
-      session: session || 1
-    }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-
-    if (existing) {
-      return c.json({ error: `Chapter ${chapterNumber} already exists in Session ${session || 1}` }, 409)
-    }
-
+    const now = new Date()
     const newChapter = {
       mangaId: toObjectId(mangaId),
       title: title || `Chapter ${chapterNumber}`,
@@ -74,11 +75,13 @@ chapterRoutes.post('/', adminAuth, async (c) => {
         quality: link.quality || '',
         type: link.type || 'direct'
       })),
-      session: session || 1
+      session: session || 1,
+      createdAt: now,
+      updatedAt: now,
     }
 
-    await insertOne('chapters', newChapter, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    await updateOne('animes', { _id: toObjectId(mangaId) }, { lastContentAdded: new Date() }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    await db.collection('chapters').insertOne(newChapter)
+    await db.collection('animes').updateOne({ _id: toObjectId(mangaId) }, { $set: { lastContentAdded: new Date() } })
 
     return c.json({ message: 'Chapter added successfully!', chapter: newChapter })
   } catch (err: any) {
@@ -95,11 +98,12 @@ chapterRoutes.get('/download/:mangaId/:chapterNumber', async (c) => {
 
     if (!isValidObjectId(mangaId)) return c.json({ error: 'Invalid mangaId' }, 400)
 
-    const chapter = await findOne<IChapter>('chapters', {
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const chapter = await db.collection('chapters').findOne({
       mangaId: toObjectId(mangaId),
       chapterNumber: Number(chapterNumber),
       session
-    }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    }) as IChapter | null
 
     if (!chapter) return c.json({ error: 'Chapter not found' }, 404)
 
@@ -135,7 +139,7 @@ chapterRoutes.get('/:mangaId', async (c) => {
   }
 })
 
-// UPDATE CHAPTER — auth required
+// UPDATE CHAPTER — auth required. ✅ FIX: 3 connections combined into 1.
 chapterRoutes.patch('/', adminAuth, async (c) => {
   try {
     const { mangaId, chapterNumber, title, secureFileReference, mainLink, downloadLinks, session } = await c.req.json()
@@ -145,10 +149,11 @@ chapterRoutes.patch('/', adminAuth, async (c) => {
     }
     if (!isValidObjectId(mangaId)) return c.json({ error: 'Invalid mangaId' }, 400)
 
-    const manga = await findOne('animes', { _id: toObjectId(mangaId) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const manga = await db.collection('animes').findOne({ _id: toObjectId(mangaId) })
     if (!manga) return c.json({ error: 'Manga not found' }, 404)
 
-    const update: any = { mainLink: mainLink || '' }
+    const update: any = { mainLink: mainLink || '', updatedAt: new Date() }
     if (typeof title !== 'undefined') update.title = title
     if (typeof secureFileReference !== 'undefined') update.secureFileReference = secureFileReference
     if (typeof session !== 'undefined') update.session = session
@@ -171,15 +176,14 @@ chapterRoutes.patch('/', adminAuth, async (c) => {
       }))
     }
 
-    const updated = await updateOne('chapters', {
-      mangaId: toObjectId(mangaId),
-      chapterNumber: Number(chapterNumber),
-      session: session || 1
-    }, update, c.env.MONGODB_URI, c.env.MONGODB_DB)
-
+    const updated = await db.collection('chapters').findOneAndUpdate(
+      { mangaId: toObjectId(mangaId), chapterNumber: Number(chapterNumber), session: session || 1 },
+      { $set: update },
+      { returnDocument: 'after' }
+    )
     if (!updated) return c.json({ error: 'Chapter not found' }, 404)
 
-    await updateOne('animes', { _id: toObjectId(mangaId) }, { lastContentAdded: new Date() }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    await db.collection('animes').updateOne({ _id: toObjectId(mangaId) }, { $set: { lastContentAdded: new Date() } })
 
     return c.json({ message: '✅ Chapter updated successfully!', chapter: updated })
   } catch (err: any) {
@@ -187,7 +191,7 @@ chapterRoutes.patch('/', adminAuth, async (c) => {
   }
 })
 
-// DELETE CHAPTER — auth required
+// DELETE CHAPTER — auth required. ✅ FIX: 2 connections combined into 1.
 chapterRoutes.delete('/', adminAuth, async (c) => {
   try {
     const { mangaId, chapterNumber, session } = await c.req.json()
@@ -206,7 +210,7 @@ chapterRoutes.delete('/', adminAuth, async (c) => {
 
     if (!removed) return c.json({ error: 'Chapter not found' }, 404)
 
-    await updateOne('animes', { _id: toObjectId(mangaId) }, { lastContentAdded: new Date() }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    await db.collection('animes').updateOne({ _id: toObjectId(mangaId) }, { $set: { lastContentAdded: new Date() } })
 
     return c.json({ message: 'Chapter deleted' })
   } catch (err: any) {

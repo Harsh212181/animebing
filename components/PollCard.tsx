@@ -1,4 +1,4 @@
- import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 
 const API_BASE_URL = 'https://animabing-backend.animabingwatch.workers.dev/api';
@@ -329,7 +329,9 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess, location }) => {
     }
   }, [polls, loadPolls]);
 
-  if (loading && polls.length === 0) return <div className="p-4 bg-[#1a1a1a] rounded-lg border border-gray-700 animate-pulse">Loading...</div>;
+  // ✅ FIX: loading ke dauraan kuch bhi render mat karo — no "Loading..." flash.
+  // Agar active poll nahi hai to page par silently kuch nahi dikhega.
+  if (loading) return null;
   if (error || polls.length === 0) return null;
 
   return (

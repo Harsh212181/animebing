@@ -1,4 +1,4 @@
- import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
@@ -30,7 +30,7 @@ interface SubAdminStat {
   shortUsersCount: number;
   linksCount: number;
   totalClicks: number;
-  instagramAccountsCount: number;   // 👈 add karo
+  instagramAccountsCount: number;   // 👈 added
 }
 
 interface SubAnime {
@@ -80,7 +80,7 @@ const AVAILABLE_PERMISSIONS = [
   { key: 'pageviews', label: 'Analytics (Page Views)', icon: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z' },
   { key: 'link-control', label: 'Link Control', icon: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z' },
   { key: 'tracklist', label: 'YouTube Track List', icon: 'M15 10l4.55-2.27a1 1 0 011.45.9v6.74a1 1 0 01-1.45.9L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z' },
-  { key: 'instagram', label: 'Instagram Automation', icon: 'M12 3l2.6 5.6 6.1.6-4.5 4.2 1.3 6-5.5-3-5.5 3 1.3-6-4.5-4.2 6.1-.6L12 3z' }, // 👈 add karo
+  { key: 'instagram', label: 'Instagram Automation', icon: 'M12 3l2.6 5.6 6.1.6-4.5 4.2 1.3 6-5.5-3-5.5 3 1.3-6-4.5-4.2 6.1-.6L12 3z' }, // 👈 added
   { key: 'videoUpload', label: 'Video Upload', icon: 'M15 10l4.55-2.27a1 1 0 011.45.9v6.74a1 1 0 01-1.45.9L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z' },
   { key: 'r2storage', label: 'Connect Own Storage (R2)', icon: 'M20 7h-9m3-3v6M4 17h9m-3 3v-6M4 7h4M16 17h4' },
   { key: 'earnings', label: 'My Earnings', icon: 'M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6' }, // 🆕 EARNINGS
@@ -577,7 +577,7 @@ const SubAdminManager: React.FC = () => {
       setAllAnime(list);
       setAssignedAnimeIds(new Set((assignedRes.data || []).map((a: SubAnime) => a._id)));
     } catch (err: any) {
-      toast.error('Anime list load nahi ho saka');
+      toast.error('Could not load anime list');
     } finally {
       setAssignLoading(false);
     }
@@ -618,11 +618,11 @@ const SubAdminManager: React.FC = () => {
         await axios.post(`${API_BASE}/sub-admin/${assignModalFor._id}/unassign-anime`, { animeIds: toRemove }, authHeaders);
       }
 
-      toast.success('Anime assignments update ho gaye', { id: toastId });
+      toast.success('Anime assignments updated', { id: toastId });
       setAssignModalFor(null);
       fetchStats();
     } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Save fail ho gaya', { id: toastId });
+      toast.error(err.response?.data?.error || 'Save failed', { id: toastId });
     } finally {
       setAssignSaving(false);
     }
@@ -1341,7 +1341,7 @@ const SubAdminManager: React.FC = () => {
               <input
                 value={animeSearch}
                 onChange={e => setAnimeSearch(e.target.value)}
-                placeholder="Anime search karo..."
+                placeholder="Search anime..."
                 className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white placeholder-white/30 outline-none focus:border-purple-500/50"
               />
               <p className="mt-2 text-xs text-white/40">{assignedAnimeIds.size} anime selected</p>

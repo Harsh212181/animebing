@@ -1,4 +1,4 @@
- // components/HomePage.tsx
+// components/HomePage.tsx
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { Anime, FilterType, ContentTypeFilter } from '../src/types';
@@ -58,21 +58,10 @@ const HomePage: React.FC<Props> = ({
   contentType: _contentTypeProp
 }) => {
   const {
-    animeList,
-    featuredAnimes,
-    isLoading,
-    error,
-    isLoadingMore,
-    isSearching,
-    hasMore,
-    loadInitialAnime,
-    loadMoreAnime,
-    fetchFeatured,
-    filter,
-    setFilter,
-    contentType,
-    setContentType,
-    setSearchQuery
+    animeList, featuredAnimes, featuredSections, sectionVisibility, featuredSectionsLoading,
+    isLoading, error, isLoadingMore, isSearching, hasMore,
+    loadInitialAnime, loadMoreAnime, fetchFeatured,
+    filter, setFilter, contentType, setContentType, setSearchQuery
   } = useAnimeContext();
 
   const isComingBackRef = useRef(!!sessionStorage.getItem('homeScrollPosition'));
@@ -262,8 +251,34 @@ const HomePage: React.FC<Props> = ({
     if (filter !== 'All') list = list.filter(a => a.subDubStatus === filter);
     const uniqueMap = new Map<string, Anime>();
     list.forEach(a => uniqueMap.set(getAnimeId(a), a));
-    return Array.from(uniqueMap.values());
-  }, [animeList, filter, contentType]);
+    let unique = Array.from(uniqueMap.values());
+
+    // ✅ NEW — jo anime upar "Latest Content" (sliding) carousel mein already
+    // dikh raha hai, use niche grid mein dubara mat dikhao — duplicate hata do
+    if (!searchQuery && featuredAnimes.length > 0) {
+      const featuredIds = new Set(featuredAnimes.map(a => getAnimeId(a)));
+      unique = unique.filter(a => !featuredIds.has(getAnimeId(a)));
+    }
+
+    // ✅ Recently added anime/movie/manga (same window jo AnimeCard ke
+    // "NEW" badge ke liye use hota hai) ko sabse upar dikhao. Baaki sab apne
+    // original order me niche rahenge.
+    const NEW_WINDOW_HOURS = 48;
+    const isNew = (a: Anime): boolean => {
+      if (!a.lastContentAdded) return false;
+      const addedTime = new Date(a.lastContentAdded as any).getTime();
+      if (Number.isNaN(addedTime)) return false;
+      const hoursSince = (Date.now() - addedTime) / (1000 * 60 * 60);
+      return hoursSince >= 0 && hoursSince <= NEW_WINDOW_HOURS;
+    };
+
+    const newOnes = unique
+      .filter(isNew)
+      .sort((a, b) => new Date(b.lastContentAdded as any).getTime() - new Date(a.lastContentAdded as any).getTime());
+    const restOnes = unique.filter(a => !isNew(a));
+
+    return [...newOnes, ...restOnes];
+  }, [animeList, filter, contentType, featuredAnimes, searchQuery]);
 
   // ✅ Mobile browsers (especially with a transformed fixed header) sometimes skip
   // repainting this section after a filter change until a scroll event fires.
@@ -289,11 +304,19 @@ const HomePage: React.FC<Props> = ({
     return () => window.removeEventListener('scroll', handleScroll);
   }, [isLoadingMore, hasMore, isSearching, loadMoreAnime]);
 
-  if (isLoading && animeList.length === 0 && !isComingBackRef.current) {
+  // ✅ FIX: grid AUR featured carousel — dono ka data ek saath ready hone
+  // tak wait karo. Isse page ek hi baar mein poora render hoga, koi
+  // "pehle grid, phir featured upar aaya" wala jump nahi hoga.
+  const initialReady = animeList.length > 0 || !isLoading;
+  const featuredReady = !featuredSectionsLoading;
+  const bothReady = initialReady && featuredReady;
+
+  if (!bothReady && animeList.length === 0 && !isComingBackRef.current) {
     return (
       <>
         <SEO {...seoData} />
         <div className="min-h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-purple-900 p-4">
+          <div className="h-[330px] w-full rounded-2xl bg-slate-800/40 animate-pulse mb-6" />
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-6 gap-3">
             {Array.from({ length: 18 }).map((_, i) => <SkeletonLoader key={i} />)}
           </div>
@@ -361,13 +384,16 @@ const HomePage: React.FC<Props> = ({
             <SpecialModeBanner location="home" className="mb-6" />
           )}
 
-          {!searchQuery && !isSearching && featuredAnimes.length > 0 && (
-            <div className="mb-6">
-              <h2 className="text-2xl font-bold bg-gradient-to-r from-white to-purple-200 bg-clip-text text-transparent mb-4 text-left">
-                Latest Content
-              </h2>
-              <FeaturedAnimeCarousel featuredAnimes={featuredAnimes} onAnimeSelect={onAnimeSelect} />
-            </div>
+          {/* ✅ FIX: hamesha mount karo aur ab sectionData + visibility props
+              pass karo — carousel khud apna loading/empty state aur heading
+              handle karta hai, isliye page load hote hi apni jagah reserve
+              kar leta hai, koi layout jump nahi hota. */}
+          {!searchQuery && !isSearching && (
+            <FeaturedAnimeCarousel
+              sectionData={featuredSections}
+              visibility={sectionVisibility}
+              onAnimeSelect={onAnimeSelect}
+            />
           )}
 
           {!searchQuery && !isSearching && isPollActive && pollChecked && (

@@ -1,4 +1,4 @@
- // src/components/admin/TrackListLogs.tsx
+// src/components/admin/TrackListLogs.tsx
 import React, { useMemo, useState } from 'react';
 import { RunLog } from '../../types/trackTypes';
 import { Icon, formatIST } from '../../utils/trackUtils';
@@ -24,12 +24,12 @@ interface TrackListLogsProps {
 function timeAgo(dateStr: string): string {
   const diffMs = Date.now() - new Date(dateStr).getTime();
   const min = Math.floor(diffMs / 60000);
-  if (min < 1) return 'abhi';
-  if (min < 60) return `${min}m pehle`;
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min}m ago`;
   const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h pehle`;
+  if (hr < 24) return `${hr}h ago`;
   const days = Math.floor(hr / 24);
-  return `${days}d pehle`;
+  return `${days}d ago`;
 }
 
 function SearchIcon({ className = 'w-3.5 h-3.5' }: { className?: string }) {
@@ -52,9 +52,9 @@ const ACTION_META: Record<string, { label: string; className: string; dot: strin
 };
 const ACTION_FILTERS = ['all', ...Object.keys(ACTION_META)] as const;
 
-// ✅ Item 5 — priority order jab default (all) filter selected ho: action-needed
-// wale (approval pending, no format) sabse upar, phir season/limit blocks, phir
-// added/replaced, sabse aakhir me already-known (sabse kam relevant)
+// ✅ Item 5 — priority order when default (all) filter is selected: action-needed
+// ones (approval pending, no format) at the top, then season/limit blocks, then
+// added/replaced, and lastly already-known (least relevant)
 const ACTION_PRIORITY: Record<string, number> = {
   'needs-approval': 0,
   'no-format-detected': 1,
@@ -113,7 +113,7 @@ const TrackListLogs: React.FC<TrackListLogsProps> = ({
           if (titles.length === 0) return null;
         }
 
-        // ✅ Item 5 — har title ke andar entries ko priority se sort karo
+        // ✅ Item 5 — sort entries within each title by priority
         titles = titles.map((t: any) => ({
           ...t,
           entries: [...t.entries].sort(
@@ -126,7 +126,7 @@ const TrackListLogs: React.FC<TrackListLogsProps> = ({
       .filter(Boolean);
   }, [logs, logSearch, actionFilter]);
 
-  // ✅ Item 4 — sirf added/replaced entries ko date-wise group karo
+  // ✅ Item 4 — group only added/replaced entries date-wise
   const updateHistoryByDate = useMemo(() => {
     const groups: Record<
       string,
@@ -156,7 +156,7 @@ const TrackListLogs: React.FC<TrackListLogsProps> = ({
     return groups;
   }, [logs]);
 
-  // logs already runAt-desc order me aate hain backend se (sort: { runAt: -1 })
+  // logs already come in runAt-desc order from backend (sort: { runAt: -1 })
   const updateHistoryDates = Object.keys(updateHistoryByDate);
 
   return (
@@ -174,7 +174,7 @@ const TrackListLogs: React.FC<TrackListLogsProps> = ({
             {Icon.checkAll('w-4 h-4 text-emerald-400')} Auto-Update History
             {updateHistoryDates.length > 0 && (
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-slate-300 border border-white/10 font-medium">
-                {updateHistoryDates.length} din
+                {updateHistoryDates.length} days
               </span>
             )}
           </h4>
@@ -184,8 +184,8 @@ const TrackListLogs: React.FC<TrackListLogsProps> = ({
           <div className="p-4 space-y-4 max-h-[500px] overflow-y-auto">
             {updateHistoryDates.length === 0 ? (
               <p className="text-sm text-slate-500 text-center py-6">
-                Abhi tak koi auto-add/replace nahi hua. Jab bhi koi episode automatically kisi
-                page pe add/replace hoga, wo yahan date-wise dikhega.
+                No auto-add/replace has happened yet. Whenever an episode is automatically
+                added/replaced on any page, it will appear here date-wise.
               </p>
             ) : (
               updateHistoryDates.map((dateKey) => (
@@ -285,7 +285,7 @@ const TrackListLogs: React.FC<TrackListLogsProps> = ({
             <div className="p-4">
               {runs.length === 0 ? (
                 <p className="text-sm text-slate-500 text-center py-6">
-                  Abhi tak koi automatic run nahi hua — cron din me 2 baar (8 AM, 8 PM IST) chalega.
+                  No automatic run has happened yet — cron will run twice a day (8 AM, 8 PM IST).
                 </p>
               ) : (
                 <div className="relative max-h-[320px] overflow-y-auto pr-1">
@@ -380,7 +380,7 @@ const TrackListLogs: React.FC<TrackListLogsProps> = ({
           <div className="p-4">
             {logs.length === 0 ? (
               <p className="text-sm text-slate-500 text-center py-6">
-                Abhi tak koi check log nahi hai. "Check Now" ya "Test Run" dabao.
+                No check log yet. Press "Check Now" or "Test Run".
               </p>
             ) : (
               <>
@@ -393,7 +393,7 @@ const TrackListLogs: React.FC<TrackListLogsProps> = ({
                     <input
                       value={logSearch}
                       onChange={(e) => setLogSearch(e.target.value)}
-                      placeholder="Channel se search karo..."
+                      placeholder="Search by channel..."
                       className="w-full text-xs bg-black/30 border border-white/10 rounded-lg pl-8 pr-3 py-1.5 text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-white/25 transition"
                     />
                   </div>
@@ -422,7 +422,7 @@ const TrackListLogs: React.FC<TrackListLogsProps> = ({
                 </div>
 
                 {filteredLogs.length === 0 ? (
-                  <p className="text-sm text-slate-500 text-center py-6">Filter se koi log match nahi hua.</p>
+                  <p className="text-sm text-slate-500 text-center py-6">No log matched the filter.</p>
                 ) : (
                   <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
                     {filteredLogs.map((log: any) => {
@@ -453,7 +453,7 @@ const TrackListLogs: React.FC<TrackListLogsProps> = ({
                                   "{t.keyword}" — {t.matchedVideoCount} matched
                                 </p>
                                 {t.entries.length === 0 ? (
-                                  <p className="text-[10px] text-slate-500">Koi video keyword se match nahi hua.</p>
+                                  <p className="text-[10px] text-slate-500">No video matched the keyword.</p>
                                 ) : (
                                   <div className="space-y-1.5">
                                     {t.entries.map((e: any, j: number) => {
