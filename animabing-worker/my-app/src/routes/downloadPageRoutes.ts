@@ -48,17 +48,21 @@ downloadPageRoutes.get('/stats', adminAuth, async (c) => {
   }
 })
 
-// GET BY ANIME ID
+// GET BY ANIME ID — 180s edge-cached (anime detail page load pe hit hoti hai)
 downloadPageRoutes.get('/anime/:animeId', async (c) => {
   try {
     const animeId = c.req.param('animeId')
     if (!isValidObjectId(animeId)) return c.json({ error: 'Invalid animeId' }, 400)
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const pages = await db.collection('downloadpages')
-      .find({ animeId: toObjectId(animeId) })
-      .sort({ episodeNumber: 1 })
-      .toArray()
-    return c.json(pages)
+
+    const response = await withEdgeCache(c, 180, async () => {
+      const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+      const pages = await db.collection('downloadpages')
+        .find({ animeId: toObjectId(animeId) })
+        .sort({ episodeNumber: 1 })
+        .toArray()
+      return pages
+    })
+    return response
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
@@ -372,11 +376,11 @@ downloadPageRoutes.post('/:id/unset-primary-episode-count', adminAuth, async (c)
 //      EK BAAR me prefetch (`prefetchR2Providers`) — chahe kitne bhi links
 //      hon, sirf 1 extra query. Baaki sab (isProtectedDomainSync,
 //      signDownloadUrlBatch) DB-free hain (sirf crypto/decryption).
-//   2. `withEdgeCache(c, 15, ...)` — 15s edge cache. Isse same slug pe
+//   2. `withEdgeCache(c, 180, ...)` — 180s edge cache. Isse same slug pe
 //      aane wale hazaaron concurrent visitors ke liye sirf EK DB hit hoti
-//      hai per 15 seconds, baaki sab Cloudflare edge se serve hote hain.
+//      hai per 180 seconds, baaki sab Cloudflare edge se serve hote hain.
 //
-// NOTE: Signed URLs (R2 links) ek TTL ke saath bante hain. 15s cache TTL
+// NOTE: Signed URLs (R2 links) ek TTL ke saath bante hain. 180s cache TTL
 // itna chhota hai ki koi bhi normal signature-validity window (typically
 // minutes+) ke andar hi rahega — safe hai.
 // ============================================================================
@@ -384,7 +388,7 @@ downloadPageRoutes.get('/:slug', async (c) => {
   try {
     const slug = c.req.param('slug')
 
-    const response = await withEdgeCache(c, 15, async () => {
+    const response = await withEdgeCache(c, 180, async () => {
       const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
       const page = await db.collection('downloadpages').findOne({ slug }) as IDownloadPage | null

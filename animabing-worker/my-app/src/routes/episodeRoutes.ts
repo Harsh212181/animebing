@@ -3,6 +3,7 @@ import { Env, Variables } from '../index'
 import { findMany, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
 import { IEpisode } from '../models/types'
 import { adminAuth, superAdminOnly } from '../middleware/auth'
+import { withEdgeCache } from '../utils/cache'
 
 const episodeRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
@@ -119,21 +120,21 @@ episodeRoutes.get('/download/:animeId/:episodeNumber', async (c) => {
   }
 })
 
-// GET BY ANIME ID — public
+// GET BY ANIME ID — public (🆕 CACHED: 180s edge cache)
 episodeRoutes.get('/:animeId', async (c) => {
   try {
     const animeId = c.req.param('animeId')
     if (!animeId || animeId === 'undefined') return c.json({ error: 'Invalid anime ID' }, 400)
     if (!isValidObjectId(animeId)) return c.json({ error: 'Invalid animeId' }, 400)
 
-    const episodes = await findMany<IEpisode>('episodes', { animeId: toObjectId(animeId) }, { sort: { session: 1, episodeNumber: 1 } }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-
-    const fixedEpisodes = episodes.map(ep => ({
-      ...ep,
-      mainLink: ep.mainLink !== undefined && ep.mainLink !== null ? ep.mainLink : ''
-    }))
-
-    return c.json(fixedEpisodes || [])
+    const response = await withEdgeCache(c, 180, async () => {
+      const episodes = await findMany<IEpisode>('episodes', { animeId: toObjectId(animeId) }, { sort: { session: 1, episodeNumber: 1 } }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+      return episodes.map(ep => ({
+        ...ep,
+        mainLink: ep.mainLink !== undefined && ep.mainLink !== null ? ep.mainLink : ''
+      }))
+    })
+    return response
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }

@@ -34,6 +34,9 @@ import {
 import { isForceLink5ModeActive } from './specialModeRoutes'
 // 🆕 Verify signed ?l= / ?ls= tags so linkUsed can't be spoofed
 import { signTag } from '../services/externalShortenerService'
+// 🆕 FIX: fire-and-forget helper — /pageview ab turant response dega,
+// saara DB kaam background me chalega
+import { fireAndForget } from '../utils/cache'
 
 const analyticsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
@@ -131,9 +134,14 @@ function detectPageType(path: string): string {
 }
 
 // ─── POST /api/analytics/pageview ────────────────────────────────────────
-// ✅ Partially fixed: linksettings read now happens from a connection that
-// is already open. `trackPageView(...)` will still open its own separate
-// connection until analyticsService.ts is fixed.
+// 🆕 FIX: /pageview route ab TURANT response deta hai, saara DB kaam
+// (dedupe check, earning context, trackPageView ke 8-10 sequential ops)
+// background me chalta hai (`c.executionCtx.waitUntil` / fireAndForget).
+//
+// Frontend ko pageview ka result kabhi dikhna hi nahi chahiye tha — ye
+// sirf analytics hai. Ab visitor turant response paata hai, backend apna
+// analytics kaam apni speed se karta hai — user experience is se disconnect
+// ho gaya hai.
 analyticsRoutes.post('/pageview', async (c) => {
   try {
     const body = await c.req.json()
@@ -185,50 +193,55 @@ analyticsRoutes.post('/pageview', async (c) => {
     const referrer = c.req.header('referer') || undefined
     const pageType = overridePageType === 'not-found' ? 'not-found' : detectPageType(path)
 
-    let earningContext:
-      | { link5Active: boolean; specialModeForcing: boolean; countEveryView: boolean; dedupeWindowSec: number }
-      | undefined
+    // 🆕 FIX: yahan se neeche — saara DB kaam ab BACKGROUND me chalta hai.
+    // Response ussi turant chala jaata hai, MongoDB ka wait nahi karna padta.
+    fireAndForget(c, (async () => {
+      let earningContext:
+        | { link5Active: boolean; specialModeForcing: boolean; countEveryView: boolean; dedupeWindowSec: number }
+        | undefined
 
-    if (pageType === 'download' || pageType === 'anime-detail' || pageType === 'episode') {
-      const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-      const linkSettings: any = await db.collection('linksettings').findOne({})
-      const countEveryView = linkSettings?.countEveryView === true
-      const dedupeWindowSec = typeof linkSettings?.dedupeWindowSec === 'number' ? linkSettings.dedupeWindowSec : 86400
+      if (pageType === 'download' || pageType === 'anime-detail' || pageType === 'episode') {
+        const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+        const linkSettings: any = await db.collection('linksettings').findOne({})
+        const countEveryView = linkSettings?.countEveryView === true
+        const dedupeWindowSec = typeof linkSettings?.dedupeWindowSec === 'number' ? linkSettings.dedupeWindowSec : 86400
 
-      let link5Active = false
-      let specialModeForcing = false
-      if (pageType === 'download') {
-        link5Active = linkSettings?.link5 !== false
-        specialModeForcing = await isForceLink5ModeActive(c.env.MONGODB_URI, c.env.MONGODB_DB)
+        let link5Active = false
+        let specialModeForcing = false
+        if (pageType === 'download') {
+          link5Active = linkSettings?.link5 !== false
+          specialModeForcing = await isForceLink5ModeActive(c.env.MONGODB_URI, c.env.MONGODB_DB)
+        }
+        earningContext = { link5Active, specialModeForcing, countEveryView, dedupeWindowSec }
       }
-      earningContext = { link5Active, specialModeForcing, countEveryView, dedupeWindowSec }
-    }
 
-    const result = await trackPageView(
-      {
-        path,
-        pageType,
-        slug: cleanSlug,
-        animeTitle,
-        ip,
-        country,
-        region,
-        city,
-        device,
-        browser,
-        referrer,
-        sessionId,
-        timeOnPage,
-        visitorId: typeof visitorId === 'string' ? visitorId.slice(0, 64) : undefined,
-        userAgent: ua.slice(0, 200),
-        linkUsed,
-      },
-      c.env.MONGODB_URI,
-      c.env.MONGODB_DB,
-      earningContext
-    )
+      await trackPageView(
+        {
+          path,
+          pageType,
+          slug: cleanSlug,
+          animeTitle,
+          ip,
+          country,
+          region,
+          city,
+          device,
+          browser,
+          referrer,
+          sessionId,
+          timeOnPage,
+          visitorId: typeof visitorId === 'string' ? visitorId.slice(0, 64) : undefined,
+          userAgent: ua.slice(0, 200),
+          linkUsed,
+        },
+        c.env.MONGODB_URI,
+        c.env.MONGODB_DB,
+        earningContext
+      )
+    })())
 
-    return c.json({ ok: true, ...(result.counted ? {} : { skipped: 'duplicate' }) })
+    // ✅ Response turant — background task ka wait nahi kiya
+    return c.json({ ok: true })
   } catch (err: any) {
     console.error('Analytics track error:', err.message)
     return c.json({ error: err.message }, 500)

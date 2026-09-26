@@ -4,7 +4,7 @@ import { adminAuth, requirePermission } from '../middleware/auth'
 import { getDb, toObjectId, isValidObjectId } from '../services/mongoService'
 import { IAnime } from '../models/types'
 // 🆕 CACHING — edge cache + background tasks ke liye
-import { withEdgeCache, fireAndForget } from '../utils/cache'
+import { withEdgeCache, fireAndForget, getCachedJSON } from '../utils/cache'
 
 const animeRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
@@ -32,12 +32,39 @@ const SECTION_FIELDS: Record<string, { flag: string; order: string }> = {
   movie: { flag: 'featuredMovieSection', order: 'featuredMovieOrder' },
 }
 
-// ============ FEATURED (section-aware) — NOW CACHED (60s) ============
+// ✅ FIX: view-increment throttle — pehle ye fireAndForget se cache-hit
+// response ke saath bhi har request apna alag naya DB connection khol
+// raha tha. Ab 60s window mein sirf ek increment DB tak jayega, baaki
+// sab skip honge (chhota accuracy trade-off, connections bahut bachte hain).
+async function throttledViewIncrement(c: any, lockName: string, matchFilter: any) {
+  // @ts-ignore
+  const cache = caches.default
+  const lockUrl = new URL(c.req.url)
+  lockUrl.pathname = '/__view_lock__/' + lockName
+  lockUrl.search = ''
+  const lockKey = new Request(lockUrl.toString(), { method: 'GET' })
+
+  const alreadyCounted = await cache.match(lockKey)
+  if (alreadyCounted) return
+
+  const lockResponse = new Response('1', { headers: { 'Cache-Control': 'public, max-age=60' } })
+  c.executionCtx.waitUntil(cache.put(lockKey, lockResponse))
+
+  fireAndForget(
+    c,
+    (async () => {
+      const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+      await db.collection('animes').updateOne(matchFilter, { $inc: { views: 1 } })
+    })()
+  )
+}
+
+// ============ FEATURED (section-aware) — NOW CACHED (120s) ============
 animeRoutes.get('/featured', async (c) => {
   try {
     const section = c.req.query('section') || 'content'
 
-    const response = await withEdgeCache(c, 60, async () => {
+    const response = await withEdgeCache(c, 120, async () => {
       const cfg = SECTION_FIELDS[section] || SECTION_FIELDS.content
       const filter: any = { [cfg.flag]: true, isHidden: { $ne: true }, isBlocked: { $ne: true } }
       const sort: any = { [cfg.order]: -1, createdAt: -1 }
@@ -120,7 +147,7 @@ animeRoutes.get('/top100', async (c) => {
 })
 
 // ============================================================================
-// ============ SLUG — NOW CACHED (20s), views decoupled from cache ============
+// ============ SLUG — NOW CACHED (180s), views decoupled from cache ==========
 // ⚠️ IMPORTANT TRADE-OFF: pehle har request `$inc: { views: 1 }` karta tha
 // SYNCHRONOUSLY — matlab response tabhi jaata tha jab MongoDB confirm karta
 // tha ki view count ho gaya. Ab: response CACHE se turant chala jaata hai
@@ -134,16 +161,10 @@ animeRoutes.get('/slug/:slug', async (c) => {
     const slug = c.req.param('slug')
     if (!slug) return c.json({ success: false, error: 'Slug required' }, 400)
 
-    // View-increment हमेशा background me chalta hai, cache hit ho ya miss
-    fireAndForget(
-      c,
-      (async () => {
-        const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-        await db.collection('animes').updateOne({ slug }, { $inc: { views: 1 } })
-      })()
-    )
+    // View-increment ab throttled — 60s mein sirf ek increment
+    await throttledViewIncrement(c, `slug-${slug}`, { slug })
 
-    const response = await withEdgeCache(c, 20, async () => {
+    const response = await withEdgeCache(c, 180, async () => {
       const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
       const anime = await db.collection('animes').findOne({ slug }) as unknown as IAnime | null
 
@@ -337,29 +358,35 @@ animeRoutes.get('/:id/vote-status', async (c) => {
   }
 })
 
-// ============ HOMEPAGE LIST — NOW CACHED (30s) ============
+// ============ HOMEPAGE LIST — NOW CACHED (180s) ============
 animeRoutes.get('/', async (c) => {
   try {
     const page = parseInt(c.req.query('page') || '1')
     const limit = parseInt(c.req.query('limit') || '24')
 
-    const response = await withEdgeCache(c, 30, async () => {
+    const response = await withEdgeCache(c, 180, async () => {
       const skip = (page - 1) * limit
       const baseFilter = { isHidden: { $ne: true }, isBlocked: { $ne: true } }
 
       const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
       const col = db.collection('animes')
 
-      const [animes, total] = await Promise.all([
-        col.find(baseFilter, {
-          projection: { title: 1, thumbnail: 1, releaseYear: 1, subDubStatus: 1, contentType: 1, updatedAt: 1, createdAt: 1, slug: 1, likes: 1, dislikes: 1, rating: 1, monthlyLikes: 1, weeklyLikes: 1, totalVotes: 1, currentEpisode: 1, lastContentAdded: 1 }
-        })
-          .sort({ lastContentAdded: -1 })
-          .skip(skip)
-          .limit(limit)
-          .toArray(),
-        col.countDocuments(baseFilter)
-      ])
+      // ✅ FIX: total count alag se, 10-minute cache ke saath — total document
+      // count second-to-second change nahi hota, isliye ise har homepage request
+      // pe recompute karne ki zarurat nahi. Isse miss-window chhota hota hai
+      // (sirf 1 query reh jaati hai), jo stampede risk kam karta hai.
+      const totalCacheKey = `homepage-total-count`
+      const total = await getCachedJSON(c, 600, totalCacheKey, async () => {
+        return col.countDocuments(baseFilter)
+      })
+
+      const animes = await col.find(baseFilter, {
+        projection: { title: 1, thumbnail: 1, releaseYear: 1, subDubStatus: 1, contentType: 1, updatedAt: 1, createdAt: 1, slug: 1, likes: 1, dislikes: 1, rating: 1, monthlyLikes: 1, weeklyLikes: 1, totalVotes: 1, currentEpisode: 1, lastContentAdded: 1 }
+      })
+        .sort({ lastContentAdded: -1 })
+        .skip(skip)
+        .limit(limit)
+        .toArray()
 
       return {
         success: true, data: animes,
@@ -536,28 +563,49 @@ animeRoutes.put('/settings/section-visibility', adminAuth, async (c) => {
   }
 })
 
-// ============ GET SINGLE ANIME — 3 calls combined into 1 connection ============
+// ============================================================================
+// ============ GET SINGLE ANIME — NOW CACHED (180s), views decoupled =========
+// 🆕 FIX: pehle ye route har request pe synchronous `$inc: { views: 1 }`
+// karta tha, aur phir usi request me episodes bhi fetch karta tha. Ab:
+//   - view-increment BACKGROUND me (fireAndForget) — response ka wait nahi
+//   - pura response 180s ke liye edge-cached — same id/slug pe aane wale
+//     hazaaron concurrent visitors sirf 1 DB hit per 180s
+// ⚠️ TRADE-OFF: views count 1-2 sec delayed hoga, lekin visitor ko turant
+// response milega (cache hit pe zero DB wait).
+// ============================================================================
 animeRoutes.get('/:id', async (c) => {
   try {
     const id = c.req.param('id')
     const isObjectId = isValidObjectId(id)
 
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const anime = await db.collection('animes').findOneAndUpdate(
-      isObjectId ? { _id: toObjectId(id) } : { slug: id },
-      { $inc: { views: 1 } },
-      { returnDocument: 'after' }
-    ) as unknown as IAnime | null
+    // View-increment ab throttled — 60s mein sirf ek increment
+    await throttledViewIncrement(
+      c,
+      `id-${id}`,
+      isObjectId ? { _id: toObjectId(id) } : { slug: id }
+    )
 
-    if (!anime || anime.isBlocked) return c.json({ success: false, message: 'Anime not found' }, 404)
+    const response = await withEdgeCache(c, 180, async () => {
+      const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+      const anime = await db.collection('animes').findOne(
+        isObjectId ? { _id: toObjectId(id) } : { slug: id }
+      ) as unknown as IAnime | null
 
-    const episodes = await db.collection('episodes')
-      .find({ animeId: anime._id })
-      .sort({ session: 1, episodeNumber: 1 })
-      .toArray()
+      if (!anime || anime.isBlocked) {
+        throw { __notFound: true }
+      }
 
-    return c.json({ success: true, data: { ...anime, episodes } })
+      const episodes = await db.collection('episodes')
+        .find({ animeId: anime._id })
+        .sort({ session: 1, episodeNumber: 1 })
+        .toArray()
+
+      return { success: true, data: { ...anime, episodes } }
+    })
+
+    return response
   } catch (err: any) {
+    if (err?.__notFound) return c.json({ success: false, message: 'Anime not found' }, 404)
     return c.json({ success: false, error: err.message }, 500)
   }
 })

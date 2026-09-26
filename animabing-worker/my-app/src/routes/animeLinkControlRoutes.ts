@@ -1,4 +1,4 @@
- import { Hono } from 'hono'
+import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth, requirePermission } from '../middleware/auth'
 import {
@@ -6,6 +6,7 @@ import {
   toObjectId, isValidObjectId, getDb
 } from '../services/mongoService'
 import { IAnimeLinkControl } from '../models/types'
+import { withEdgeCache, invalidateEdgeCache } from '../utils/cache'
 
 const animeLinkControlRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
@@ -17,6 +18,21 @@ async function getOwnedAnimeIds(admin: any, mongoUri: string, dbName: string): P
     .find({ createdBy: admin.id }, { projection: { _id: 1 } })
     .toArray()
   return animes.map((a: any) => a._id.toString())
+}
+
+// ============ HELPER: affected anime IDs ke effective-cache clear karo ============
+// effective/:animeId route ka cache per-animeId hai, aur ek group mein multiple
+// animeIds ho sakte hain — isliye group create/update/delete pe saare affected
+// animeIds ke cache ko invalidate karna zaruri hai.
+async function invalidateEffectiveCacheForAnimeIds(c: any, animeIds: string[] | undefined | null) {
+  if (!animeIds || animeIds.length === 0) return
+  for (const aid of animeIds) {
+    try {
+      await invalidateEdgeCache(c, `/api/anime-link-control/effective/${aid}`)
+    } catch (_) {
+      // cache-miss pe error aaye to silently ignore karo
+    }
+  }
 }
 
 // ============ LIST GROUPS (admin + sub-admin, filtered) ============
@@ -98,6 +114,10 @@ animeLinkControlRoutes.post('/', adminAuth, requirePermission('link-control'), a
     }
 
     const result = await insertOne('animelinkcontrols', group, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    // ✅ naye animeIds ke effective-cache invalidate karo
+    await invalidateEffectiveCacheForAnimeIds(c, animeIds)
+
     return c.json({ success: true, message: 'Link control group created!', data: result })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
@@ -115,11 +135,14 @@ animeLinkControlRoutes.put('/:id', adminAuth, requirePermission('link-control'),
     const ownedAnimeIds = await getOwnedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
+    // ✅ purane animeIds capture karo (invalidation ke liye)
+    const existingGroupDoc = await db.collection('animelinkcontrols').findOne({ _id: toObjectId(id) })
+    if (!existingGroupDoc) return c.json({ success: false, error: 'Group not found' }, 404)
+    const oldAnimeIds: string[] = Array.isArray(existingGroupDoc.animeIds) ? existingGroupDoc.animeIds : []
+
     if (ownedAnimeIds !== null) {
       const ownedSet = new Set(ownedAnimeIds)
-      const existingGroup = await db.collection('animelinkcontrols').findOne({ _id: toObjectId(id) })
-      if (!existingGroup) return c.json({ success: false, error: 'Group not found' }, 404)
-      const belongsToMe = (existingGroup.animeIds || []).some((aid: string) => ownedSet.has(aid))
+      const belongsToMe = (existingGroupDoc.animeIds || []).some((aid: string) => ownedSet.has(aid))
       if (!belongsToMe) {
         return c.json({ success: false, error: 'Aap sirf apna group edit kar sakte ho' }, 403)
       }
@@ -155,6 +178,12 @@ animeLinkControlRoutes.put('/:id', adminAuth, requirePermission('link-control'),
 
     const updated = await updateOne('animelinkcontrols', { _id: toObjectId(id) }, updateData, c.env.MONGODB_URI, c.env.MONGODB_DB)
     if (!updated) return c.json({ success: false, error: 'Group not found' }, 404)
+
+    // ✅ purane + naye dono animeIds ke cache invalidate karo
+    const affected = new Set<string>([...oldAnimeIds])
+    if (animeIds) for (const aid of animeIds) affected.add(aid)
+    await invalidateEffectiveCacheForAnimeIds(c, Array.from(affected))
+
     return c.json({ success: true, message: 'Updated!', data: updated })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
@@ -169,11 +198,14 @@ animeLinkControlRoutes.delete('/:id', adminAuth, requirePermission('link-control
     if (!isValidObjectId(id)) return c.json({ success: false, error: 'Invalid ID' }, 400)
 
     const ownedAnimeIds = await getOwnedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const existingGroup = await db.collection('animelinkcontrols').findOne({ _id: toObjectId(id) })
+    if (!existingGroup) return c.json({ success: false, error: 'Group not found' }, 404)
+    const affectedAnimeIds: string[] = Array.isArray(existingGroup.animeIds) ? existingGroup.animeIds : []
+
     if (ownedAnimeIds !== null) {
-      const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
       const ownedSet = new Set(ownedAnimeIds)
-      const existingGroup = await db.collection('animelinkcontrols').findOne({ _id: toObjectId(id) })
-      if (!existingGroup) return c.json({ success: false, error: 'Group not found' }, 404)
       const belongsToMe = (existingGroup.animeIds || []).some((aid: string) => ownedSet.has(aid))
       if (!belongsToMe) {
         return c.json({ success: false, error: 'Aap sirf apna group delete kar sakte ho' }, 403)
@@ -181,57 +213,69 @@ animeLinkControlRoutes.delete('/:id', adminAuth, requirePermission('link-control
     }
 
     await deleteOne('animelinkcontrols', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    // ✅ delete hone wale group ke animeIds ke cache invalidate karo
+    await invalidateEffectiveCacheForAnimeIds(c, affectedAnimeIds)
+
     return c.json({ success: true, message: 'Group deleted! Anime ab global settings use karega.' })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
   }
 })
 
-// ============ EFFECTIVE SETTINGS (PUBLIC — unchanged) ============
+// ============ EFFECTIVE SETTINGS (PUBLIC — now edge-cached 30s) ============
+// Cache-key animeId ke hisab se automatically alag banega (URL alag hai),
+// isliye har anime ka apna cache hoga. Group create/update/delete pe
+// invalidateEffectiveCacheForAnimeIds se clear ho jaata hai.
 animeLinkControlRoutes.get('/effective/:animeId', async (c) => {
   try {
     const animeId = c.req.param('animeId')
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    let globalSettings: any = await db.collection('linksettings').findOne({})
-    if (!globalSettings) {
-      globalSettings = { link1: true, link2: true, link3: true, link4: true, link5: true }
-    }
+    const response = await withEdgeCache(c, 30, async () => {
+      const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    let effective = {
-      link1: globalSettings.link1,
-      link2: globalSettings.link2,
-      link3: globalSettings.link3,
-      link4: globalSettings.link4,
-      link5: globalSettings.link5,
-      source: 'global' as 'global' | 'override',
-      groupName: null as string | null
-    }
+      let globalSettings: any = await db.collection('linksettings').findOne({})
+      if (!globalSettings) {
+        globalSettings = { link1: true, link2: true, link3: true, link4: true, link5: true }
+      }
 
-    if (isValidObjectId(animeId)) {
-      const group = await db.collection('animelinkcontrols').findOne({ animeIds: animeId })
-      if (group) {
-        effective = {
-          link1: group.link1,
-          link2: group.link2,
-          link3: group.link3,
-          link4: group.link4,
-          link5: globalSettings.link5,
-          source: 'override',
-          groupName: group.name
+      let effective = {
+        link1: globalSettings.link1,
+        link2: globalSettings.link2,
+        link3: globalSettings.link3,
+        link4: globalSettings.link4,
+        link5: globalSettings.link5,
+        source: 'global' as 'global' | 'override',
+        groupName: null as string | null
+      }
+
+      if (isValidObjectId(animeId)) {
+        const group = await db.collection('animelinkcontrols').findOne({ animeIds: animeId })
+        if (group) {
+          effective = {
+            link1: group.link1,
+            link2: group.link2,
+            link3: group.link3,
+            link4: group.link4,
+            link5: globalSettings.link5,
+            source: 'override',
+            groupName: group.name
+          }
         }
       }
-    }
 
-    if (globalSettings.link5) {
-      effective.link1 = false
-      effective.link2 = false
-      effective.link3 = false
-      effective.link4 = false
-      effective.link5 = true
-    }
+      if (globalSettings.link5) {
+        effective.link1 = false
+        effective.link2 = false
+        effective.link3 = false
+        effective.link4 = false
+        effective.link5 = true
+      }
 
-    return c.json({ success: true, data: effective })
+      return effective
+    })
+
+    return response
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
   }

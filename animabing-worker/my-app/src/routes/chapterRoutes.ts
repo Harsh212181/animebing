@@ -3,8 +3,10 @@ import { Env, Variables } from '../index'
 import { findMany, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
 import { IChapter } from '../models/types'
 import { adminAuth, superAdminOnly } from '../middleware/auth'
+// 🆕 CACHING — public /:mangaId route ke liye edge cache
+import { withEdgeCache } from '../utils/cache'
 
-const chapterRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
+const chapterRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
 // DELETE ALL — sirf main admin
 chapterRoutes.delete('/all', adminAuth, superAdminOnly, async (c) => {
@@ -119,21 +121,26 @@ chapterRoutes.get('/download/:mangaId/:chapterNumber', async (c) => {
   }
 })
 
-// GET BY MANGA ID — public
+// ============================================================================
+// GET BY MANGA ID — public — NOW CACHED (180s)
+// Ye route manga detail page pe har visitor ke liye chalti hai. Ab 180s ke
+// liye edge-cached hai, matlab same mangaId pe aane wale hazaaron concurrent
+// visitors sirf 1 DB hit per 180s.
+// ============================================================================
 chapterRoutes.get('/:mangaId', async (c) => {
   try {
     const mangaId = c.req.param('mangaId')
     if (!mangaId || mangaId === 'undefined') return c.json({ error: 'Invalid manga ID' }, 400)
     if (!isValidObjectId(mangaId)) return c.json({ error: 'Invalid mangaId' }, 400)
 
-    const chapters = await findMany<IChapter>('chapters', { mangaId: toObjectId(mangaId) }, { sort: { session: 1, chapterNumber: 1 } }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-
-    const fixedChapters = chapters.map(ch => ({
-      ...ch,
-      mainLink: ch.mainLink !== undefined && ch.mainLink !== null ? ch.mainLink : ''
-    }))
-
-    return c.json(fixedChapters || [])
+    const response = await withEdgeCache(c, 180, async () => {
+      const chapters = await findMany<IChapter>('chapters', { mangaId: toObjectId(mangaId) }, { sort: { session: 1, chapterNumber: 1 } }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+      return chapters.map(ch => ({
+        ...ch,
+        mainLink: ch.mainLink !== undefined && ch.mainLink !== null ? ch.mainLink : ''
+      }))
+    })
+    return response
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }

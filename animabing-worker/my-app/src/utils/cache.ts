@@ -55,8 +55,11 @@ export async function withEdgeCache(
     },
   })
 
-  // 3) Cache me store karo (background me)
-  c.executionCtx.waitUntil(cache.put(cacheKey, response.clone()))
+  // 3) ✅ FIX: waitUntil (background) ki jagah AWAIT karo. Isse response
+  // thoda (~5-10ms) der se jayega, lekin cache turant save ho jati hai —
+  // agar isi second mein aur concurrent requests aayen (stampede), unhe
+  // cache MIL JAYEGI, MongoDB tak nahi jaana padega.
+  await cache.put(cacheKey, response.clone())
 
   return response
 }
@@ -132,7 +135,8 @@ export async function getCachedJSON(
       'Cache-Control': `public, max-age=${ttlSeconds}`,
     },
   })
-  c.executionCtx.waitUntil(cache.put(cacheKey, response))
+  // ✅ FIX: yahan bhi await karo, same reason
+  await cache.put(cacheKey, response)
 
   return data
 }
