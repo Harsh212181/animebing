@@ -3,6 +3,7 @@ import { Env, Variables } from '../index'
 import { getDb, toObjectId, isValidObjectId } from '../services/mongoService'
 import { ObjectId, Db } from 'mongodb'
 import { IPoll } from '../models/types'
+import { getCachedJSON } from '../utils/cache'
 
 const pollRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
@@ -28,26 +29,48 @@ async function autoDeactivateExpired(db: Db) {
   } catch (err) { }
 }
 
+// ✅ Vote lagne ke baad polls-active cache ko manually clear karo (same key
+// pattern jo getCachedJSON internally banata hai — /__cache_data__ prefix +
+// _key=polls-active)
+async function invalidatePollsActiveCache(c: any) {
+  try {
+    // @ts-ignore
+    const cache = caches.default
+    const cacheUrl = new URL(c.req.url)
+    cacheUrl.pathname = '/__cache_data__/api/polls/active'
+    cacheUrl.search = ''
+    cacheUrl.searchParams.set('_key', 'polls-active')
+    await cache.delete(new Request(cacheUrl.toString(), { method: 'GET' }))
+  } catch (err) {
+    console.error('[invalidatePollsActiveCache] failed:', err)
+  }
+}
+
 // ============ USER ROUTES ============
 
-// GET ACTIVE POLL(S) — pehle autoDeactivateExpired + apna getDb = 2 connections. Ab 1.
+// GET ACTIVE POLL(S) — ✅ CACHED. Shared poll data cache hota hai (30s),
+// per-user (deviceId-based) hasVoted/userVoteOption cache ke BAHAR compute
+// hota hai — isliye deviceId cache-key ko contaminate nahi karta.
 pollRoutes.get('/active', async (c) => {
   try {
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    await autoDeactivateExpired(db)
-
     const deviceId = c.req.query('deviceId')
     const location = c.req.query('location') as 'home' | 'detail' | 'downloadLink' | undefined
 
-    const pollsRaw = await db.collection('polls').find({
-      isActive: true,
-      expiresAt: { $gt: new Date() }
-    }).sort({ createdAt: -1 }).toArray() as IPoll[]
+    // ✅ Shared data — cached (30s), sabke liye same
+    const pollsRaw = await getCachedJSON(c, 30, 'polls-active', async () => {
+      const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+      await autoDeactivateExpired(db)
+      return await db.collection('polls').find({
+        isActive: true,
+        expiresAt: { $gt: new Date() }
+      }).sort({ createdAt: -1 }).toArray() as IPoll[]
+    })
 
     const filtered = location
       ? pollsRaw.filter((p: any) => getPollLocations(p).includes(location))
       : pollsRaw
 
+    // ✅ Per-user overlay — DB call NAHI lagti, deviceId sirf cached data pe match hota hai
     const polls = filtered.map((poll: any) => {
       let hasVoted = false
       let userVoteOption = null
@@ -129,6 +152,10 @@ pollRoutes.post('/vote', async (c) => {
     )
 
     if (updated) {
+      // ✅ Vote hone ke turant baad cache invalidate karo — taaki naya vote
+      // count agli hi request pe dikhe, 30s TTL khatam hone ka wait na ho
+      c.executionCtx.waitUntil(invalidatePollsActiveCache(c))
+
       return c.json({
         success: true,
         totalVotes: updated.totalVotes,

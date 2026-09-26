@@ -4,6 +4,8 @@ import { adminAuth } from '../middleware/auth'
 import { findMany, insertOne, updateOne, deleteOne, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
 import { ISpecialMode } from '../models/types'
 import { Db } from 'mongodb'
+// ⚠️ Path check kar lena — agar tumhare project me edgeCache service kisi aur path pe hai to adjust karo
+import { withEdgeCache, invalidateEdgeCache } from '../utils/cache'
 
 const specialModeRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
@@ -25,6 +27,11 @@ const getModeLocations = (m: any): Array<'home' | 'detail' | 'downloadLink'> =>
 // `syncSpecialModeLinks` bhi wahi 2-connection pattern follow karta tha, aur
 // ye `linkSettingsRoutes.ts` ke `getSettings()` se chalta hai jo khud bahut
 // routes se call hota hai — is fix se wahan bhi connections kam honge.
+//
+// 🆕 FIX (aur ek): `invalidateEdgeCache` ko ab har admin write
+// (create/update/delete/master-toggle) ke turant baad call kiya gaya hai.
+// Pehle cache TTL (30s) khatam hone tak admin ke changes public
+// `/api/special-modes/active` pe reflect nahi hote the.
 // ============================================================================
 
 export async function getTodaysActiveModes(mongoUri: string, dbName: string, existingDb?: Db): Promise<ISpecialMode[]> {
@@ -211,6 +218,10 @@ specialModeRoutes.post('/', adminAuth, async (c) => {
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
     const result = await db.collection('specialmodes').insertOne(mode)
     await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB, db) // ✅ db pass kiya
+
+    // 🆕 FIX: cache invalidate karo taaki naya mode turant public /active pe dikhe
+    c.executionCtx.waitUntil(invalidateEdgeCache(c, '/api/special-modes/active'))
+
     return c.json({ success: true, message: 'Mode created!', data: result })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
@@ -253,6 +264,10 @@ specialModeRoutes.put('/:id', adminAuth, async (c) => {
     if (!updated) return c.json({ success: false, error: 'Mode not found' }, 404)
 
     await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB, db) // ✅ db pass kiya
+
+    // 🆕 FIX: cache invalidate
+    c.executionCtx.waitUntil(invalidateEdgeCache(c, '/api/special-modes/active'))
+
     return c.json({ success: true, message: 'Updated!', data: updated })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
@@ -267,6 +282,10 @@ specialModeRoutes.delete('/:id', adminAuth, async (c) => {
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
     await db.collection('specialmodes').deleteOne({ _id: toObjectId(id) })
     await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB, db) // ✅ db pass kiya
+
+    // 🆕 FIX: cache invalidate
+    c.executionCtx.waitUntil(invalidateEdgeCache(c, '/api/special-modes/active'))
+
     return c.json({ success: true, message: 'Mode deleted!' })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
@@ -281,6 +300,10 @@ specialModeRoutes.put('/master-toggle', adminAuth, async (c) => {
     const newValue = !(settings?.autoModeEnabled !== false)
     await db.collection('linksettings').updateOne({}, { $set: { autoModeEnabled: newValue } }, { upsert: true })
     await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB, db) // ✅ db pass kiya
+
+    // 🆕 FIX: cache invalidate
+    c.executionCtx.waitUntil(invalidateEdgeCache(c, '/api/special-modes/active'))
+
     return c.json({ success: true, autoModeEnabled: newValue })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
