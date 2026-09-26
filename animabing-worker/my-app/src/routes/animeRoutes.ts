@@ -4,7 +4,7 @@ import { adminAuth, requirePermission } from '../middleware/auth'
 import { getDb, toObjectId, isValidObjectId } from '../services/mongoService'
 import { IAnime } from '../models/types'
 // 🆕 CACHING — edge cache + background tasks ke liye
-import { withEdgeCache, fireAndForget, getCachedJSON } from '../utils/cache'
+import { withEdgeCache, fireAndForget, invalidateEdgeCache, getCachedJSON } from '../utils/cache'
 
 const animeRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
@@ -30,6 +30,17 @@ const SECTION_FIELDS: Record<string, { flag: string; order: string }> = {
   anime: { flag: 'featuredAnimeSection', order: 'featuredAnimeOrder' },
   manga: { flag: 'featuredMangaSection', order: 'featuredMangaOrder' },
   movie: { flag: 'featuredMovieSection', order: 'featuredMovieOrder' },
+}
+
+// ✅ NEW — anime hide/block/delete/vote hone par uska apna detail-cache
+// turant clear karo, TTL wait nahi karna
+async function invalidateAnimeCache(c: any, id: string, slug?: string | null) {
+  try {
+    await invalidateEdgeCache(c, `/api/anime/${id}`)
+    if (slug) await invalidateEdgeCache(c, `/api/anime/slug/${slug}`)
+  } catch (err) {
+    console.error('[invalidateAnimeCache] failed:', err)
+  }
 }
 
 // ✅ FIX: view-increment throttle — pehle ye fireAndForget se cache-hit
@@ -147,7 +158,7 @@ animeRoutes.get('/top100', async (c) => {
 })
 
 // ============================================================================
-// ============ SLUG — NOW CACHED (180s), views decoupled from cache ==========
+// ============ SLUG — NOW CACHED (300s), views decoupled from cache ==========
 // ⚠️ IMPORTANT TRADE-OFF: pehle har request `$inc: { views: 1 }` karta tha
 // SYNCHRONOUSLY — matlab response tabhi jaata tha jab MongoDB confirm karta
 // tha ki view count ho gaya. Ab: response CACHE se turant chala jaata hai
@@ -164,7 +175,7 @@ animeRoutes.get('/slug/:slug', async (c) => {
     // View-increment ab throttled — 60s mein sirf ek increment
     await throttledViewIncrement(c, `slug-${slug}`, { slug })
 
-    const response = await withEdgeCache(c, 180, async () => {
+    const response = await withEdgeCache(c, 300, async () => {
       const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
       const anime = await db.collection('animes').findOne({ slug }) as unknown as IAnime | null
 
@@ -420,7 +431,7 @@ animeRoutes.patch('/:id/hide', adminAuth, async (c) => {
       { _id: toObjectId(id) },
       { $set: { isHidden: newHidden, updatedAt: new Date() } }
     )
-
+    await invalidateAnimeCache(c, id, (anime as any).slug) // ✅ NEW
     return c.json({ success: true, message: newHidden ? 'Anime hidden' : 'Anime visible', data: { isHidden: newHidden } })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
@@ -447,7 +458,7 @@ animeRoutes.patch('/:id/block', adminAuth, requirePermission('block-anime'), asy
       { _id: toObjectId(id) },
       { $set: { isBlocked: newBlocked, updatedAt: new Date() } }
     )
-
+    await invalidateAnimeCache(c, id, (anime as any).slug) // ✅ NEW
     return c.json({ success: true, message: `Anime ${newBlocked ? 'blocked' : 'unblocked'} successfully`, isBlocked: newBlocked })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
@@ -564,12 +575,12 @@ animeRoutes.put('/settings/section-visibility', adminAuth, async (c) => {
 })
 
 // ============================================================================
-// ============ GET SINGLE ANIME — NOW CACHED (180s), views decoupled =========
+// ============ GET SINGLE ANIME — NOW CACHED (300s), views decoupled =========
 // 🆕 FIX: pehle ye route har request pe synchronous `$inc: { views: 1 }`
 // karta tha, aur phir usi request me episodes bhi fetch karta tha. Ab:
 //   - view-increment BACKGROUND me (fireAndForget) — response ka wait nahi
-//   - pura response 180s ke liye edge-cached — same id/slug pe aane wale
-//     hazaaron concurrent visitors sirf 1 DB hit per 180s
+//   - pura response 300s ke liye edge-cached — same id/slug pe aane wale
+//     hazaaron concurrent visitors sirf 1 DB hit per 300s
 // ⚠️ TRADE-OFF: views count 1-2 sec delayed hoga, lekin visitor ko turant
 // response milega (cache hit pe zero DB wait).
 // ============================================================================
@@ -585,7 +596,7 @@ animeRoutes.get('/:id', async (c) => {
       isObjectId ? { _id: toObjectId(id) } : { slug: id }
     )
 
-    const response = await withEdgeCache(c, 180, async () => {
+    const response = await withEdgeCache(c, 300, async () => {
       const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
       const anime = await db.collection('animes').findOne(
         isObjectId ? { _id: toObjectId(id) } : { slug: id }
@@ -622,6 +633,7 @@ animeRoutes.delete('/:id', adminAuth, async (c) => {
 
     await db.collection('animes').deleteOne({ _id: toObjectId(id) })
     await db.collection('downloadpages').deleteMany({ animeId: toObjectId(id) })
+    await invalidateAnimeCache(c, id, (anime as any).slug) // ✅ NEW
 
     return c.json({ success: true, message: 'Anime deleted successfully' })
   } catch (err: any) {

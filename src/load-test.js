@@ -30,24 +30,21 @@ const downloadPageLatency = new Trend('download_page_latency')
 const pageviewLatency = new Trend('pageview_latency')
 
 // ============================================================================
-// ✅ STAGES — dheere dheere load badhao, ek dum spike mat karo.
-// Ye "ramping" pattern hai: 30 sec me 10 tak jao, phir 1 min tak wahi rakho,
-// phir 30 tak badhao, phir 60, phir 100 — jahan bhi errors badhna shuru
-// hon, wahi tumhari "safe capacity" ke aas paas hai.
-//
-// ⚠️ Pehli baar chalao to conservative stages se shuru karo (neeche wale),
-// production ko achanak 100+ users se mat maaro. Dheere dheere upar badhao.
+// ✅ STAGES — max 100 concurrent VUs tak hi jaate hain is version mein.
+// Dheere dheere load badhao: 30s me 10 tak, 1min baseline, phir 30-30-60
+// karke 100 tak. Jahan bhi errors badhna shuru hon, wahi tumhari "safe
+// capacity" ke aas paas hai.
 // ============================================================================
 export const options = {
   stages: [
     { duration: '30s', target: 10 },   // warm-up
-    { duration: '1m', target: 10 },    // baseline — yahan sab kuch fast hona chahiye
-    { duration: '30s', target: 30 },
-    { duration: '1m', target: 30 },
-    { duration: '30s', target: 60 },
-    { duration: '1m', target: 60 },
+    { duration: '1m', target: 10 },    // baseline
+    { duration: '30s', target: 40 },
+    { duration: '1m', target: 40 },
+    { duration: '30s', target: 70 },
+    { duration: '1m', target: 70 },
     { duration: '30s', target: 100 },
-    { duration: '1m', target: 100 },
+    { duration: '2m', target: 100 },   // ✅ 100 users pe zyada der tak hold karo
     { duration: '30s', target: 0 },    // cool-down
   ],
   thresholds: {

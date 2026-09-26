@@ -8,8 +8,9 @@ import {
 } from '../services/mongoService'
 import { IAnime, IEpisode, IChapter, IReport, ISocialMedia } from '../models/types'
 import { ObjectId, Db } from 'mongodb'
+import { withEdgeCache, fireAndForget, invalidateEdgeCache, getCachedJSON } from '../utils/cache'
 
-const adminRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
+const adminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
 // ============================================================================
 // ✅ FIX: `getOwnedAnimeIds` ab apna alag connection nahi kholta — `db` object
@@ -30,6 +31,17 @@ async function getOwnedAnimeIds(admin: any, db: Db): Promise<string[] | null> {
   const assignedIds: string[] = subAdminDoc?.assignedAnimeIds || []
 
   return Array.from(new Set([...createdIds, ...assignedIds]))
+}
+
+// ✅ NEW — anime edit/delete/hide/episode-status change hone par uska
+// detail-cache (id + slug dono) turant clear karo
+async function invalidateAnimeCache(c: any, id: string, slug?: string | null) {
+  try {
+    await invalidateEdgeCache(c, `/api/anime/${id}`)
+    if (slug) await invalidateEdgeCache(c, `/api/anime/slug/${slug}`)
+  } catch (err) {
+    console.error('[invalidateAnimeCache] failed:', err)
+  }
 }
 
 // ============ RANDOM LIKES HELPER ============
@@ -183,6 +195,10 @@ adminRoutes.put('/edit-anime/:id', adminAuth, requirePermission('edit-anime'), a
 
     const anime = await updateOne('animes', { _id: toObjectId(id) }, updateData, c.env.MONGODB_URI, c.env.MONGODB_DB)
     if (!anime) return c.json({ error: 'Anime not found' }, 404)
+
+    // ✅ NEW — purana slug bhi clear karo (agar slug change hua ho) + naya slug bhi
+    await invalidateAnimeCache(c, id, (anime as any).slug)
+
     return c.json({ success: true, message: 'Updated successfully!', anime })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -196,9 +212,12 @@ adminRoutes.delete('/delete-anime', adminAuth, requirePermission('delete-anime')
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
 
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const anime = await db.collection('animes').findOne({ _id: toObjectId(id) }) // ✅ NEW — slug fetch karne ke liye
     await db.collection('animes').deleteOne({ _id: toObjectId(id) })
     await db.collection('episodes').deleteMany({ animeId: toObjectId(id) })
     await db.collection('reports').deleteMany({ animeId: toObjectId(id) })
+
+    await invalidateAnimeCache(c, id, (anime as any)?.slug) // ✅ NEW
 
     return c.json({ success: true, message: 'Deleted successfully!' })
   } catch (err: any) {
@@ -218,6 +237,9 @@ adminRoutes.patch('/toggle-hide/:id', adminAuth, async (c) => {
 
     const newHidden = !anime.isHidden
     await db.collection('animes').updateOne({ _id: toObjectId(id) }, { $set: { isHidden: newHidden, updatedAt: new Date() } })
+
+    await invalidateAnimeCache(c, id, (anime as any).slug) // ✅ NEW
+
     return c.json({ success: true, message: `Anime ${newHidden ? 'hidden' : 'visible'} successfully`, isHidden: newHidden })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -235,6 +257,9 @@ adminRoutes.patch('/anime/:id/episode-status', adminAuth, async (c) => {
     if (currentEpisode !== undefined) updateData.currentEpisode = currentEpisode
     const anime = await updateOne('animes', { _id: toObjectId(id) }, updateData, c.env.MONGODB_URI, c.env.MONGODB_DB)
     if (!anime) return c.json({ error: 'Anime not found' }, 404)
+
+    await invalidateAnimeCache(c, id, (anime as any).slug) // ✅ NEW
+
     return c.json({ success: true, message: 'Episode status updated!', anime })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -255,6 +280,9 @@ adminRoutes.post('/anime/:id/sync-episode-count', adminAuth, async (c) => {
       { returnDocument: 'after' }
     )
     if (!anime) return c.json({ error: 'Anime not found' }, 404)
+
+    await invalidateAnimeCache(c, id, (anime as any).slug) // ✅ NEW
+
     return c.json({ success: true, message: `Synced to ${episodeCount} episodes`, anime })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -293,7 +321,16 @@ adminRoutes.put('/edit-episode/:id', adminAuth, async (c) => {
     ) as unknown as IEpisode | null
     if (!episode) return c.json({ error: 'Episode not found' }, 404)
 
-    await db.collection('animes').updateOne({ _id: episode.animeId }, { $set: { lastContentAdded: new Date() } })
+    const anime = await db.collection('animes').findOneAndUpdate(
+      { _id: episode.animeId },
+      { $set: { lastContentAdded: new Date() } },
+      { returnDocument: 'after' }
+    )
+
+    // ✅ NEW — episode list + anime detail dono cache clear karo
+    await invalidateEdgeCache(c, `/api/episodes/${episode.animeId}`)
+    await invalidateAnimeCache(c, episode.animeId.toString(), (anime as any)?.slug)
+
     return c.json({ success: true, message: 'Episode updated!', episode })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -332,7 +369,16 @@ adminRoutes.put('/edit-chapter/:id', adminAuth, async (c) => {
     ) as unknown as IChapter | null
     if (!chapter) return c.json({ error: 'Chapter not found' }, 404)
 
-    await db.collection('animes').updateOne({ _id: chapter.mangaId }, { $set: { lastContentAdded: new Date() } })
+    const manga = await db.collection('animes').findOneAndUpdate(
+      { _id: chapter.mangaId },
+      { $set: { lastContentAdded: new Date() } },
+      { returnDocument: 'after' }
+    )
+
+    // ✅ NEW
+    await invalidateEdgeCache(c, `/api/chapters/${chapter.mangaId}`)
+    await invalidateAnimeCache(c, chapter.mangaId.toString(), (manga as any)?.slug)
+
     return c.json({ success: true, message: 'Chapter updated!', chapter })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -592,9 +638,12 @@ adminRoutes.delete('/protected/delete-anime', adminAuth, requirePermission('dele
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
 
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const anime = await db.collection('animes').findOne({ _id: toObjectId(id) }) // ✅ NEW — slug fetch karne ke liye
     await db.collection('animes').deleteOne({ _id: toObjectId(id) })
     await db.collection('episodes').deleteMany({ animeId: toObjectId(id) })
     await db.collection('reports').deleteMany({ animeId: toObjectId(id) })
+
+    await invalidateAnimeCache(c, id, (anime as any)?.slug) // ✅ NEW
 
     return c.json({ success: true, message: 'Deleted successfully!' })
   } catch (err: any) {
@@ -620,6 +669,9 @@ adminRoutes.put('/protected/edit-anime/:id', adminAuth, requirePermission('edit-
 
     const anime = await updateOne('animes', { _id: toObjectId(id) }, updateData, c.env.MONGODB_URI, c.env.MONGODB_DB)
     if (!anime) return c.json({ error: 'Anime not found' }, 404)
+
+    await invalidateAnimeCache(c, id, (anime as any).slug) // ✅ NEW
+
     return c.json({ success: true, message: 'Updated successfully!', anime })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -636,6 +688,9 @@ adminRoutes.patch('/protected/toggle-hide/:id', adminAuth, async (c) => {
     if (!anime) return c.json({ error: 'Anime not found' }, 404)
     const newHidden = !anime.isHidden
     await db.collection('animes').updateOne({ _id: toObjectId(id) }, { $set: { isHidden: newHidden, updatedAt: new Date() } })
+
+    await invalidateAnimeCache(c, id, (anime as any).slug) // ✅ NEW
+
     return c.json({ success: true, message: `Anime ${newHidden ? 'hidden' : 'visible'} successfully`, isHidden: newHidden })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -652,6 +707,9 @@ adminRoutes.patch('/protected/anime/:id/episode-status', adminAuth, async (c) =>
     if (currentEpisode !== undefined) updateData.currentEpisode = currentEpisode
     const anime = await updateOne('animes', { _id: toObjectId(id) }, updateData, c.env.MONGODB_URI, c.env.MONGODB_DB)
     if (!anime) return c.json({ error: 'Anime not found' }, 404)
+
+    await invalidateAnimeCache(c, id, (anime as any).slug) // ✅ NEW
+
     return c.json({ success: true, message: 'Episode status updated!', anime })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)

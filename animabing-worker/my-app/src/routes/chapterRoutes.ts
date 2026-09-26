@@ -3,10 +3,20 @@ import { Env, Variables } from '../index'
 import { findMany, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
 import { IChapter } from '../models/types'
 import { adminAuth, superAdminOnly } from '../middleware/auth'
-// 🆕 CACHING — public /:mangaId route ke liye edge cache
-import { withEdgeCache } from '../utils/cache'
+import { withEdgeCache, invalidateEdgeCache } from '../utils/cache'
 
-const chapterRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
+const chapterRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
+
+// ✅ NEW — chapter add/edit/delete hone par related cache turant clear karo
+async function invalidateChapterRelatedCache(c: any, mangaId: string, slug?: string | null) {
+  try {
+    await invalidateEdgeCache(c, `/api/chapters/${mangaId}`)
+    await invalidateEdgeCache(c, `/api/anime/${mangaId}`)
+    if (slug) await invalidateEdgeCache(c, `/api/anime/slug/${slug}`)
+  } catch (err) {
+    console.error('[invalidateChapterRelatedCache] failed:', err)
+  }
+}
 
 // DELETE ALL — sirf main admin
 chapterRoutes.delete('/all', adminAuth, superAdminOnly, async (c) => {
@@ -85,6 +95,9 @@ chapterRoutes.post('/', adminAuth, async (c) => {
     await db.collection('chapters').insertOne(newChapter)
     await db.collection('animes').updateOne({ _id: toObjectId(mangaId) }, { $set: { lastContentAdded: new Date() } })
 
+    // ✅ NEW — turant cache clear karo
+    await invalidateChapterRelatedCache(c, mangaId, (manga as any).slug)
+
     return c.json({ message: 'Chapter added successfully!', chapter: newChapter })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -121,19 +134,14 @@ chapterRoutes.get('/download/:mangaId/:chapterNumber', async (c) => {
   }
 })
 
-// ============================================================================
-// GET BY MANGA ID — public — NOW CACHED (180s)
-// Ye route manga detail page pe har visitor ke liye chalti hai. Ab 180s ke
-// liye edge-cached hai, matlab same mangaId pe aane wale hazaaron concurrent
-// visitors sirf 1 DB hit per 180s.
-// ============================================================================
+// GET BY MANGA ID — public — 🆕 300s edge-cached
 chapterRoutes.get('/:mangaId', async (c) => {
   try {
     const mangaId = c.req.param('mangaId')
     if (!mangaId || mangaId === 'undefined') return c.json({ error: 'Invalid manga ID' }, 400)
     if (!isValidObjectId(mangaId)) return c.json({ error: 'Invalid mangaId' }, 400)
 
-    const response = await withEdgeCache(c, 180, async () => {
+    const response = await withEdgeCache(c, 300, async () => {
       const chapters = await findMany<IChapter>('chapters', { mangaId: toObjectId(mangaId) }, { sort: { session: 1, chapterNumber: 1 } }, c.env.MONGODB_URI, c.env.MONGODB_DB)
       return chapters.map(ch => ({
         ...ch,
@@ -192,6 +200,9 @@ chapterRoutes.patch('/', adminAuth, async (c) => {
 
     await db.collection('animes').updateOne({ _id: toObjectId(mangaId) }, { $set: { lastContentAdded: new Date() } })
 
+    // ✅ NEW — turant cache clear karo
+    await invalidateChapterRelatedCache(c, mangaId, (manga as any).slug)
+
     return c.json({ message: '✅ Chapter updated successfully!', chapter: updated })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -217,7 +228,14 @@ chapterRoutes.delete('/', adminAuth, async (c) => {
 
     if (!removed) return c.json({ error: 'Chapter not found' }, 404)
 
-    await db.collection('animes').updateOne({ _id: toObjectId(mangaId) }, { $set: { lastContentAdded: new Date() } })
+    const manga = await db.collection('animes').findOneAndUpdate(
+      { _id: toObjectId(mangaId) },
+      { $set: { lastContentAdded: new Date() } },
+      { returnDocument: 'after' }
+    )
+
+    // ✅ NEW — turant cache clear karo
+    await invalidateChapterRelatedCache(c, mangaId, (manga as any)?.slug)
 
     return c.json({ message: 'Chapter deleted' })
   } catch (err: any) {

@@ -5,8 +5,8 @@ import { toObjectId, isValidObjectId, getDb } from '../services/mongoService'
 import { IDownloadPage } from '../models/types'
 import { syncPageDerivedData, syncAnimeEpisodeCountFromAnime } from '../services/episodeSyncService'
 import { prefetchR2Providers, isProtectedDomainSync, signDownloadUrlBatch } from '../services/signedUrlService'
-// 🆕 CACHED VERSION — edge cache helper (path check kar lena)
-import { withEdgeCache } from '../utils/cache'
+// 🆕 CACHED VERSION — edge cache helpers
+import { withEdgeCache, invalidateEdgeCache } from '../utils/cache'
 
 const downloadPageRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
@@ -37,6 +37,19 @@ async function getOwnedAnimeIds(admin: any, db: any): Promise<string[] | null> {
   return animes.map((a: any) => a._id.toString())
 }
 
+// ============================================================================
+// ✅ NEW — download-page create/update/delete/toggle hone par uska cache
+// turant clear karo (warna admin ko TTL khatam hone tak purana data dikhta rahega)
+// ============================================================================
+async function invalidateDownloadPageCache(c: any, animeId?: string | null, slug?: string | null) {
+  try {
+    if (animeId) await invalidateEdgeCache(c, `/api/download-pages/anime/${animeId}`)
+    if (slug) await invalidateEdgeCache(c, `/api/download-pages/${slug}`)
+  } catch (err) {
+    console.error('[invalidateDownloadPageCache] failed:', err)
+  }
+}
+
 // STATS
 downloadPageRoutes.get('/stats', adminAuth, async (c) => {
   try {
@@ -48,13 +61,13 @@ downloadPageRoutes.get('/stats', adminAuth, async (c) => {
   }
 })
 
-// GET BY ANIME ID — 180s edge-cached (anime detail page load pe hit hoti hai)
+// GET BY ANIME ID — 🆕 300s edge-cached (anime detail page load pe hit hoti hai)
 downloadPageRoutes.get('/anime/:animeId', async (c) => {
   try {
     const animeId = c.req.param('animeId')
     if (!isValidObjectId(animeId)) return c.json({ error: 'Invalid animeId' }, 400)
 
-    const response = await withEdgeCache(c, 180, async () => {
+    const response = await withEdgeCache(c, 300, async () => {
       const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
       const pages = await db.collection('downloadpages')
         .find({ animeId: toObjectId(animeId) })
@@ -187,6 +200,8 @@ downloadPageRoutes.post('/', adminAuth, async (c) => {
       await syncPageDerivedData(result.insertedId.toString(), c.env.MONGODB_URI, c.env.MONGODB_DB)
     }
 
+    await invalidateDownloadPageCache(c, animeId, cleanSlug) // ✅ NEW
+
     return c.json(page, 201)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -236,6 +251,8 @@ downloadPageRoutes.put('/:id', adminAuth, async (c) => {
       await syncPageDerivedData(id!, c.env.MONGODB_URI, c.env.MONGODB_DB)
     }
 
+    await invalidateDownloadPageCache(c, (page as any).animeId?.toString(), updateData.slug || page.slug) // ✅ NEW
+
     return c.json(updated)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -258,6 +275,9 @@ downloadPageRoutes.patch('/:id/toggle-hide', adminAuth, async (c) => {
       { $set: { isHidden: newHiddenState, updatedAt: new Date() } },
       { returnDocument: 'after' }
     )
+
+    await invalidateDownloadPageCache(c, (page as any).animeId?.toString(), (page as any).slug) // ✅ NEW
+
     return c.json(updated)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -306,6 +326,8 @@ downloadPageRoutes.delete('/:id', adminAuth, async (c) => {
     if (animeId) {
       await syncAnimeEpisodeCountFromAnime(animeId, c.env.MONGODB_URI, c.env.MONGODB_DB)
     }
+
+    await invalidateDownloadPageCache(c, animeId?.toString(), (page as any).slug) // ✅ NEW
 
     return c.json({ success: true })
   } catch (err: any) {
@@ -376,11 +398,11 @@ downloadPageRoutes.post('/:id/unset-primary-episode-count', adminAuth, async (c)
 //      EK BAAR me prefetch (`prefetchR2Providers`) — chahe kitne bhi links
 //      hon, sirf 1 extra query. Baaki sab (isProtectedDomainSync,
 //      signDownloadUrlBatch) DB-free hain (sirf crypto/decryption).
-//   2. `withEdgeCache(c, 180, ...)` — 180s edge cache. Isse same slug pe
+//   2. `withEdgeCache(c, 300, ...)` — 300s edge cache. Isse same slug pe
 //      aane wale hazaaron concurrent visitors ke liye sirf EK DB hit hoti
-//      hai per 180 seconds, baaki sab Cloudflare edge se serve hote hain.
+//      hai per 300 seconds, baaki sab Cloudflare edge se serve hote hain.
 //
-// NOTE: Signed URLs (R2 links) ek TTL ke saath bante hain. 180s cache TTL
+// NOTE: Signed URLs (R2 links) ek TTL ke saath bante hain. 300s cache TTL
 // itna chhota hai ki koi bhi normal signature-validity window (typically
 // minutes+) ke andar hi rahega — safe hai.
 // ============================================================================
@@ -388,7 +410,7 @@ downloadPageRoutes.get('/:slug', async (c) => {
   try {
     const slug = c.req.param('slug')
 
-    const response = await withEdgeCache(c, 180, async () => {
+    const response = await withEdgeCache(c, 300, async () => {
       const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
       const page = await db.collection('downloadpages').findOne({ slug }) as IDownloadPage | null

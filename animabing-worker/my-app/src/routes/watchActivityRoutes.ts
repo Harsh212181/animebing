@@ -4,6 +4,7 @@ import { adminAuth, requirePermission } from '../middleware/auth'
 import { insertOne, updateOne, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
 import { getOwnedAnimeIds, getAnimeIdsForSubAdmin, toObjectIds } from '../services/subAdminScope'
 import { IWatchActivity } from '../models/types'
+import { aggregateAndPruneDay, aggregateAndPruneDayNoDelete, getRollupStatsForRange, startOfUTCDay } from '../services/dailyStatsService' // ✅ NEW
 
 const watchActivityRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
@@ -214,39 +215,20 @@ watchActivityRoutes.get('/', adminAuth, requirePermission('useractivity'), async
 })
 
 // ✅ ADMIN — summary stats (with range filter + sub-admin scoping)
-// ✅ FIX: same subAdminScope signature update — ek hi `db` reuse hota hai
+// ✅ NEW: ab "aaj ka live data" (raw watchactivities collection) + "purane dinon ka
+// rollup" (dailyActivityStats) dono combine karke return karta hai. Isse aaj ka
+// data bina rollup ka wait kiye turant dikhta hai, aur purane din fast aggregate
+// se aate hain (raw collection scan nahi hota).
 watchActivityRoutes.get('/stats', adminAuth, requirePermission('useractivity'), async (c) => {
   try {
     const { range, subAdminId } = c.req.query()
     const admin = c.get('admin')
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    const dateFilter: any = {}
-    if (range) {
-      const now = new Date()
-      let startDate: Date
+    const now = new Date()
+    const today0 = startOfUTCDay(now)
 
-      switch (range) {
-        case 'today':
-          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-          break
-        case 'week': {
-          const day = now.getDay()
-          const diff = day === 0 ? 6 : day - 1
-          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diff)
-          startDate.setHours(0, 0, 0, 0)
-          break
-        }
-        case 'month':
-          startDate = new Date(now.getFullYear(), now.getMonth(), 1)
-          break
-        default:
-          startDate = new Date(0)
-      }
-      dateFilter.startedAt = { $gte: startDate }
-    }
-
-    // 🔒 scoping — sub-admin 'own' ya main-admin ka subAdminId filter
+    // 🔒 Sub-admin scoping — pehle jaisa hi
     const ownedAnimeIds = await getOwnedAnimeIds(admin, db)
     let animeScope: string[] | null = null
     if (ownedAnimeIds !== null) {
@@ -254,44 +236,119 @@ watchActivityRoutes.get('/stats', adminAuth, requirePermission('useractivity'), 
     } else if (subAdminId && isValidObjectId(subAdminId)) {
       animeScope = await getAnimeIdsForSubAdmin(subAdminId, db)
     }
-    if (animeScope !== null) {
-      if (animeScope.length === 0) {
-        return c.json({ success: true, totalWatch: 0, totalDownload: 0, uniqueViewers: 0, totalWatchTimeSec: 0, topAnime: [], topDownloads: [] })
-      }
-      dateFilter.animeId = { $in: toObjectIds(animeScope) }
+    if (animeScope !== null && animeScope.length === 0) {
+      return c.json({ success: true, totalWatch: 0, totalDownload: 0, uniqueViewers: 0, totalWatchTimeSec: 0, topAnime: [], topDownloads: [] })
     }
 
-    const totalWatch = await db.collection('watchactivities').countDocuments({ ...dateFilter, activityType: 'watch' })
-    const totalDownload = await db.collection('watchactivities').countDocuments({ ...dateFilter, activityType: 'download' })
+    // ✅ Range se decide karo kitna purana rollup chahiye
+    let rangeStart: Date
+    switch (range) {
+      case 'today': rangeStart = today0; break
+      case 'week': {
+        const day = now.getUTCDay()
+        const diff = day === 0 ? 6 : day - 1
+        rangeStart = new Date(today0.getTime() - diff * 24 * 60 * 60 * 1000)
+        break
+      }
+      case 'month': rangeStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)); break
+      default: rangeStart = new Date(0) // 'all'
+    }
 
-    const uniqueViewersAgg = await db.collection('watchactivities').aggregate([
-      { $match: dateFilter },
-      { $group: { _id: '$ip' } },
-      { $count: 'count' }
-    ]).toArray()
-    const uniqueViewers = uniqueViewersAgg[0]?.count || 0
+    // ── Part A: aaj ka LIVE data (raw collection se, kyunki aaj ka data abhi tak rollup nahi hua) ──
+    const liveFilter: any = { startedAt: { $gte: today0 > rangeStart ? today0 : rangeStart } }
+    if (animeScope) liveFilter.animeId = { $in: toObjectIds(animeScope) }
 
-    const totalWatchTimeAgg = await db.collection('watchactivities').aggregate([
-      { $match: { ...dateFilter, activityType: 'watch' } },
+    const liveTotalWatch = await db.collection('watchactivities').countDocuments({ ...liveFilter, activityType: 'watch' })
+    const liveTotalDownload = await db.collection('watchactivities').countDocuments({ ...liveFilter, activityType: 'download' })
+    const liveIps: string[] = await db.collection('watchactivities').distinct('ip', liveFilter)
+    const liveWatchTimeAgg = await db.collection('watchactivities').aggregate([
+      { $match: { ...liveFilter, activityType: 'watch' } },
       { $group: { _id: null, totalSec: { $sum: '$watchDurationSec' } } }
     ]).toArray()
-    const totalWatchTimeSec = totalWatchTimeAgg[0]?.totalSec || 0
+    const liveWatchTimeSec = liveWatchTimeAgg[0]?.totalSec || 0
 
-    const topAnime = await db.collection('watchactivities').aggregate([
-      { $match: { ...dateFilter, activityType: 'watch' } },
-      { $group: { _id: '$animeId', title: { $first: '$animeTitle' }, count: { $sum: 1 }, totalWatchSec: { $sum: '$watchDurationSec' } } },
-      { $sort: { count: -1 } },
-      { $limit: 10 }
+    const liveTopAnime = await db.collection('watchactivities').aggregate([
+      { $match: { ...liveFilter, activityType: 'watch' } },
+      { $group: { _id: '$animeId', title: { $first: '$animeTitle' }, count: { $sum: 1 }, totalWatchSec: { $sum: '$watchDurationSec' } } }
+    ]).toArray()
+    const liveTopDownloads = await db.collection('watchactivities').aggregate([
+      { $match: { ...liveFilter, activityType: 'download' } },
+      { $group: { _id: '$animeId', title: { $first: '$animeTitle' }, count: { $sum: 1 } } }
     ]).toArray()
 
-    const topDownloads = await db.collection('watchactivities').aggregate([
-      { $match: { ...dateFilter, activityType: 'download' } },
-      { $group: { _id: '$animeId', title: { $first: '$animeTitle' }, count: { $sum: 1 } } },
-      { $sort: { count: -1 } },
-      { $limit: 10 }
-    ]).toArray()
+    // ── Part B: rangeStart se pehle wale dinon ka ROLLUP (dailyActivityStats se) ──
+    let rollup = { totalWatch: 0, totalDownload: 0, totalWatchTimeSec: 0, uniqueIps: [] as string[], topAnime: [] as any[], topDownloads: [] as any[] }
+    if (rangeStart < today0) {
+      rollup = await getRollupStatsForRange(c.env.MONGODB_URI, c.env.MONGODB_DB, rangeStart, today0, animeScope)
+    }
 
-    return c.json({ success: true, totalWatch, totalDownload, uniqueViewers, totalWatchTimeSec, topAnime, topDownloads })
+    // ── Combine ──
+    const ipSet = new Set<string>([...liveIps, ...rollup.uniqueIps])
+    const animeMap: Record<string, { _id: string; title: string; count: number; totalWatchSec: number }> = {}
+    for (const a of rollup.topAnime) animeMap[a._id] = { ...a }
+    for (const a of liveTopAnime) {
+      const id = a._id?.toString()
+      if (!id) continue
+      if (!animeMap[id]) animeMap[id] = { _id: id, title: a.title, count: 0, totalWatchSec: 0 }
+      animeMap[id].count += a.count
+      animeMap[id].totalWatchSec += a.totalWatchSec || 0
+    }
+    const downloadMap: Record<string, { _id: string; title: string; count: number }> = {}
+    for (const a of rollup.topDownloads) downloadMap[a._id] = { ...a }
+    for (const a of liveTopDownloads) {
+      const id = a._id?.toString()
+      if (!id) continue
+      if (!downloadMap[id]) downloadMap[id] = { _id: id, title: a.title, count: 0 }
+      downloadMap[id].count += a.count
+    }
+
+    return c.json({
+      success: true,
+      totalWatch: liveTotalWatch + rollup.totalWatch,
+      totalDownload: liveTotalDownload + rollup.totalDownload,
+      uniqueViewers: ipSet.size,
+      totalWatchTimeSec: liveWatchTimeSec + rollup.totalWatchTimeSec,
+      topAnime: Object.values(animeMap).sort((a, b) => b.count - a.count).slice(0, 10),
+      topDownloads: Object.values(downloadMap).sort((a, b) => b.count - a.count).slice(0, 10),
+    })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ✅ ADMIN — ek-baar chalane wala backfill: purane saare raw watchactivities
+// ko dailyActivityStats rollup mein convert karta hai (raw data delete kiye bina).
+// Isse dashboard ke purane range (week/month/all) turant fast ho jayenge.
+watchActivityRoutes.post('/backfill-rollup', adminAuth, requirePermission('useractivity'), async (c) => {
+  try {
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const oldest = await db.collection('watchactivities').find({}).sort({ startedAt: 1 }).limit(1).toArray()
+    const newest = await db.collection('watchactivities').find({}).sort({ startedAt: -1 }).limit(1).toArray()
+
+    if (oldest.length === 0) {
+      return c.json({ success: true, message: 'Koi data nahi mila', daysProcessed: 0 })
+    }
+
+    const firstDay = startOfUTCDay(new Date(oldest[0].startedAt))
+    const lastDay = startOfUTCDay(new Date(newest[0].startedAt))
+
+    const results: { date: string; aggregated: boolean }[] = []
+    let cursor = new Date(firstDay)
+
+    while (cursor <= lastDay) {
+      const dateStr = cursor.toISOString().slice(0, 10)
+      const result = await aggregateAndPruneDayNoDelete(c.env.MONGODB_URI, c.env.MONGODB_DB, dateStr)
+      results.push(result)
+      cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000)
+    }
+
+    return c.json({
+      success: true,
+      daysProcessed: results.length,
+      daysWithData: results.filter(r => r.aggregated).length,
+      range: { from: firstDay.toISOString().slice(0, 10), to: lastDay.toISOString().slice(0, 10) },
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }

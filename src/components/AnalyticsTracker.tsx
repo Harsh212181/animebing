@@ -1,4 +1,4 @@
- // src/components/AnalyticsTracker.tsx
+// src/components/AnalyticsTracker.tsx
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 
@@ -57,14 +57,20 @@ function getVisitorId(): string {
 
 // ─── Module-level guard: same render-cycle / StrictMode double-fire ─────
 let lastSentPath = '';
+let lastSentAt = 0;
 
 function sendToBackend(path: string) {
   const { pageType, slug } = getPageMeta(path.split('?')[0]);   // ← query hata ke slug nikalo
   const payload = { path, pageType, slug, sessionId: getSessionId(), visitorId: getVisitorId() };
 
-  // StrictMode double-mount / re-render guard
-  if (path === lastSentPath) return;
+  // ✅ FIX: sirf 1 second ke andar wale exact duplicate ko guard karo
+  // (StrictMode double-fire isi window mein hota hai). Genuine revisit
+  // (back-button se dobara aana, ya kisi aur page se wapas download page
+  // par aana) ab silently drop nahi hoga.
+  const now = Date.now();
+  if (path === lastSentPath && now - lastSentAt < 1000) return;
   lastSentPath = path;
+  lastSentAt = now;
 
   fetch(`${API_BASE}/analytics/pageview`, {
     method: 'POST',

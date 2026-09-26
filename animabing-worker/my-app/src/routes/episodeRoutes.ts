@@ -3,9 +3,23 @@ import { Env, Variables } from '../index'
 import { findMany, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
 import { IEpisode } from '../models/types'
 import { adminAuth, superAdminOnly } from '../middleware/auth'
-import { withEdgeCache } from '../utils/cache'
+import { withEdgeCache, invalidateEdgeCache } from '../utils/cache'
 
 const episodeRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
+
+// ✅ NEW — episode add/edit/delete hone par related cache turant clear karo,
+// TTL (300s) khatam hone ka wait nahi karna padega. animeId ke episodes-list
+// AUR us anime ke detail-page (id + slug dono) ka cache clear hota hai,
+// kyunki anime-detail response ke andar bhi episodes embed hote hain.
+async function invalidateEpisodeRelatedCache(c: any, animeId: string, slug?: string | null) {
+  try {
+    await invalidateEdgeCache(c, `/api/episodes/${animeId}`)
+    await invalidateEdgeCache(c, `/api/anime/${animeId}`)
+    if (slug) await invalidateEdgeCache(c, `/api/anime/slug/${slug}`)
+  } catch (err) {
+    console.error('[invalidateEpisodeRelatedCache] failed:', err)
+  }
+}
 
 // DELETE ALL — sirf main admin
 episodeRoutes.delete('/all', adminAuth, superAdminOnly, async (c) => {
@@ -84,6 +98,9 @@ episodeRoutes.post('/', adminAuth, async (c) => {
     await db.collection('episodes').insertOne(newEpisode)
     await db.collection('animes').updateOne({ _id: toObjectId(animeId) }, { $set: { lastContentAdded: new Date() } })
 
+    // ✅ NEW — turant cache clear karo
+    await invalidateEpisodeRelatedCache(c, animeId, (anime as any).slug)
+
     return c.json({ message: 'Episode added successfully! This anime will now appear first on homepage.', episode: newEpisode })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -120,14 +137,14 @@ episodeRoutes.get('/download/:animeId/:episodeNumber', async (c) => {
   }
 })
 
-// GET BY ANIME ID — public (🆕 CACHED: 180s edge cache)
+// GET BY ANIME ID — public — 🆕 300s edge-cached
 episodeRoutes.get('/:animeId', async (c) => {
   try {
     const animeId = c.req.param('animeId')
     if (!animeId || animeId === 'undefined') return c.json({ error: 'Invalid anime ID' }, 400)
     if (!isValidObjectId(animeId)) return c.json({ error: 'Invalid animeId' }, 400)
 
-    const response = await withEdgeCache(c, 180, async () => {
+    const response = await withEdgeCache(c, 300, async () => {
       const episodes = await findMany<IEpisode>('episodes', { animeId: toObjectId(animeId) }, { sort: { session: 1, episodeNumber: 1 } }, c.env.MONGODB_URI, c.env.MONGODB_DB)
       return episodes.map(ep => ({
         ...ep,
@@ -186,6 +203,9 @@ episodeRoutes.patch('/', adminAuth, async (c) => {
 
     await db.collection('animes').updateOne({ _id: toObjectId(animeId) }, { $set: { lastContentAdded: new Date() } })
 
+    // ✅ NEW — turant cache clear karo
+    await invalidateEpisodeRelatedCache(c, animeId, (anime as any).slug)
+
     return c.json({ message: '✅ Episode updated successfully!', episode: updated })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -211,7 +231,14 @@ episodeRoutes.delete('/', adminAuth, async (c) => {
 
     if (!removed) return c.json({ error: 'Episode not found' }, 404)
 
-    await db.collection('animes').updateOne({ _id: toObjectId(animeId) }, { $set: { lastContentAdded: new Date() } })
+    const anime = await db.collection('animes').findOneAndUpdate(
+      { _id: toObjectId(animeId) },
+      { $set: { lastContentAdded: new Date() } },
+      { returnDocument: 'after' }
+    )
+
+    // ✅ NEW — turant cache clear karo
+    await invalidateEpisodeRelatedCache(c, animeId, (anime as any)?.slug)
 
     return c.json({ message: 'Episode deleted' })
   } catch (err: any) {

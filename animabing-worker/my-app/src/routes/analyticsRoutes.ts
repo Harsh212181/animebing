@@ -1,7 +1,7 @@
 // src/routes/analyticsRoutes.ts
 import { Hono } from 'hono'
 import { Env, Variables } from '../index'
-import { adminAuth } from '../middleware/auth'
+import { adminAuth, requirePermission } from '../middleware/auth' // ✅ requirePermission add kiya
 import { getDb } from '../services/mongoService'
 import {
   trackPageView,
@@ -37,6 +37,8 @@ import { signTag } from '../services/externalShortenerService'
 // 🆕 FIX: fire-and-forget helper — /pageview ab turant response dega,
 // saara DB kaam background me chalega
 import { fireAndForget } from '../utils/cache'
+// ✅ NEW — pageview daily rollup (backfill route ke liye)
+import { aggregateAndPrunePageviewDay } from '../services/dailyPageStatsService'
 
 const analyticsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
@@ -201,18 +203,26 @@ analyticsRoutes.post('/pageview', async (c) => {
         | undefined
 
       if (pageType === 'download' || pageType === 'anime-detail' || pageType === 'episode') {
-        const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-        const linkSettings: any = await db.collection('linksettings').findOne({})
-        const countEveryView = linkSettings?.countEveryView === true
-        const dedupeWindowSec = typeof linkSettings?.dedupeWindowSec === 'number' ? linkSettings.dedupeWindowSec : 86400
+        // ✅ DEFENSE-IN-DEPTH: earningContext build ko try/catch me wrap kiya.
+        // Agar isForceLink5ModeActive (ya linksettings fetch) kabhi bhi throw
+        // kare, toh bhi trackPageView chalta rahega — warna silently downloadViews
+        // 0 ho jaata kyunki poora background task crash ho jaata.
+        try {
+          const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+          const linkSettings: any = await db.collection('linksettings').findOne({})
+          const countEveryView = linkSettings?.countEveryView === true
+          const dedupeWindowSec = typeof linkSettings?.dedupeWindowSec === 'number' ? linkSettings.dedupeWindowSec : 86400
 
-        let link5Active = false
-        let specialModeForcing = false
-        if (pageType === 'download') {
-          link5Active = linkSettings?.link5 !== false
-          specialModeForcing = await isForceLink5ModeActive(c.env.MONGODB_URI, c.env.MONGODB_DB)
+          let link5Active = false
+          let specialModeForcing = false
+          if (pageType === 'download') {
+            link5Active = linkSettings?.link5 !== false
+            specialModeForcing = await isForceLink5ModeActive(c.env.MONGODB_URI, c.env.MONGODB_DB)
+          }
+          earningContext = { link5Active, specialModeForcing, countEveryView, dedupeWindowSec }
+        } catch (e) {
+          console.error('earningContext build failed, tracking view anyway:', e)
         }
-        earningContext = { link5Active, specialModeForcing, countEveryView, dedupeWindowSec }
       }
 
       await trackPageView(
@@ -577,6 +587,55 @@ analyticsRoutes.get('/sub-admin-stats', adminAuth, async (c) => {
     }))
 
     return c.json({ stats })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// ─── POST /api/analytics/backfill-pageviews-rollup ────────────────────────
+// ✅ ONE-TIME BACKFILL — purane pageviews documents ko dailyPageStats mein
+// rollup karta hai, AUR raw docs bhi delete karta hai (jaisi aggregateAndPrunePageviewDay
+// normally cron mein karta hai). Isse purani 59k+ collection turant halki ho jayegi.
+//
+// ⚠️ IMPORTANT: Ye ek heavy route hai — ek baar chalane ke liye. Agar 60 din ka
+// data hai, toh 60 iterations honge, har iteration ka aggregation chalega.
+// Cloudflare Workers ki CPU/subrequest limit hit ho sakti hai agar bahut purana
+// data ho. Agar timeout aaye toh `from`/`to` query params se chunk-wise chalao.
+analyticsRoutes.post('/backfill-pageviews-rollup', adminAuth, requirePermission('useractivity'), async (c) => {
+  try {
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    // date field yahan STRING hai ('YYYY-MM-DD', IST) — Date object nahi
+    const oldest = await db.collection('pageviews').find({}).sort({ date: 1 }).limit(1).toArray()
+    const newest = await db.collection('pageviews').find({}).sort({ date: -1 }).limit(1).toArray()
+
+    if (oldest.length === 0) {
+      return c.json({ success: true, message: 'Koi data nahi mila', daysProcessed: 0 })
+    }
+
+    const firstDateStr: string = oldest[0].date
+    const lastDateStr: string = newest[0].date
+
+    const results: { date: string; aggregated: boolean }[] = []
+    let cursor = new Date(`${firstDateStr}T00:00:00.000Z`)
+    const last = new Date(`${lastDateStr}T00:00:00.000Z`)
+
+    while (cursor <= last) {
+      const dateStr = cursor.toISOString().slice(0, 10)
+      // ✅ rawRetentionDays=7 rakha hai (default) — isliye jaise-jaise loop aage
+      // badhega, har din process hone ke turant baad uska raw data (agar 7 din
+      // se purana ho chuka hai) automatically delete bhi ho jayega
+      const result = await aggregateAndPrunePageviewDay(c.env.MONGODB_URI, c.env.MONGODB_DB, dateStr, 7)
+      results.push(result)
+      cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000)
+    }
+
+    return c.json({
+      success: true,
+      daysProcessed: results.length,
+      daysWithData: results.filter(r => r.aggregated).length,
+      range: { from: firstDateStr, to: lastDateStr },
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }

@@ -1,4 +1,4 @@
- import { MongoClient, Db, ObjectId, Filter, Document } from 'mongodb'
+import { MongoClient, Db, ObjectId, Filter, Document } from 'mongodb'
 
 // ============================================================================
 // ✅ IMPORTANT ARCHITECTURE NOTE
@@ -226,7 +226,7 @@ export function toObjectId(id: string | undefined): ObjectId {
   return new ObjectId(id)
 }
 
-export function isValidObjectId(id: string | undefined): boolean {
+export function isValidObjectId(id: string | undefined): id is string {
   if (!id) return false
   return ObjectId.isValid(id)
 }

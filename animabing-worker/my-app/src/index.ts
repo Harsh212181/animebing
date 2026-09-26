@@ -1,4 +1,4 @@
- import { Hono } from 'hono'
+import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import adminRoutes from './routes/adminRoutes'
 import animeRoutes from './routes/animeRoutes'
@@ -36,6 +36,8 @@ import { runQueueChain } from './services/instagramQueueService'
 import formRoutes from './routes/formRoutes' // ✅ NEW
 import r2ProviderRoutes from './routes/r2ProviderRoutes' // ✅ NEW
 import uploadRoutes from './routes/uploadRoutes' // ✅ NEW
+import { aggregateAndPruneDay } from './services/dailyStatsService' // ✅ NEW — daily stats rollup
+import { aggregateAndPrunePageviewDay } from './services/dailyPageStatsService' // ✅ NEW — daily pageview rollup
 
 export type Env = {
   MONGODB_URI: string
@@ -169,6 +171,31 @@ export default {
         console.error('Instagram DM queue processing failed:', err)
       }
       return // ✅ yahin ruk jao — neeche wala YouTube tracking code bilkul mat chalne do
+    }
+
+    // ✅ 🆕 Daily activity rollup — roz raat 00:10 UTC pe pichle din ka data aggregate
+    // karke dailyStats me daalega aur purane raw logs prune karega.
+    if (event.cron === '10 0 * * *') {
+      try {
+        const result = await aggregateAndPruneDay(env.MONGODB_URI, env.MONGODB_DB)
+        console.log('Daily activity rollup done:', result)
+      } catch (err) {
+        console.error('Daily activity aggregation failed:', err)
+      }
+      return // ✅ yahin ruk jao — YouTube tracking code mat chalao
+    }
+
+    // ✅ 🆕 Daily PAGEVIEW rollup — roz 18:40 UTC (00:10 IST) pe pichle IST din ka
+    // pageview data aggregate karke dailyPageStats me daalega aur raw logs prune karega.
+    // IST use kiya kyunki India-centric audience ke hisaab se din 00:00 IST pe khatam hota hai.
+    if (event.cron === '40 18 * * *') {
+      try {
+        const result = await aggregateAndPrunePageviewDay(env.MONGODB_URI, env.MONGODB_DB)
+        console.log('Daily pageview rollup done:', result)
+      } catch (err) {
+        console.error('Daily pageview aggregation failed:', err)
+      }
+      return // ✅ yahin ruk jao — YouTube tracking code mat chalao
     }
 
     // ============ MAIN YOUTUBE TRACKER CRON ============

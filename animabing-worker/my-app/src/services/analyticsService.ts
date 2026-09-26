@@ -2,6 +2,7 @@
 import { getDb } from './mongoService'
 import { ObjectId, Db } from 'mongodb'
 import { EarningType, ISubAdminAnimeEarning, ISubAdminEarningsSummary } from '../models/types'
+import { getPageRollupForRange } from './dailyPageStatsService' // ✅ NEW — daily rollup (purane din, pruned raw)
 
 export interface PageViewRecord {
   path: string
@@ -42,6 +43,35 @@ function getISTDateStr(d: Date = new Date()): string {
   const IST_OFFSET = 5.5 * 60 * 60 * 1000
   const istDate = new Date(d.getTime() + IST_OFFSET)
   return istDate.toISOString().slice(0, 10)
+}
+
+// ✅ NEW — raw collection mein sirf last 7 din rakhe jaate hain (cron baaki
+// days ko dailyPageStats mein rollup kar ke delete kar deta hai). Isliye koi
+// bhi function jo 7 din se purana range maangta hai, use rollup se data lena
+// padega. Ye helper: requested sinceStr aur (today-6d) me se JO BAAD WALI
+// date hai, wahi raw ka safe boundary return karta hai.
+function rawBoundaryStr(sinceStr: string): string {
+  const sevenDaysAgoStr = getISTDateStr(new Date(Date.now() - 6 * 24 * 60 * 60 * 1000))
+  return sinceStr > sevenDaysAgoStr ? sinceStr : sevenDaysAgoStr
+}
+
+// ✅ NEW — pageview rollup object ka shape (dailyPageStatsService se aata hai).
+// ⚠️ FIX: `topPaths` mein `_id` NAHI hota — `path` hota hai. Pehle yahan
+// galti se `_id` likha gaya tha, jisse rollup ke saare top pages ek hi
+// `undefined` key mein overwrite ho jaate the aur "Top Pages" table mein
+// sirf ek rollup page bachta tha.
+interface PageRollupRange {
+  totalViews: number
+  uniqueIps: string[]
+  dailyChart: { date: string; views: number }[]
+  topPaths: { path: string; views: number; pageType?: string; animeTitle?: string; slug?: string }[] // ✅ _id nahi, path hai
+  byType: { type: string; views: number }[]
+  byDevice: { device: string; count: number }[]
+  byCountry: { country: string; views: number }[]
+}
+
+const EMPTY_ROLLUP: PageRollupRange = {
+  totalViews: 0, uniqueIps: [], dailyChart: [], topPaths: [], byType: [], byDevice: [], byCountry: [],
 }
 
 // ─── Sub-admin scoping helper ──────────────────────────────────────────────
@@ -381,11 +411,19 @@ export async function trackPageView(
   return { counted: true }
 }
 
-// Summary stats for admin
-// ✅ FIX: `getSlugMetaMap` ko ab `db` pass karte hain — pehle ye alag
-// connection kholta tha (aur andar se `getSubAdminNameMap` bhi ek aur
-// alag connection khol sakta tha) — matlab ek `/stats` call 1+2 = 3
-// connections tak khol sakti thi. Ab guaranteed 1.
+// ─────────────────────────────────────────────────────────────────────────────
+// ✅ UPDATED — Summary stats for admin.
+//
+// Ab ye function:
+//   1. Last 7 din ka data RAW `pageviews` collection se leta hai (jaise pehle),
+//   2. Usse purane dinon ka data `dailyPageStats` rollup se leta hai (naya),
+//   3. Dono ko combine karke single response deta hai.
+//
+// Iska fayda: jab `days > 7` ho, `pageviews` (jo sirf 7 din ka hota hai) pe
+// bhaari aggregation chalane ki zaroorat nahi — purane din pehle se hi rollup
+// mein aggregate ho chuke hote hain (cron ne raat ko `aggregateAndPrunePageviewDay`
+// se banaye the aur raw se delete kar diye the).
+// ─────────────────────────────────────────────────────────────────────────────
 export async function getPageViewStats(
   mongoUri: string,
   dbName: string,
@@ -394,16 +432,20 @@ export async function getPageViewStats(
   ownedSlugs?: string[] | null
 ) {
   const db = await getDb(mongoUri, dbName)
+
   const since = new Date()
   since.setDate(since.getDate() - (days - 1))
   const sinceStr = getISTDateStr(since)
 
+  // ✅ NEW — raw boundary: `pageviews` mein sirf last 7 din ka data hota hai.
+  const rawSinceStr = rawBoundaryStr(sinceStr)
+
   const scope = slugFilter(ownedSlugs)
-
-  const baseMatch: Record<string, any> = { date: { $gte: sinceStr }, ...scope }
-  if (device) baseMatch.device = device
-
   const todayStr = getISTDateStr()
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PART A — RAW (last 7 din)
+  // ═══════════════════════════════════════════════════════════════════════════
 
   const todayMatch: Record<string, any> = { date: todayStr, ...scope }
   if (device) todayMatch.device = device
@@ -414,52 +456,29 @@ export async function getPageViewStats(
     .distinct('ip', todayMatch)
     .then((arr: string[]) => arr.length)
 
-  const totalViews = await db.collection('pageviews').countDocuments(baseMatch)
+  const rawBaseMatch: Record<string, any> = { date: { $gte: rawSinceStr }, ...scope }
+  if (device) rawBaseMatch.device = device
 
-  const allTimeMatch: Record<string, any> = { ...scope }
-  if (device) allTimeMatch.device = device
-  const allTimeTotalViews = await db.collection('pageviews').countDocuments(allTimeMatch)
+  const rawTotalViews = await db.collection('pageviews').countDocuments(rawBaseMatch)
+  const rawUniqueIps: string[] = await db.collection('pageviews').distinct('ip', rawBaseMatch)
 
-  const allTimeUniqueVisitors = await db
-    .collection('pageviews')
-    .distinct('ip', allTimeMatch)
-    .then((arr: string[]) => arr.length)
-
-  const sevenDaysAgo = new Date()
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-  const sevenDaysStr = getISTDateStr(sevenDaysAgo)
-  const sevenDayMatch: Record<string, any> = { date: { $gte: sevenDaysStr }, ...scope }
-  if (device) sevenDayMatch.device = device
-
-  const last7DaysUniqueVisitors = await db
-    .collection('pageviews')
-    .distinct('ip', sevenDayMatch)
-    .then((arr: string[]) => arr.length)
-
-  const dailyRaw = await db
+  // daily chart from raw (last 7 days)
+  const rawDailyRaw = await db
     .collection('pageviews')
     .aggregate([
-      { $match: baseMatch },
+      { $match: rawBaseMatch },
       { $group: { _id: '$date', views: { $sum: 1 } } },
-      { $sort: { _id: 1 } },
     ])
     .toArray()
+  const rawDailyMap = new Map<string, number>(rawDailyRaw.map((d: any) => [d._id, d.views]))
 
-  const dailyMap = new Map<string, number>(dailyRaw.map((d: any) => [d._id, d.views]))
-  const dailyChart: { date: string; views: number }[] = []
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
-    const dateStr = getISTDateStr(d)
-    dailyChart.push({ date: dateStr, views: dailyMap.get(dateStr) || 0 })
-  }
-
-  let topPages: any[]
+  // topPages from raw
+  let rawTopPages: any[]
   if (device) {
-    topPages = await db
+    rawTopPages = await db
       .collection('pageviews')
       .aggregate([
-        { $match: baseMatch },
+        { $match: rawBaseMatch },
         { $addFields: { normPath: { $toLower: { $trim: { input: '$path', chars: '/' } } } } },
         {
           $group: {
@@ -476,10 +495,10 @@ export async function getPageViewStats(
       ])
       .toArray()
   } else {
-    topPages = await db
+    rawTopPages = await db
       .collection('pageview_daily')
       .aggregate([
-        { $match: { date: { $gte: sinceStr }, ...scope } },
+        { $match: { date: { $gte: rawSinceStr }, ...scope } },
         { $addFields: { normPath: { $toLower: { $trim: { input: '$path', chars: '/' } } } } },
         {
           $group: {
@@ -497,50 +516,152 @@ export async function getPageViewStats(
       .toArray()
   }
 
-  const byType = await db
+  // byType / byDevice / byCountry from raw
+  const rawByType = await db
     .collection('pageviews')
     .aggregate([
-      { $match: baseMatch },
+      { $match: rawBaseMatch },
       { $group: { _id: '$pageType', views: { $sum: 1 } } },
-      { $sort: { views: -1 } },
     ])
     .toArray()
 
-  const byDevice = await db
+  const rawByDevice = await db
     .collection('pageviews')
     .aggregate([
-      { $match: { date: { $gte: sinceStr }, ...scope } },
+      { $match: { date: { $gte: rawSinceStr }, ...scope } },
       { $group: { _id: '$device', count: { $sum: 1 } } },
-      { $sort: { count: -1 } },
     ])
     .toArray()
 
-  const uniqueVisitors = await db
-    .collection('pageviews')
-    .distinct('ip', baseMatch)
-    .then((arr: string[]) => arr.length)
-
-  const byCountryRaw = await db
+  const rawByCountry = await db
     .collection('pageviews')
     .aggregate([
-      { $match: baseMatch },
+      { $match: rawBaseMatch },
       { $group: { _id: '$country', views: { $sum: 1 } } },
       { $sort: { views: -1 } },
-      { $limit: 100 },
+      { $limit: 200 },
     ])
     .toArray()
 
-  const byCountry = byCountryRaw
-    .filter((c: any) => c._id && c._id !== 'XX')
-    .map((c: any) => ({ country: c._id as string, views: c.views as number }))
+  // all-time from raw (last 7 days part)
+  const allTimeRawMatch: Record<string, any> = { ...scope }
+  if (device) allTimeRawMatch.device = device
+  const rawAllTimeViews = await db.collection('pageviews').countDocuments(allTimeRawMatch)
+  const rawAllTimeUniqueIps: string[] = await db.collection('pageviews').distinct('ip', allTimeRawMatch)
 
+  // 7-day unique visitors (raw only — kyunki 7-din exactly raw range hai)
+  const last7DaysUniqueVisitors = rawUniqueIps.length
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PART B — ROLLUP (raw se purane din)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Range ke liye rollup — sirf tab jab requested range 7 din se bada ho.
+  let rollupRange: PageRollupRange = EMPTY_ROLLUP
+  if (sinceStr < rawSinceStr) {
+    rollupRange = await getPageRollupForRange(mongoUri, dbName, sinceStr, rawSinceStr) as unknown as PageRollupRange
+  }
+
+  // All-time ke liye rollup — raw se purana sab kuch.
+  let rollupAllTime: PageRollupRange = EMPTY_ROLLUP
+  if (rawSinceStr > '2000-01-01') {
+    rollupAllTime = await getPageRollupForRange(mongoUri, dbName, '2000-01-01', rawSinceStr) as unknown as PageRollupRange
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PART C — COMBINE
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // totalViews + uniqueVisitors (range)
+  const ipSet = new Set<string>([...rawUniqueIps, ...rollupRange.uniqueIps])
+  const totalViews = rawTotalViews + rollupRange.totalViews
+  const uniqueVisitors = ipSet.size
+
+  // all-time
+  const allTimeIpSet = new Set<string>([...rawAllTimeUniqueIps, ...rollupAllTime.uniqueIps])
+  const allTimeTotalViews = rawAllTimeViews + rollupAllTime.totalViews
+  const allTimeUniqueVisitors = allTimeIpSet.size
+
+  // dailyChart — rollup daily + raw daily merged into a proper day-by-day array
+  const rollupDailyMap = new Map<string, number>(rollupRange.dailyChart.map(d => [d.date, d.views]))
+  const dailyChart: { date: string; views: number }[] = []
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date()
+    d.setDate(d.getDate() - i)
+    const dateStr = getISTDateStr(d)
+    dailyChart.push({
+      date: dateStr,
+      views: (rollupDailyMap.get(dateStr) || 0) + (rawDailyMap.get(dateStr) || 0),
+    })
+  }
+
+  // topPages — merge rollup.topPaths + raw top pages
+  // ⚠️ FIX: rollup.topPaths mein `_id` NAHI hota, `path` hota hai. Pehle
+  // yahan `p._id` use ho raha tha (jo hamesha undefined hota), jisse saare
+  // rollup pages ek hi undefined key mein overwrite ho jaate the. Ab `path`
+  // ko key banaya gaya hai.
+  const topPagesMap = new Map<string, any>()
+  for (const p of rollupRange.topPaths) {
+    topPagesMap.set(p.path, {
+      _id: p.path,
+      views: p.views,
+      path: p.path,
+      pageType: p.pageType,
+      animeTitle: p.animeTitle,
+      slug: p.slug,
+    })
+  }
+  for (const p of rawTopPages) {
+    const existing = topPagesMap.get(p._id)
+    if (existing) {
+      existing.views += p.views
+      if (!existing.path) existing.path = p.path
+      if (!existing.pageType) existing.pageType = p.pageType
+      if (!existing.animeTitle) existing.animeTitle = p.animeTitle
+      if (!existing.slug) existing.slug = p.slug
+    } else {
+      topPagesMap.set(p._id, {
+        _id: p._id,
+        views: p.views,
+        path: p.path ?? '/' + p._id,
+        pageType: p.pageType,
+        animeTitle: p.animeTitle,
+        slug: p.slug,
+      })
+    }
+  }
+  const topPages: any[] = Array.from(topPagesMap.values())
+    .sort((a, b) => b.views - a.views)
+    .slice(0, 50)
+
+  // byType — merge
+  const byTypeMap = new Map<string, number>()
+  for (const t of rollupRange.byType) byTypeMap.set(t.type, (byTypeMap.get(t.type) || 0) + t.views)
+  for (const t of rawByType) byTypeMap.set(t._id, (byTypeMap.get(t._id) || 0) + t.views)
+
+  // byDevice — merge
+  const byDeviceMap = new Map<string, number>()
+  for (const d of rollupRange.byDevice) byDeviceMap.set(d.device, (byDeviceMap.get(d.device) || 0) + d.count)
+  for (const d of rawByDevice) byDeviceMap.set(d._id, (byDeviceMap.get(d._id) || 0) + d.count)
+
+  // byCountry — merge (aur 'XX' filter)
+  const byCountryMap = new Map<string, number>()
+  for (const c of rollupRange.byCountry) byCountryMap.set(c.country, (byCountryMap.get(c.country) || 0) + c.views)
+  for (const c of rawByCountry) byCountryMap.set(c._id, (byCountryMap.get(c._id) || 0) + c.views)
+  const byCountry = Array.from(byCountryMap.entries())
+    .filter(([country]) => country && country !== 'XX')
+    .map(([country, views]) => ({ country, views }))
+    .sort((a, b) => b.views - a.views)
+    .slice(0, 100)
+
+  // ── slugMeta + topPages ko pehle jaisa enrich/combinable karo ──
   const slugMeta = await getSlugMetaMap(
     mongoUri, dbName,
     ownedSlugs === null || ownedSlugs === undefined,
-    db // ✅ db pass kiya
+    db
   )
 
-  const rawTopPages = topPages.map((p: any) => {
+  const rawTopPagesEnriched = topPages.map((p: any) => {
     const slug = p.slug as string | undefined
     const meta = slug ? slugMeta.get(slug) : undefined
     return {
@@ -558,7 +679,7 @@ export async function getPageViewStats(
   const combinedByAnimeId = new Map<string, any>()
   const finalTopPages: any[] = []
 
-  for (const row of rawTopPages) {
+  for (const row of rawTopPagesEnriched) {
     if (row.animeId && COMBINABLE_TYPES.has(row.pageType)) {
       let entry = combinedByAnimeId.get(row.animeId)
       if (!entry) {
@@ -585,8 +706,12 @@ export async function getPageViewStats(
     }
   }
 
+  // ⚠️ journey correction (fromDetail-based de-dup) sirf raw portion se hi mil
+  // sakta hai — rollup detail granularity save nahi karta. Isliye hum ise sirf
+  // raw range pe apply karte hain; rollup wale dinon ke combined views me
+  // thoda over-count ho sakta hai (acceptable trade-off).
   const journeyRaw = await db.collection('pageviews').aggregate([
-    { $match: { ...baseMatch, pageType: 'download', fromDetail: true } },
+    { $match: { ...rawBaseMatch, pageType: 'download', fromDetail: true } },
     { $group: { _id: '$animeId', n: { $sum: 1 } } },
   ]).toArray()
   const journeyByAnime = new Map<string, number>(journeyRaw.map((j: any) => [j._id, j.n]))
@@ -609,8 +734,8 @@ export async function getPageViewStats(
     dailyChart,
     byCountry,
     topPages: finalTopPages,
-    byType: byType.map((t: any) => ({ type: t._id, views: t.views })),
-    byDevice: byDevice.map((d: any) => ({ device: d._id || 'unknown', count: d.count })),
+    byType: Array.from(byTypeMap.entries()).map(([type, views]) => ({ type, views })),
+    byDevice: Array.from(byDeviceMap.entries()).map(([device, count]) => ({ device: device || 'unknown', count })),
   }
 }
 
@@ -668,6 +793,9 @@ export async function getGeoDetail(
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ✅ UPDATED — Country stats ab rollup bhi consider karta hai.
+// ─────────────────────────────────────────────────────────────────────────────
 export async function getByCountryStats(
   mongoUri: string,
   dbName: string,
@@ -678,23 +806,34 @@ export async function getByCountryStats(
   const since = new Date()
   since.setDate(since.getDate() - (days - 1))
   const sinceStr = getISTDateStr(since)
+  const rawSinceStr = rawBoundaryStr(sinceStr) // ✅ NEW
   const scope = slugFilter(ownedSlugs)
 
-  const match: Record<string, any> = { date: { $gte: sinceStr }, ...scope }
+  const rawMatch: Record<string, any> = { date: { $gte: rawSinceStr }, ...scope }
 
-  const byCountryRaw = await db
+  const rawByCountry = await db
     .collection('pageviews')
     .aggregate([
-      { $match: match },
+      { $match: rawMatch },
       { $group: { _id: '$country', views: { $sum: 1 } } },
-      { $sort: { views: -1 } },
-      { $limit: 100 },
     ])
     .toArray()
 
-  const byCountry = byCountryRaw
-    .filter((c: any) => c._id && c._id !== 'XX')
-    .map((c: any) => ({ country: c._id as string, views: c.views as number }))
+  // ✅ NEW — rollup part
+  let rollup: PageRollupRange = EMPTY_ROLLUP
+  if (sinceStr < rawSinceStr) {
+    rollup = await getPageRollupForRange(mongoUri, dbName, sinceStr, rawSinceStr) as unknown as PageRollupRange
+  }
+
+  const byCountryMap = new Map<string, number>()
+  for (const c of rollup.byCountry) byCountryMap.set(c.country, (byCountryMap.get(c.country) || 0) + c.views)
+  for (const c of rawByCountry) byCountryMap.set(c._id, (byCountryMap.get(c._id) || 0) + c.views)
+
+  const byCountry = Array.from(byCountryMap.entries())
+    .filter(([country]) => country && country !== 'XX')
+    .map(([country, views]) => ({ country, views }))
+    .sort((a, b) => b.views - a.views)
+    .slice(0, 100)
 
   return { byCountry }
 }
