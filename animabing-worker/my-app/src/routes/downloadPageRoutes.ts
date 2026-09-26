@@ -5,8 +5,10 @@ import { toObjectId, isValidObjectId, getDb } from '../services/mongoService'
 import { IDownloadPage } from '../models/types'
 import { syncPageDerivedData, syncAnimeEpisodeCountFromAnime } from '../services/episodeSyncService'
 import { prefetchR2Providers, isProtectedDomainSync, signDownloadUrlBatch } from '../services/signedUrlService'
+// 🆕 CACHED VERSION — edge cache helper (path check kar lena)
+import { withEdgeCache } from '../utils/cache'
 
-const downloadPageRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
+const downloadPageRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
 function countLinksByType(links: any[]) {
   return {
@@ -358,70 +360,86 @@ downloadPageRoutes.post('/:id/unset-primary-episode-count', adminAuth, async (c)
 })
 
 // ============================================================================
-// ✅ GET BY SLUG — SABSE HIGH-TRAFFIC ROUTE (har visitor jo download page
-// kholta hai isko hit karta hai). Pehle: page findOne + anime findOne + HAR
-// LINK ke liye 2 alag DB calls (isProtectedDomain + signDownloadUrl) — matlab
-// 5 links wale page ke liye ~12 MongoDB connections EK REQUEST me.
+// 🆕 CACHED VERSION — SABSE HIGH-TRAFFIC ROUTE (har visitor jo download page
+// kholta hai isko hit karta hai).
 //
-// Ab: page + anime = 1 connection (parallel). Links ke liye saare providers
-// EK BAAR me prefetch (`prefetchR2Providers`) — chahe kitne bhi links hon,
-// sirf 1 extra query. Baaki sab (isProtectedDomainSync, signDownloadUrlBatch)
-// DB-free hain (sirf crypto/decryption).
+// Pehle: page findOne + anime findOne + HAR LINK ke liye 2 alag DB calls
+// (isProtectedDomain + signDownloadUrl) — matlab 5 links wale page ke liye
+// ~12 MongoDB connections EK REQUEST me, AUR har visitor ke liye ALAG.
+//
+// Ab (2 changes):
+//   1. page + anime = 1 connection (parallel). Links ke liye saare providers
+//      EK BAAR me prefetch (`prefetchR2Providers`) — chahe kitne bhi links
+//      hon, sirf 1 extra query. Baaki sab (isProtectedDomainSync,
+//      signDownloadUrlBatch) DB-free hain (sirf crypto/decryption).
+//   2. `withEdgeCache(c, 15, ...)` — 15s edge cache. Isse same slug pe
+//      aane wale hazaaron concurrent visitors ke liye sirf EK DB hit hoti
+//      hai per 15 seconds, baaki sab Cloudflare edge se serve hote hain.
+//
+// NOTE: Signed URLs (R2 links) ek TTL ke saath bante hain. 15s cache TTL
+// itna chhota hai ki koi bhi normal signature-validity window (typically
+// minutes+) ke andar hi rahega — safe hai.
 // ============================================================================
 downloadPageRoutes.get('/:slug', async (c) => {
   try {
     const slug = c.req.param('slug')
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    const page = await db.collection('downloadpages').findOne({ slug }) as IDownloadPage | null
-    if (!page) return c.json({ error: 'Page not found' }, 404)
-    if ((page as any).isHidden) return c.json({ error: 'Page not found' }, 404)
+    const response = await withEdgeCache(c, 15, async () => {
+      const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    const animeIdStr = (page as any).animeId?.toString()
-    const animeData = animeIdStr && isValidObjectId(animeIdStr)
-      ? await db.collection('animes').findOne(
-          { _id: toObjectId(animeIdStr) },
-          { projection: { title: 1, thumbnail: 1, description: 1, seoDescription: 1, contentType: 1 } }
-        )
-      : null
+      const page = await db.collection('downloadpages').findOne({ slug }) as IDownloadPage | null
+      if (!page) throw { __notFound: true }
+      if ((page as any).isHidden) throw { __notFound: true }
 
-    const allLinks = (page as any).links || []
-    const providerMap = await prefetchR2Providers(
-      allLinks.map((l: any) => l.url),
-      c.env.MONGODB_URI, c.env.MONGODB_DB
-    )
+      const animeIdStr = (page as any).animeId?.toString()
+      const animeData = animeIdStr && isValidObjectId(animeIdStr)
+        ? await db.collection('animes').findOne(
+            { _id: toObjectId(animeIdStr) },
+            { projection: { title: 1, thumbnail: 1, description: 1, seoDescription: 1, contentType: 1 } }
+          )
+        : null
 
-    const signedLinks = await Promise.all(
-      allLinks.map(async (link: any) => {
-        if (isProtectedDomainSync(link.url, providerMap)) {
-          try {
-            const signed = await signDownloadUrlBatch(
-              link.url,
-              {
-                R2_ACCOUNT_ID: c.env.R2_ACCOUNT_ID,
-                R2_ACCESS_KEY_ID: c.env.R2_ACCESS_KEY_ID,
-                R2_SECRET_ACCESS_KEY: c.env.R2_SECRET_ACCESS_KEY,
-                ENCRYPTION_KEY: c.env.ENCRYPTION_KEY,
-              },
-              link.type,
-              providerMap
-            )
-            return { ...link, url: signed }
-          } catch (e) {
-            console.error('Signing failed for link:', link.url, e)
-            return link
+      const allLinks = (page as any).links || []
+      const providerMap = await prefetchR2Providers(
+        allLinks.map((l: any) => l.url),
+        c.env.MONGODB_URI, c.env.MONGODB_DB
+      )
+
+      const signedLinks = await Promise.all(
+        allLinks.map(async (link: any) => {
+          if (isProtectedDomainSync(link.url, providerMap)) {
+            try {
+              const signed = await signDownloadUrlBatch(
+                link.url,
+                {
+                  R2_ACCOUNT_ID: c.env.R2_ACCOUNT_ID,
+                  R2_ACCESS_KEY_ID: c.env.R2_ACCESS_KEY_ID,
+                  R2_SECRET_ACCESS_KEY: c.env.R2_SECRET_ACCESS_KEY,
+                  ENCRYPTION_KEY: c.env.ENCRYPTION_KEY,
+                },
+                link.type,
+                providerMap
+              )
+              return { ...link, url: signed }
+            } catch (e) {
+              console.error('Signing failed for link:', link.url, e)
+              return link
+            }
           }
-        }
-        return link
-      })
-    )
+          return link
+        })
+      )
 
-    return c.json({
-      ...(page as any),
-      links: signedLinks,
-      animeId: animeData || (page as any).animeId
+      return {
+        ...(page as any),
+        links: signedLinks,
+        animeId: animeData || (page as any).animeId
+      }
     })
+
+    return response
   } catch (err: any) {
+    if (err?.__notFound) return c.json({ error: 'Page not found' }, 404)
     return c.json({ error: err.message }, 500)
   }
 })

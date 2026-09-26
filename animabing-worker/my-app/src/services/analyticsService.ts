@@ -173,6 +173,10 @@ interface GeoIPResponse {
   city?: string
 }
 
+// ⚠️ NOTE: `enrichGeo` ab `trackPageView` me use nahi hota (neeche fix dekho).
+// Function ko yahin rakhha gaya hai kyunki ho sakta hai kisi aur file/service
+// me import ho raha ho. Agar 100% sure ho ki kahin aur use nahi hota to ise
+// safely delete kar sakte ho.
 async function enrichGeo(ip: string): Promise<{ country?: string; region?: string; city?: string }> {
   try {
     if (ip === '0.0.0.0' || ip.startsWith('127.') || ip.startsWith('10.') || ip.startsWith('192.168.')) {
@@ -283,6 +287,8 @@ async function hadDetailVisit(
 // Track single page view
 // ✅ FIX: `resolveAnimeOwnerForSlug` ko ab `db` pass karte hain (upar dekho) —
 // isse ye poora function guaranteed SIRF EK connection use karta hai.
+// ✅ FIX (naya): `enrichGeo()` external API call hata di — ab sirf Cloudflare
+// ke apne headers se aaya country/region/city use hota hai.
 export async function trackPageView(
   data: Omit<PageViewRecord, 'timestamp' | 'date' | 'earningType' | 'animeId' | 'subAdminId' | 'rateSnapshot' | 'activeLinks' | 'fromDetail' | 'testMode'>,
   mongoUri: string,
@@ -316,15 +322,13 @@ export async function trackPageView(
     }
   }
 
-  let country = data.country
-  let region = data.region
-  let city = data.city
-  if (!country || !region) {
-    const geo = await enrichGeo(data.ip)
-    country = country || geo.country
-    region = region || geo.region
-    city = city || geo.city
-  }
+  // 🆕 FIX: enrichGeo() (ip-api.com) call hata diya — ye free-tier external
+  // API (45 req/min limit) load ke neeche turant rate-limit ho jaata tha,
+  // jisse HAR pageview slow/fail hota tha. Ab sirf Cloudflare ke apne
+  // headers pe bharosa — instant hai, koi external network call nahi.
+  const country = data.country
+  const region = data.region
+  const city = data.city
 
   let earningType: EarningType | undefined
   let animeId: string | undefined
