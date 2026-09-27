@@ -2,7 +2,7 @@
 import { getDb } from './mongoService'
 import { ObjectId, Db } from 'mongodb'
 import { EarningType, ISubAdminAnimeEarning, ISubAdminEarningsSummary } from '../models/types'
-import { getPageRollupForRange } from './dailyPageStatsService' // ✅ NEW — daily rollup (purane din, pruned raw)
+import { getPageRollupForRange } from './dailyPageStatsService'
 
 export interface PageViewRecord {
   path: string
@@ -30,7 +30,7 @@ export interface PageViewRecord {
   activeLinks?: number[]
   fromDetail?: boolean
   testMode?: boolean
-  isAdminPreview?: boolean // 🆕 admin preview flag — earnings block skip karne ke liye
+  isAdminPreview?: boolean
 }
 
 export interface EarningContext {
@@ -46,26 +46,16 @@ function getISTDateStr(d: Date = new Date()): string {
   return istDate.toISOString().slice(0, 10)
 }
 
-// ✅ NEW — raw collection mein sirf last 7 din rakhe jaate hain (cron baaki
-// days ko dailyPageStats mein rollup kar ke delete kar deta hai). Isliye koi
-// bhi function jo 7 din se purana range maangta hai, use rollup se data lena
-// padega. Ye helper: requested sinceStr aur (today-6d) me se JO BAAD WALI
-// date hai, wahi raw ka safe boundary return karta hai.
 function rawBoundaryStr(sinceStr: string): string {
   const sevenDaysAgoStr = getISTDateStr(new Date(Date.now() - 6 * 24 * 60 * 60 * 1000))
   return sinceStr > sevenDaysAgoStr ? sinceStr : sevenDaysAgoStr
 }
 
-// ✅ NEW — pageview rollup object ka shape (dailyPageStatsService se aata hai).
-// ⚠️ FIX: `topPaths` mein `_id` NAHI hota — `path` hota hai. Pehle yahan
-// galti se `_id` likha gaya tha, jisse rollup ke saare top pages ek hi
-// `undefined` key mein overwrite ho jaate the aur "Top Pages" table mein
-// sirf ek rollup page bachta tha.
 interface PageRollupRange {
   totalViews: number
   uniqueIps: string[]
   dailyChart: { date: string; views: number }[]
-  topPaths: { path: string; views: number; pageType?: string; animeTitle?: string; slug?: string }[] // ✅ _id nahi, path hai
+  topPaths: { path: string; views: number; pageType?: string; animeTitle?: string; slug?: string }[]
   byType: { type: string; views: number }[]
   byDevice: { device: string; count: number }[]
   byCountry: { country: string; views: number }[]
@@ -75,7 +65,6 @@ const EMPTY_ROLLUP: PageRollupRange = {
   totalViews: 0, uniqueIps: [], dailyChart: [], topPaths: [], byType: [], byDevice: [], byCountry: [],
 }
 
-// ─── Sub-admin scoping helper ──────────────────────────────────────────────
 function slugFilter(ownedSlugs?: string[] | null): Record<string, any> {
   if (!ownedSlugs) return {}
   return { slug: { $in: ownedSlugs } }
@@ -86,14 +75,37 @@ function creatorFilter(creatorId?: string | null): Record<string, any> {
   return { createdByAdminId: creatorId }
 }
 
-// ============================================================================
-// ✅ FIX: `getSubAdminNameMap` aur `getSlugMetaMap` ab EK OPTIONAL trailing
-// `existingDb` param lete hain (episodeSyncService.ts wala pattern). Jahan
-// caller ke paas already khula `db` hai, wahi reuse hota hai — naya connection
-// nahi khulta. Backward-compatible: param na diya jaaye to purana behavior
-// (apna connection khud kholna) waisa hi rehta hai.
-// ============================================================================
+// ─────────────────────────────────────────────────────────────────────────────
+// 🆕 ROLLUP HELPERS — dailyPageStats se per-day/per-month aggregated numbers
+// nikalne ke liye. Yahi asli fix hai jo monthly overview/detail me use hoga.
+//
+// dailyPageStats doc schema (see dailyPageStatsService.ts):
+//   { date, totalViews, byType: [{ type, views }], topPaths: [{ path, views, slug, ... }], ... }
+// NOTE: top-level `views` ya `pageType` field NAHI hoti — ye sirf per-day
+//       summary doc hai. Isliye aggregation me $reduce se byType traverse
+//       karna zaroori hai.
+// ─────────────────────────────────────────────────────────────────────────────
+function sumByType(byTypeArr: any[], allowedTypes: string[]): number {
+  if (!Array.isArray(byTypeArr)) return 0
+  let sum = 0
+  for (const t of byTypeArr) {
+    if (t && allowedTypes.includes(t.type)) sum += (t.views || 0)
+  }
+  return sum
+}
 
+function scopedViewsFromTopPaths(topPathsArr: any[], scopedSlugs: Set<string>): number {
+  if (!Array.isArray(topPathsArr)) return 0
+  let sum = 0
+  for (const p of topPathsArr) {
+    if (p && p.slug && scopedSlugs.has(p.slug)) sum += (p.views || 0)
+  }
+  return sum
+}
+
+// ============================================================================
+// SUB-ADMIN LIST
+// ============================================================================
 export async function getSubAdminsList(mongoUri: string, dbName: string) {
   const db = await getDb(mongoUri, dbName)
   const subs = await db.collection('subadmins')
@@ -153,11 +165,6 @@ async function getSlugMetaMap(
   return map
 }
 
-// ✅ FIX: ab `db` optional 4th param leta hai — trackPageView isse pass
-// karega taaki dusra connection na khule (pehle ye function trackPageView
-// ke andar se apna ALAG getDb() khol raha tha, matlab HAR download pageview
-// pe 2 MongoDB connections khulte the — is fix ka sabse bada impact yahi hai
-// kyunki trackPageView har single pageview pe chalta hai).
 async function resolveAnimeOwnerForSlug(
   slug: string | undefined,
   mongoUri: string,
@@ -204,10 +211,6 @@ interface GeoIPResponse {
   city?: string
 }
 
-// ⚠️ NOTE: `enrichGeo` ab `trackPageView` me use nahi hota (neeche fix dekho).
-// Function ko yahin rakhha gaya hai kyunki ho sakta hai kisi aur file/service
-// me import ho raha ho. Agar 100% sure ho ki kahin aur use nahi hota to ise
-// safely delete kar sakte ho.
 async function enrichGeo(ip: string): Promise<{ country?: string; region?: string; city?: string }> {
   try {
     if (ip === '0.0.0.0' || ip.startsWith('127.') || ip.startsWith('10.') || ip.startsWith('192.168.')) {
@@ -315,19 +318,9 @@ async function hadDetailVisit(
   return !!hit
 }
 
-// Track single page view
-// ✅ FIX: `resolveAnimeOwnerForSlug` ko ab `db` pass karte hain (upar dekho) —
-// isse ye poora function guaranteed SIRF EK connection use karta hai.
-// ✅ FIX (naya): `enrichGeo()` external API call hata di — ab sirf Cloudflare
-// ke apne headers se aaya country/region/city use hota hai.
-// 🆕 FIX (admin preview): agar `data.isAdminPreview === true` ho, to download
-// page ka earnings-relevant block (owner lookup, earningType decide, rate
-// snapshot, fromDetail) skip ho jaata hai — isse admin apne hi page kholne
-// se sub-admin earnings inflate nahi hongi.
-// ✅ FINAL FIX (linkUsed guard): 'normal' (billable) earning SIRF tab set
-// hoti hai jab visitor VERIFIED short-link (1-4) redirect se aaya ho. Direct
-// hit / bookmark / admin preview / raw share link me data.linkUsed undefined
-// hota hai, to earningType assign hi nahi hoga — earnings queries auto skip.
+// ═════════════════════════════════════════════════════════════════════════════
+// TRACK PAGE VIEW
+// ═════════════════════════════════════════════════════════════════════════════
 export async function trackPageView(
   data: Omit<PageViewRecord, 'timestamp' | 'date' | 'earningType' | 'animeId' | 'subAdminId' | 'rateSnapshot' | 'activeLinks' | 'fromDetail' | 'testMode'>,
   mongoUri: string,
@@ -361,10 +354,6 @@ export async function trackPageView(
     }
   }
 
-  // 🆕 FIX: enrichGeo() (ip-api.com) call hata diya — ye free-tier external
-  // API (45 req/min limit) load ke neeche turant rate-limit ho jaata tha,
-  // jisse HAR pageview slow/fail hota tha. Ab sirf Cloudflare ke apne
-  // headers pe bharosa — instant hai, koi external network call nahi.
   const country = data.country
   const region = data.region
   const city = data.city
@@ -376,11 +365,8 @@ export async function trackPageView(
   let activeLinks: number[] | undefined
   let fromDetail = false
 
-  // 🆕 ADMIN PREVIEW GUARD: sirf tab chalao jab page download ho AUR admin
-  // preview na ho. Admin apne preview button se kholta hai to uska view
-  // sub-admin earnings / rate snapshot / fromDetail inflate nahi karega.
   if (data.pageType === 'download' && !data.isAdminPreview) {
-    const owner = await resolveAnimeOwnerForSlug(data.slug, mongoUri, dbName, db) // ✅ db pass kiya
+    const owner = await resolveAnimeOwnerForSlug(data.slug, mongoUri, dbName, db)
     animeId = owner.animeId
     subAdminId = owner.subAdminId
 
@@ -390,21 +376,9 @@ export async function trackPageView(
       } else if (earningContext.link5Active) {
         earningType = 'link5-direct'
       } else if (data.linkUsed) {
-        // ✅ FINAL FIX: 'normal' (billable) earning SIRF tab set hoti hai jab
-        // visitor ek VERIFIED short-link (1-4) redirect se aaya ho — matlab
-        // signed ?l= & ?ls= tag route me valid verify hua (signTag check,
-        // analyticsRoutes.ts me already hai). Ye cover karta hai:
-        //   - Admin/sub-admin "View public page" button click (koi ?l= tag nahi)
-        //   - Sub-admin ka raw /download/slug link kahin bhi share karna
-        //   - Bookmark se dobara visit (short-link tag URL me nahi rehta)
-        //   - Koi bhi seedha/direct hit jisme signed tag na ho
-        // In sab cases me data.linkUsed undefined rahega, to earningType
-        // assign hi nahi hoga — aur getSubAdminEarnings /
-        // getAllSubAdminEarningsSummary ki query (`earningType: { $exists: true }`)
-        // is document ko automatically skip kar degi.
         earningType = 'normal'
       }
-      // else: earningType undefined chhod do — earnings se automatically excluded
+      // else: earningType undefined → earnings queries skip
     }
 
     if (earningType === 'normal') {
@@ -440,19 +414,9 @@ export async function trackPageView(
   return { counted: true }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ✅ UPDATED — Summary stats for admin.
-//
-// Ab ye function:
-//   1. Last 7 din ka data RAW `pageviews` collection se leta hai (jaise pehle),
-//   2. Usse purane dinon ka data `dailyPageStats` rollup se leta hai (naya),
-//   3. Dono ko combine karke single response deta hai.
-//
-// Iska fayda: jab `days > 7` ho, `pageviews` (jo sirf 7 din ka hota hai) pe
-// bhaari aggregation chalane ki zaroorat nahi — purane din pehle se hi rollup
-// mein aggregate ho chuke hote hain (cron ne raat ko `aggregateAndPrunePageviewDay`
-// se banaye the aur raw se delete kar diye the).
-// ─────────────────────────────────────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════════════
+// SUMMARY STATS
+// ═════════════════════════════════════════════════════════════════════════════
 export async function getPageViewStats(
   mongoUri: string,
   dbName: string,
@@ -465,16 +429,10 @@ export async function getPageViewStats(
   const since = new Date()
   since.setDate(since.getDate() - (days - 1))
   const sinceStr = getISTDateStr(since)
-
-  // ✅ NEW — raw boundary: `pageviews` mein sirf last 7 din ka data hota hai.
   const rawSinceStr = rawBoundaryStr(sinceStr)
 
   const scope = slugFilter(ownedSlugs)
   const todayStr = getISTDateStr()
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // PART A — RAW (last 7 din)
-  // ═══════════════════════════════════════════════════════════════════════════
 
   const todayMatch: Record<string, any> = { date: todayStr, ...scope }
   if (device) todayMatch.device = device
@@ -491,7 +449,6 @@ export async function getPageViewStats(
   const rawTotalViews = await db.collection('pageviews').countDocuments(rawBaseMatch)
   const rawUniqueIps: string[] = await db.collection('pageviews').distinct('ip', rawBaseMatch)
 
-  // daily chart from raw (last 7 days)
   const rawDailyRaw = await db
     .collection('pageviews')
     .aggregate([
@@ -501,7 +458,6 @@ export async function getPageViewStats(
     .toArray()
   const rawDailyMap = new Map<string, number>(rawDailyRaw.map((d: any) => [d._id, d.views]))
 
-  // topPages from raw
   let rawTopPages: any[]
   if (device) {
     rawTopPages = await db
@@ -545,7 +501,6 @@ export async function getPageViewStats(
       .toArray()
   }
 
-  // byType / byDevice / byCountry from raw
   const rawByType = await db
     .collection('pageviews')
     .aggregate([
@@ -572,46 +527,31 @@ export async function getPageViewStats(
     ])
     .toArray()
 
-  // all-time from raw (last 7 days part)
   const allTimeRawMatch: Record<string, any> = { ...scope }
   if (device) allTimeRawMatch.device = device
   const rawAllTimeViews = await db.collection('pageviews').countDocuments(allTimeRawMatch)
   const rawAllTimeUniqueIps: string[] = await db.collection('pageviews').distinct('ip', allTimeRawMatch)
 
-  // 7-day unique visitors (raw only — kyunki 7-din exactly raw range hai)
   const last7DaysUniqueVisitors = rawUniqueIps.length
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // PART B — ROLLUP (raw se purane din)
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  // Range ke liye rollup — sirf tab jab requested range 7 din se bada ho.
   let rollupRange: PageRollupRange = EMPTY_ROLLUP
   if (sinceStr < rawSinceStr) {
     rollupRange = await getPageRollupForRange(mongoUri, dbName, sinceStr, rawSinceStr) as unknown as PageRollupRange
   }
 
-  // All-time ke liye rollup — raw se purana sab kuch.
   let rollupAllTime: PageRollupRange = EMPTY_ROLLUP
   if (rawSinceStr > '2000-01-01') {
     rollupAllTime = await getPageRollupForRange(mongoUri, dbName, '2000-01-01', rawSinceStr) as unknown as PageRollupRange
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // PART C — COMBINE
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  // totalViews + uniqueVisitors (range)
   const ipSet = new Set<string>([...rawUniqueIps, ...rollupRange.uniqueIps])
   const totalViews = rawTotalViews + rollupRange.totalViews
   const uniqueVisitors = ipSet.size
 
-  // all-time
   const allTimeIpSet = new Set<string>([...rawAllTimeUniqueIps, ...rollupAllTime.uniqueIps])
   const allTimeTotalViews = rawAllTimeViews + rollupAllTime.totalViews
   const allTimeUniqueVisitors = allTimeIpSet.size
 
-  // dailyChart — rollup daily + raw daily merged into a proper day-by-day array
   const rollupDailyMap = new Map<string, number>(rollupRange.dailyChart.map(d => [d.date, d.views]))
   const dailyChart: { date: string; views: number }[] = []
   for (let i = days - 1; i >= 0; i--) {
@@ -624,11 +564,6 @@ export async function getPageViewStats(
     })
   }
 
-  // topPages — merge rollup.topPaths + raw top pages
-  // ⚠️ FIX: rollup.topPaths mein `_id` NAHI hota, `path` hota hai. Pehle
-  // yahan `p._id` use ho raha tha (jo hamesha undefined hota), jisse saare
-  // rollup pages ek hi undefined key mein overwrite ho jaate the. Ab `path`
-  // ko key banaya gaya hai.
   const topPagesMap = new Map<string, any>()
   for (const p of rollupRange.topPaths) {
     topPagesMap.set(p.path, {
@@ -663,17 +598,14 @@ export async function getPageViewStats(
     .sort((a, b) => b.views - a.views)
     .slice(0, 50)
 
-  // byType — merge
   const byTypeMap = new Map<string, number>()
   for (const t of rollupRange.byType) byTypeMap.set(t.type, (byTypeMap.get(t.type) || 0) + t.views)
   for (const t of rawByType) byTypeMap.set(t._id, (byTypeMap.get(t._id) || 0) + t.views)
 
-  // byDevice — merge
   const byDeviceMap = new Map<string, number>()
   for (const d of rollupRange.byDevice) byDeviceMap.set(d.device, (byDeviceMap.get(d.device) || 0) + d.count)
   for (const d of rawByDevice) byDeviceMap.set(d._id, (byDeviceMap.get(d._id) || 0) + d.count)
 
-  // byCountry — merge (aur 'XX' filter)
   const byCountryMap = new Map<string, number>()
   for (const c of rollupRange.byCountry) byCountryMap.set(c.country, (byCountryMap.get(c.country) || 0) + c.views)
   for (const c of rawByCountry) byCountryMap.set(c._id, (byCountryMap.get(c._id) || 0) + c.views)
@@ -683,7 +615,6 @@ export async function getPageViewStats(
     .sort((a, b) => b.views - a.views)
     .slice(0, 100)
 
-  // ── slugMeta + topPages ko pehle jaisa enrich/combinable karo ──
   const slugMeta = await getSlugMetaMap(
     mongoUri, dbName,
     ownedSlugs === null || ownedSlugs === undefined,
@@ -735,10 +666,6 @@ export async function getPageViewStats(
     }
   }
 
-  // ⚠️ journey correction (fromDetail-based de-dup) sirf raw portion se hi mil
-  // sakta hai — rollup detail granularity save nahi karta. Isliye hum ise sirf
-  // raw range pe apply karte hain; rollup wale dinon ke combined views me
-  // thoda over-count ho sakta hai (acceptable trade-off).
   const journeyRaw = await db.collection('pageviews').aggregate([
     { $match: { ...rawBaseMatch, pageType: 'download', fromDetail: true } },
     { $group: { _id: '$animeId', n: { $sum: 1 } } },
@@ -822,9 +749,6 @@ export async function getGeoDetail(
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ✅ UPDATED — Country stats ab rollup bhi consider karta hai.
-// ─────────────────────────────────────────────────────────────────────────────
 export async function getByCountryStats(
   mongoUri: string,
   dbName: string,
@@ -835,7 +759,7 @@ export async function getByCountryStats(
   const since = new Date()
   since.setDate(since.getDate() - (days - 1))
   const sinceStr = getISTDateStr(since)
-  const rawSinceStr = rawBoundaryStr(sinceStr) // ✅ NEW
+  const rawSinceStr = rawBoundaryStr(sinceStr)
   const scope = slugFilter(ownedSlugs)
 
   const rawMatch: Record<string, any> = { date: { $gte: rawSinceStr }, ...scope }
@@ -848,7 +772,6 @@ export async function getByCountryStats(
     ])
     .toArray()
 
-  // ✅ NEW — rollup part
   let rollup: PageRollupRange = EMPTY_ROLLUP
   if (sinceStr < rawSinceStr) {
     rollup = await getPageRollupForRange(mongoUri, dbName, sinceStr, rawSinceStr) as unknown as PageRollupRange
@@ -1292,8 +1215,6 @@ export async function getPageDetail(
   return { path, total, daily }
 }
 
-// ✅ FIX: getSubAdminNameMap ko ab `db` pass karte hain (jo upar already
-// khula hai) instead of alag connection kholne ke.
 export async function getUserLinkAnalytics(
   mongoUri: string,
   dbName: string,
@@ -1602,7 +1523,6 @@ export async function getLeaderboard(
   creatorId?: string | null
 ) {
   const db = await getDb(mongoUri, dbName)
-  const today = getISTDateStr()
   const todayStart = new Date()
   todayStart.setHours(0, 0, 0, 0)
   const weekStart = new Date()
@@ -2106,44 +2026,105 @@ export async function getUserSelfAnalytics(
   }
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// MONTHLY OVERVIEW — ✅ FIXED
+// ─────────────────────────────────────────────────────────────────────────────
+// Raw part: last 7 days ka per-pageview data (pageviews collection)
+// Rollup part: usse purane dinon ka per-day aggregate (dailyPageStats collection)
+//
+// ⚠️ IMPORTANT: `dailyPageStats` me top-level `views` / `pageType` field NAHI
+// hoti — usme `totalViews: number` aur `byType: [{type, views}]` hoti hai.
+// Isliye hum `byType` array ko traverse karke animeViews/downloadViews
+// nikalte hain. Agar dailyPageStatsService me schema badle to ye code
+// accordingly update karna hoga.
+//
+// Sub-admin scoping (ownedSlugs filter):
+//   • dailyPageStats me top-level `slug` nahi hota, isliye jab scope lagta hai
+//     to hum sirf `topPaths` me se woh entries sum karte hain jinke slug match
+//     karte hain. Yeh top-100 paths tak limited hai → scoped rollup thoda
+//     under-count kar sakta hai. Main admin (ownedSlugs=null) ke liye full
+//     accuracy hai.
+// ═════════════════════════════════════════════════════════════════════════════
 export async function getMonthlyOverview(
   mongoUri: string,
   dbName: string,
   ownedSlugs?: string[] | null
 ) {
   const db = await getDb(mongoUri, dbName)
-  const scope = slugFilter(ownedSlugs)
+  const rawSinceStr = rawBoundaryStr(getISTDateStr())
 
-  const raw = await db
-    .collection('pageviews')
-    .aggregate([
-      { $match: scope },
-      {
-        $group: {
-          _id: { $substrCP: ['$date', 0, 7] },
-          views: { $sum: 1 },
-          animeViews: {
-            $sum: { $cond: [{ $in: ['$pageType', ['anime-detail', 'episode']] }, 1, 0] }
-          },
-          downloadViews: {
-            $sum: { $cond: [{ $eq: ['$pageType', 'download'] }, 1, 0] }
-          },
-        },
+  // ── RAW (last 7 days) ────────────────────────────────────────────────
+  const rawMatch: any = { date: { $gte: rawSinceStr } }
+  if (ownedSlugs && ownedSlugs.length > 0) rawMatch.slug = { $in: ownedSlugs }
+
+  const rawAgg = await db.collection('pageviews').aggregate([
+    { $match: rawMatch },
+    {
+      $group: {
+        _id: { $substrCP: ['$date', 0, 7] },
+        views: { $sum: 1 },
+        animeViews: { $sum: { $cond: [{ $in: ['$pageType', ['anime-detail', 'episode']] }, 1, 0] } },
+        downloadViews: { $sum: { $cond: [{ $eq: ['$pageType', 'download'] }, 1, 0] } },
       },
-      { $sort: { _id: 1 } },
-    ])
+    },
+  ]).toArray()
+
+  // ── ROLLUP (raw se purana sab) ───────────────────────────────────────
+  // dailyPageStats has ONE doc per day. We fetch all and aggregate in JS.
+  const rollupDocs = await db.collection('dailyPageStats')
+    .find({ date: { $lt: rawSinceStr } })
+    .project({ date: 1, totalViews: 1, byType: 1, topPaths: 1 })
     .toArray()
 
+  const scopedSlugs = ownedSlugs && ownedSlugs.length > 0 ? new Set(ownedSlugs) : null
+
+  const rollupMonthMap = new Map<string, { views: number; animeViews: number; downloadViews: number }>()
+  for (const doc of rollupDocs) {
+    const month = (doc.date as string).slice(0, 7)
+    const cur = rollupMonthMap.get(month) || { views: 0, animeViews: 0, downloadViews: 0 }
+
+    if (scopedSlugs) {
+      // Best-effort scoped: only count paths in topPaths matching owned slugs.
+      cur.views += scopedViewsFromTopPaths(doc.topPaths, scopedSlugs)
+      // By-type split not available for scoped subset — leave as 0.
+    } else {
+      cur.views += doc.totalViews || 0
+      cur.animeViews += sumByType(doc.byType, ['anime-detail', 'episode'])
+      cur.downloadViews += sumByType(doc.byType, ['download'])
+    }
+    rollupMonthMap.set(month, cur)
+  }
+
+  // ── MERGE ────────────────────────────────────────────────────────────
+  const monthMap = new Map<string, { month: string; views: number; animeViews: number; downloadViews: number }>()
+  for (const [month, r] of rollupMonthMap) {
+    monthMap.set(month, { month, views: r.views, animeViews: r.animeViews, downloadViews: r.downloadViews })
+  }
+  for (const m of rawAgg) {
+    const key = (m._id as string) || ''
+    if (!key) continue
+    const cur = monthMap.get(key) || { month: key, views: 0, animeViews: 0, downloadViews: 0 }
+    cur.views += m.views || 0
+    cur.animeViews += m.animeViews || 0
+    cur.downloadViews += m.downloadViews || 0
+    monthMap.set(key, cur)
+  }
+
   return {
-    months: raw.map((m: any) => ({
-      month: m._id,
-      views: m.views,
-      animeViews: m.animeViews,
-      downloadViews: m.downloadViews,
-    })),
+    months: Array.from(monthMap.values()).sort((a, b) => a.month.localeCompare(b.month)),
   }
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// MONTHLY DETAIL — ✅ FIXED
+// ─────────────────────────────────────────────────────────────────────────────
+// Same split as overview:
+//   • RAW: days in month where date >= rawSinceStr (last 7 days)
+//   • ROLLUP: days in month where date < rawSinceStr
+//
+// Merge day-wise in JS because dailyPageStats docs have different shape
+// from raw pageviews docs (no pageType field, uses byType array).
+// ═════════════════════════════════════════════════════════════════════════════
 export async function getMonthlyDetail(
   mongoUri: string,
   dbName: string,
@@ -2151,7 +2132,6 @@ export async function getMonthlyDetail(
   ownedSlugs?: string[] | null
 ) {
   const db = await getDb(mongoUri, dbName)
-  const scope = slugFilter(ownedSlugs)
 
   const [yearStr, monStr] = month.split('-')
   const year = parseInt(yearStr, 10)
@@ -2165,34 +2145,62 @@ export async function getMonthlyDetail(
   const isCurrentMonth = todayStr.slice(0, 7) === month
   const lastDay = isCurrentMonth ? parseInt(todayStr.slice(8, 10), 10) : daysInMonth
 
-  const match: Record<string, any> = {
-    date: { $gte: `${month}-01`, $lte: `${month}-31` },
-    ...scope,
-  }
+  const monthStart = `${month}-01`
+  const monthEnd = `${month}-${String(lastDay).padStart(2, '0')}`
+  const rawSinceStr = rawBoundaryStr(getISTDateStr())
 
-  const raw = await db
-    .collection('pageviews')
-    .aggregate([
-      { $match: match },
-      {
-        $group: {
-          _id: '$date',
-          totalViews: { $sum: 1 },
-          animeViews: {
-            $sum: { $cond: [{ $in: ['$pageType', ['anime-detail', 'episode']] }, 1, 0] }
-          },
-          downloadViews: {
-            $sum: { $cond: [{ $eq: ['$pageType', 'download'] }, 1, 0] }
-          },
-        },
+  // ── RAW: only days in this month that fall in last 7 days ────────────
+  const rawStart = monthStart > rawSinceStr ? monthStart : rawSinceStr
+  const rawMatch: any = { date: { $gte: rawStart, $lte: monthEnd } }
+  if (ownedSlugs && ownedSlugs.length > 0) rawMatch.slug = { $in: ownedSlugs }
+
+  const rawAgg = await db.collection('pageviews').aggregate([
+    { $match: rawMatch },
+    {
+      $group: {
+        _id: '$date',
+        totalViews: { $sum: 1 },
+        animeViews: { $sum: { $cond: [{ $in: ['$pageType', ['anime-detail', 'episode']] }, 1, 0] } },
+        downloadViews: { $sum: { $cond: [{ $eq: ['$pageType', 'download'] }, 1, 0] } },
       },
-    ])
+    },
+  ]).toArray()
+
+  // ── ROLLUP: days in month that are older than rawSinceStr ────────────
+  const rollupDocs = await db.collection('dailyPageStats')
+    .find({ date: { $gte: monthStart, $lte: monthEnd, $lt: rawSinceStr } })
+    .project({ date: 1, totalViews: 1, byType: 1, topPaths: 1 })
     .toArray()
 
-  const dayMap = new Map<string, { totalViews: number; animeViews: number; downloadViews: number }>(
-    raw.map((d: any) => [d._id, { totalViews: d.totalViews, animeViews: d.animeViews, downloadViews: d.downloadViews }])
-  )
+  const scopedSlugs = ownedSlugs && ownedSlugs.length > 0 ? new Set(ownedSlugs) : null
 
+  const rollupDayMap = new Map<string, { totalViews: number; animeViews: number; downloadViews: number }>()
+  for (const doc of rollupDocs) {
+    const cur = { totalViews: 0, animeViews: 0, downloadViews: 0 }
+    if (scopedSlugs) {
+      cur.totalViews = scopedViewsFromTopPaths(doc.topPaths, scopedSlugs)
+    } else {
+      cur.totalViews = doc.totalViews || 0
+      cur.animeViews = sumByType(doc.byType, ['anime-detail', 'episode'])
+      cur.downloadViews = sumByType(doc.byType, ['download'])
+    }
+    rollupDayMap.set(doc.date, cur)
+  }
+
+  // ── MERGE day-wise ───────────────────────────────────────────────────
+  const dayMap = new Map<string, { totalViews: number; animeViews: number; downloadViews: number }>()
+  for (const [date, r] of rollupDayMap) dayMap.set(date, r)
+  for (const d of rawAgg) {
+    const key = d._id as string
+    if (!key) continue
+    const cur = dayMap.get(key) || { totalViews: 0, animeViews: 0, downloadViews: 0 }
+    cur.totalViews += d.totalViews || 0
+    cur.animeViews += d.animeViews || 0
+    cur.downloadViews += d.downloadViews || 0
+    dayMap.set(key, cur)
+  }
+
+  // ── Build full month array (missing days = 0) ────────────────────────
   const days: { date: string; totalViews: number; animeViews: number; downloadViews: number; otherViews: number }[] = []
   for (let day = 1; day <= lastDay; day++) {
     const dateStr = `${month}-${String(day).padStart(2, '0')}`
@@ -2219,10 +2227,9 @@ export async function getMonthlyDetail(
   return { month, days, totals }
 }
 
-// ══════════════════════════════════════════════════════════════════════════
-// SUB-ADMIN EARNINGS (view → $ tracking, per anime, split by earningType)
-// ══════════════════════════════════════════════════════════════════════════
-
+// ═════════════════════════════════════════════════════════════════════════════
+// SUB-ADMIN EARNINGS
+// ═════════════════════════════════════════════════════════════════════════════
 interface SubAdminRateDoc {
   _id: ObjectId
   username: string

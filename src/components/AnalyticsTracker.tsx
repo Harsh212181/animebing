@@ -112,14 +112,61 @@ function stripLinkTagFromUrl() {
   );
 }
 
+// ─── 🆕 Time-on-page tracking ───────────────────────────────────────────
+let pageEnteredAt = Date.now();
+let currentTrackedPath = '';
+let lastTimeSentFor = '';   // ek path ke liye sirf ek hi time-beacon bhejein
+
+function sendTimeOnPage() {
+  if (!currentTrackedPath) return;
+  if (lastTimeSentFor === currentTrackedPath) return; // double-send guard
+
+  const seconds = Math.round((Date.now() - pageEnteredAt) / 1000);
+  if (seconds < 1 || seconds > 3599) return; // junk filter (<1s, >1h)
+
+  const { pageType, slug } = getPageMeta(currentTrackedPath.split('?')[0]);
+  const payload = {
+    path: currentTrackedPath,
+    pageType,
+    slug,
+    timeOnPage: seconds,
+    sessionId: getSessionId(),
+    visitorId: getVisitorId(),
+    isAdminPreview: isAdminPreviewUrl(),
+  };
+
+  lastTimeSentFor = currentTrackedPath;
+
+  // sendBeacon: tab close / route change par reliable delivery
+  try {
+    const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+    const ok = navigator.sendBeacon?.(`${API_BASE}/analytics/pageview`, blob);
+    if (!ok) throw new Error('beacon blocked');
+  } catch {
+    // Fallback: fetch with keepalive
+    fetch(`${API_BASE}/analytics/pageview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      keepalive: true,
+    }).catch(() => {});
+  }
+}
+
 // ─── Component ────────────────────────────────────────────────────────────
 const AnalyticsTracker = () => {
   const location = useLocation();
 
   useEffect(() => {
-    const currentPath = location.pathname + location.search;
+    // ✅ Pichle page ka time bhejo, navigate hone se pehle
+    sendTimeOnPage();
 
-    // ✅ हर रूट चेंज पर एक पेज व्यू भेजें (payload isi call mein ban jata hai, l/ls/adminPreview ke saath)
+    const currentPath = location.pathname + location.search;
+    currentTrackedPath = currentPath;
+    pageEnteredAt = Date.now();
+    lastTimeSentFor = ''; // naye path ke liye reset
+
+    // ✅ Har route change par ek pageview bhejein
     sendToBackend(currentPath);
 
     // 🆕 pageview bhejne ke BAAD address bar saaf karo
@@ -141,7 +188,37 @@ const AnalyticsTracker = () => {
         isAdminPreview: isAdminPreviewUrl(),
       });
     }
+
+    return () => {
+      // Route change cleanup: agar component unmount ho raha hai to bhi time bhejo
+      sendTimeOnPage();
+    };
   }, [location]);
+
+  // 🆕 Tab close / reload / browser back (hard nav) par time bhejo
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      lastTimeSentFor = ''; // force send
+      sendTimeOnPage();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        lastTimeSentFor = ''; // force send on tab switch
+        sendTimeOnPage();
+      } else if (document.visibilityState === 'visible') {
+        // Wapas aane par timer reset karo (idle time count na ho)
+        pageEnteredAt = Date.now();
+        lastTimeSentFor = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
 
   return null;
 };

@@ -144,6 +144,11 @@ function detectPageType(path: string): string {
 // sirf analytics hai. Ab visitor turant response paata hai, backend apna
 // analytics kaam apni speed se karta hai — user experience is se disconnect
 // ho gaya hai.
+//
+// 🆕 TIME-ON-PAGE PING: frontend ab route change / tab close / visibility
+// change par ek "sirf timeOnPage" wala beacon bhejta hai. Us case me hum
+// NAYA pageview insert nahi karte — sirf usi session+path ke sabse recent
+// pageview doc ka `timeOnPage` field update karte hain.
 analyticsRoutes.post('/pageview', async (c) => {
   try {
     const body = await c.req.json()
@@ -159,6 +164,75 @@ analyticsRoutes.post('/pageview', async (c) => {
     } = body
 
     if (!rawPath) return c.json({ error: 'path required' }, 400)
+
+    // ================================================================
+    // 🆕 TIME-ON-PAGE-ONLY PING
+    // ----------------------------------------------------------------
+    // Frontend ke `sendTimeOnPage()` se aane wala payload:
+    //   { path, pageType, slug, timeOnPage, sessionId, visitorId, isAdminPreview }
+    //
+    // Ye ek full pageview NAHI hai — bas engagement duration ka follow-up
+    // update hai. Isliye:
+    //   • koi naya pageview insert nahi karenge
+    //   • bot check, l/ls parsing, earnings context — kuch nahi chalayenge
+    //   • bas usi (sessionId|visitorId)+path+pageType ke sabse recent
+    //     pageview doc ka `timeOnPage` set kar denge
+    // ================================================================
+    if (typeof timeOnPage === 'number' && timeOnPage > 0) {
+      const seconds = Math.max(1, Math.min(3600, Math.round(timeOnPage)))
+
+      // bot traffic beacon bhejta hi nahi, but defense-in-depth
+      const ua = c.req.header('user-agent') || ''
+      const botPattern = /bot|crawl|spider|slurp|mediapartners|googlebot|bingbot|yandex|baidu/i
+      if (botPattern.test(ua)) return c.json({ ok: true, skipped: 'bot' })
+
+      // path se l/ls strip karo (agar beacon me aa gaye ho — normally nahi aate)
+      const cleanPathForTime = rawPath.split('?')[0]
+
+      fireAndForget(c, (async () => {
+        try {
+          const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+          // Most-recent-match filter: same session/visitor + same path.
+          // Sirf last 2 hours ka doc consider karo (stale docs ko touch na karo).
+          const filter: any = {
+            path: cleanPathForTime,
+            timestamp: { $gte: new Date(Date.now() - 2 * 60 * 60 * 1000) },
+          }
+          if (typeof sessionId === 'string' && sessionId) filter.sessionId = sessionId
+          else if (typeof visitorId === 'string' && visitorId) filter.visitorId = visitorId.slice(0, 64)
+          // Agar dono missing hain (rare case) — IP+UA se best-effort match
+          else {
+            const ip =
+              c.req.header('cf-connecting-ip') ||
+              c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
+              '0.0.0.0'
+            filter.ip = ip
+            filter.userAgent = ua.slice(0, 200)
+          }
+
+          // findOneAndUpdate supports `sort` option in the Mongo driver.
+          // (updateOne does NOT — user ke snippet me wahi galti thi.)
+          await db.collection('pageviews').findOneAndUpdate(
+            filter,
+            {
+              $set: {
+                timeOnPage: seconds,
+                timeOnPageUpdatedAt: new Date(),
+              },
+            },
+            { sort: { timestamp: -1 } }
+          )
+        } catch (e) {
+          console.error('time-on-page update failed:', e)
+        }
+      })())
+
+      return c.json({ ok: true })
+    }
+    // ================================================================
+    // (end time-on-page-only ping — neeche normal pageview flow)
+    // ================================================================
 
     const cleanSlug = typeof slug === 'string' ? slug.split('?')[0] : undefined
 
