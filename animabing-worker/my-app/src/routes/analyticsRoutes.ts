@@ -155,6 +155,7 @@ analyticsRoutes.post('/pageview', async (c) => {
       visitorId,
       timeOnPage,
       pageType: overridePageType,
+      isAdminPreview, // 🆕 admin preview flag (frontend se aata hai)
     } = body
 
     if (!rawPath) return c.json({ error: 'path required' }, 400)
@@ -243,6 +244,7 @@ analyticsRoutes.post('/pageview', async (c) => {
           visitorId: typeof visitorId === 'string' ? visitorId.slice(0, 64) : undefined,
           userAgent: ua.slice(0, 200),
           linkUsed,
+          isAdminPreview: isAdminPreview === true, // 🆕 flag pass — trackPageView ise ignore/skip karega
         },
         c.env.MONGODB_URI,
         c.env.MONGODB_DB,

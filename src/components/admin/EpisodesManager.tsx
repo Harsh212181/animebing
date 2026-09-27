@@ -1,4 +1,4 @@
- // src/components/admin/EpisodesManager.tsx - Premium UI, no emojis, custom SVG icons
+// src/components/admin/EpisodesManager.tsx - Premium UI, no emojis, custom SVG icons
 import React, { useState, useEffect } from 'react';
 import type { Anime, Episode, Chapter } from '../../types';
 import axios from 'axios';
@@ -24,6 +24,10 @@ const DEFAULT_LINK_NAMES = [
 
 const API_BASE = import.meta.env.VITE_API_BASE || 
   'https://animabing-backend.animabingwatch.workers.dev/api';
+
+// ── Frontend base helper (for public / preview links) ────────────────
+const getFrontendBase = () =>
+  (import.meta.env.VITE_FRONTEND_URL || 'https://animebing.in').replace(/\/+$/, '');
 
 interface EpisodesManagerProps {
   token?: string;
@@ -833,7 +837,9 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
           )}
 
           {downloadPages.map((page: any) => {
-            const publicUrl = `https://animebing.in/download/${page.slug}`;
+            // Preview link with adminPreview flag (uses env-driven frontend base)
+            const publicUrl = `${getFrontendBase()}/download/${page.slug}`;
+            const previewUrl = `${getFrontendBase()}/download/${page.slug}?adminPreview=1`;
             const downloadCount = (page.links || []).filter((l: any) => l.type === 'download').length;
             const watchCount = (page.links || []).filter((l: any) => l.type === 'watch').length;
             const episodeNumbers = (page.links || []).map((l: any) => l.episode);
@@ -891,15 +897,15 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
 
                   <div className="flex gap-1.5 flex-wrap">
                     <button
-                      onClick={() => window.open(publicUrl, '_blank', 'noopener,noreferrer')}
-                      title="View public page"
+                      onClick={() => window.open(previewUrl, '_blank', 'noopener,noreferrer')}
+                      title="Preview public page (admin)"
                       className="p-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-gray-400 hover:bg-emerald-500/10 hover:border-emerald-500/25 hover:text-emerald-300 transition-all"
                     >
                       <SvgIcon d={ICONS.eye} className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => copyToClipboard(publicUrl, 'Download page link copied!')}
-                      title="Copy link"
+                      title="Copy public link"
                       className="p-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-gray-400 hover:bg-amber-500/10 hover:border-amber-500/25 hover:text-amber-300 transition-all"
                     >
                       <SvgIcon d={ICONS.copy} className="w-4 h-4" />

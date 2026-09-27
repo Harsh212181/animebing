@@ -1,4 +1,4 @@
- // src/components/admin/DownloadPageManager.tsx – Premium UI, mobile-friendly
+// src/components/admin/DownloadPageManager.tsx – Premium UI, mobile-friendly
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { DownloadPage, DownloadPageLink, ContentType, SubDubStatus } from '../../types';
 import SearchableDropdown from './SearchableDropdown';
@@ -74,7 +74,7 @@ const CustomSelect: React.FC<{
 
   return (
     <div ref={ref} className={`relative ${className || ''}`}>
-      <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1 flex items-center gap-1.5">
+      <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1 flexl items-center gap-1.5">
         {icon}
         {label} {required && <span className="text-rose-400">*</span>}
       </label>
@@ -1160,7 +1160,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
 
                     <div className="flex gap-1.5 items-center flex-wrap sm:flex-nowrap pl-3 sm:pl-0">
                       <button
-                        onClick={() => window.open(`${getFrontendBase()}/download/${page.slug}`, '_blank')}
+                        onClick={() => window.open(`${getFrontendBase()}/download/${page.slug}?adminPreview=1`, '_blank')}
                         title="View public page"
                         className="p-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-gray-400 hover:bg-emerald-500/10 hover:border-emerald-500/25 hover:text-emerald-300 transition-all"
                       >

@@ -30,6 +30,7 @@ export interface PageViewRecord {
   activeLinks?: number[]
   fromDetail?: boolean
   testMode?: boolean
+  isAdminPreview?: boolean // 🆕 admin preview flag — earnings block skip karne ke liye
 }
 
 export interface EarningContext {
@@ -319,6 +320,14 @@ async function hadDetailVisit(
 // isse ye poora function guaranteed SIRF EK connection use karta hai.
 // ✅ FIX (naya): `enrichGeo()` external API call hata di — ab sirf Cloudflare
 // ke apne headers se aaya country/region/city use hota hai.
+// 🆕 FIX (admin preview): agar `data.isAdminPreview === true` ho, to download
+// page ka earnings-relevant block (owner lookup, earningType decide, rate
+// snapshot, fromDetail) skip ho jaata hai — isse admin apne hi page kholne
+// se sub-admin earnings inflate nahi hongi.
+// ✅ FINAL FIX (linkUsed guard): 'normal' (billable) earning SIRF tab set
+// hoti hai jab visitor VERIFIED short-link (1-4) redirect se aaya ho. Direct
+// hit / bookmark / admin preview / raw share link me data.linkUsed undefined
+// hota hai, to earningType assign hi nahi hoga — earnings queries auto skip.
 export async function trackPageView(
   data: Omit<PageViewRecord, 'timestamp' | 'date' | 'earningType' | 'animeId' | 'subAdminId' | 'rateSnapshot' | 'activeLinks' | 'fromDetail' | 'testMode'>,
   mongoUri: string,
@@ -367,15 +376,35 @@ export async function trackPageView(
   let activeLinks: number[] | undefined
   let fromDetail = false
 
-  if (data.pageType === 'download') {
+  // 🆕 ADMIN PREVIEW GUARD: sirf tab chalao jab page download ho AUR admin
+  // preview na ho. Admin apne preview button se kholta hai to uska view
+  // sub-admin earnings / rate snapshot / fromDetail inflate nahi karega.
+  if (data.pageType === 'download' && !data.isAdminPreview) {
     const owner = await resolveAnimeOwnerForSlug(data.slug, mongoUri, dbName, db) // ✅ db pass kiya
     animeId = owner.animeId
     subAdminId = owner.subAdminId
 
     if (earningContext) {
-      if (earningContext.specialModeForcing) earningType = 'special-mode'
-      else if (earningContext.link5Active) earningType = 'link5-direct'
-      else earningType = 'normal'
+      if (earningContext.specialModeForcing) {
+        earningType = 'special-mode'
+      } else if (earningContext.link5Active) {
+        earningType = 'link5-direct'
+      } else if (data.linkUsed) {
+        // ✅ FINAL FIX: 'normal' (billable) earning SIRF tab set hoti hai jab
+        // visitor ek VERIFIED short-link (1-4) redirect se aaya ho — matlab
+        // signed ?l= & ?ls= tag route me valid verify hua (signTag check,
+        // analyticsRoutes.ts me already hai). Ye cover karta hai:
+        //   - Admin/sub-admin "View public page" button click (koi ?l= tag nahi)
+        //   - Sub-admin ka raw /download/slug link kahin bhi share karna
+        //   - Bookmark se dobara visit (short-link tag URL me nahi rehta)
+        //   - Koi bhi seedha/direct hit jisme signed tag na ho
+        // In sab cases me data.linkUsed undefined rahega, to earningType
+        // assign hi nahi hoga — aur getSubAdminEarnings /
+        // getAllSubAdminEarningsSummary ki query (`earningType: { $exists: true }`)
+        // is document ko automatically skip kar degi.
+        earningType = 'normal'
+      }
+      // else: earningType undefined chhod do — earnings se automatically excluded
     }
 
     if (earningType === 'normal') {

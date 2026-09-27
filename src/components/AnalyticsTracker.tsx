@@ -55,13 +55,29 @@ function getVisitorId(): string {
   }
 }
 
+// 🆕 Admin preview detection (?adminPreview=1)
+function isAdminPreviewUrl(): boolean {
+  try {
+    return new URLSearchParams(window.location.search).get('adminPreview') === '1';
+  } catch {
+    return false;
+  }
+}
+
 // ─── Module-level guard: same render-cycle / StrictMode double-fire ─────
 let lastSentPath = '';
 let lastSentAt = 0;
 
 function sendToBackend(path: string) {
   const { pageType, slug } = getPageMeta(path.split('?')[0]);   // ← query hata ke slug nikalo
-  const payload = { path, pageType, slug, sessionId: getSessionId(), visitorId: getVisitorId() };
+  const payload = {
+    path,
+    pageType,
+    slug,
+    sessionId: getSessionId(),
+    visitorId: getVisitorId(),
+    isAdminPreview: isAdminPreviewUrl(), // 🆕 admin preview flag
+  };
 
   // ✅ FIX: sirf 1 second ke andar wale exact duplicate ko guard karo
   // (StrictMode double-fire isi window mein hota hai). Genuine revisit
@@ -80,12 +96,14 @@ function sendToBackend(path: string) {
   }).catch(() => {});
 }
 
-// 🆕 ?l= aur ?ls= ko address bar se hata do (share karne par signed URL leak na ho)
+// 🆕 ?l=, ?ls= aur ?adminPreview= ko address bar se hata do
+// (share karne par signed URL ya admin preview flag leak na ho)
 function stripLinkTagFromUrl() {
   const p = new URLSearchParams(window.location.search);
-  if (!p.has('l') && !p.has('ls')) return;
+  if (!p.has('l') && !p.has('ls') && !p.has('adminPreview')) return;
   p.delete('l');
   p.delete('ls');
+  p.delete('adminPreview');
   const q = p.toString();
   window.history.replaceState(
     window.history.state,
@@ -101,7 +119,7 @@ const AnalyticsTracker = () => {
   useEffect(() => {
     const currentPath = location.pathname + location.search;
 
-    // ✅ हर रूट चेंज पर एक पेज व्यू भेजें (payload isi call mein ban jata hai, l/ls ke saath)
+    // ✅ हर रूट चेंज पर एक पेज व्यू भेजें (payload isi call mein ban jata hai, l/ls/adminPreview ke saath)
     sendToBackend(currentPath);
 
     // 🆕 pageview bhejne ke BAAD address bar saaf karo
@@ -117,7 +135,11 @@ const AnalyticsTracker = () => {
     }
 
     if (import.meta.env.DEV) {
-      console.log('📊 Page View:', { path: currentPath, ...getPageMeta(location.pathname) });
+      console.log('📊 Page View:', {
+        path: currentPath,
+        ...getPageMeta(location.pathname),
+        isAdminPreview: isAdminPreviewUrl(),
+      });
     }
   }, [location]);
 
