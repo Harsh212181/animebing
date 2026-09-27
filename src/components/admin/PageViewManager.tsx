@@ -1,4 +1,4 @@
- // src/components/admin/PageViewManager.tsx
+// src/components/admin/PageViewManager.tsx
 import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
@@ -226,6 +226,53 @@ function viewsToColor(views: number, maxViews: number): string {
   const b = Math.round(100 + intensity * 150);
   return `rgb(${r},${g},${b})`;
 }
+
+// ─── 🆕 Collapsible Section ───────────────────────────────────────────────
+// Poore card header pe click karke expand/collapse ho jaata hai.
+// Andar jo interactive elements hain (period selectors, tabs, refresh),
+// unpe click karne se collapse toggle nahi hota (stopPropagation).
+const CollapsibleSection: React.FC<{
+  title: string;
+  subtitle?: string;
+  defaultOpen?: boolean;
+  headerExtra?: React.ReactNode;
+  children: React.ReactNode;
+}> = ({ title, subtitle, defaultOpen = false, headerExtra, children }) => {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl overflow-hidden transition-colors hover:border-white/[0.12]">
+      <div
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center justify-between gap-3 px-4 py-3 cursor-pointer select-none hover:bg-white/[0.02] transition-colors"
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o); } }}
+      >
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-semibold text-gray-300 uppercase tracking-wide">{title}</p>
+          {subtitle && <p className="text-[10px] text-gray-600 mt-0.5">{subtitle}</p>}
+        </div>
+        <div
+          className="flex items-center gap-2 flex-shrink-0"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {headerExtra}
+          <span
+            className={`text-gray-500 transition-transform text-xs ml-1 ${open ? 'rotate-180' : ''}`}
+            onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }}
+          >
+            ▾
+          </span>
+        </div>
+      </div>
+      {open && (
+        <div className="border-t border-white/[0.06]">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ─── World Map Component ──────────────────────────────────────────────────
 interface WorldMapProps {
@@ -1202,6 +1249,19 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
   const allTypes = Array.from(new Set((topPages || []).map(p => p.pageType)));
   const allDevices = stats?.byDevice?.map(d => d.device) ?? [];
 
+  // Helper to render a period selector (used inside CollapsibleSection header)
+  const renderPeriodSelector = (value: string, setValue: (v: string) => void) => (
+    <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
+      {Object.entries(topPeriodLabels).map(([key, { label }]) => (
+        <button key={key} onClick={() => setValue(key)}
+          className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors
+            ${value === key ? 'bg-purple-600/50 text-purple-200 shadow-sm' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
   if (loading && !stats) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -1287,7 +1347,7 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
         </div>
       </div>
 
-      {/* ── World Map ──────────────────────────────────────────────────── */}
+      {/* ── World Map (not collapsible) ─────────────────────────────────── */}
       <WorldMap
         byCountry={byCountry}
         token={token}
@@ -1297,7 +1357,7 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
         loading={countryLoading}
       />
 
-      {/* ── Funnel ────────────────────────────────────────────────────── */}
+      {/* ── Funnel (not collapsible) ────────────────────────────────────── */}
       {funnel && (
         <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4">
           <div className="flex items-center justify-between mb-4">
@@ -1339,7 +1399,7 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
         </div>
       )}
 
-      {/* ── Monthly Analytics ─────────────────────────────────────────────── */}
+      {/* ── Monthly Analytics (not collapsible) ───────────────────────────── */}
       <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
           <div>
@@ -1430,74 +1490,62 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
         )}
       </div>
 
-      {/* ── 1. Traffic Sources (Referrers) ────────────────────────────── */}
-      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Traffic Sources</p>
-          <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
-            {Object.entries(topPeriodLabels).map(([key, { label }]) => (
-              <button key={key} onClick={() => setReferrerPeriod(key)}
-                className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors
-                  ${referrerPeriod === key ? 'bg-purple-600/50 text-purple-200 shadow-sm' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-        {referrerLoading ? (
-          <div className="flex justify-center py-4"><span className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
-        ) : referrers.length === 0 ? (
-          <p className="text-gray-600 text-xs text-center py-4">No referrer data</p>
-        ) : (
-          <div className="space-y-2">
-            {referrers.slice(0, 10).map((r, i) => {
-              const max = referrers[0]?.views || 1;
-              const barWidth = (r.views / max) * 100;
-              return (
-                <div key={i} className="flex items-center gap-2 text-xs">
-                  <span className="text-gray-500 w-20 truncate">{r.source}</span>
-                  <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-purple-600/60 to-purple-400 rounded-full" style={{ width: `${barWidth}%` }} />
+      {/* ── 1. Traffic Sources — Collapsible ─────────────────────────── */}
+      <CollapsibleSection
+        title="Traffic Sources"
+        subtitle="Where visitors come from"
+        headerExtra={renderPeriodSelector(referrerPeriod, setReferrerPeriod)}
+      >
+        <div className="p-4">
+          {referrerLoading ? (
+            <div className="flex justify-center py-4"><span className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
+          ) : referrers.length === 0 ? (
+            <p className="text-gray-600 text-xs text-center py-4">No referrer data</p>
+          ) : (
+            <div className="space-y-2">
+              {referrers.slice(0, 10).map((r, i) => {
+                const max = referrers[0]?.views || 1;
+                const barWidth = (r.views / max) * 100;
+                return (
+                  <div key={i} className="flex items-center gap-2 text-xs">
+                    <span className="text-gray-500 w-20 truncate">{r.source}</span>
+                    <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-purple-600/60 to-purple-400 rounded-full" style={{ width: `${barWidth}%` }} />
+                    </div>
+                    <span className="text-white font-medium w-16 text-right">{r.views.toLocaleString()}</span>
                   </div>
-                  <span className="text-white font-medium w-16 text-right">{r.views.toLocaleString()}</span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* ── 2. Browser Breakdown ──────────────────────────────────────── */}
-      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Browsers</p>
-          <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
-            {Object.entries(topPeriodLabels).map(([key, { label }]) => (
-              <button key={key} onClick={() => setBrowserPeriod(key)}
-                className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors
-                  ${browserPeriod === key ? 'bg-purple-600/50 text-purple-200 shadow-sm' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}>
-                {label}
-              </button>
-            ))}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
-        {browserLoading ? (
-          <div className="flex justify-center py-4"><span className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
-        ) : browsers.length === 0 ? (
-          <p className="text-gray-600 text-xs text-center py-4">No browser data</p>
-        ) : (
-          <div className="grid grid-cols-2 gap-2">
-            {browsers.map((b, i) => (
-              <div key={i} className="flex items-center justify-between p-2 bg-white/5 rounded-lg">
-                <span className="text-gray-300 text-xs">{b.browser}</span>
-                <span className="text-white font-medium text-xs">{b.count.toLocaleString()}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      </CollapsibleSection>
 
-      {/* ── 3. Average Time on Page ────────────────────────────────────── */}
+      {/* ── 2. Browsers — Collapsible ───────────────────────────────── */}
+      <CollapsibleSection
+        title="Browsers"
+        subtitle="Browser distribution"
+        headerExtra={renderPeriodSelector(browserPeriod, setBrowserPeriod)}
+      >
+        <div className="p-4">
+          {browserLoading ? (
+            <div className="flex justify-center py-4"><span className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
+          ) : browsers.length === 0 ? (
+            <p className="text-gray-600 text-xs text-center py-4">No browser data</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              {browsers.map((b, i) => (
+                <div key={i} className="flex items-center justify-between p-2 bg-white/5 rounded-lg">
+                  <span className="text-gray-300 text-xs">{b.browser}</span>
+                  <span className="text-white font-medium text-xs">{b.count.toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </CollapsibleSection>
+
+      {/* ── 3. Average Time on Page (not in list — leave expanded) ───── */}
       <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Avg. Time on Page</p>
@@ -1528,7 +1576,7 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
         )}
       </div>
 
-      {/* ── 4. Live Visitors ───────────────────────────────────────────── */}
+      {/* ── 4. Live Visitors (not in list — leave expanded) ──────────── */}
       <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Live Visitors (last 5 min)</p>
@@ -1555,118 +1603,100 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
         )}
       </div>
 
-      {/* ── 5. Top Anime Overall ───────────────────────────────────────── */}
-      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Top Anime</p>
-          <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
-            {Object.entries(topPeriodLabels).map(([key, { label }]) => (
-              <button key={key} onClick={() => setTopAnimePeriod(key)}
-                className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors
-                  ${topAnimePeriod === key ? 'bg-purple-600/50 text-purple-200 shadow-sm' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-        {topAnimeLoading ? (
-          <div className="flex justify-center py-4"><span className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
-        ) : topAnime.length === 0 ? (
-          <p className="text-gray-600 text-xs text-center py-4">No anime data</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-white/[0.06]">
-                  <th className="py-2 text-left text-gray-500">Anime</th>
-                  <th className="py-2 text-right text-gray-500">Total</th>
-                  <th className="py-2 text-right text-gray-500 hidden sm:table-cell">Detail</th>
-                  <th className="py-2 text-right text-gray-500 hidden sm:table-cell">Episode</th>
-                  <th className="py-2 text-right text-gray-500 hidden sm:table-cell">Download</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topAnime.slice(0, 15).map((a, i) => (
-                  <tr key={i} className="border-b border-white/[0.03]">
-                    <td className="py-2 text-gray-300 truncate max-w-xs">{a.animeTitle}</td>
-                    <td className="py-2 text-right text-white font-medium">{a.totalViews.toLocaleString()}</td>
-                    <td className="py-2 text-right text-gray-500 hidden sm:table-cell">{a.detailViews}</td>
-                    <td className="py-2 text-right text-gray-500 hidden sm:table-cell">{a.episodeViews}</td>
-                    <td className="py-2 text-right text-gray-500 hidden sm:table-cell">{a.downloadViews}</td>
+      {/* ── 5. Top Anime — Collapsible ──────────────────────────────── */}
+      <CollapsibleSection
+        title="Top Anime"
+        subtitle="Most viewed anime across all pages"
+        headerExtra={renderPeriodSelector(topAnimePeriod, setTopAnimePeriod)}
+      >
+        <div className="p-4">
+          {topAnimeLoading ? (
+            <div className="flex justify-center py-4"><span className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
+          ) : topAnime.length === 0 ? (
+            <p className="text-gray-600 text-xs text-center py-4">No anime data</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-white/[0.06]">
+                    <th className="py-2 text-left text-gray-500">Anime</th>
+                    <th className="py-2 text-right text-gray-500">Total</th>
+                    <th className="py-2 text-right text-gray-500 hidden sm:table-cell">Detail</th>
+                    <th className="py-2 text-right text-gray-500 hidden sm:table-cell">Episode</th>
+                    <th className="py-2 text-right text-gray-500 hidden sm:table-cell">Download</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* ── 6. Hourly Heatmap ──────────────────────────────────────────── */}
-      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Hourly Activity (IST)</p>
-          <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
-            {Object.entries(topPeriodLabels).map(([key, { label }]) => (
-              <button key={key} onClick={() => setHourlyPeriod(key)}
-                className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors
-                  ${hourlyPeriod === key ? 'bg-purple-600/50 text-purple-200 shadow-sm' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}>
-                {label}
-              </button>
-            ))}
-          </div>
+                </thead>
+                <tbody>
+                  {topAnime.slice(0, 15).map((a, i) => (
+                    <tr key={i} className="border-b border-white/[0.03]">
+                      <td className="py-2 text-gray-300 truncate max-w-xs">{a.animeTitle}</td>
+                      <td className="py-2 text-right text-white font-medium">{a.totalViews.toLocaleString()}</td>
+                      <td className="py-2 text-right text-gray-500 hidden sm:table-cell">{a.detailViews}</td>
+                      <td className="py-2 text-right text-gray-500 hidden sm:table-cell">{a.episodeViews}</td>
+                      <td className="py-2 text-right text-gray-500 hidden sm:table-cell">{a.downloadViews}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
-        {hourlyLoading ? (
-          <div className="flex justify-center py-4"><span className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
-        ) : hourlyData.length === 0 ? (
-          <p className="text-gray-600 text-xs text-center py-4">No hourly data</p>
-        ) : (
-          <div className="flex items-end gap-1 h-24">
-            {hourlyData.map((h, i) => {
-              const maxH = Math.max(...hourlyData.map(d => d.views), 1);
-              const heightPct = (h.views / maxH) * 100;
-              return (
-                <div key={i} className="flex-1 flex flex-col items-center justify-end gap-1">
-                  <span className="text-[9px] text-gray-500">{h.views > 0 ? h.views : ''}</span>
-                  <div className="w-full bg-purple-600/70 rounded-t" style={{ height: `${Math.max(heightPct, 2)}%` }} />
-                  <span className="text-[9px] text-gray-600">{h.hour}</span>
+      </CollapsibleSection>
+
+      {/* ── 6. Hourly Activity — Collapsible ─────────────────────────── */}
+      <CollapsibleSection
+        title="Hourly Activity (IST)"
+        subtitle="Views by hour of day"
+        headerExtra={renderPeriodSelector(hourlyPeriod, setHourlyPeriod)}
+      >
+        <div className="p-4">
+          {hourlyLoading ? (
+            <div className="flex justify-center py-4"><span className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
+          ) : hourlyData.length === 0 ? (
+            <p className="text-gray-600 text-xs text-center py-4">No hourly data</p>
+          ) : (
+            <div className="flex items-end gap-1 h-24">
+              {hourlyData.map((h, i) => {
+                const maxH = Math.max(...hourlyData.map(d => d.views), 1);
+                const heightPct = (h.views / maxH) * 100;
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center justify-end gap-1">
+                    <span className="text-[9px] text-gray-500">{h.views > 0 ? h.views : ''}</span>
+                    <div className="w-full bg-purple-600/70 rounded-t" style={{ height: `${Math.max(heightPct, 2)}%` }} />
+                    <span className="text-[9px] text-gray-600">{h.hour}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </CollapsibleSection>
+
+      {/* ── 7. 404 Pages — Collapsible ──────────────────────────────── */}
+      <CollapsibleSection
+        title="404 / Not Found Pages"
+        subtitle="Broken or missing links"
+        headerExtra={renderPeriodSelector(notFoundPeriod, setNotFoundPeriod)}
+      >
+        <div className="p-4">
+          {notFoundLoading ? (
+            <div className="flex justify-center py-4"><span className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
+          ) : notFoundPages.length === 0 ? (
+            <p className="text-gray-600 text-xs text-center py-4">No 404 pages recorded</p>
+          ) : (
+            <div className="space-y-2">
+              {notFoundPages.slice(0, 15).map((p, i) => (
+                <div key={i} className="flex items-center justify-between text-xs">
+                  <span className="text-gray-300 truncate max-w-xs">{p.path}</span>
+                  <span className="text-white font-medium">{p.views}</span>
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* ── 7. 404 Pages ────────────────────────────────────────────────── */}
-      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">404 / Not Found Pages</p>
-          <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
-            {Object.entries(topPeriodLabels).map(([key, { label }]) => (
-              <button key={key} onClick={() => setNotFoundPeriod(key)}
-                className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors
-                  ${notFoundPeriod === key ? 'bg-purple-600/50 text-purple-200 shadow-sm' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}>
-                {label}
-              </button>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
-        {notFoundLoading ? (
-          <div className="flex justify-center py-4"><span className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
-        ) : notFoundPages.length === 0 ? (
-          <p className="text-gray-600 text-xs text-center py-4">No 404 pages recorded</p>
-        ) : (
-          <div className="space-y-2">
-            {notFoundPages.slice(0, 15).map((p, i) => (
-              <div key={i} className="flex items-center justify-between text-xs">
-                <span className="text-gray-300 truncate max-w-xs">{p.path}</span>
-                <span className="text-white font-medium">{p.views}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      </CollapsibleSection>
 
-      {/* ── 8. New vs Returning Visitors ───────────────────────────────── */}
+      {/* ── 8. Visitor Loyalty (not in list — leave expanded) ────────── */}
       <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Visitor Loyalty</p>
@@ -1698,24 +1728,12 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
         )}
       </div>
 
-      {/* ── User Link Analytics ─────────────────────────────────────────── */}
-      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
-          <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">User Link Analytics</p>
-            <p className="text-[10px] text-gray-600 mt-0.5">Per-user link performance, traffic sources & visitor loyalty</p>
-          </div>
-          <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
-            {Object.entries(topPeriodLabels).map(([key, { label }]) => (
-              <button key={key} onClick={() => setUserLinksPeriod(key)}
-                className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors
-                  ${userLinksPeriod === key ? 'bg-purple-600/50 text-purple-200 shadow-sm' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-
+      {/* ── User Link Analytics — Collapsible ────────────────────────── */}
+      <CollapsibleSection
+        title="User Link Analytics"
+        subtitle="Per-user link performance, traffic sources & visitor loyalty"
+        headerExtra={renderPeriodSelector(userLinksPeriod, setUserLinksPeriod)}
+      >
         {userLinksLoading ? (
           <div className="flex justify-center py-8">
             <span className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
@@ -1737,14 +1755,12 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
                     onClick={() => setExpandedUser(isExpanded ? null : u.userId)}
                     className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/[0.03] transition-colors text-left group"
                   >
-                    {/* Avatar */}
                     <div className="w-8 h-8 rounded-full bg-purple-600/20 flex items-center justify-center flex-shrink-0">
                       <span className="text-purple-300 text-xs font-semibold">
                         {u.realName.charAt(0).toUpperCase()}
                       </span>
                     </div>
 
-                    {/* Name + username */}
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-white truncate">{u.realName}</p>
                       <p className="text-[10px] text-gray-500 flex items-center gap-1.5">
@@ -1757,40 +1773,33 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
                       </p>
                     </div>
 
-                    {/* Period clicks */}
                     <div className="text-right flex-shrink-0">
                       <p className="text-sm font-semibold text-purple-400">{u.clicksInPeriod.toLocaleString()}</p>
                       <p className="text-[10px] text-gray-600">period clicks</p>
                     </div>
 
-                    {/* Unique visitors */}
                     <div className="text-right flex-shrink-0 hidden sm:block">
                       <p className="text-sm font-semibold text-cyan-400">{u.uniqueVisitors.toLocaleString()}</p>
                       <p className="text-[10px] text-gray-600">unique</p>
                     </div>
 
-                    {/* Returning % */}
                     <div className="text-right flex-shrink-0 hidden md:block">
                       <p className="text-sm font-semibold text-emerald-400">{returningPct}%</p>
                       <p className="text-[10px] text-gray-600">returning</p>
                     </div>
 
-                    {/* Top country */}
                     <div className="text-right flex-shrink-0 hidden lg:block w-16">
                       <p className="text-xs text-gray-300">{topCountry ? (COUNTRY_NAMES[topCountry.country] || topCountry.country) : '—'}</p>
                       <p className="text-[10px] text-gray-600">top country</p>
                     </div>
 
-                    {/* Expand arrow */}
                     <span className={`text-gray-600 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}>
                       ▾
                     </span>
                   </button>
 
-                  {/* Expanded detail */}
                   {isExpanded && (
                     <div className="border-t border-white/[0.04] bg-white/[0.02] px-4 py-4 space-y-4">
-                      {/* Stats row */}
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         <div className="bg-white/5 rounded-lg p-3">
                           <p className="text-[10px] text-gray-500 uppercase tracking-wide">Total (all time)</p>
@@ -1810,7 +1819,6 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
                         </div>
                       </div>
 
-                      {/* Daily chart (mini bar chart) */}
                       <div>
                         <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-2">Daily clicks (last 7 days)</p>
                         <div className="flex items-end gap-1 h-16">
@@ -1828,9 +1836,7 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
                         </div>
                       </div>
 
-                      {/* Country + Device row */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {/* Countries */}
                         <div>
                           <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-2">Top countries</p>
                           {u.byCountry.length === 0 ? (
@@ -1856,7 +1862,6 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
                           )}
                         </div>
 
-                        {/* Devices */}
                         <div>
                           <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-2">By device</p>
                           {u.byDevice.length === 0 ? (
@@ -1882,7 +1887,6 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
                         </div>
                       </div>
 
-                      {/* Per-link table */}
                       <div>
                         <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-2">Links performance</p>
                         <div className="overflow-x-auto rounded-lg border border-white/[0.06]">
@@ -1926,17 +1930,19 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
             })}
           </div>
         )}
-      </div>
+      </CollapsibleSection>
 
-      {/* ── FEATURE 1+2: Earnings Timeline + Link Health ─────────────────── */}
-      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
-          <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Earnings & Link Health</p>
-            <p className="text-[10px] text-gray-600 mt-0.5">30-day timeline, projected income & per-link status</p>
-          </div>
-          <button onClick={fetchEarnings} className="text-[10px] text-purple-400 hover:text-purple-300 transition-colors">Refresh</button>
-        </div>
+      {/* ── Earnings & Link Health — Collapsible ─────────────────────── */}
+      <CollapsibleSection
+        title="Earnings & Link Health"
+        subtitle="30-day timeline, projected income & per-link status"
+        headerExtra={
+          <button onClick={(e) => { e.stopPropagation(); fetchEarnings(); }}
+            className="text-[10px] text-purple-400 hover:text-purple-300 transition-colors px-2 py-1">
+            Refresh
+          </button>
+        }
+      >
         {earningsLoading ? (
           <div className="flex justify-center py-8"><span className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
         ) : earningsData.length === 0 ? (
@@ -2033,25 +2039,14 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
             })}
           </div>
         )}
-      </div>
+      </CollapsibleSection>
 
-      {/* ── FEATURE 3: Fraud Detection ──────────────────────────────────── */}
-      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
-          <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Fraud & Bot Detection</p>
-            <p className="text-[10px] text-gray-600 mt-0.5">Suspicious IPs, click spikes, unknown traffic</p>
-          </div>
-          <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
-            {Object.entries(topPeriodLabels).map(([key, { label }]) => (
-              <button key={key} onClick={() => setFraudDays(key)}
-                className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors
-                  ${fraudDays === key ? 'bg-purple-600/50 text-purple-200' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
+      {/* ── Fraud & Bot Detection — Collapsible ──────────────────────── */}
+      <CollapsibleSection
+        title="Fraud & Bot Detection"
+        subtitle="Suspicious IPs, click spikes, unknown traffic"
+        headerExtra={renderPeriodSelector(fraudDays, setFraudDays)}
+      >
         {fraudLoading ? (
           <div className="flex justify-center py-8"><span className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
         ) : fraudData.length === 0 ? (
@@ -2104,15 +2099,13 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
             ))}
           </div>
         )}
-      </div>
+      </CollapsibleSection>
 
-      {/* ── FEATURE 4: Leaderboard ───────────────────────────────────────── */}
-      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
-          <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Leaderboard & Streaks</p>
-            <p className="text-[10px] text-gray-600 mt-0.5">Rankings, consecutive days, login streaks</p>
-          </div>
+      {/* ── Leaderboard & Streaks — Collapsible ──────────────────────── */}
+      <CollapsibleSection
+        title="Leaderboard & Streaks"
+        subtitle="Rankings, consecutive days, login streaks"
+        headerExtra={
           <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
             {(['byToday', 'byWeek', 'byAllTime', 'byStreak'] as const).map(tab => (
               <button key={tab} onClick={() => setLeaderTab(tab)}
@@ -2122,7 +2115,8 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
               </button>
             ))}
           </div>
-        </div>
+        }
+      >
         {leaderLoading ? (
           <div className="flex justify-center py-8"><span className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
         ) : !leaderData ? null : (
@@ -2165,15 +2159,18 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
             })}
           </div>
         )}
-      </div>
+      </CollapsibleSection>
 
-      {/* ── FEATURE 5: Payment Analytics ─────────────────────────────────── */}
-      {paymentData && (
-        <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-white/[0.06]">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Payment Analytics</p>
-            <p className="text-[10px] text-gray-600 mt-0.5">Earnings overview, pending requests, monthly trend</p>
-          </div>
+      {/* ── Payment Analytics — Collapsible ──────────────────────────── */}
+      <CollapsibleSection
+        title="Payment Analytics"
+        subtitle="Earnings overview, pending requests, monthly trend"
+      >
+        {paymentLoading ? (
+          <div className="flex justify-center py-8"><span className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
+        ) : !paymentData ? (
+          <p className="text-gray-600 text-xs text-center py-8">No payment data</p>
+        ) : (
           <div className="p-4 space-y-4">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="bg-white/5 rounded-lg p-3">
@@ -2242,15 +2239,14 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
               </div>
             )}
           </div>
-        </div>
-      )}
+        )}
+      </CollapsibleSection>
 
-      {/* ── FEATURE 6: Cohort Analysis ───────────────────────────────────── */}
-      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-white/[0.06]">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">User Cohort Analysis</p>
-          <p className="text-[10px] text-gray-600 mt-0.5">Retention by join month — 30/60/90 day activity</p>
-        </div>
+      {/* ── User Cohort Analysis — Collapsible ───────────────────────── */}
+      <CollapsibleSection
+        title="User Cohort Analysis"
+        subtitle="Retention by join month — 30/60/90 day activity"
+      >
         {cohortLoading ? (
           <div className="flex justify-center py-8"><span className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
         ) : cohortData.length === 0 ? (
@@ -2297,17 +2293,13 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
             </table>
           </div>
         )}
-      </div>
+      </CollapsibleSection>
 
-      {/* ── FEATURE 7 (Updated): Link Journey Tracking ─────────────────────── */}
-      <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
-          <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Link Journey Tracking</p>
-            <p className="text-[10px] text-gray-600 mt-0.5">
-              {journeyTab === 'byUser' ? 'Click → detail → download per user' : 'Per‑link journey: clicks → page visits'}
-            </p>
-          </div>
+      {/* ── Link Journey Tracking — Collapsible ──────────────────────── */}
+      <CollapsibleSection
+        title="Link Journey Tracking"
+        subtitle={journeyTab === 'byUser' ? 'Click → detail → download per user' : 'Per‑link journey: clicks → page visits'}
+        headerExtra={
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
               <button onClick={() => setJourneyTab('byUser')}
@@ -2321,20 +2313,11 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
                 By Link
               </button>
             </div>
-            <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5">
-              {Object.entries(topPeriodLabels).map(([key, { label }]) => (
-                <button key={key} onClick={() => setJourneyDays(key)}
-                  className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-colors
-                    ${journeyDays === key ? 'bg-purple-600/50 text-purple-200' : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'}`}>
-                  {label}
-                </button>
-              ))}
-            </div>
+            {renderPeriodSelector(journeyDays, setJourneyDays)}
           </div>
-        </div>
-
+        }
+      >
         {journeyTab === 'byUser' ? (
-          /* By User view */
           journeyLoading ? (
             <div className="flex justify-center py-8"><span className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
           ) : journeyData.length === 0 ? (
@@ -2375,7 +2358,6 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
             </div>
           )
         ) : (
-          /* By Link view */
           journeyLoading ? (
             <div className="flex justify-center py-8"><span className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /></div>
           ) : linkJourneyData.length === 0 ? (
@@ -2418,9 +2400,9 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
             </div>
           )
         )}
-      </div>
+      </CollapsibleSection>
 
-      {/* Top pages table */}
+      {/* Top pages table (not in list — leave expanded) */}
       <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl overflow-hidden">
         <div className="p-4 border-b border-white/[0.06] flex flex-wrap items-center gap-3">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide flex-1">Top Pages</p>
@@ -2503,7 +2485,6 @@ const PageViewManager: React.FC<PageViewManagerProps> = ({ token }) => {
                           {page.animeTitle && (
                             <span className="text-gray-600 truncate max-w-xs text-[10px]">{page.path}</span>
                           )}
-                          {/* (Old breakdown line removed — now shown in Views column) */}
                           <div className="mt-1 h-1 bg-white/5 rounded-full w-32 overflow-hidden">
                             <div className="h-full rounded-full"
                               style={{ width: `${barWidth}%`, background: TYPE_COLOR[page.pageType] || '#a78bfa' }} />
