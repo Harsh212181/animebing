@@ -1,4 +1,4 @@
- // src/components/admin/EpisodeStatusManager.tsx – Premium UI, mobile cards, dropdown filters
+// src/components/admin/EpisodeStatusManager.tsx – Premium UI, mobile cards, dropdown filters
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
@@ -180,6 +180,27 @@ const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: toke
   const [syncModalLoading, setSyncModalLoading] = useState(false);
   const [confirmingPageId, setConfirmingPageId] = useState<string | null>(null);
 
+  // 🆕 Double-click / slow-network guard — synchronous Set of in-flight keys.
+  // Prevents duplicate API calls even if user clicks before React re-renders.
+  const pendingRef = useRef<Set<string>>(new Set());
+
+  /**
+   * Wrap any async action with this helper. If the same key is already in-flight,
+   * the second call becomes a silent no-op. Errors are swallowed here because
+   * every action already shows its own toast.
+   */
+  const guarded = async (key: string, fn: () => Promise<void>) => {
+    if (pendingRef.current.has(key)) return;
+    pendingRef.current.add(key);
+    try {
+      await fn();
+    } catch {
+      /* each action handles its own errors */
+    } finally {
+      setTimeout(() => { pendingRef.current.delete(key); }, 250);
+    }
+  };
+
   useEffect(() => {
     fetchAnime();
   }, []);
@@ -221,26 +242,28 @@ const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: toke
   }, [searchTerm, animeList, contentTypeFilter, statusFilter, subDubFilter, creatorFilter]);
 
   const fetchAnime = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const token = getToken();
-      const { data } = await axios.get(
-        `${API_BASE}/admin/protected/anime-list`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-      setAnimeList(data);
-      setFilteredList(data);
-    } catch (err: any) {
-      console.error('Failed to fetch anime list', err);
-      setError(
-        err.response?.data?.error || err.message || 'Failed to load anime'
-      );
-    } finally {
-      setLoading(false);
-    }
+    await guarded('fetch-anime', async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const token = getToken();
+        const { data } = await axios.get(
+          `${API_BASE}/admin/protected/anime-list`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        setAnimeList(data);
+        setFilteredList(data);
+      } catch (err: any) {
+        console.error('Failed to fetch anime list', err);
+        setError(
+          err.response?.data?.error || err.message || 'Failed to load anime'
+        );
+      } finally {
+        setLoading(false);
+      }
+    });
   };
 
   const handleUpdate = async (
@@ -248,101 +271,109 @@ const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: toke
     totalEpisodes: number,
     currentEpisode: number
   ) => {
-    setSavingId(id);
-    setError('');
-    const toastId = toast.loading('Updating episode status...');
-    try {
-      const token = getToken();
-      await axios.patch(
-        `${API_BASE}/admin/protected/anime/${id}/episode-status`,
-        { totalEpisodes, currentEpisode },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setAnimeList(prev =>
-        prev.map(a =>
-          a._id === id ? { ...a, totalEpisodes, currentEpisode } : a
-        )
-      );
-      toast.success('Episode status updated successfully!', { id: toastId });
-    } catch (err: any) {
-      console.error('Update failed', err);
-      toast.error(
-        'Failed to update: ' +
-          (err.response?.data?.error || err.message),
-        { id: toastId }
-      );
-    } finally {
-      setSavingId(null);
-    }
+    await guarded(`update-status-${id}`, async () => {
+      setSavingId(id);
+      setError('');
+      const toastId = toast.loading('Updating episode status...');
+      try {
+        const token = getToken();
+        await axios.patch(
+          `${API_BASE}/admin/protected/anime/${id}/episode-status`,
+          { totalEpisodes, currentEpisode },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        setAnimeList(prev =>
+          prev.map(a =>
+            a._id === id ? { ...a, totalEpisodes, currentEpisode } : a
+          )
+        );
+        toast.success('Episode status updated successfully!', { id: toastId });
+      } catch (err: any) {
+        console.error('Update failed', err);
+        toast.error(
+          'Failed to update: ' +
+            (err.response?.data?.error || err.message),
+          { id: toastId }
+        );
+      } finally {
+        setSavingId(null);
+      }
+    });
   };
 
   const handleSync = async (id: string, title: string) => {
-    setSyncModalLoading(true);
-    setSyncModalAnime({ id, title });
-    setSyncModalPages([]);
-    try {
-      const token = getToken();
-      const { data: pages } = await axios.get<DownloadPage[]>(
-        `${API_BASE}/download-pages/anime/${id}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+    await guarded(`sync-fetch-${id}`, async () => {
+      setSyncModalLoading(true);
+      setSyncingId(id);
+      setSyncModalAnime({ id, title });
+      setSyncModalPages([]);
+      try {
+        const token = getToken();
+        const { data: pages } = await axios.get<DownloadPage[]>(
+          `${API_BASE}/download-pages/anime/${id}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
 
-      if (!pages || pages.length === 0) {
-        toast.error('No download pages found for this anime.');
+        if (!pages || pages.length === 0) {
+          toast.error('No download pages found for this anime.');
+          setSyncModalAnime(null);
+          return;
+        }
+
+        if (pages.length === 1) {
+          await syncWithSpecificPage(id, pages[0]);
+          setSyncModalAnime(null);
+          return;
+        }
+
+        setSyncModalPages(pages);
+      } catch (err: any) {
+        console.error('Sync fetch failed', err);
+        toast.error('Failed to load pages: ' + (err.response?.data?.error || err.message));
         setSyncModalAnime(null);
-        return;
+      } finally {
+        setSyncModalLoading(false);
+        setSyncingId(null);
       }
-
-      if (pages.length === 1) {
-        await syncWithSpecificPage(id, pages[0]);
-        setSyncModalAnime(null);
-        return;
-      }
-
-      setSyncModalPages(pages);
-    } catch (err: any) {
-      console.error('Sync fetch failed', err);
-      toast.error('Failed to load pages: ' + (err.response?.data?.error || err.message));
-      setSyncModalAnime(null);
-    } finally {
-      setSyncModalLoading(false);
-    }
+    });
   };
 
   const syncWithSpecificPage = async (animeId: string, page: DownloadPage) => {
-    setConfirmingPageId(page._id);
-    const toastId = toast.loading('Syncing from selected page...');
-    try {
-      const watchLinks = page.links.filter(l => (l.type || 'watch') === 'watch');
-      let maxEpisode = 0;
-      watchLinks.forEach(link => {
-        if (link.episode > maxEpisode) maxEpisode = link.episode;
-      });
+    await guarded(`sync-apply-${page._id}`, async () => {
+      setConfirmingPageId(page._id);
+      const toastId = toast.loading('Syncing from selected page...');
+      try {
+        const watchLinks = page.links.filter(l => (l.type || 'watch') === 'watch');
+        let maxEpisode = 0;
+        watchLinks.forEach(link => {
+          if (link.episode > maxEpisode) maxEpisode = link.episode;
+        });
 
-      if (maxEpisode === 0) {
-        toast.error('Is page me koi valid episode number nahi mila.', { id: toastId });
-        return;
+        if (maxEpisode === 0) {
+          toast.error('Is page me koi valid episode number nahi mila.', { id: toastId });
+          return;
+        }
+
+        const token = getToken();
+        await axios.patch(
+          `${API_BASE}/admin/protected/anime/${animeId}/episode-status`,
+          { currentEpisode: maxEpisode },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+
+        setAnimeList(prev =>
+          prev.map(a => (a._id === animeId ? { ...a, currentEpisode: maxEpisode } : a))
+        );
+
+        toast.success(`Synced! Current episode set to ${maxEpisode}`, { id: toastId });
+        setSyncModalAnime(null);
+      } catch (err: any) {
+        console.error('Sync failed', err);
+        toast.error('Sync failed: ' + (err.response?.data?.error || err.message), { id: toastId });
+      } finally {
+        setConfirmingPageId(null);
       }
-
-      const token = getToken();
-      await axios.patch(
-        `${API_BASE}/admin/protected/anime/${animeId}/episode-status`,
-        { currentEpisode: maxEpisode },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      setAnimeList(prev =>
-        prev.map(a => (a._id === animeId ? { ...a, currentEpisode: maxEpisode } : a))
-      );
-
-      toast.success(`Synced! Current episode set to ${maxEpisode}`, { id: toastId });
-      setSyncModalAnime(null);
-    } catch (err: any) {
-      console.error('Sync failed', err);
-      toast.error('Sync failed: ' + (err.response?.data?.error || err.message), { id: toastId });
-    } finally {
-      setConfirmingPageId(null);
-    }
+    });
   };
 
   const updateLocalField = (id: string, field: 'totalEpisodes' | 'currentEpisode', value: number) => {
@@ -366,7 +397,7 @@ const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: toke
     );
   }
 
-  const inputCls = "w-full px-2 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-xs text-white text-center outline-none transition-all focus:border-purple-500/50 focus:bg-white/[0.06] focus:ring-2 focus:ring-purple-500/20";
+  const inputCls = "w-full px-2 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-xs text-white text-center outline-none transition-all focus:border-purple-500/50 focus:bg-white/[0.06] focus:ring-2 focus:ring-purple-500/20 disabled:opacity-60 disabled:cursor-not-allowed";
 
   return (
     <div className="p-3 sm:p-6 space-y-4 min-h-screen bg-[#0b0a14] text-white">
@@ -490,96 +521,102 @@ const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: toke
         <>
           {/* ─── Mobile Card View ─────────────────────── */}
           <div className="lg:hidden space-y-2">
-            {filteredList.map(anime => (
-              <div key={anime._id} className="bg-white/[0.03] border border-white/[0.06] rounded-2xl overflow-hidden">
-                <div className="flex gap-3 p-3">
-                  <img
-                    src={
-                      anime.thumbnail ||
-                      'https://via.placeholder.com/72x96/1e293b/64748b?text=NA'
-                    }
-                    alt={anime.title}
-                    className="w-14 h-[76px] rounded-lg object-cover border border-white/[0.08] flex-shrink-0"
-                    loading="lazy"
-                    onError={e => {
-                      e.currentTarget.src = 'https://via.placeholder.com/72x96/1e293b/64748b?text=NA';
-                    }}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-white leading-snug break-words">{anime.title}</p>
-                    <div className="flex flex-wrap gap-1 mt-1.5">
-                      {anime.status && <StatusBadge status={anime.status} />}
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/25">
-                        {anime.contentType || 'Anime'}
-                      </span>
-                      {getSubDubBadge(anime.subDubStatus)}
-                      {isMainAdmin && (
-                        (!anime.createdBy || anime.createdBy === 'admin') ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/25">
-                            <SvgIcon d={ICONS.crown} className="w-2.5 h-2.5" /> Admin
-                          </span>
-                        ) : (
-                          <span
-                            className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/25"
-                            title={`Created by: ${anime.createdByUsername}`}
-                          >
-                            <SvgIcon d={ICONS.user} className="w-2.5 h-2.5" /> {anime.createdByUsername || 'Sub'}
-                          </span>
-                        )
-                      )}
+            {filteredList.map(anime => {
+              const isSavingThis = savingId === anime._id;
+              const isSyncingThis = syncingId === anime._id;
+              return (
+                <div key={anime._id} className={`bg-white/[0.03] border border-white/[0.06] rounded-2xl overflow-hidden ${isSavingThis || isSyncingThis ? 'opacity-90' : ''}`}>
+                  <div className="flex gap-3 p-3">
+                    <img
+                      src={
+                        anime.thumbnail ||
+                        'https://via.placeholder.com/72x96/1e293b/64748b?text=NA'
+                      }
+                      alt={anime.title}
+                      className="w-14 h-[76px] rounded-lg object-cover border border-white/[0.08] flex-shrink-0"
+                      loading="lazy"
+                      onError={e => {
+                        e.currentTarget.src = 'https://via.placeholder.com/72x96/1e293b/64748b?text=NA';
+                      }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-white leading-snug break-words">{anime.title}</p>
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {anime.status && <StatusBadge status={anime.status} />}
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/25">
+                          {anime.contentType || 'Anime'}
+                        </span>
+                        {getSubDubBadge(anime.subDubStatus)}
+                        {isMainAdmin && (
+                          (!anime.createdBy || anime.createdBy === 'admin') ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/25">
+                              <SvgIcon d={ICONS.crown} className="w-2.5 h-2.5" /> Admin
+                            </span>
+                          ) : (
+                            <span
+                              className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/25"
+                              title={`Created by: ${anime.createdByUsername}`}
+                            >
+                              <SvgIcon d={ICONS.user} className="w-2.5 h-2.5" /> {anime.createdByUsername || 'Sub'}
+                            </span>
+                          )
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="grid grid-cols-2 gap-2 px-3 pb-2">
-                  <div>
-                    <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Total Episodes</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={anime.totalEpisodes ?? 0}
-                      onChange={e => updateLocalField(anime._id, 'totalEpisodes', parseInt(e.target.value) || 0)}
-                      className={inputCls}
-                    />
+                  <div className="grid grid-cols-2 gap-2 px-3 pb-2">
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Total Episodes</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={anime.totalEpisodes ?? 0}
+                        onChange={e => updateLocalField(anime._id, 'totalEpisodes', parseInt(e.target.value) || 0)}
+                        disabled={isSavingThis}
+                        className={inputCls}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Current Episode</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={anime.currentEpisode ?? 0}
+                        onChange={e => updateLocalField(anime._id, 'currentEpisode', parseInt(e.target.value) || 0)}
+                        disabled={isSavingThis}
+                        className={inputCls}
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Current Episode</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={anime.currentEpisode ?? 0}
-                      onChange={e => updateLocalField(anime._id, 'currentEpisode', parseInt(e.target.value) || 0)}
-                      className={inputCls}
-                    />
-                  </div>
-                </div>
 
-                <div className="flex gap-1.5 px-3 pb-3">
-                  <button
-                    onClick={() => handleUpdate(anime._id, anime.totalEpisodes, anime.currentEpisode)}
-                    disabled={savingId === anime._id}
-                    className="flex-1 inline-flex items-center justify-center gap-1 px-3 py-2 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/25 text-indigo-300 text-[11px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {savingId === anime._id ? (
-                      <><span className="w-3 h-3 border-2 border-indigo-300/30 border-t-indigo-300 rounded-full animate-spin" /> Saving...</>
-                    ) : (
-                      <><SvgIcon d={ICONS.save} className="w-3 h-3" /> Save</>
-                    )}
-                  </button>
-                  <button
-                    onClick={() => handleSync(anime._id, anime.title)}
-                    disabled={syncModalAnime?.id === anime._id && syncModalLoading}
-                    className="flex-1 inline-flex items-center justify-center gap-1 px-3 py-2 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/25 text-emerald-300 text-[11px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {syncModalAnime?.id === anime._id && syncModalLoading ? (
-                      <><span className="w-3 h-3 border-2 border-emerald-300/30 border-t-emerald-300 rounded-full animate-spin" /> Loading...</>
-                    ) : (
-                      <><SvgIcon d={ICONS.sync} className="w-3 h-3" /> Sync</>
-                    )}
-                  </button>
+                  <div className="flex gap-1.5 px-3 pb-3">
+                    <button
+                      onClick={() => handleUpdate(anime._id, anime.totalEpisodes, anime.currentEpisode)}
+                      disabled={isSavingThis || isSyncingThis}
+                      className="flex-1 inline-flex items-center justify-center gap-1 px-3 py-2 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/25 text-indigo-300 text-[11px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {isSavingThis ? (
+                        <><span className="w-3 h-3 border-2 border-indigo-300/30 border-t-indigo-300 rounded-full animate-spin" /> Saving...</>
+                      ) : (
+                        <><SvgIcon d={ICONS.save} className="w-3 h-3" /> Save</>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => handleSync(anime._id, anime.title)}
+                      disabled={isSyncingThis || isSavingThis}
+                      className="flex-1 inline-flex items-center justify-center gap-1 px-3 py-2 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/25 text-emerald-300 text-[11px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {isSyncingThis ? (
+                        <><span className="w-3 h-3 border-2 border-emerald-300/30 border-t-emerald-300 rounded-full animate-spin" /> Loading...</>
+                      ) : (
+                        <><SvgIcon d={ICONS.sync} className="w-3 h-3" /> Sync</>
+                      )}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* ─── Desktop Table View ───────────────────── */}
@@ -601,97 +638,103 @@ const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: toke
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredList.map(anime => (
-                    <tr key={anime._id} className="border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors">
-                      <td className="px-3 py-2.5">
-                        <img
-                          src={anime.thumbnail || 'https://via.placeholder.com/64x88/1e293b/64748b?text=NA'}
-                          alt={anime.title}
-                          className="w-12 h-16 object-cover rounded-lg border border-white/[0.08]"
-                          loading="lazy"
-                          onError={e => {
-                            e.currentTarget.src = 'https://via.placeholder.com/64x88/1e293b/64748b?text=NA';
-                          }}
-                        />
-                      </td>
-                      <td className="px-3 py-2.5 max-w-[220px]">
-                        <div className="flex flex-col gap-1">
-                          <span className="text-xs font-semibold text-white truncate" title={anime.title}>
-                            {anime.title}
-                          </span>
-                          {anime.status && <StatusBadge status={anime.status} />}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2.5 whitespace-nowrap">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/25">
-                          {anime.contentType || 'Anime'}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5 whitespace-nowrap">
-                        {anime.subDubStatus ? getSubDubBadge(anime.subDubStatus) : <span className="text-gray-600">—</span>}
-                      </td>
-                      {isMainAdmin && (
-                        <td className="px-3 py-2.5 whitespace-nowrap">
-                          {(!anime.createdBy || anime.createdBy === 'admin') ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/25">
-                              <SvgIcon d={ICONS.crown} className="w-2.5 h-2.5" /> Admin
-                            </span>
-                          ) : (
-                            <span
-                              className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/25"
-                              title={`Created by: ${anime.createdByUsername}`}
-                            >
-                              <SvgIcon d={ICONS.user} className="w-2.5 h-2.5" /> {anime.createdByUsername || 'Sub'}
-                            </span>
-                          )}
+                  {filteredList.map(anime => {
+                    const isSavingThis = savingId === anime._id;
+                    const isSyncingThis = syncingId === anime._id;
+                    return (
+                      <tr key={anime._id} className="border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors">
+                        <td className="px-3 py-2.5">
+                          <img
+                            src={anime.thumbnail || 'https://via.placeholder.com/64x88/1e293b/64748b?text=NA'}
+                            alt={anime.title}
+                            className="w-12 h-16 object-cover rounded-lg border border-white/[0.08]"
+                            loading="lazy"
+                            onError={e => {
+                              e.currentTarget.src = 'https://via.placeholder.com/64x88/1e293b/64748b?text=NA';
+                            }}
+                          />
                         </td>
-                      )}
-                      <td className="px-3 py-2.5 whitespace-nowrap">
-                        <input
-                          type="number"
-                          min="0"
-                          value={anime.totalEpisodes ?? 0}
-                          onChange={e => updateLocalField(anime._id, 'totalEpisodes', parseInt(e.target.value) || 0)}
-                          className="w-16 px-2 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-xs text-white text-center outline-none transition-all focus:border-purple-500/50 focus:bg-white/[0.06] focus:ring-2 focus:ring-purple-500/20"
-                        />
-                      </td>
-                      <td className="px-3 py-2.5 whitespace-nowrap">
-                        <input
-                          type="number"
-                          min="0"
-                          value={anime.currentEpisode ?? 0}
-                          onChange={e => updateLocalField(anime._id, 'currentEpisode', parseInt(e.target.value) || 0)}
-                          className="w-16 px-2 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-xs text-white text-center outline-none transition-all focus:border-purple-500/50 focus:bg-white/[0.06] focus:ring-2 focus:ring-purple-500/20"
-                        />
-                      </td>
-                      <td className="px-3 py-2.5 whitespace-nowrap">
-                        <div className="flex gap-1.5">
-                          <button
-                            onClick={() => handleUpdate(anime._id, anime.totalEpisodes, anime.currentEpisode)}
-                            disabled={savingId === anime._id}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/25 text-indigo-300 text-[10px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                          >
-                            {savingId === anime._id ? (
-                              <><span className="w-3 h-3 border-2 border-indigo-300/30 border-t-indigo-300 rounded-full animate-spin" /> Saving</>
+                        <td className="px-3 py-2.5 max-w-[220px]">
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs font-semibold text-white truncate" title={anime.title}>
+                              {anime.title}
+                            </span>
+                            {anime.status && <StatusBadge status={anime.status} />}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/25">
+                            {anime.contentType || 'Anime'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          {anime.subDubStatus ? getSubDubBadge(anime.subDubStatus) : <span className="text-gray-600">—</span>}
+                        </td>
+                        {isMainAdmin && (
+                          <td className="px-3 py-2.5 whitespace-nowrap">
+                            {(!anime.createdBy || anime.createdBy === 'admin') ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/25">
+                                <SvgIcon d={ICONS.crown} className="w-2.5 h-2.5" /> Admin
+                              </span>
                             ) : (
-                              <><SvgIcon d={ICONS.save} className="w-3 h-3" /> Save</>
+                              <span
+                                className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/25"
+                                title={`Created by: ${anime.createdByUsername}`}
+                              >
+                                <SvgIcon d={ICONS.user} className="w-2.5 h-2.5" /> {anime.createdByUsername || 'Sub'}
+                              </span>
                             )}
-                          </button>
-                          <button
-                            onClick={() => handleSync(anime._id, anime.title)}
-                            disabled={syncModalAnime?.id === anime._id && syncModalLoading}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/25 text-emerald-300 text-[10px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                          >
-                            {syncModalAnime?.id === anime._id && syncModalLoading ? (
-                              <><span className="w-3 h-3 border-2 border-emerald-300/30 border-t-emerald-300 rounded-full animate-spin" /> Loading</>
-                            ) : (
-                              <><SvgIcon d={ICONS.sync} className="w-3 h-3" /> Sync</>
-                            )}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                          </td>
+                        )}
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          <input
+                            type="number"
+                            min="0"
+                            value={anime.totalEpisodes ?? 0}
+                            onChange={e => updateLocalField(anime._id, 'totalEpisodes', parseInt(e.target.value) || 0)}
+                            disabled={isSavingThis}
+                            className="w-16 px-2 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-xs text-white text-center outline-none transition-all focus:border-purple-500/50 focus:bg-white/[0.06] focus:ring-2 focus:ring-purple-500/20 disabled:opacity-60 disabled:cursor-not-allowed"
+                          />
+                        </td>
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          <input
+                            type="number"
+                            min="0"
+                            value={anime.currentEpisode ?? 0}
+                            onChange={e => updateLocalField(anime._id, 'currentEpisode', parseInt(e.target.value) || 0)}
+                            disabled={isSavingThis}
+                            className="w-16 px-2 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-xs text-white text-center outline-none transition-all focus:border-purple-500/50 focus:bg-white/[0.06] focus:ring-2 focus:ring-purple-500/20 disabled:opacity-60 disabled:cursor-not-allowed"
+                          />
+                        </td>
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          <div className="flex gap-1.5">
+                            <button
+                              onClick={() => handleUpdate(anime._id, anime.totalEpisodes, anime.currentEpisode)}
+                              disabled={isSavingThis || isSyncingThis}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/25 text-indigo-300 text-[10px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              {isSavingThis ? (
+                                <><span className="w-3 h-3 border-2 border-indigo-300/30 border-t-indigo-300 rounded-full animate-spin" /> Saving</>
+                              ) : (
+                                <><SvgIcon d={ICONS.save} className="w-3 h-3" /> Save</>
+                              )}
+                            </button>
+                            <button
+                              onClick={() => handleSync(anime._id, anime.title)}
+                              disabled={isSyncingThis || isSavingThis}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/25 text-emerald-300 text-[10px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              {isSyncingThis ? (
+                                <><span className="w-3 h-3 border-2 border-emerald-300/30 border-t-emerald-300 rounded-full animate-spin" /> Loading</>
+                              ) : (
+                                <><SvgIcon d={ICONS.sync} className="w-3 h-3" /> Sync</>
+                              )}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -703,7 +746,7 @@ const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: toke
       {syncModalAnime && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
-          onClick={() => !syncModalLoading && setSyncModalAnime(null)}
+          onClick={() => !syncModalLoading && !confirmingPageId && setSyncModalAnime(null)}
         >
           <div
             className="w-full max-w-md rounded-3xl border border-white/10 bg-[#151422] p-5 shadow-2xl shadow-black/40"
@@ -730,12 +773,13 @@ const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: toke
                 {syncModalPages.map((page, idx) => {
                   const watchLinks = page.links.filter(l => (l.type || 'watch') === 'watch');
                   const maxEp = watchLinks.reduce((m, l) => Math.max(m, l.episode), 0);
+                  const isConfirmingThis = confirmingPageId === page._id;
                   return (
                     <button
                       key={page._id}
                       onClick={() => syncWithSpecificPage(syncModalAnime.id, page)}
-                      disabled={confirmingPageId === page._id}
-                      className="w-full flex items-center justify-between gap-2 bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.08] hover:border-white/[0.14] rounded-xl px-3 py-2.5 text-left transition-all disabled:opacity-50"
+                      disabled={!!confirmingPageId}
+                      className="w-full flex items-center justify-between gap-2 bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.08] hover:border-white/[0.14] rounded-xl px-3 py-2.5 text-left transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-bold text-white">Page {idx + 1}</p>
@@ -748,7 +792,7 @@ const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: toke
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/25">
                           Max: {maxEp || '—'}
                         </span>
-                        {confirmingPageId === page._id && (
+                        {isConfirmingThis && (
                           <span className="w-3.5 h-3.5 border-2 border-emerald-300/30 border-t-emerald-300 rounded-full animate-spin" />
                         )}
                       </div>
@@ -761,8 +805,8 @@ const EpisodeStatusManager: React.FC<EpisodeStatusManagerProps> = ({ token: toke
             <div className="mt-5 flex justify-end">
               <button
                 onClick={() => setSyncModalAnime(null)}
-                disabled={syncModalLoading}
-                className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/70 hover:bg-white/10 hover:text-white transition-all disabled:opacity-50"
+                disabled={syncModalLoading || !!confirmingPageId}
+                className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/70 hover:bg-white/10 hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>

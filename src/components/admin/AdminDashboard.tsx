@@ -1,4 +1,4 @@
- // src/components/admin/AdminDashboard.tsx - Premium Colorful Sidebar (No Background Glow)
+// src/components/admin/AdminDashboard.tsx - Premium Colorful Sidebar (No Background Glow)
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Toaster, toast } from 'react-hot-toast';
 import AnimeListTable from './AnimeListTable';
@@ -73,13 +73,11 @@ function scrollChildIntoContainer(
   const bRect = child.getBoundingClientRect();
 
   if (bRect.top < cRect.top + padding) {
-    // upar cut gaya — upar scroll
     container.scrollTo({
       top: container.scrollTop - (cRect.top + padding - bRect.top),
       behavior: 'smooth',
     });
   } else if (bRect.bottom > cRect.bottom - padding) {
-    // neeche cut gaya — neeche scroll
     container.scrollTo({
       top: container.scrollTop + (bRect.bottom - (cRect.bottom - padding)),
       behavior: 'smooth',
@@ -289,7 +287,7 @@ interface NavItemProps {
   collapsed: boolean;
   badge?: number;
   onClick: (id: string) => void;
-  itemRef?: (el: HTMLButtonElement | null) => void;   // 🆕
+  itemRef?: (el: HTMLButtonElement | null) => void;
 }
 
 const NavItem: React.FC<NavItemProps> = ({ tabId, activeTab, collapsed, badge, onClick, itemRef }) => {
@@ -300,7 +298,7 @@ const NavItem: React.FC<NavItemProps> = ({ tabId, activeTab, collapsed, badge, o
 
   return (
     <button
-      ref={itemRef}                                     /* 🆕 */
+      ref={itemRef}
       onClick={() => onClick(tabId)}
       className={`group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-left overflow-hidden
         ${isActive
@@ -413,6 +411,30 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const expandedNavBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const mobileNavBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
+  // 🆕 Double-click / slow-network guard — synchronous Set of pending action keys.
+  // Prevents duplicate network calls even if user clicks multiple times before
+  // React state (loading flags) has a chance to re-render & disable buttons.
+  const pendingRef = useRef<Set<string>>(new Set());
+
+  /**
+   * Wrap any async action with this helper. If the same `key` is already
+   * in-flight, the second call becomes a silent no-op (no duplicate toast,
+   * no duplicate network request). Errors are swallowed here because each
+   * action already shows its own toast / error UI.
+   */
+  const guarded = async (key: string, fn: () => Promise<void>) => {
+    if (pendingRef.current.has(key)) return;
+    pendingRef.current.add(key);
+    try {
+      await fn();
+    } catch {
+      // each action shows its own toast
+    } finally {
+      // small release delay so that very fast networks still show feedback
+      setTimeout(() => { pendingRef.current.delete(key); }, 250);
+    }
+  };
+
   useEffect(() => {
     setVisitedTabs(prev => {
       if (prev.has(activeTab)) return prev;
@@ -422,7 +444,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     });
   }, [activeTab]);
 
-  // 🆕 Auto-scroll active tab into view — jab bhi tab change ho, sidebar open ho, ya mobile menu khule
+  // 🆕 Auto-scroll active tab into view
   useEffect(() => {
     const id = window.setTimeout(() => {
       scrollChildIntoContainer(iconRailRef.current, iconRailBtnRefs.current[activeTab], 10);
@@ -482,6 +504,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const getLastSeenReportsAt = () => localStorage.getItem(REPORTS_SEEN_KEY) || '';
 
   const fetchPendingReportsCount = async () => {
+    // 🛡️ Lightweight background poll — guard prevents overlapping calls if
+    // a previous request is still in flight (slow network).
+    if (pendingRef.current.has('pending-reports')) return;
+    pendingRef.current.add('pending-reports');
     try {
       const inst = axios.create({ timeout: 10000, headers: { Authorization: `Bearer ${token}` } });
       const since = getLastSeenReportsAt();
@@ -491,6 +517,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       const res = await inst.get(url);
       setPendingReportsCount(res.data?.count || 0);
     } catch { /* ignore */ }
+    finally { pendingRef.current.delete('pending-reports'); }
   };
 
   const handleTabChange = (tabId: string) => {
@@ -517,102 +544,120 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   useEffect(() => {
     if (!token) return;
     const interval = setInterval(async () => {
-      try {
-        const inst = axios.create({ timeout: 10000, headers: { Authorization: `Bearer ${token}` } });
-        const res = await inst.get(`${API_BASE}/short-users/admin/messages-count`);
-        setUnreadShortMessagesCount(res.data?.unread || 0);
-      } catch { /* ignore */ }
-      try {
-        const inst = axios.create({ timeout: 10000, headers: { Authorization: `Bearer ${token}` } });
-        const res = await inst.get(`${API_BASE}/track/notifications/summary`);
-        const unread = (res.data?.total || 0) - (res.data?.completed || 0);
-        setTrackUnreadCount(unread > 0 ? unread : 0);
-      } catch { /* ignore */ }
+      // 🛡️ All three polling calls are guarded so slow networks won't stack them up.
+      await guarded('poll-messages-count', async () => {
+        try {
+          const inst = axios.create({ timeout: 10000, headers: { Authorization: `Bearer ${token}` } });
+          const res = await inst.get(`${API_BASE}/short-users/admin/messages-count`);
+          setUnreadShortMessagesCount(res.data?.unread || 0);
+        } catch { /* ignore */ }
+      });
+      await guarded('poll-track-summary', async () => {
+        try {
+          const inst = axios.create({ timeout: 10000, headers: { Authorization: `Bearer ${token}` } });
+          const res = await inst.get(`${API_BASE}/track/notifications/summary`);
+          const unread = (res.data?.total || 0) - (res.data?.completed || 0);
+          setTrackUnreadCount(unread > 0 ? unread : 0);
+        } catch { /* ignore */ }
+      });
       fetchPendingReportsCount();
     }, 30000);
     return () => clearInterval(interval);
   }, [token]);
 
   const loadInitialData = async (isRefresh = false) => {
-    if (isRefresh) {
-      setIsRefreshing(true);
-    } else {
-      setLoading(true);
-    }
-    setError('');
-    try {
-      const inst = axios.create({ timeout: 10000, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } });
-      const [userRes, analyticsRes] = await Promise.all([
-        inst.get(`${API_BASE}/admin/user-info`),
-        inst.get(`${API_BASE}/admin/analytics`),
-      ]);
-      setUser(userRes.data);
-      setAnalytics(analyticsRes.data);
-
-      fetchPendingReportsCount();
-
-      try {
-        const msgCountRes = await inst.get(`${API_BASE}/short-users/admin/messages-count`);
-        setUnreadShortMessagesCount(msgCountRes.data?.unread || 0);
-      } catch { /* ignore */ }
-
-      try {
-        const trackRes = await inst.get(`${API_BASE}/track/notifications/summary`);
-        const unread = (trackRes.data?.total || 0) - (trackRes.data?.completed || 0);
-        setTrackUnreadCount(unread > 0 ? unread : 0);
-      } catch { /* ignore */ }
-    } catch (err: any) {
-      const msg = err.response?.data?.error || err.message || 'Failed to load dashboard data.';
-      setError(msg);
-      if (err.response?.status === 401) {
-        localStorage.removeItem('adminToken');
-        localStorage.removeItem('adminUsername');
-        window.location.href = '/';
+    // 🛡️ prevents duplicate refreshes when user spam-clicks the header refresh
+    await guarded(isRefresh ? 'refresh-initial' : 'load-initial', async () => {
+      if (isRefresh) {
+        setIsRefreshing(true);
+      } else {
+        setLoading(true);
       }
-    } finally {
-      setLoading(false);
-      setIsRefreshing(false);
-    }
+      setError('');
+      try {
+        const inst = axios.create({ timeout: 10000, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } });
+        const [userRes, analyticsRes] = await Promise.all([
+          inst.get(`${API_BASE}/admin/user-info`),
+          inst.get(`${API_BASE}/admin/analytics`),
+        ]);
+        setUser(userRes.data);
+        setAnalytics(analyticsRes.data);
+
+        fetchPendingReportsCount();
+
+        try {
+          const msgCountRes = await inst.get(`${API_BASE}/short-users/admin/messages-count`);
+          setUnreadShortMessagesCount(msgCountRes.data?.unread || 0);
+        } catch { /* ignore */ }
+
+        try {
+          const trackRes = await inst.get(`${API_BASE}/track/notifications/summary`);
+          const unread = (trackRes.data?.total || 0) - (trackRes.data?.completed || 0);
+          setTrackUnreadCount(unread > 0 ? unread : 0);
+        } catch { /* ignore */ }
+      } catch (err: any) {
+        const msg = err.response?.data?.error || err.message || 'Failed to load dashboard data.';
+        setError(msg);
+        if (err.response?.status === 401) {
+          localStorage.removeItem('adminToken');
+          localStorage.removeItem('adminUsername');
+          window.location.href = '/';
+        }
+      } finally {
+        setLoading(false);
+        setIsRefreshing(false);
+      }
+    });
   };
 
   const fetchLinkSettings = async () => {
-    try {
-      setLinkSettingsLoading(true);
-      const { data } = await axios.get(`${API_BASE}/link-settings`, { timeout: 5000 });
-      setLinkSettings(data);
-    } catch (e) {
-      console.error('Link settings fetch failed', e);
-    } finally {
-      setLinkSettingsLoading(false);
-    }
+    await guarded('fetch-link-settings', async () => {
+      try {
+        setLinkSettingsLoading(true);
+        const { data } = await axios.get(`${API_BASE}/link-settings`, { timeout: 5000 });
+        setLinkSettings(data);
+      } catch (e) {
+        console.error('Link settings fetch failed', e);
+      } finally {
+        setLinkSettingsLoading(false);
+      }
+    });
   };
 
   const fetchRestorePreview = async () => {
-    try {
-      const { data } = await axios.get(`${API_BASE}/link-settings/restore-preview`, { timeout: 5000 });
-      setRestorePreview(data);
-    } catch { /* ignore */ }
+    await guarded('fetch-restore-preview', async () => {
+      try {
+        const { data } = await axios.get(`${API_BASE}/link-settings/restore-preview`, { timeout: 5000 });
+        setRestorePreview(data);
+      } catch { /* ignore */ }
+    });
   };
 
   const fetchDownloadStats = async () => {
-    try {
-      const res = await axios.get(`${API_BASE}/download-pages/stats`, { timeout: 5000, headers: { Authorization: `Bearer ${token}` } });
-      setDownloadStats(res.data);
-    } catch (e) {
-      console.error('Download stats fetch failed', e);
-    }
+    await guarded('fetch-download-stats', async () => {
+      try {
+        const res = await axios.get(`${API_BASE}/download-pages/stats`, { timeout: 5000, headers: { Authorization: `Bearer ${token}` } });
+        setDownloadStats(res.data);
+      } catch (e) {
+        console.error('Download stats fetch failed', e);
+      }
+    });
   };
 
   const toggleLink = async (num: number) => {
     if (num < 1 || num > 5) return;
-    try {
-      setLinkSettingsLoading(true);
-      const { data } = await axios.put(`${API_BASE}/link-settings/toggle/${num}`, {}, authHeaders());
-      if (data.settings) setLinkSettings(data.settings);
-      toast.success(`${LINK_NAMES[num]} is now ${data.toggledLink?.status ? 'ACTIVE' : 'INACTIVE'}`);
-    } catch (err: any) {
-      toast.error(`Failed to toggle: ${err.response?.data?.error || err.message}`);
-    } finally { setLinkSettingsLoading(false); }
+    // 🛡️ Per-link key so toggling link 1 doesn't block toggling link 2, but
+    // double-clicking link 1 quickly only fires ONE request.
+    await guarded(`toggle-link-${num}`, async () => {
+      try {
+        setLinkSettingsLoading(true);
+        const { data } = await axios.put(`${API_BASE}/link-settings/toggle/${num}`, {}, authHeaders());
+        if (data.settings) setLinkSettings(data.settings);
+        toast.success(`${LINK_NAMES[num]} is now ${data.toggledLink?.status ? 'ACTIVE' : 'INACTIVE'}`);
+      } catch (err: any) {
+        toast.error(`Failed to toggle: ${err.response?.data?.error || err.message}`);
+      } finally { setLinkSettingsLoading(false); }
+    });
   };
 
   const getLinkStatus = (num: number): boolean => {
@@ -676,7 +721,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           <BrandLogo />
         </div>
         <div
-          ref={iconRailRef}                                /* 🆕 */
+          ref={iconRailRef}
           className="flex-1 flex flex-col items-center py-4 gap-1.5 overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]"
         >
           {Object.keys(TAB_LABELS).map(tabId => {
@@ -685,7 +730,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             return (
               <button
                 key={tabId}
-                ref={el => { iconRailBtnRefs.current[tabId] = el; }}   /* 🆕 */
+                ref={el => { iconRailBtnRefs.current[tabId] = el; }}
                 onClick={() => handleTabChange(tabId)}
                 title={TAB_LABELS[tabId]}
                 className={`group relative w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 flex-shrink-0 ${
@@ -751,7 +796,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           </button>
         </div>
         <nav
-          ref={expandedNavRef}                                  /* 🆕 */
+          ref={expandedNavRef}
           className="flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-3 [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]"
         >
           <SidebarSection label="Content">
@@ -841,7 +886,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         </div>
 
         <nav
-          ref={mobileNavRef}                                  /* 🆕 */
+          ref={mobileNavRef}
           className="flex-1 overflow-y-auto overflow-x-hidden py-3 space-y-3 [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]"
         >
           <SidebarSection label="Content">
@@ -922,6 +967,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           <div className="ml-auto flex items-center gap-2 sm:gap-3">
             <button
               onClick={() => {
+                // 🛡️ guarded inside loadInitialData — safe on double-click
                 loadInitialData(true);
                 setTabRefreshVersions(prev => ({
                   ...prev,
@@ -989,17 +1035,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
               {[1, 2, 3, 4, 5].map(num => {
                 const active = getLinkStatus(num);
+                const isToggling = pendingRef.current.has(`toggle-link-${num}`);
                 return (
                   <button
                     key={num}
                     onClick={() => toggleLink(num)}
-                    disabled={areTogglesDisabled}
-                    className={`rounded-xl py-3 px-2 text-center transition-all duration-200 border disabled:opacity-50 disabled:cursor-not-allowed ${
+                    disabled={areTogglesDisabled || isToggling}
+                    className={`relative rounded-xl py-3 px-2 text-center transition-all duration-200 border disabled:opacity-50 disabled:cursor-not-allowed ${
                       active
                         ? 'bg-purple-500/20 border-purple-500/40 hover:bg-purple-500/30'
                         : 'bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.06]'
                     }`}
                   >
+                    {isToggling && (
+                      <span className="absolute top-2 right-2 w-3 h-3 border-2 border-purple-300 border-t-transparent rounded-full animate-spin" />
+                    )}
                     <p className={`text-sm font-semibold mb-1 ${active ? 'text-purple-200' : 'text-gray-500'}`}>
                       {LINK_NAMES[num]}
                     </p>

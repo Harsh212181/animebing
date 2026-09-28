@@ -260,7 +260,8 @@ const CustomSelect: React.FC<{
   icon?: React.ReactNode;
   label: string;
   required?: boolean;
-}> = ({ value, onChange, options, icon, label, required }) => {
+  disabled?: boolean;
+}> = ({ value, onChange, options, icon, label, required, disabled }) => {
   const [isOpen, setIsOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -282,10 +283,11 @@ const CustomSelect: React.FC<{
       </label>
       <button
         type="button"
-        onClick={() => setIsOpen(v => !v)}
+        disabled={disabled}
+        onClick={() => !disabled && setIsOpen(v => !v)}
         className={`w-full bg-slate-900/80 border text-white rounded-xl px-4 py-3 text-sm text-left transition-all flex items-center justify-between gap-2 ${
           isOpen ? 'border-purple-500/60 ring-2 ring-purple-500/30' : 'border-slate-700 hover:border-slate-600'
-        }`}
+        } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
       >
         <span className="flex items-center gap-2 truncate">
           {selected?.color && <span className={`w-2 h-2 rounded-full bg-gradient-to-r ${selected.color} flex-shrink-0`} />}
@@ -296,7 +298,7 @@ const CustomSelect: React.FC<{
         </svg>
       </button>
 
-      {isOpen && (
+      {isOpen && !disabled && (
         <div className="absolute z-30 mt-2 w-full bg-slate-900 border border-slate-700 rounded-xl shadow-2xl shadow-black/50 py-1.5 max-h-72 overflow-y-auto animate-fadeIn">
           {options.map(opt => {
             const isSelected = opt.value === value;
@@ -361,7 +363,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
   const [isGenreDropdownOpen, setIsGenreDropdownOpen] = useState(false);
   const [searchGenre, setSearchGenre] = useState('');
   const [focusedField, setFocusedField] = useState<string | null>(null);
-  
+
   // ✅ New touched states for SEO manual editing detection
   const [seoTitleTouched, setSeoTitleTouched] = useState(false);
   const [seoDescriptionTouched, setSeoDescriptionTouched] = useState(false);
@@ -370,6 +372,12 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
   const genreDropdownRef = useRef<HTMLDivElement>(null);
   const successTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const errorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // 🆕 Double-click / slow-network guard — prevents duplicate submissions.
+  // `loading` state already disables the button, but on very slow connections
+  // a second click can still fire before React re-renders, so we use a ref
+  // that is checked *synchronously* at the top of the handler.
+  const submittingRef = useRef(false);
 
   // 📱🖥️ Refs for the fields that must auto-grow to show their FULL text
   // (no more clipped 1-2 line boxes that need scrolling — on phone or PC)
@@ -407,6 +415,11 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // 🛡️ Synchronous guard — blocks a 2nd click that fires before React re-renders.
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+
     setLoading(true);
     setSuccess('');
     setError('');
@@ -437,7 +450,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
       setSeoTitleTouched(false);
       setSeoDescriptionTouched(false);
       setSeoKeywordsTouched(false);
-      
+
       setForm({
         title: '',
         description: '',
@@ -457,6 +470,8 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
       setError(err.response?.data?.error || 'Failed to add anime. Please try again.');
     } finally {
       setLoading(false);
+      // 🛡️ Release the guard after a short delay so the UI can settle
+      setTimeout(() => { submittingRef.current = false; }, 300);
     }
   };
 
@@ -599,6 +614,9 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
 
   const isFormValid = form.title.trim() && form.slug.trim() && form.genreList.length > 0 && form.thumbnail.trim();
 
+  // 🆕 Lock inputs during submit so the user cannot change values mid-flight
+  const isLocked = loading;
+
   return (
     <div className="w-full h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4 md:p-6 lg:p-8 overflow-auto">
       <div className="max-w-7xl mx-auto">
@@ -623,6 +641,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                 type="checkbox"
                 checked={autoGenerateSEO}
                 onChange={() => setAutoGenerateSEO(!autoGenerateSEO)}
+                disabled={isLocked}
                 className="sr-only peer"
               />
               <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-purple-500 peer-checked:to-pink-500"></div>
@@ -658,7 +677,8 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                     onChange={handleTitleChange}
                     onFocus={() => setFocusedField('title')}
                     onBlur={() => setFocusedField(null)}
-                    className="w-full bg-slate-900/80 border border-slate-700 text-white rounded-xl pl-4 pr-14 py-3 text-sm focus:outline-none transition-all placeholder:text-slate-500"
+                    disabled={isLocked}
+                    className="w-full bg-slate-900/80 border border-slate-700 text-white rounded-xl pl-4 pr-14 py-3 text-sm focus:outline-none transition-all placeholder:text-slate-500 disabled:opacity-60"
                     placeholder='e.g., "Naruto Shippuden"'
                     required
                   />
@@ -674,6 +694,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                   label="Type"
                   icon={<Icons.Type className="w-4 h-4 text-slate-400" />}
                   value={form.contentType}
+                  disabled={isLocked}
                   onChange={(v) => handleContentTypeChange({ target: { value: v } } as React.ChangeEvent<HTMLSelectElement>)}
                   options={[
                     { value: 'Anime', label: 'Anime Series', color: 'from-blue-500 to-cyan-500' },
@@ -695,7 +716,8 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                     type="number"
                     value={form.releaseYear}
                     onChange={(e) => setForm({ ...form, releaseYear: Number(e.target.value) })}
-                    className="w-full bg-slate-900/80 border border-slate-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all"
+                    disabled={isLocked}
+                    className="w-full bg-slate-900/80 border border-slate-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all disabled:opacity-60"
                     min="1900"
                     max="2030"
                     required
@@ -705,6 +727,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                   label="Status"
                   icon={<Icons.Status className="w-4 h-4 text-slate-400" />}
                   value={form.status}
+                  disabled={isLocked}
                   onChange={(v) => setForm({ ...form, status: v })}
                   options={[
                     { value: 'Ongoing', label: 'Ongoing', color: 'from-yellow-500 to-orange-500' },
@@ -718,6 +741,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                 label="Sub / Dub Status"
                 icon={<Icons.Info className="w-4 h-4 text-slate-400" />}
                 value={form.subDubStatus}
+                disabled={isLocked}
                 onChange={(v) => handleSubDubStatusChange({ target: { value: v } } as React.ChangeEvent<HTMLSelectElement>)}
                 options={[
                   { value: 'Hindi Dub', label: 'Hindi Dub', color: 'from-red-500 to-orange-500' },
@@ -751,7 +775,8 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                   <textarea
                     value={form.description}
                     onChange={(e) => setForm({ ...form, description: e.target.value })}
-                    className="scrollbar-hide w-full bg-slate-900/80 border border-slate-700 text-white rounded-xl px-3 sm:px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all resize-none overflow-y-auto placeholder:text-slate-500 h-[220px] sm:h-[215px]"
+                    disabled={isLocked}
+                    className="scrollbar-hide w-full bg-slate-900/80 border border-slate-700 text-white rounded-xl px-3 sm:px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all resize-none overflow-y-auto placeholder:text-slate-500 h-[220px] sm:h-[215px] disabled:opacity-60"
                     placeholder="Write a brief description of the anime..."
                   />
                 </div>
@@ -775,7 +800,8 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                   <button
                     type="button"
                     onClick={clearAllGenres}
-                    className="text-xs text-red-400 hover:text-red-300 px-3 py-1 rounded-full bg-red-900/20 hover:bg-red-900/40 transition-all border border-red-800/20 hover:border-red-700/30 flex items-center gap-1"
+                    disabled={isLocked}
+                    className="text-xs text-red-400 hover:text-red-300 px-3 py-1 rounded-full bg-red-900/20 hover:bg-red-900/40 transition-all border border-red-800/20 hover:border-red-700/30 flex items-center gap-1 disabled:opacity-50"
                   >
                     <Icons.Clear className="w-3 h-3" />
                     Clear
@@ -801,7 +827,8 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                       <button
                         type="button"
                         onClick={() => toggleGenre(genre)}
-                        className="hover:text-white/70 ml-0.5 text-sm font-bold transition-transform hover:scale-125 flex-shrink-0"
+                        disabled={isLocked}
+                        className="hover:text-white/70 ml-0.5 text-sm font-bold transition-transform hover:scale-125 flex-shrink-0 disabled:opacity-50"
                         title="Remove genre"
                       >
                         <Icons.X className="w-3 h-3" />
@@ -824,13 +851,14 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                   value={customGenre}
                   onChange={(e) => setCustomGenre(e.target.value)}
                   onKeyPress={handleCustomGenreKeyPress}
-                  className="flex-1 bg-slate-900/80 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all placeholder:text-slate-500"
+                  disabled={isLocked}
+                  className="flex-1 bg-slate-900/80 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all placeholder:text-slate-500 disabled:opacity-60"
                   placeholder="Type custom genre..."
                 />
                 <button
                   type="button"
                   onClick={addCustomGenre}
-                  disabled={!customGenre.trim()}
+                  disabled={!customGenre.trim() || isLocked}
                   className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-xl transition-all text-sm font-medium shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40 flex items-center justify-center gap-1"
                 >
                   <Icons.AddCircle className="w-4 h-4" />
@@ -847,8 +875,9 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                   value={searchGenre}
                   onChange={(e) => setSearchGenre(e.target.value)}
                   onFocus={() => setIsGenreDropdownOpen(true)}
+                  disabled={isLocked}
                   placeholder="Search genres..."
-                  className="w-full bg-slate-900/60 border border-slate-700 text-white rounded-xl px-4 py-2.5 pl-10 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all placeholder:text-slate-500"
+                  className="w-full bg-slate-900/60 border border-slate-700 text-white rounded-xl px-4 py-2.5 pl-10 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all placeholder:text-slate-500 disabled:opacity-60"
                 />
                 <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
                   <Icons.Search className="w-4 h-4" />
@@ -869,8 +898,8 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                         className={`flex items-center p-2.5 rounded-xl cursor-pointer transition-all duration-200 border-2 ${isSelected
                             ? `bg-gradient-to-r ${gradient} border-transparent shadow-lg shadow-purple-500/20`
                             : 'bg-slate-800/40 border-slate-700 hover:bg-slate-700/40 hover:border-slate-600'
-                          }`}
-                        onClick={() => toggleGenre(genre)}
+                          } ${isLocked ? 'pointer-events-none opacity-60' : ''}`}
+                        onClick={() => !isLocked && toggleGenre(genre)}
                       >
                         <div className={`flex-shrink-0 flex items-center justify-center w-5 h-5 mr-2 rounded-md border-2 transition-all ${isSelected
                             ? 'bg-white/20 border-white/40'
@@ -918,6 +947,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                     type="checkbox"
                     checked={autoGenerateSEO}
                     onChange={() => setAutoGenerateSEO(!autoGenerateSEO)}
+                    disabled={isLocked}
                     className="sr-only peer"
                   />
                   <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-amber-500 peer-checked:to-orange-500"></div>
@@ -940,7 +970,8 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                     type="text"
                     value={form.seoTitle}
                     onChange={(e) => { setForm({ ...form, seoTitle: e.target.value }); setSeoTitleTouched(true); }}
-                    className={`w-full bg-slate-900/80 border ${form.seoTitle.length <= 60 ? 'border-slate-700' : 'border-red-500/50'} text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-500`}
+                    disabled={isLocked}
+                    className={`w-full bg-slate-900/80 border ${form.seoTitle.length <= 60 ? 'border-slate-700' : 'border-red-500/50'} text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-500 disabled:opacity-60`}
                     placeholder="Watch Naruto Shippuden Online..."
                     maxLength={60}
                   />
@@ -961,7 +992,8 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                     ref={seoDescriptionRef}
                     value={form.seoDescription}
                     onChange={(e) => { setForm({ ...form, seoDescription: e.target.value }); setSeoDescriptionTouched(true); }}
-                    className={`w-full bg-slate-900/80 border ${form.seoDescription.length <= 160 ? 'border-slate-700' : 'border-red-500/50'} text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-500 resize-none overflow-hidden min-h-[44px]`}
+                    disabled={isLocked}
+                    className={`w-full bg-slate-900/80 border ${form.seoDescription.length <= 160 ? 'border-slate-700' : 'border-red-500/50'} text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-500 resize-none overflow-hidden min-h-[44px] disabled:opacity-60`}
                     placeholder="Watch Naruto Shippuden online in Hindi Dub..."
                     maxLength={160}
                     rows={1}
@@ -983,7 +1015,8 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                     ref={seoKeywordsRef}
                     value={form.seoKeywords}
                     onChange={(e) => { setForm({ ...form, seoKeywords: e.target.value }); setSeoKeywordsTouched(true); }}
-                    className="flex-1 bg-slate-900/80 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-500 resize-none overflow-hidden min-h-[44px]"
+                    disabled={isLocked}
+                    className="flex-1 bg-slate-900/80 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-500 resize-none overflow-hidden min-h-[44px] disabled:opacity-60"
                     placeholder="naruto shippuden hindi dub, watch naruto online..."
                     rows={1}
                   />
@@ -994,7 +1027,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                       setForm(prev => ({ ...prev, seoKeywords: regenerated }));
                       setSeoKeywordsTouched(false);
                     }}
-                    disabled={!form.title.trim()}
+                    disabled={!form.title.trim() || isLocked}
                     className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-xl transition-all text-sm font-medium shadow-lg shadow-amber-500/20 flex items-center justify-center gap-1 whitespace-nowrap"
                   >
                     <Icons.Generate className="w-4 h-4" />
@@ -1015,7 +1048,8 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                     type="text"
                     value={form.slug}
                     onChange={(e) => setForm({ ...form, slug: e.target.value })}
-                    className="flex-1 bg-slate-900/80 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all placeholder:text-slate-500 font-mono"
+                    disabled={isLocked}
+                    className="flex-1 bg-slate-900/80 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all placeholder:text-slate-500 font-mono disabled:opacity-60"
                     placeholder="naruto-shippuden-hindi-dub"
                     required
                   />
@@ -1027,7 +1061,8 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                         setForm(prev => ({ ...prev, slug: newSlug }));
                       }
                     }}
-                    className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-5 py-2.5 rounded-xl transition-all text-sm font-medium shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40 flex items-center justify-center gap-1"
+                    disabled={isLocked}
+                    className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl transition-all text-sm font-medium shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40 flex items-center justify-center gap-1"
                   >
                     <Icons.Generate className="w-4 h-4" />
                     Generate

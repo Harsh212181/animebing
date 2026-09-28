@@ -1,5 +1,5 @@
 // src/components/admin/EpisodesManager.tsx - Premium UI, no emojis, custom SVG icons
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type { Anime, Episode, Chapter } from '../../types';
 import axios from 'axios';
 import Spinner from '../Spinner';
@@ -69,15 +69,16 @@ const ConfirmModal: React.FC<{
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
+  loading?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
-}> = ({ open, title, message, confirmLabel = 'Delete', cancelLabel = 'Cancel', danger = true, onConfirm, onCancel }) => {
+}> = ({ open, title, message, confirmLabel = 'Delete', cancelLabel = 'Cancel', danger = true, loading = false, onConfirm, onCancel }) => {
   if (!open) return null;
 
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
-      onClick={onCancel}
+      onClick={loading ? undefined : onCancel}
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -98,19 +99,22 @@ const ConfirmModal: React.FC<{
         <div className="mt-6 flex justify-end gap-2.5">
           <button
             onClick={onCancel}
-            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/70 transition-all hover:bg-white/10 hover:text-white"
+            disabled={loading}
+            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/70 transition-all hover:bg-white/10 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {cancelLabel}
           </button>
           <button
             onClick={onConfirm}
-            className={`rounded-xl px-4 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-95 ${
+            disabled={loading}
+            className={`rounded-xl px-4 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100 inline-flex items-center gap-1.5 ${
               danger
                 ? 'bg-gradient-to-r from-red-600 to-red-700 shadow-red-500/25 hover:shadow-red-500/40'
                 : 'bg-gradient-to-r from-purple-600 to-pink-600 shadow-purple-500/25 hover:shadow-purple-500/40'
             }`}
           >
-            {confirmLabel}
+            {loading && <span className="w-3 h-3 border-2 border-white/80 border-t-transparent rounded-full animate-spin" />}
+            {loading ? (danger ? 'Deleting...' : 'Saving...') : confirmLabel}
           </button>
         </div>
       </div>
@@ -138,6 +142,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
   const [loading, setLoading] = useState(true);
   const [animesLoading, setAnimesLoading] = useState(true);
   const [addingItem, setAddingItem] = useState(false);
+  const [updatingItem, setUpdatingItem] = useState(false);
   const [selectedSession, setSelectedSession] = useState<number>(1);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
@@ -149,9 +154,32 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
   });
 
   const [deleteConfirm, setDeleteConfirm] = useState<{ itemId: string; itemNumber: number; session: number } | null>(null);
+  const [deletingItem, setDeletingItem] = useState(false);
   const [generatingLinks, setGeneratingLinks] = useState(false);
   const [downloadPages, setDownloadPages] = useState<any[]>([]);
   const [loadingDownloadPages, setLoadingDownloadPages] = useState(false);
+
+  // 🆕 Double-click / slow-network guard — synchronous Set of in-flight keys.
+  // Prevents duplicate API calls even if user clicks before React re-renders.
+  const pendingRef = useRef<Set<string>>(new Set());
+
+  /**
+   * Wrap any async action with this helper. If the same key is already in-flight,
+   * the second call becomes a silent no-op. Errors are swallowed here because
+   * every action already shows its own toast.
+   */
+  const guarded = async (key: string, fn: () => Promise<void>) => {
+    if (pendingRef.current.has(key)) return;
+    pendingRef.current.add(key);
+    try {
+      await fn();
+    } catch {
+      /* each action handles its own errors */
+    } finally {
+      // short grace period so fast networks still show visual feedback
+      setTimeout(() => { pendingRef.current.delete(key); }, 250);
+    }
+  };
 
   const isManga = getContentGroup(selectedAnime?.contentType) === 'chapter';
 
@@ -169,60 +197,64 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
   }, []);
 
   const fetchAnimes = async () => {
-    setAnimesLoading(true);
-    try {
-      const token = getToken();
-      const { data } = await axios.get(`${API_BASE}/admin/protected/anime-list`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setAnimes(data.map((a: any) => ({
-        ...a,
-        id: a._id || a.id,
-        _id: a._id || a.id
-      })));
-    } catch (err: any) {
-      console.error('Animes load error:', err.response?.data || err.message);
-      toast.error('Failed to load animes');
-    } finally {
-      setAnimesLoading(false);
-    }
+    await guarded('fetch-animes', async () => {
+      setAnimesLoading(true);
+      try {
+        const token = getToken();
+        const { data } = await axios.get(`${API_BASE}/admin/protected/anime-list`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setAnimes(data.map((a: any) => ({
+          ...a,
+          id: a._id || a.id,
+          _id: a._id || a.id
+        })));
+      } catch (err: any) {
+        console.error('Animes load error:', err.response?.data || err.message);
+        toast.error('Failed to load animes');
+      } finally {
+        setAnimesLoading(false);
+      }
+    });
   };
 
   const handleRefresh = async () => {
-    setAnimesLoading(true);
-    try {
-      const token = getToken();
-      const { data } = await axios.get(`${API_BASE}/admin/protected/anime-list`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const updatedAnimes = data.map((a: any) => ({
-        ...a,
-        id: a._id || a.id,
-        _id: a._id || a.id
-      }));
-      setAnimes(updatedAnimes);
+    await guarded('refresh-animes', async () => {
+      setAnimesLoading(true);
+      try {
+        const token = getToken();
+        const { data } = await axios.get(`${API_BASE}/admin/protected/anime-list`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const updatedAnimes = data.map((a: any) => ({
+          ...a,
+          id: a._id || a.id,
+          _id: a._id || a.id
+        }));
+        setAnimes(updatedAnimes);
 
-      if (selectedAnime) {
-        const updatedSelectedAnime = updatedAnimes.find((a: Anime) => a._id === selectedAnime._id);
-        if (updatedSelectedAnime) {
-          setSelectedAnime(updatedSelectedAnime);
-          await fetchContent(updatedSelectedAnime._id);
-          await fetchDownloadPagesForAnime(updatedSelectedAnime._id);
-        } else {
-          setSelectedAnime(null);
-          setEpisodes([]);
-          setChapters([]);
-          setDownloadPages([]);
-          toast.error('Previously selected content was removed from the list.');
+        if (selectedAnime) {
+          const updatedSelectedAnime = updatedAnimes.find((a: Anime) => a._id === selectedAnime._id);
+          if (updatedSelectedAnime) {
+            setSelectedAnime(updatedSelectedAnime);
+            await fetchContent(updatedSelectedAnime._id);
+            await fetchDownloadPagesForAnime(updatedSelectedAnime._id);
+          } else {
+            setSelectedAnime(null);
+            setEpisodes([]);
+            setChapters([]);
+            setDownloadPages([]);
+            toast.error('Previously selected content was removed from the list.');
+          }
         }
+        toast.success('Content refreshed successfully!');
+      } catch (err: any) {
+        console.error('Refresh error:', err.response?.data || err.message);
+        toast.error('Failed to refresh content');
+      } finally {
+        setAnimesLoading(false);
       }
-      toast.success('Content refreshed successfully!');
-    } catch (err: any) {
-      console.error('Refresh error:', err.response?.data || err.message);
-      toast.error('Failed to refresh content');
-    } finally {
-      setAnimesLoading(false);
-    }
+    });
   };
 
   useEffect(() => {
@@ -248,58 +280,62 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
   });
 
   const fetchContent = async (contentId: string) => {
-    setLoading(true);
-    setEditingItemId(null);
-    try {
-      const token = getToken();
-      if (isManga) {
-        const { data } = await axios.get(`${API_BASE}/chapters/${contentId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const transformed = data.map(transformChapterData);
-        setChapters(transformed);
-        const lastItem = transformed.filter((ch: Chapter) => (ch.session || 1) === selectedSession);
-        setNewItem(prev => ({
-          ...prev,
-          number: lastItem.length > 0 ? Math.max(...lastItem.map((ch: Chapter) => ch.chapterNumber)) + 1 : 1,
-          session: selectedSession,
-          mainLink: '',
-          downloadLinks: [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }]
-        }));
-      } else {
-        const { data } = await axios.get(`${API_BASE}/episodes/${contentId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const transformed = data.map(transformEpisodeData);
-        setEpisodes(transformed);
-        const lastItem = transformed.filter((ep: Episode) => (ep.session || 1) === selectedSession);
-        setNewItem(prev => ({
-          ...prev,
-          number: lastItem.length > 0 ? Math.max(...lastItem.map((ep: Episode) => ep.episodeNumber)) + 1 : 1,
-          session: selectedSession,
-          mainLink: '',
-          downloadLinks: [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }]
-        }));
+    await guarded(`fetch-content-${contentId}`, async () => {
+      setLoading(true);
+      setEditingItemId(null);
+      try {
+        const token = getToken();
+        if (isManga) {
+          const { data } = await axios.get(`${API_BASE}/chapters/${contentId}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const transformed = data.map(transformChapterData);
+          setChapters(transformed);
+          const lastItem = transformed.filter((ch: Chapter) => (ch.session || 1) === selectedSession);
+          setNewItem(prev => ({
+            ...prev,
+            number: lastItem.length > 0 ? Math.max(...lastItem.map((ch: Chapter) => ch.chapterNumber)) + 1 : 1,
+            session: selectedSession,
+            mainLink: '',
+            downloadLinks: [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }]
+          }));
+        } else {
+          const { data } = await axios.get(`${API_BASE}/episodes/${contentId}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const transformed = data.map(transformEpisodeData);
+          setEpisodes(transformed);
+          const lastItem = transformed.filter((ep: Episode) => (ep.session || 1) === selectedSession);
+          setNewItem(prev => ({
+            ...prev,
+            number: lastItem.length > 0 ? Math.max(...lastItem.map((ep: Episode) => ep.episodeNumber)) + 1 : 1,
+            session: selectedSession,
+            mainLink: '',
+            downloadLinks: [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }]
+          }));
+        }
+      } catch (err: any) {
+        console.error('Content load error:', err.response?.data || err.message);
+        toast.error('Failed to load content');
+      } finally {
+        setLoading(false);
       }
-    } catch (err: any) {
-      console.error('Content load error:', err.response?.data || err.message);
-      toast.error('Failed to load content');
-    } finally {
-      setLoading(false);
-    }
+    });
   };
 
   const fetchDownloadPagesForAnime = async (animeId: string) => {
-    setLoadingDownloadPages(true);
-    try {
-      const { data } = await axios.get(`${API_BASE}/download-pages/anime/${animeId}`);
-      setDownloadPages(Array.isArray(data) ? data : []);
-    } catch (err: any) {
-      console.error('Download pages load error:', err.response?.data || err.message);
-      setDownloadPages([]);
-    } finally {
-      setLoadingDownloadPages(false);
-    }
+    await guarded(`fetch-dl-pages-${animeId}`, async () => {
+      setLoadingDownloadPages(true);
+      try {
+        const { data } = await axios.get(`${API_BASE}/download-pages/anime/${animeId}`);
+        setDownloadPages(Array.isArray(data) ? data : []);
+      } catch (err: any) {
+        console.error('Download pages load error:', err.response?.data || err.message);
+        setDownloadPages([]);
+      } finally {
+        setLoadingDownloadPages(false);
+      }
+    });
   };
 
   const handleEditItem = (item: Episode | Chapter) => {
@@ -403,40 +439,43 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
       toast.error('Pehle valid link daalo');
       return;
     }
-    setGeneratingLinks(true);
-    try {
-      const token = getToken();
-      const { data } = await axios.post(
-        `${API_BASE}/link-generator/generate`,
-        { url: link },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+    const key = `generate-links-${isEdit ? 'edit' : 'new'}${externalLink ? '-ext' : ''}`;
+    await guarded(key, async () => {
+      setGeneratingLinks(true);
+      try {
+        const token = getToken();
+        const { data } = await axios.post(
+          `${API_BASE}/link-generator/generate`,
+          { url: link },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
 
-      const newLinks: DownloadLink[] = DEFAULT_LINK_NAMES.map((name) => ({
-        name,
-        url: data[name] || '',
-        quality: '',
-        type: name === 'Link 5' ? 'direct' : 'server'
-      }));
+        const newLinks: DownloadLink[] = DEFAULT_LINK_NAMES.map((name) => ({
+          name,
+          url: data[name] || '',
+          quality: '',
+          type: name === 'Link 5' ? 'direct' : 'server'
+        }));
 
-      if (newLinks.some(l => !l.url)) {
-        toast.error('Kuch shortener fail ho gaye, dobara generate karo');
-        return;
+        if (newLinks.some(l => !l.url)) {
+          toast.error('Kuch shortener fail ho gaye, dobara generate karo');
+          return;
+        }
+
+        setGenToken(data.genToken || '');
+        if (isEdit && !externalLink) {
+          setEditForm(prev => ({ ...prev, mainLink: link, downloadLinks: newLinks }));
+        } else {
+          setNewItem(prev => ({ ...prev, mainLink: link, downloadLinks: newLinks }));
+        }
+        toast.success('4 short links + 1 direct link form me add ho gaye!');
+      } catch (err: any) {
+        console.error('Auto-generate error:', err.response?.data || err.message);
+        toast.error(err.response?.data?.error || 'Link generate karne me error aaya');
+      } finally {
+        setGeneratingLinks(false);
       }
-
-      setGenToken(data.genToken || '');
-      if (isEdit && !externalLink) {
-        setEditForm(prev => ({ ...prev, mainLink: link, downloadLinks: newLinks }));
-      } else {
-        setNewItem(prev => ({ ...prev, mainLink: link, downloadLinks: newLinks }));
-      }
-      toast.success('4 short links + 1 direct link form me add ho gaye!');
-    } catch (err: any) {
-      console.error('Auto-generate error:', err.response?.data || err.message);
-      toast.error(err.response?.data?.error || 'Link generate karne me error aaya');
-    } finally {
-      setGeneratingLinks(false);
-    }
+    });
   };
 
   const validateDownloadLinks = (links: DownloadLink[]): boolean => {
@@ -479,128 +518,140 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
       return;
     }
 
-    setAddingItem(true);
-    try {
-      const token = getToken();
-      const endpoint = isManga ? '/chapters' : '/episodes';
-      const requestBody = isManga
-        ? {
-            mangaId: selectedAnime._id,
-            chapterNumber: newItem.number,
-            title: newItem.title || `Chapter ${newItem.number}`,
-            session: newItem.session,
-            mainLink: newItem.mainLink,
-            downloadLinks: newItem.downloadLinks,
-            ...(genToken ? { genToken } : {})
+    await guarded('add-item', async () => {
+      setAddingItem(true);
+      try {
+        const token = getToken();
+        const endpoint = isManga ? '/chapters' : '/episodes';
+        const requestBody = isManga
+          ? {
+              mangaId: selectedAnime._id,
+              chapterNumber: newItem.number,
+              title: newItem.title || `Chapter ${newItem.number}`,
+              session: newItem.session,
+              mainLink: newItem.mainLink,
+              downloadLinks: newItem.downloadLinks,
+              ...(genToken ? { genToken } : {})
+            }
+          : {
+              animeId: selectedAnime._id,
+              episodeNumber: newItem.number,
+              title: newItem.title || `Episode ${newItem.number}`,
+              session: newItem.session,
+              mainLink: newItem.mainLink,
+              downloadLinks: newItem.downloadLinks,
+              ...(genToken ? { genToken } : {})
+            };
+
+        const response = await axios.post(`${API_BASE}${endpoint}`, requestBody, {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
           }
-        : {
-            animeId: selectedAnime._id,
-            episodeNumber: newItem.number,
-            title: newItem.title || `Episode ${newItem.number}`,
-            session: newItem.session,
-            mainLink: newItem.mainLink,
-            downloadLinks: newItem.downloadLinks,
-            ...(genToken ? { genToken } : {})
-          };
+        });
 
-      const response = await axios.post(`${API_BASE}${endpoint}`, requestBody, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
+        toast.success(`${isManga ? 'Chapter' : 'Episode'} added successfully!`);
+
+        if (isManga) {
+          setChapters(prev => [...prev, transformChapterData(response.data.episode || response.data)]);
+        } else {
+          setEpisodes(prev => [...prev, transformEpisodeData(response.data.episode || response.data)]);
         }
-      });
 
-      toast.success(`${isManga ? 'Chapter' : 'Episode'} added successfully!`);
-
-      if (isManga) {
-        setChapters(prev => [...prev, transformChapterData(response.data.episode || response.data)]);
-      } else {
-        setEpisodes(prev => [...prev, transformEpisodeData(response.data.episode || response.data)]);
+        const nextNumber = getNextAvailableNumber();
+        setNewItem({
+          number: nextNumber,
+          title: '',
+          session: selectedSession,
+          mainLink: '',
+          downloadLinks: [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }]
+        });
+        setGenToken('');
+      } catch (err: any) {
+        console.error('Add error:', err.response?.data || err.message);
+        toast.error(`Failed to add ${isManga ? 'chapter' : 'episode'}: ${err.response?.data?.error || err.message}`);
+      } finally {
+        setAddingItem(false);
       }
-
-      const nextNumber = getNextAvailableNumber();
-      setNewItem({
-        number: nextNumber,
-        title: '',
-        session: selectedSession,
-        mainLink: '',
-        downloadLinks: [{ name: DEFAULT_LINK_NAMES[0], url: '', quality: '', type: 'direct' }]
-      });
-      setGenToken('');
-    } catch (err: any) {
-      console.error('Add error:', err.response?.data || err.message);
-      toast.error(`Failed to add ${isManga ? 'chapter' : 'episode'}: ${err.response?.data?.error || err.message}`);
-    } finally {
-      setAddingItem(false);
-    }
+    });
   };
 
   const handleUpdateItem = async () => {
     if (!editingItemId || !selectedAnime) return;
     if (!validateDownloadLinks(editForm.downloadLinks)) return;
 
-    try {
-      const token = getToken();
-      const endpoint = isManga ? '/chapters' : '/episodes';
-      const requestBody = isManga
-        ? {
-            mangaId: selectedAnime._id,
-            chapterNumber: editForm.number,
-            title: editForm.title || `Chapter ${editForm.number}`,
-            session: editForm.session,
-            mainLink: editForm.mainLink,
-            downloadLinks: editForm.downloadLinks,
-            ...(genToken ? { genToken } : {})
+    await guarded('update-item', async () => {
+      setUpdatingItem(true);
+      try {
+        const token = getToken();
+        const endpoint = isManga ? '/chapters' : '/episodes';
+        const requestBody = isManga
+          ? {
+              mangaId: selectedAnime._id,
+              chapterNumber: editForm.number,
+              title: editForm.title || `Chapter ${editForm.number}`,
+              session: editForm.session,
+              mainLink: editForm.mainLink,
+              downloadLinks: editForm.downloadLinks,
+              ...(genToken ? { genToken } : {})
+            }
+          : {
+              animeId: selectedAnime._id,
+              episodeNumber: editForm.number,
+              title: editForm.title || `Episode ${editForm.number}`,
+              session: editForm.session,
+              mainLink: editForm.mainLink,
+              downloadLinks: editForm.downloadLinks,
+              ...(genToken ? { genToken } : {})
+            };
+
+        await axios.patch(`${API_BASE}${endpoint}`, requestBody, {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
           }
-        : {
-            animeId: selectedAnime._id,
-            episodeNumber: editForm.number,
-            title: editForm.title || `Episode ${editForm.number}`,
-            session: editForm.session,
-            mainLink: editForm.mainLink,
-            downloadLinks: editForm.downloadLinks,
-            ...(genToken ? { genToken } : {})
-          };
+        });
 
-      await axios.patch(`${API_BASE}${endpoint}`, requestBody, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        }
-      });
-
-      toast.success(`${isManga ? 'Chapter' : 'Episode'} updated successfully!`);
-      setEditingItemId(null);
-      setGenToken('');
-      await fetchContent(selectedAnime._id);
-    } catch (err: any) {
-      console.error('Update error:', err.response?.data || err.message);
-      toast.error(`Failed to update ${isManga ? 'chapter' : 'episode'}: ${err.response?.data?.error || err.message}`);
-    }
+        toast.success(`${isManga ? 'Chapter' : 'Episode'} updated successfully!`);
+        setEditingItemId(null);
+        setGenToken('');
+        await fetchContent(selectedAnime._id);
+      } catch (err: any) {
+        console.error('Update error:', err.response?.data || err.message);
+        toast.error(`Failed to update ${isManga ? 'chapter' : 'episode'}: ${err.response?.data?.error || err.message}`);
+      } finally {
+        setUpdatingItem(false);
+      }
+    });
   };
 
   const confirmDelete = async () => {
     if (!deleteConfirm || !selectedAnime) return;
     const { itemNumber, session } = deleteConfirm;
-    try {
-      const token = getToken();
-      const endpoint = isManga ? '/chapters' : '/episodes';
-      await axios.delete(`${API_BASE}${endpoint}`, {
-        headers: { Authorization: `Bearer ${token}` },
-        data: {
-          [isManga ? 'mangaId' : 'animeId']: selectedAnime._id,
-          [isManga ? 'chapterNumber' : 'episodeNumber']: itemNumber,
-          session: session
-        }
-      });
-      toast.success(`${isManga ? 'Chapter' : 'Episode'} deleted successfully!`);
-      await fetchContent(selectedAnime._id);
-    } catch (err: any) {
-      console.error('Delete error:', err.response?.data || err.message);
-      toast.error(err.response?.data?.error || `Failed to delete ${isManga ? 'chapter' : 'episode'}`);
-    } finally {
-      setDeleteConfirm(null);
-    }
+
+    await guarded('delete-item', async () => {
+      setDeletingItem(true);
+      try {
+        const token = getToken();
+        const endpoint = isManga ? '/chapters' : '/episodes';
+        await axios.delete(`${API_BASE}${endpoint}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          data: {
+            [isManga ? 'mangaId' : 'animeId']: selectedAnime._id,
+            [isManga ? 'chapterNumber' : 'episodeNumber']: itemNumber,
+            session: session
+          }
+        });
+        toast.success(`${isManga ? 'Chapter' : 'Episode'} deleted successfully!`);
+        await fetchContent(selectedAnime._id);
+      } catch (err: any) {
+        console.error('Delete error:', err.response?.data || err.message);
+        toast.error(err.response?.data?.error || `Failed to delete ${isManga ? 'chapter' : 'episode'}`);
+      } finally {
+        setDeletingItem(false);
+        setDeleteConfirm(null);
+      }
+    });
   };
 
   const openMainLink = (link: string) => link && window.open(link, '_blank', 'noopener,noreferrer');
@@ -611,7 +662,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
   };
 
   // ── Shared input style classes ──────────────────────────────────────
-  const inputCls = "w-full px-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-xs text-white placeholder-gray-500 outline-none transition-all focus:border-purple-500/50 focus:bg-white/[0.06] focus:ring-2 focus:ring-purple-500/20";
+  const inputCls = "w-full px-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-xs text-white placeholder-gray-500 outline-none transition-all focus:border-purple-500/50 focus:bg-white/[0.06] focus:ring-2 focus:ring-purple-500/20 disabled:opacity-60";
 
   // ── Shared edit form ────────────────────────────────────────────────
   const renderEditForm = (_item: any) => (
@@ -629,11 +680,11 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1 block">Number *</label>
-            <input type="number" value={editForm.number} onChange={(e) => setEditForm({...editForm, number: Math.max(1, parseInt(e.target.value)||1)})} className={inputCls} />
+            <input type="number" value={editForm.number} onChange={(e) => setEditForm({...editForm, number: Math.max(1, parseInt(e.target.value)||1)})} className={inputCls} disabled={updatingItem} />
           </div>
           <div>
             <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1 block">Session *</label>
-            <input type="number" value={editForm.session} onChange={(e) => setEditForm({...editForm, session: Math.max(1, parseInt(e.target.value)||1)})} className={inputCls} />
+            <input type="number" value={editForm.session} onChange={(e) => setEditForm({...editForm, session: Math.max(1, parseInt(e.target.value)||1)})} className={inputCls} disabled={updatingItem} />
           </div>
         </div>
 
@@ -643,12 +694,12 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
             <SvgIcon d={ICONS.link} className="w-3.5 h-3.5 text-amber-300" />
             <label className="text-[11px] font-bold uppercase tracking-wider text-amber-300">Main Link (Admin)</label>
           </div>
-          <input type="text" value={editForm.mainLink} onChange={(e) => setEditForm({...editForm, mainLink: e.target.value})} className={inputCls} />
+          <input type="text" value={editForm.mainLink} onChange={(e) => setEditForm({...editForm, mainLink: e.target.value})} className={inputCls} disabled={updatingItem} />
           {isMainAdmin && (
             <button
               type="button"
               onClick={() => handleAutoGenerateLinks(true)}
-              disabled={!editForm.mainLink || generatingLinks}
+              disabled={!editForm.mainLink || generatingLinks || updatingItem}
               className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[11px] font-bold rounded-lg transition-all"
             >
               {generatingLinks ? <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <SvgIcon d={ICONS.bolt} className="w-3 h-3" />}
@@ -661,7 +712,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">User Download Links</label>
-            <button type="button" onClick={handleEditAddDownloadLink} disabled={editForm.downloadLinks.length>=5}
+            <button type="button" onClick={handleEditAddDownloadLink} disabled={editForm.downloadLinks.length>=5 || updatingItem}
               className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 hover:bg-emerald-500/25 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
               <SvgIcon d={ICONS.plus} className="w-3 h-3" /> Add
             </button>
@@ -672,23 +723,23 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-bold text-purple-300">{link.name}</span>
                   {editForm.downloadLinks.length>1 && (
-                    <button type="button" onClick={() => handleEditRemoveDownloadLink(idx)}
-                      className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-500/15 text-rose-300 border border-rose-500/25 hover:bg-rose-500/25 transition-all">
+                    <button type="button" onClick={() => handleEditRemoveDownloadLink(idx)} disabled={updatingItem}
+                      className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-500/15 text-rose-300 border border-rose-500/25 hover:bg-rose-500/25 transition-all disabled:opacity-40">
                       Remove
                     </button>
                   )}
                 </div>
                 <div>
                   <label className="text-[10px] text-gray-500 mb-0.5 block">Name</label>
-                  <input type="text" value={link.name} onChange={(e) => handleEditUpdateDownloadLink(idx, 'name', e.target.value)} className={inputCls} />
+                  <input type="text" value={link.name} onChange={(e) => handleEditUpdateDownloadLink(idx, 'name', e.target.value)} className={inputCls} disabled={updatingItem} />
                 </div>
                 <div>
                   <label className="text-[10px] text-gray-500 mb-0.5 block">URL</label>
-                  <input type="url" value={link.url} onChange={(e) => handleEditUpdateDownloadLink(idx, 'url', e.target.value)} className={inputCls} />
+                  <input type="url" value={link.url} onChange={(e) => handleEditUpdateDownloadLink(idx, 'url', e.target.value)} className={inputCls} disabled={updatingItem} />
                 </div>
                 <div>
                   <label className="text-[10px] text-gray-500 mb-0.5 block">Type</label>
-                  <select value={link.type||'direct'} onChange={(e) => handleEditUpdateDownloadLink(idx, 'type', e.target.value)} className={inputCls}>
+                  <select value={link.type||'direct'} onChange={(e) => handleEditUpdateDownloadLink(idx, 'type', e.target.value)} className={inputCls} disabled={updatingItem}>
                     <option className="bg-slate-900">direct</option>
                     <option className="bg-slate-900">server</option>
                     <option className="bg-slate-900">google_drive</option>
@@ -703,16 +754,25 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
 
         <div>
           <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1 block">Title</label>
-          <input type="text" value={editForm.title} onChange={(e) => setEditForm({...editForm, title: e.target.value})} className={inputCls} />
+          <input type="text" value={editForm.title} onChange={(e) => setEditForm({...editForm, title: e.target.value})} className={inputCls} disabled={updatingItem} />
         </div>
 
         <div className="flex gap-2">
-          <button type="button" onClick={handleUpdateItem}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold rounded-lg shadow-lg shadow-emerald-500/20 transition-all">
-            <SvgIcon d={ICONS.check} className="w-3.5 h-3.5" /> Save Changes
+          <button type="button" onClick={handleUpdateItem} disabled={updatingItem}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold rounded-lg shadow-lg shadow-emerald-500/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
+            {updatingItem ? (
+              <>
+                <span className="w-3.5 h-3.5 border-2 border-white/80 border-t-transparent rounded-full animate-spin" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <SvgIcon d={ICONS.check} className="w-3.5 h-3.5" /> Save Changes
+              </>
+            )}
           </button>
-          <button type="button" onClick={handleCancelEdit}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-gray-300 text-xs font-bold rounded-lg transition-all">
+          <button type="button" onClick={handleCancelEdit} disabled={updatingItem}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-gray-300 text-xs font-bold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed">
             <SvgIcon d={ICONS.cancel} className="w-3.5 h-3.5" /> Cancel
           </button>
         </div>
@@ -730,6 +790,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
         confirmLabel="Delete"
         onConfirm={confirmDelete}
         onCancel={() => setDeleteConfirm(null)}
+        loading={deletingItem}
       />
 
       {/* ─── Header ─────────────────────────────────────── */}
@@ -837,7 +898,6 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
           )}
 
           {downloadPages.map((page: any) => {
-            // Preview link with adminPreview flag (uses env-driven frontend base)
             const publicUrl = `${getFrontendBase()}/download/${page.slug}`;
             const previewUrl = `${getFrontendBase()}/download/${page.slug}?adminPreview=1`;
             const downloadCount = (page.links || []).filter((l: any) => l.type === 'download').length;
@@ -991,6 +1051,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                 className={inputCls}
                 min="1"
                 required
+                disabled={addingItem}
               />
             </div>
             <div>
@@ -1002,6 +1063,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                 className={inputCls}
                 min="1"
                 required
+                disabled={addingItem}
               />
             </div>
           </div>
@@ -1025,12 +1087,13 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                 onChange={(e) => setNewItem({ ...newItem, mainLink: e.target.value })}
                 placeholder="https://example.com/original.mp4"
                 className={`${inputCls} flex-1`}
+                disabled={addingItem}
               />
               <div className="flex gap-1.5 flex-wrap">
                 <button
                   type="button"
                   onClick={() => openMainLink(newItem.mainLink)}
-                  disabled={!newItem.mainLink}
+                  disabled={!newItem.mainLink || addingItem}
                   className="inline-flex items-center gap-1 px-3 py-2 bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/25 text-sky-300 text-[11px] font-bold rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                 >
                   <SvgIcon d={ICONS.open} className="w-3 h-3" /> Open
@@ -1038,7 +1101,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                 <button
                   type="button"
                   onClick={() => newItem.mainLink && copyToClipboard(newItem.mainLink)}
-                  disabled={!newItem.mainLink}
+                  disabled={!newItem.mainLink || addingItem}
                   className="inline-flex items-center gap-1 px-3 py-2 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/25 text-amber-300 text-[11px] font-bold rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                 >
                   <SvgIcon d={ICONS.copy} className="w-3 h-3" /> Copy
@@ -1047,7 +1110,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                   <button
                     type="button"
                     onClick={() => handleAutoGenerateLinks(false)}
-                    disabled={!newItem.mainLink || generatingLinks}
+                    disabled={!newItem.mainLink || generatingLinks || addingItem}
                     className="inline-flex items-center gap-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                   >
                     {generatingLinks ? <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <SvgIcon d={ICONS.bolt} className="w-3 h-3" />}
@@ -1075,7 +1138,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                 <button
                   type="button"
                   onClick={handleAddDownloadLink}
-                  disabled={newItem.downloadLinks.length >= 5}
+                  disabled={newItem.downloadLinks.length >= 5 || addingItem}
                   className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 hover:bg-emerald-500/25 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                 >
                   <SvgIcon d={ICONS.plus} className="w-3 h-3" /> Add (max 5)
@@ -1091,7 +1154,8 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                       <button
                         type="button"
                         onClick={() => handleRemoveDownloadLink(idx)}
-                        className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-500/15 text-rose-300 border border-rose-500/25 hover:bg-rose-500/25 transition-all"
+                        disabled={addingItem}
+                        className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-500/15 text-rose-300 border border-rose-500/25 hover:bg-rose-500/25 transition-all disabled:opacity-40"
                       >
                         Remove
                       </button>
@@ -1099,15 +1163,15 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                   </div>
                   <div>
                     <label className="text-[10px] text-gray-500 mb-0.5 block">Link Name *</label>
-                    <input type="text" value={link.name} onChange={(e) => handleUpdateDownloadLink(idx, 'name', e.target.value)} readOnly={restrictLinks} className={`${inputCls} ${restrictLinks ? 'opacity-60' : ''}`} required />
+                    <input type="text" value={link.name} onChange={(e) => handleUpdateDownloadLink(idx, 'name', e.target.value)} readOnly={restrictLinks} className={`${inputCls} ${restrictLinks ? 'opacity-60' : ''}`} required disabled={addingItem} />
                   </div>
                   <div>
                     <label className="text-[10px] text-gray-500 mb-0.5 block">Download URL *</label>
-                    <input type="url" value={link.url} onChange={(e) => handleUpdateDownloadLink(idx, 'url', e.target.value)} readOnly={restrictLinks} className={`${inputCls} ${restrictLinks ? 'opacity-60' : ''}`} required />
+                    <input type="url" value={link.url} onChange={(e) => handleUpdateDownloadLink(idx, 'url', e.target.value)} readOnly={restrictLinks} className={`${inputCls} ${restrictLinks ? 'opacity-60' : ''}`} required disabled={addingItem} />
                   </div>
                   <div>
                     <label className="text-[10px] text-gray-500 mb-0.5 block">Type</label>
-                    <select value={link.type || 'direct'} onChange={(e) => handleUpdateDownloadLink(idx, 'type', e.target.value)} disabled={restrictLinks} className={`${inputCls} ${restrictLinks ? 'opacity-60' : ''}`}>
+                    <select value={link.type || 'direct'} onChange={(e) => handleUpdateDownloadLink(idx, 'type', e.target.value)} disabled={restrictLinks || addingItem} className={`${inputCls} ${restrictLinks ? 'opacity-60' : ''}`}>
                       <option value="direct" className="bg-slate-900">Direct Download</option>
                       <option value="server" className="bg-slate-900">Server Download</option>
                       <option value="google_drive" className="bg-slate-900">Google Drive</option>
@@ -1128,6 +1192,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
               onChange={(e) => setNewItem({ ...newItem, title: e.target.value })}
               placeholder={`Defaults to '${isManga ? 'Chapter' : 'Episode'} X'`}
               className={inputCls}
+              disabled={addingItem}
             />
           </div>
 
@@ -1181,8 +1246,9 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                 {filteredItems.map((item: any) => {
                   const isEditing = editingItemId === item._id;
                   const number = isManga ? item.chapterNumber : item.episodeNumber;
+                  const isDeletingThis = isEditing && deletingItem;
                   return (
-                    <div key={item._id} className={`bg-white/[0.02] rounded-xl overflow-hidden border transition-all ${isEditing ? 'border-amber-500/40 bg-amber-500/[0.03]' : 'border-white/[0.06]'}`}>
+                    <div key={item._id} className={`bg-white/[0.02] rounded-xl overflow-hidden border transition-all ${isEditing ? 'border-amber-500/40 bg-amber-500/[0.03]' : 'border-white/[0.06]'} ${isDeletingThis ? 'opacity-50 pointer-events-none' : ''}`}>
                       <div className="p-3">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
@@ -1227,7 +1293,8 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                         <div className="flex gap-1.5 mt-3">
                           <button
                             onClick={() => handleEditItem(item)}
-                            className={`flex-1 inline-flex items-center justify-center gap-1 px-3 py-2 rounded-lg text-[11px] font-bold transition-all border ${
+                            disabled={updatingItem}
+                            className={`flex-1 inline-flex items-center justify-center gap-1 px-3 py-2 rounded-lg text-[11px] font-bold transition-all border disabled:opacity-50 ${
                               isEditing
                                 ? 'bg-amber-500/15 text-amber-300 border-amber-500/25 hover:bg-amber-500/25'
                                 : 'bg-sky-500/15 text-sky-300 border-sky-500/25 hover:bg-sky-500/25'
@@ -1312,7 +1379,8 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
                               <div className="flex gap-1.5">
                                 <button
                                   onClick={() => handleEditItem(item)}
-                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold transition-all border ${
+                                  disabled={updatingItem}
+                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold transition-all border disabled:opacity-50 ${
                                     isEditing
                                       ? 'bg-amber-500/15 text-amber-300 border-amber-500/25 hover:bg-amber-500/25'
                                       : 'bg-sky-500/15 text-sky-300 border-sky-500/25 hover:bg-sky-500/25'

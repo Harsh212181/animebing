@@ -1,4 +1,4 @@
- import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import VideoPlayer from '../../../components/VideoPlayer';
 import AddToPageModal from './AddToPageModal';
 
@@ -162,19 +162,21 @@ interface EpisodeRowProps {
   onRenameConfirm: () => void;
   onRenameCancel: () => void;
   onDelete: () => void;
+  rowPending?: boolean;
 }
 
 const EpisodeRow: React.FC<EpisodeRowProps> = ({
   item, episode, isRenaming, renameValue, setRenameValue, busyKey, isPlaying, isAddingToPage,
   selectMode, isSelected, onToggleSelect,
   onWatch, onDownload, onCopy, onToggleAddToPage, onRenameStart, onRenameConfirm, onRenameCancel, onDelete,
+  rowPending = false,
 }) => {
   const btn = "inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition-all";
 
   return (
     <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 p-2.5 transition-colors ${
       isSelected ? 'bg-purple-500/10' : 'hover:bg-white/[0.02]'
-    }`}>
+    } ${rowPending ? 'opacity-60 pointer-events-none' : ''}`}>
       <div className="min-w-0 flex-1 flex items-start gap-2.5">
         {selectMode && (
           <CustomCheckbox checked={isSelected} onChange={onToggleSelect} size="sm" className="mt-1" />
@@ -212,7 +214,11 @@ const EpisodeRow: React.FC<EpisodeRowProps> = ({
             <>
               <button onClick={onRenameConfirm} disabled={busyKey === item.key + 'rename'}
                 className={`${btn} bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-500/25 text-emerald-300 disabled:opacity-40`}>
-                <SvgIcon d={ICONS.check} className="w-3 h-3" /> Save
+                {busyKey === item.key + 'rename' ? (
+                  <><span className="w-3 h-3 border-2 border-emerald-300/40 border-t-emerald-300 rounded-full animate-spin" /> Saving...</>
+                ) : (
+                  <><SvgIcon d={ICONS.check} className="w-3 h-3" /> Save</>
+                )}
               </button>
               <button onClick={onRenameCancel}
                 className={`${btn} bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-gray-300`}>
@@ -250,7 +256,11 @@ const EpisodeRow: React.FC<EpisodeRowProps> = ({
               </button>
               <button onClick={onDelete} disabled={busyKey === item.key + 'delete'}
                 className={`${btn} bg-rose-500/15 hover:bg-rose-500/25 border-rose-500/25 text-rose-300 disabled:opacity-40`}>
-                <SvgIcon d={ICONS.trash} className="w-3 h-3" />
+                {busyKey === item.key + 'delete' ? (
+                  <span className="w-3 h-3 border-2 border-rose-300/40 border-t-rose-300 rounded-full animate-spin" />
+                ) : (
+                  <SvgIcon d={ICONS.trash} className="w-3 h-3" />
+                )}
               </button>
             </>
           )}
@@ -276,12 +286,14 @@ interface ImageCardProps {
   onRenameConfirm: () => void;
   onRenameCancel: () => void;
   onDelete: () => void;
+  cardPending?: boolean;
 }
 
 const ImageCard: React.FC<ImageCardProps> = ({
   item, isRenaming, renameValue, setRenameValue, busyKey,
   selectMode, isSelected, onToggleSelect,
   onDownload, onCopy, onRenameStart, onRenameConfirm, onRenameCancel, onDelete,
+  cardPending = false,
 }) => {
   const btn = "flex-1 inline-flex items-center justify-center gap-0.5 px-1.5 py-1 rounded text-[10px] font-bold border transition-all";
 
@@ -290,7 +302,7 @@ const ImageCard: React.FC<ImageCardProps> = ({
       onClick={() => selectMode && onToggleSelect()}
       className={`group relative rounded-xl overflow-hidden border bg-white/[0.03] transition-colors ${
         isSelected ? 'border-purple-500 ring-2 ring-purple-500/40' : 'border-white/[0.06] hover:border-purple-500/30'
-      } ${selectMode ? 'cursor-pointer' : ''}`}
+      } ${selectMode ? 'cursor-pointer' : ''} ${cardPending ? 'opacity-60 pointer-events-none' : ''}`}
     >
       {selectMode && (
         <CustomCheckbox
@@ -330,7 +342,7 @@ const ImageCard: React.FC<ImageCardProps> = ({
             <>
               <button onClick={onRenameConfirm} disabled={busyKey === item.key + 'rename'}
                 className={`${btn} bg-emerald-500/25 hover:bg-emerald-500/40 border-emerald-500/30 text-emerald-300`}>
-                Save
+                {busyKey === item.key + 'rename' ? '...' : 'Save'}
               </button>
               <button onClick={onRenameCancel}
                 className={`${btn} bg-white/[0.06] hover:bg-white/[0.12] border-white/[0.1] text-gray-300`}>
@@ -394,8 +406,30 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
     title: string;
     message: string;
     confirmLabel: string;
-    onConfirm: () => void;
+    loading: boolean;
+    onConfirm: () => Promise<void> | void;
   } | null>(null);
+
+  // 🆕 Double-click / slow-network guard — synchronous Set of in-flight keys.
+  // Prevents duplicate API calls even if user clicks before React re-renders.
+  const pendingRef = useRef<Set<string>>(new Set());
+
+  /**
+   * Wrap any async action with this helper. If the same key is already in-flight,
+   * the second call becomes a silent no-op. Errors are swallowed here because
+   * every action already handles its own error state.
+   */
+  const guarded = async (key: string, fn: () => Promise<void>) => {
+    if (pendingRef.current.has(key)) return;
+    pendingRef.current.add(key);
+    try {
+      await fn();
+    } catch {
+      /* each action handles its own errors */
+    } finally {
+      setTimeout(() => { pendingRef.current.delete(key); }, 250);
+    }
+  };
 
   const toggleGroup = (groupKey: string) => {
     setExpandedGroups(prev => {
@@ -407,22 +441,27 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
   };
 
   useEffect(() => {
-    const token = resolveToken();
-    fetch(`${API_BASE}/uploads/buckets`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-      .then(res => res.json())
-      .then(data => Array.isArray(data) && setBuckets(data))
-      .catch(() => {});
+    guarded('fetch-buckets', async () => {
+      try {
+        const token = resolveToken();
+        const res = await fetch(`${API_BASE}/uploads/buckets`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+        const data = await res.json();
+        if (Array.isArray(data)) setBuckets(data);
+      } catch { /* ignore */ }
+    });
   }, []);
 
   const fetchMarks = useCallback(async () => {
-    try {
-      const token = resolveToken();
-      const res = await fetch(`${API_BASE}/uploads/marks`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {}
-      });
-      const data = await res.json();
-      if (Array.isArray(data)) setMarkedKeys(new Set(data.map((m: any) => m.groupKey)));
-    } catch {}
+    await guarded('fetch-marks', async () => {
+      try {
+        const token = resolveToken();
+        const res = await fetch(`${API_BASE}/uploads/marks`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        const data = await res.json();
+        if (Array.isArray(data)) setMarkedKeys(new Set(data.map((m: any) => m.groupKey)));
+      } catch { /* ignore */ }
+    });
   }, []);
 
   useEffect(() => { fetchMarks(); }, [fetchMarks]);
@@ -440,20 +479,22 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
   };
 
   const fetchItems = useCallback(async () => {
-    setLoading(true); setError('');
-    try {
-      const token = resolveToken();
-      const res = await fetch(`${API_BASE}/uploads/list?hostname=${encodeURIComponent(selectedHostname)}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {}
-      });
-      const data = await res.json();
-      if (Array.isArray(data)) setItems(data);
-      else setError(data.error || 'Failed to load');
-    } catch {
-      setError('Network error');
-    } finally {
-      setLoading(false);
-    }
+    await guarded('fetch-items', async () => {
+      setLoading(true); setError('');
+      try {
+        const token = resolveToken();
+        const res = await fetch(`${API_BASE}/uploads/list?hostname=${encodeURIComponent(selectedHostname)}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        const data = await res.json();
+        if (Array.isArray(data)) setItems(data);
+        else setError(data.error || 'Failed to load');
+      } catch {
+        setError('Network error');
+      } finally {
+        setLoading(false);
+      }
+    });
   }, [selectedHostname]);
 
   useEffect(() => { fetchItems(); }, [fetchItems, refreshTrigger]);
@@ -525,19 +566,21 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
       return;
     }
 
-    setBusyKey(item.key + mode);
-    try {
-      const { url } = await apiCall('/preview-url', 'POST', { hostname: item.hostname, key: item.key, mode });
-      if (mode === 'watch') {
-        setPlayingItem({ id: rowId, url });
-      } else {
-        window.open(url, '_blank');
+    await guarded(`${mode}-${item.hostname}-${item.key}`, async () => {
+      setBusyKey(item.key + mode);
+      try {
+        const { url } = await apiCall('/preview-url', 'POST', { hostname: item.hostname, key: item.key, mode });
+        if (mode === 'watch') {
+          setPlayingItem({ id: rowId, url });
+        } else {
+          window.open(url, '_blank');
+        }
+      } catch (err: any) {
+        alert(err.message || 'Failed to generate link');
+      } finally {
+        setBusyKey(null);
       }
-    } catch (err: any) {
-      alert(err.message || 'Failed to generate link');
-    } finally {
-      setBusyKey(null);
-    }
+    });
   };
 
   const handleCopyLink = (item: MediaItem) => {
@@ -546,15 +589,17 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
   };
 
   const doDelete = async (item: MediaItem) => {
-    setBusyKey(item.key + 'delete');
-    try {
-      await apiCall(`/object?hostname=${encodeURIComponent(item.hostname)}&key=${encodeURIComponent(item.key)}`, 'DELETE');
-      setItems(prev => prev.filter(i => !(i.key === item.key && i.hostname === item.hostname)));
-    } catch (err: any) {
-      alert(err.message || 'Delete failed');
-    } finally {
-      setBusyKey(null);
-    }
+    await guarded(`delete-${item.hostname}-${item.key}`, async () => {
+      setBusyKey(item.key + 'delete');
+      try {
+        await apiCall(`/object?hostname=${encodeURIComponent(item.hostname)}&key=${encodeURIComponent(item.key)}`, 'DELETE');
+        setItems(prev => prev.filter(i => !(i.key === item.key && i.hostname === item.hostname)));
+      } catch (err: any) {
+        alert(err.message || 'Delete failed');
+      } finally {
+        setBusyKey(null);
+      }
+    });
   };
 
   const requestDelete = (item: MediaItem) => {
@@ -562,7 +607,12 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
       title: 'Delete file?',
       message: `"${item.key}" permanently delete karna hai? Yeh undo nahi ho sakta.`,
       confirmLabel: 'Delete',
-      onConfirm: () => doDelete(item),
+      loading: false,
+      onConfirm: async () => {
+        setConfirmModal(prev => prev ? { ...prev, loading: true } : prev);
+        await doDelete(item);
+        setConfirmModal(null);
+      },
     });
   };
 
@@ -576,50 +626,54 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
       setRenamingKey(null);
       return;
     }
-    setBusyKey(item.key + 'rename');
-    try {
-      const { url } = await apiCall('/rename', 'POST', { hostname: item.hostname, oldKey: item.key, newKey: renameValue.trim() });
-      setItems(prev => prev.map(i =>
-        (i.key === item.key && i.hostname === item.hostname)
-          ? { ...i, key: renameValue.trim(), url }
-          : i
-      ));
-      setRenamingKey(null);
-    } catch (err: any) {
-      alert(err.message || 'Rename failed');
-    } finally {
-      setBusyKey(null);
-    }
+    await guarded(`rename-${item.hostname}-${item.key}`, async () => {
+      setBusyKey(item.key + 'rename');
+      try {
+        const { url } = await apiCall('/rename', 'POST', { hostname: item.hostname, oldKey: item.key, newKey: renameValue.trim() });
+        setItems(prev => prev.map(i =>
+          (i.key === item.key && i.hostname === item.hostname)
+            ? { ...i, key: renameValue.trim(), url }
+            : i
+        ));
+        setRenamingKey(null);
+      } catch (err: any) {
+        alert(err.message || 'Rename failed');
+      } finally {
+        setBusyKey(null);
+      }
+    });
   };
 
   const toggleMark = async (groupKey: string, displayName: string) => {
-    const token = resolveToken();
-    const isMarked = markedKeys.has(groupKey);
-    setMarkBusyKey(groupKey);
-    try {
-      if (isMarked) {
-        await fetch(`${API_BASE}/uploads/mark?groupKey=${encodeURIComponent(groupKey)}`, {
-          method: 'DELETE',
-          headers: token ? { Authorization: `Bearer ${token}` } : {}
-        });
-        setMarkedKeys(prev => {
-          const next = new Set(prev);
-          next.delete(groupKey);
-          return next;
-        });
-      } else {
-        await fetch(`${API_BASE}/uploads/mark`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-          body: JSON.stringify({ groupKey, displayName }),
-        });
-        setMarkedKeys(prev => new Set(prev).add(groupKey));
+    await guarded(`mark-${groupKey}`, async () => {
+      const token = resolveToken();
+      const isMarked = markedKeys.has(groupKey);
+      setMarkBusyKey(groupKey);
+      try {
+        if (isMarked) {
+          await fetch(`${API_BASE}/uploads/mark?groupKey=${encodeURIComponent(groupKey)}`, {
+            method: 'DELETE',
+            headers: token ? { Authorization: `Bearer ${token}` } : {}
+          });
+          setMarkedKeys(prev => {
+            const next = new Set(prev);
+            next.delete(groupKey);
+            return next;
+          });
+        } else {
+          await fetch(`${API_BASE}/uploads/mark`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+            body: JSON.stringify({ groupKey, displayName }),
+          });
+          setMarkedKeys(prev => new Set(prev).add(groupKey));
+        }
+      } catch {
+        alert('Mark update fail ho gaya, dobara try karo');
+      } finally {
+        setMarkBusyKey(null);
       }
-    } catch {
-      alert('Mark update fail ho gaya, dobara try karo');
-    } finally {
-      setMarkBusyKey(null);
-    }
+    });
   };
 
   const toggleSelectMode = () => {
@@ -655,34 +709,36 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
       return;
     }
 
-    setBulkDeleting(true);
-    try {
-      const payload = { items: targets.map(t => ({ hostname: t.hostname, key: t.key })) };
-      const result = await apiCall('/bulk-delete', 'POST', payload);
+    await guarded('bulk-delete', async () => {
+      setBulkDeleting(true);
+      try {
+        const payload = { items: targets.map(t => ({ hostname: t.hostname, key: t.key })) };
+        const result = await apiCall('/bulk-delete', 'POST', payload);
 
-      const deletedIds = new Set<string>(
-        (result.deleted || []).map((d: { hostname: string; key: string }) => `${d.hostname}::${d.key}`)
-      );
+        const deletedIds = new Set<string>(
+          (result.deleted || []).map((d: { hostname: string; key: string }) => `${d.hostname}::${d.key}`)
+        );
 
-      setItems(prev => prev.filter(i => !deletedIds.has(itemId(i))));
+        setItems(prev => prev.filter(i => !deletedIds.has(itemId(i))));
 
-      setSelectedIds(prev => {
-        const next = new Set(prev);
-        deletedIds.forEach(id => next.delete(id));
-        return next;
-      });
+        setSelectedIds(prev => {
+          const next = new Set(prev);
+          deletedIds.forEach(id => next.delete(id));
+          return next;
+        });
 
-      if (result.errors && result.errors.length > 0) {
-        const preview = result.errors.slice(0, 5).map((e: any) => `${e.key}: ${e.message}`).join('\n');
-        alert(`${deletedIds.size} deleted, ${result.errors.length} fail ho gaye:\n${preview}${result.errors.length > 5 ? '\n...' : ''}`);
-      } else {
-        setSelectMode(false);
+        if (result.errors && result.errors.length > 0) {
+          const preview = result.errors.slice(0, 5).map((e: any) => `${e.key}: ${e.message}`).join('\n');
+          alert(`${deletedIds.size} deleted, ${result.errors.length} fail ho gaye:\n${preview}${result.errors.length > 5 ? '\n...' : ''}`);
+        } else {
+          setSelectMode(false);
+        }
+      } catch (err: any) {
+        alert(err.message || 'Bulk delete failed');
+      } finally {
+        setBulkDeleting(false);
       }
-    } catch (err: any) {
-      alert(err.message || 'Bulk delete failed');
-    } finally {
-      setBulkDeleting(false);
-    }
+    });
   };
 
   const requestBulkDelete = () => {
@@ -691,7 +747,12 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
       title: 'Delete selected files?',
       message: `${selectedIds.size} file(s) permanently delete karni hain? Yeh undo nahi ho sakta.`,
       confirmLabel: `Delete ${selectedIds.size} file(s)`,
-      onConfirm: doBulkDelete,
+      loading: false,
+      onConfirm: async () => {
+        setConfirmModal(prev => prev ? { ...prev, loading: true } : prev);
+        await doBulkDelete();
+        setConfirmModal(null);
+      },
     });
   };
 
@@ -737,7 +798,8 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
 
           <button
             onClick={toggleSelectMode}
-            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition-all ${
+            disabled={bulkDeleting}
+            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
               selectMode
                 ? 'bg-rose-500/15 hover:bg-rose-500/25 border-rose-500/25 text-rose-300'
                 : 'bg-indigo-500/15 hover:bg-indigo-500/25 border-indigo-500/25 text-indigo-300'
@@ -750,7 +812,7 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
           <button
             onClick={fetchItems}
             disabled={loading}
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-gray-300 text-[10px] font-bold transition-all disabled:opacity-40"
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-gray-300 text-[10px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <SvgIcon d={ICONS.refresh} className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
             {loading ? 'Loading' : 'Refresh'}
@@ -761,30 +823,35 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
       {/* ─── Bulk toolbar ─────────────────────────────── */}
       {selectMode && (
         <div className="flex items-center justify-between flex-wrap gap-2 p-3 bg-indigo-500/[0.06] border border-indigo-500/20 rounded-xl">
-          <span className="text-xs font-bold text-indigo-200">
+          <span className="text-xs font-bold text-indigo-200 flex items-center gap-2">
+            {bulkDeleting && <span className="w-3 h-3 border-2 border-indigo-300/40 border-t-indigo-300 rounded-full animate-spin" />}
             <span className="text-indigo-300">{selectedIds.size}</span> selected
           </span>
           <div className="flex gap-1.5 flex-wrap">
             <button
               onClick={allVisibleSelected ? clearSelection : selectAllVisible}
-              className="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-gray-300 text-[10px] font-bold transition-all"
+              disabled={bulkDeleting}
+              className="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-gray-300 text-[10px] font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {allVisibleSelected ? 'Deselect All' : 'Select All'}
             </button>
             <button
               onClick={clearSelection}
-              disabled={selectedIds.size === 0}
-              className="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-gray-300 text-[10px] font-bold transition-all disabled:opacity-40"
+              disabled={selectedIds.size === 0 || bulkDeleting}
+              className="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-gray-300 text-[10px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Clear
             </button>
             <button
               onClick={requestBulkDelete}
               disabled={selectedIds.size === 0 || bulkDeleting}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/25 text-rose-300 text-[10px] font-bold transition-all disabled:opacity-40"
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/25 text-rose-300 text-[10px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <SvgIcon d={ICONS.trash} className="w-3 h-3" />
-              {bulkDeleting ? 'Deleting...' : `Delete (${selectedIds.size})`}
+              {bulkDeleting ? (
+                <><span className="w-3 h-3 border-2 border-rose-300/40 border-t-rose-300 rounded-full animate-spin" /> Deleting...</>
+              ) : (
+                <><SvgIcon d={ICONS.trash} className="w-3 h-3" /> Delete ({selectedIds.size})</>
+              )}
             </button>
           </div>
         </div>
@@ -846,6 +913,7 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5 p-2.5">
                 {imageItems.map(item => {
                   const id = itemId(item);
+                  const isDeletingThis = busyKey === item.key + 'delete';
                   return (
                     <ImageCard
                       key={id}
@@ -863,6 +931,7 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
                       onRenameConfirm={() => confirmRename(item)}
                       onRenameCancel={() => setRenamingKey(null)}
                       onDelete={() => requestDelete(item)}
+                      cardPending={isDeletingThis}
                     />
                   );
                 })}
@@ -899,7 +968,7 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
     {confirmModal && (
       <div
         className="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
-        onClick={() => setConfirmModal(null)}
+        onClick={() => !confirmModal.loading && setConfirmModal(null)}
       >
         <div
           onClick={e => e.stopPropagation()}
@@ -918,19 +987,18 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
           <div className="mt-6 flex justify-end gap-2.5">
             <button
               onClick={() => setConfirmModal(null)}
-              className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/70 transition-all hover:bg-white/10 hover:text-white"
+              disabled={confirmModal.loading}
+              className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/70 transition-all hover:bg-white/10 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
             <button
-              onClick={() => {
-                const action = confirmModal.onConfirm;
-                setConfirmModal(null);
-                action();
-              }}
-              className="rounded-xl px-4 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-95 bg-gradient-to-r from-red-600 to-red-700 shadow-red-500/25 hover:shadow-red-500/40"
+              onClick={() => { confirmModal.onConfirm(); }}
+              disabled={confirmModal.loading}
+              className="rounded-xl px-4 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-95 bg-gradient-to-r from-red-600 to-red-700 shadow-red-500/25 hover:shadow-red-500/40 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100 inline-flex items-center gap-1.5"
             >
-              {confirmModal.confirmLabel}
+              {confirmModal.loading && <span className="w-3 h-3 border-2 border-white/80 border-t-transparent rounded-full animate-spin" />}
+              {confirmModal.loading ? 'Deleting...' : confirmModal.confirmLabel}
             </button>
           </div>
         </div>
@@ -942,6 +1010,7 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
   function renderGroupCard(group: typeof groupedSeries[number]) {
     const isExpanded = expandedGroups.has(group.groupKey);
     const isMarked = markedKeys.has(group.groupKey);
+    const isMarkToggling = markBusyKey === group.groupKey;
     return (
       <div key={group.groupKey} className="border border-white/[0.06] rounded-xl overflow-hidden">
         <div className="w-full flex items-center bg-white/[0.03] border-b border-white/[0.06]">
@@ -980,15 +1049,15 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
           {!selectMode && (
             <button
               onClick={() => toggleMark(group.groupKey, group.displayName)}
-              disabled={markBusyKey === group.groupKey}
+              disabled={isMarkToggling}
               title={isMarked ? 'Unmark' : 'Mark'}
-              className={`px-2.5 py-2.5 flex-shrink-0 transition-all ${
+              className={`px-2.5 py-2.5 flex-shrink-0 transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                 isMarked
                   ? 'text-amber-400 drop-shadow-[0_0_6px_rgba(251,191,36,0.9)]'
                   : 'text-white/25 hover:text-white/60'
               }`}
             >
-              {markBusyKey === group.groupKey
+              {isMarkToggling
                 ? <span className="w-3.5 h-3.5 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin inline-block" />
                 : <SvgIcon d={ICONS.star} className={`w-3.5 h-3.5 ${isMarked ? 'fill-current' : ''}`} />}
             </button>
@@ -1005,7 +1074,8 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
                   return next;
                 });
               }}
-              className="px-2.5 py-2.5 flex-shrink-0 text-[10px] font-bold text-indigo-300 hover:text-indigo-200 whitespace-nowrap"
+              disabled={bulkDeleting}
+              className="px-2.5 py-2.5 flex-shrink-0 text-[10px] font-bold text-indigo-300 hover:text-indigo-200 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {group.episodes.every(e => selectedIds.has(itemId(e.item))) ? 'Deselect' : 'Select'}
             </button>
@@ -1027,6 +1097,7 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
               const isPlaying = playingItem?.id === rowId;
               const isAddingToPage = addToPageRowId === rowId;
               const id = itemId(item);
+              const isDeletingThis = busyKey === item.key + 'delete';
 
               return (
                 <React.Fragment key={rowId}>
@@ -1050,6 +1121,7 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
                     onRenameConfirm={() => confirmRename(item)}
                     onRenameCancel={() => setRenamingKey(null)}
                     onDelete={() => requestDelete(item)}
+                    rowPending={isDeletingThis}
                   />
                   {isPlaying && playingItem && (
                     <div className="py-3 bg-black/40 px-3">

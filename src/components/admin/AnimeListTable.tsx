@@ -1,4 +1,4 @@
- // src/components/admin/AnimeListTable.tsx – FULL CODE WITH MOBILE-FRIENDLY CARD VIEW + MAIN ADMIN SUB-ADMIN FILTER + CUSTOM DROPDOWNS + SHOW MORE BUTTON + DOUBLE CLICK TOGGLE + PROPER SIDE GAPS + MULTI-SELECT BULK HIDE/SHOW + CLICK-ANYWHERE-TO-SELECT
+// src/components/admin/AnimeListTable.tsx – FULL CODE WITH MOBILE-FRIENDLY CARD VIEW + MAIN ADMIN SUB-ADMIN FILTER + CUSTOM DROPDOWNS + SHOW MORE BUTTON + DOUBLE CLICK TOGGLE + PROPER SIDE GAPS + MULTI-SELECT BULK HIDE/SHOW + CLICK-ANYWHERE-TO-SELECT
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { Anime } from '../../types';
 import axios from 'axios';
@@ -264,6 +264,9 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
   });
 
   const [hidingId, setHidingId] = useState<string | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deletingAnime, setDeletingAnime] = useState(false);
+  const [fetchingList, setFetchingList] = useState(false);
   const isPartnerMode = propAnimeList !== undefined;
 
   // ✅ multi-select state for bulk hide/show
@@ -271,26 +274,37 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkVisBusy, setBulkVisBusy] = useState(false);
 
+  // 🆕 Double-click / slow-network guard — synchronous Set of in-flight keys.
+  // Prevents duplicate API calls even if user clicks again before React re-renders
+  // and disables buttons via state.
+  const pendingRef = useRef<Set<string>>(new Set());
+
+  /**
+   * Wrap any async action with this helper. If the same key is already in-flight,
+   * the second call becomes a silent no-op. Errors are swallowed here because
+   * every action already shows its own toast.
+   */
+  const guarded = async (key: string, fn: () => Promise<void>) => {
+    if (pendingRef.current.has(key)) return;
+    pendingRef.current.add(key);
+    try {
+      await fn();
+    } catch {
+      /* each action handles its own errors */
+    } finally {
+      setTimeout(() => { pendingRef.current.delete(key); }, 250);
+    }
+  };
+
   const resolveToken = () => tokenProp || getAdminToken();
 
-  useEffect(() => {
-    if (isPartnerMode && propAnimeList) {
-      const list = propAnimeList.map((a: any) => ({ ...a, id: a._id || a.id }));
-      setAnimes(list as AnimeWithId[]);
-      setLoading(false);
-      setError('');
-    }
-  }, [propAnimeList, isPartnerMode]);
-
-  useEffect(() => {
-    if (isPartnerMode) return;
-    const fetchAnimes = async () => {
-      setLoading(true);
-      setError('');
+  // 🆕 Reusable fetch function (used by delete + edit success)
+  const fetchAnimeList = async () => {
+    await guarded('fetch-list', async () => {
+      setFetchingList(true);
       try {
         const token = resolveToken();
-        const url = `${API_BASE}/admin/protected/anime-list`;
-        const { data } = await axios.get(url, {
+        const { data } = await axios.get(`${API_BASE}/admin/protected/anime-list`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const animeData = data.map((a: any) => ({
@@ -306,33 +320,78 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
           createdByUsername: a.createdByUsername || '',
         }));
         setAnimes(animeData as AnimeWithId[]);
-      } catch (err: any) {
-        console.error('Error fetching animes:', err);
-        setError(err.response?.data?.error || 'Failed to load anime list');
+      } catch (err) {
+        console.error('Error refetching animes:', err);
       } finally {
-        setLoading(false);
+        setFetchingList(false);
       }
+    });
+  };
+
+  useEffect(() => {
+    if (isPartnerMode && propAnimeList) {
+      const list = propAnimeList.map((a: any) => ({ ...a, id: a._id || a.id }));
+      setAnimes(list as AnimeWithId[]);
+      setLoading(false);
+      setError('');
+    }
+  }, [propAnimeList, isPartnerMode]);
+
+  useEffect(() => {
+    if (isPartnerMode) return;
+    const run = async () => {
+      await guarded('fetch-initial-animes', async () => {
+        setLoading(true);
+        setError('');
+        try {
+          const token = resolveToken();
+          const url = `${API_BASE}/admin/protected/anime-list`;
+          const { data } = await axios.get(url, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const animeData = data.map((a: any) => ({
+            ...a,
+            id: a._id,
+            seoTitle: a.seoTitle || '',
+            seoDescription: a.seoDescription || '',
+            seoKeywords: a.seoKeywords || '',
+            slug: a.slug || '',
+            episodes: a.episodes || [],
+            isHidden: a.isHidden || false,
+            createdBy: a.createdBy || '',
+            createdByUsername: a.createdByUsername || '',
+          }));
+          setAnimes(animeData as AnimeWithId[]);
+        } catch (err: any) {
+          console.error('Error fetching animes:', err);
+          setError(err.response?.data?.error || 'Failed to load anime list');
+        } finally {
+          setLoading(false);
+        }
+      });
     };
-    fetchAnimes();
+    run();
   }, [isPartnerMode]);
 
   useEffect(() => {
     if (isPartnerMode) return;
     const fetchDownloadPageCounts = async () => {
-      try {
-        const authToken = resolveToken();
-        const { data } = await axios.get(`${API_BASE}/download-pages`, {
-          headers: { Authorization: `Bearer ${authToken}` },
-        });
-        const counts: Record<string, number> = {};
-        data.forEach((page: any) => {
-          const id = page.animeId?._id || page.animeId;
-          if (id) counts[id] = (counts[id] || 0) + 1;
-        });
-        setDownloadPageCounts(counts);
-      } catch (err) {
-        console.error('Could not fetch download page counts:', err);
-      }
+      await guarded('fetch-download-counts', async () => {
+        try {
+          const authToken = resolveToken();
+          const { data } = await axios.get(`${API_BASE}/download-pages`, {
+            headers: { Authorization: `Bearer ${authToken}` },
+          });
+          const counts: Record<string, number> = {};
+          data.forEach((page: any) => {
+            const id = page.animeId?._id || page.animeId;
+            if (id) counts[id] = (counts[id] || 0) + 1;
+          });
+          setDownloadPageCounts(counts);
+        } catch (err) {
+          console.error('Could not fetch download page counts:', err);
+        }
+      });
     };
     fetchDownloadPageCounts();
   }, [isPartnerMode]);
@@ -371,32 +430,27 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
   const confirmDelete = async () => {
     if (!deleteConfirm) return;
     const { animeId } = deleteConfirm;
-    const toastId = toast.loading('Deleting anime...');
-    try {
-      const token = resolveToken();
-      await axios.delete(`${API_BASE}/admin/protected/delete-anime`, {
-        headers: { Authorization: `Bearer ${token}` },
-        data: { id: animeId },
-      });
-      setEditingAnimeId(null);
-      const { data } = await axios.get(`${API_BASE}/admin/protected/anime-list`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const animeData = data.map((a: any) => ({
-        ...a, id: a._id, seoTitle: a.seoTitle || '',
-        seoDescription: a.seoDescription || '', seoKeywords: a.seoKeywords || '',
-        slug: a.slug || '', episodes: a.episodes || [], isHidden: a.isHidden || false,
-        createdBy: a.createdBy || '',
-        createdByUsername: a.createdByUsername || '',
-      }));
-      setAnimes(animeData as AnimeWithId[]);
-      clearAnimeCache();
-      toast.success('✅ Anime deleted successfully!', { id: toastId });
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Delete failed.', { id: toastId });
-    } finally {
-      setDeleteConfirm(null);
-    }
+
+    await guarded(`delete-anime-${animeId}`, async () => {
+      setDeletingAnime(true);
+      const toastId = toast.loading('Deleting anime...');
+      try {
+        const token = resolveToken();
+        await axios.delete(`${API_BASE}/admin/protected/delete-anime`, {
+          headers: { Authorization: `Bearer ${token}` },
+          data: { id: animeId },
+        });
+        setEditingAnimeId(null);
+        await fetchAnimeList();
+        clearAnimeCache();
+        toast.success('✅ Anime deleted successfully!', { id: toastId });
+      } catch (err: any) {
+        toast.error(err.response?.data?.error || 'Delete failed.', { id: toastId });
+      } finally {
+        setDeletingAnime(false);
+        setDeleteConfirm(null);
+      }
+    });
   };
 
   const cancelDelete = () => setDeleteConfirm(null);
@@ -427,49 +481,47 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingAnimeId || isPartnerMode) return;
-    const toastId = toast.loading('Saving changes...');
-    try {
-      const token = resolveToken();
-      await axios.put(`${API_BASE}/admin/protected/edit-anime/${editingAnimeId}`, editForm, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      toast.success('✅ Anime updated successfully!', { id: toastId });
-      setEditingAnimeId(null);
-      const { data } = await axios.get(`${API_BASE}/admin/protected/anime-list`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const animeData = data.map((a: any) => ({
-        ...a, id: a._id, seoTitle: a.seoTitle || '',
-        seoDescription: a.seoDescription || '', seoKeywords: a.seoKeywords || '',
-        slug: a.slug || '', episodes: a.episodes || [], isHidden: a.isHidden || false,
-        createdBy: a.createdBy || '',
-        createdByUsername: a.createdByUsername || '',
-      }));
-      setAnimes(animeData as AnimeWithId[]);
-      clearAnimeCache();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Update failed.', { id: toastId });
-    }
+
+    await guarded(`save-edit-${editingAnimeId}`, async () => {
+      setSavingEdit(true);
+      const toastId = toast.loading('Saving changes...');
+      try {
+        const token = resolveToken();
+        await axios.put(`${API_BASE}/admin/protected/edit-anime/${editingAnimeId}`, editForm, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        toast.success('✅ Anime updated successfully!', { id: toastId });
+        setEditingAnimeId(null);
+        await fetchAnimeList();
+        clearAnimeCache();
+      } catch (err: any) {
+        toast.error(err.response?.data?.error || 'Update failed.', { id: toastId });
+      } finally {
+        setSavingEdit(false);
+      }
+    });
   };
 
   const handleCancelEdit = () => setEditingAnimeId(null);
 
   const handleToggleHide = async (anime: AnimeWithId) => {
-    const toastId = toast.loading(anime.isHidden ? 'Showing anime...' : 'Hiding anime...');
-    setHidingId(anime.id);
-    try {
-      const authToken = resolveToken();
-      const hideUrl = `${API_BASE}/admin/protected/toggle-hide/${anime.id}`;
-      await axios.patch(hideUrl, {}, { headers: { Authorization: `Bearer ${authToken}` } });
-      setAnimes(prev => prev.map(a => a.id === anime.id ? { ...a, isHidden: !a.isHidden } : a));
-      clearAnimeCache();
-      toast.success(anime.isHidden ? '✅ Anime is now visible!' : '🔒 Anime hidden from users!', { id: toastId });
-    } catch (err: any) {
-      console.error('❌ Hide error:', err.response?.status, err.response?.data);
-      toast.error(err.response?.data?.error || `Error ${err.response?.status}: Action failed`, { id: toastId });
-    } finally {
-      setHidingId(null);
-    }
+    await guarded(`toggle-hide-${anime.id}`, async () => {
+      const toastId = toast.loading(anime.isHidden ? 'Showing anime...' : 'Hiding anime...');
+      setHidingId(anime.id);
+      try {
+        const authToken = resolveToken();
+        const hideUrl = `${API_BASE}/admin/protected/toggle-hide/${anime.id}`;
+        await axios.patch(hideUrl, {}, { headers: { Authorization: `Bearer ${authToken}` } });
+        setAnimes(prev => prev.map(a => a.id === anime.id ? { ...a, isHidden: !a.isHidden } : a));
+        clearAnimeCache();
+        toast.success(anime.isHidden ? '✅ Anime is now visible!' : '🔒 Anime hidden from users!', { id: toastId });
+      } catch (err: any) {
+        console.error('❌ Hide error:', err.response?.status, err.response?.data);
+        toast.error(err.response?.data?.error || `Error ${err.response?.status}: Action failed`, { id: toastId });
+      } finally {
+        setHidingId(null);
+      }
+    });
   };
 
   // ─── multi-select helpers ───
@@ -495,51 +547,53 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
   const allVisibleSelected = filteredAnimes.length > 0 && filteredAnimes.every(a => selectedIds.has(a.id));
 
   const bulkSetVisibility = async (hidden: boolean) => {
-    const targets = filteredAnimes.filter(a => selectedIds.has(a.id) && !!a.isHidden !== hidden);
+    await guarded(`bulk-visibility-${hidden ? 'hide' : 'show'}`, async () => {
+      const targets = filteredAnimes.filter(a => selectedIds.has(a.id) && !!a.isHidden !== hidden);
 
-    if (targets.length === 0) {
-      toast(`Sab selected anime pehle se hi ${hidden ? 'hidden' : 'visible'} hain`);
-      return;
-    }
-
-    setBulkVisBusy(true);
-    const toastId = toast.loading(`${hidden ? 'Hiding' : 'Showing'} ${targets.length} anime...`);
-    try {
-      const token = resolveToken();
-      const results = await Promise.allSettled(
-        targets.map(a =>
-          axios.patch(`${API_BASE}/admin/protected/toggle-hide/${a.id}`, {}, {
-            headers: { Authorization: `Bearer ${token}` },
-          })
-        )
-      );
-
-      const succeededIds = new Set<string>();
-      results.forEach((r, idx) => {
-        if (r.status === 'fulfilled') succeededIds.add(targets[idx].id);
-      });
-
-      setAnimes(prev => prev.map(a => succeededIds.has(a.id) ? { ...a, isHidden: hidden } : a));
-      clearAnimeCache();
-
-      const failedCount = targets.length - succeededIds.size;
-      if (failedCount > 0) {
-        toast.error(`${succeededIds.size} update ho gaye, ${failedCount} fail ho gaye`, { id: toastId });
-        setSelectedIds(prev => {
-          const next = new Set(prev);
-          succeededIds.forEach(id => next.delete(id));
-          return next;
-        });
-      } else {
-        toast.success(`✅ ${succeededIds.size} anime ${hidden ? 'hidden' : 'shown'}!`, { id: toastId });
-        setSelectMode(false);
-        setSelectedIds(new Set());
+      if (targets.length === 0) {
+        toast(`Sab selected anime pehle se hi ${hidden ? 'hidden' : 'visible'} hain`);
+        return;
       }
-    } catch (err: any) {
-      toast.error('Bulk update failed', { id: toastId });
-    } finally {
-      setBulkVisBusy(false);
-    }
+
+      setBulkVisBusy(true);
+      const toastId = toast.loading(`${hidden ? 'Hiding' : 'Showing'} ${targets.length} anime...`);
+      try {
+        const token = resolveToken();
+        const results = await Promise.allSettled(
+          targets.map(a =>
+            axios.patch(`${API_BASE}/admin/protected/toggle-hide/${a.id}`, {}, {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+          )
+        );
+
+        const succeededIds = new Set<string>();
+        results.forEach((r, idx) => {
+          if (r.status === 'fulfilled') succeededIds.add(targets[idx].id);
+        });
+
+        setAnimes(prev => prev.map(a => succeededIds.has(a.id) ? { ...a, isHidden: hidden } : a));
+        clearAnimeCache();
+
+        const failedCount = targets.length - succeededIds.size;
+        if (failedCount > 0) {
+          toast.error(`${succeededIds.size} update ho gaye, ${failedCount} fail ho gaye`, { id: toastId });
+          setSelectedIds(prev => {
+            const next = new Set(prev);
+            succeededIds.forEach(id => next.delete(id));
+            return next;
+          });
+        } else {
+          toast.success(`✅ ${succeededIds.size} anime ${hidden ? 'hidden' : 'shown'}!`, { id: toastId });
+          setSelectMode(false);
+          setSelectedIds(new Set());
+        }
+      } catch (err: any) {
+        toast.error('Bulk update failed', { id: toastId });
+      } finally {
+        setBulkVisBusy(false);
+      }
+    });
   };
 
   const handleGenreChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -626,158 +680,177 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
 
   if (error) return <p className="text-red-400 text-center p-4">{error}</p>;
 
+  // 🆕 Whether the currently edited anime's save is in-flight
+  const isSavingThisEdit = (animeId: string) =>
+    savingEdit && pendingRef.current.has(`save-edit-${animeId}`);
+
   // ✅ Shared edit form
-  const renderEditForm = (anime: AnimeWithId) => (
-    <div className="py-2">
-      <div className="flex justify-between items-center mb-3 gap-2">
-        <h4 className="text-sm sm:text-base font-semibold text-white flex items-center gap-2 min-w-0">
-          <svg className="w-4 h-4 text-blue-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-          <span className="truncate">Edit: {anime.title}</span>
-        </h4>
-        <button onClick={handleAutoGenerateSEO}
-          className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-3 py-1.5 rounded text-xs flex items-center gap-1 flex-shrink-0">
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-          Auto SEO
-        </button>
-      </div>
-      <form onSubmit={handleEditSubmit} className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1">Title *</label>
-            <input type="text" value={editForm.title} onChange={handleTitleChange}
-              className="w-full bg-gray-800/60 border border-gray-700 rounded-lg text-white px-3 py-2.5 text-sm focus:ring-1 focus:ring-blue-500" required />
-          </div>
-          <CustomSelect
-            label="Content Type"
-            value={editForm.contentType}
-            onChange={(v) => setEditForm({ ...editForm, contentType: v as any })}
-            options={[
-              { value: 'Anime', label: 'Anime', color: 'from-blue-500 to-cyan-500' },
-              { value: 'Ai Anime', label: 'Ai Anime', color: 'from-violet-500 to-fuchsia-500' },
-              { value: 'Manga', label: 'Manga', color: 'from-emerald-500 to-teal-500' },
-              { value: 'Ai Manhwa', label: 'Ai Manhwa', color: 'from-fuchsia-500 to-purple-500' },
-              { value: 'Movie', label: 'Movie (Legacy)', color: 'from-purple-500 to-pink-500' },
-              { value: 'Hollywood Movie', label: 'Hollywood Movie', color: 'from-amber-500 to-orange-500' },
-              { value: 'Bollywood Movie', label: 'Bollywood Movie', color: 'from-red-500 to-rose-500' },
-              { value: 'Web Series', label: 'Web Series', color: 'from-indigo-500 to-blue-500' },
-            ]}
-          />
-          <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1">Release Year</label>
-            <input type="number" value={editForm.releaseYear} onChange={e => setEditForm({ ...editForm, releaseYear: Number(e.target.value) })}
-              className="w-full bg-gray-800/60 border border-gray-700 rounded-lg text-white px-3 py-2.5 text-sm focus:ring-1 focus:ring-blue-500" min="1900" max="2030" />
-          </div>
-          <CustomSelect
-            label="Sub/Dub"
-            value={editForm.subDubStatus}
-            onChange={(v) => handleSubDubStatusChange(v)}
-            options={[
-              { value: 'Hindi Dub', label: 'Hindi Dub', color: 'from-red-500 to-orange-500' },
-              { value: 'Hindi Sub', label: 'Hindi Sub', color: 'from-orange-500 to-amber-500' },
-              { value: 'English Sub', label: 'English Sub', color: 'from-blue-500 to-cyan-500' },
-              { value: 'Both', label: 'Both', color: 'from-purple-500 to-pink-500' },
-              { value: 'Subbed', label: 'Subbed', color: 'from-green-500 to-emerald-500' },
-              { value: 'Dubbed', label: 'Dubbed', color: 'from-yellow-500 to-orange-500' },
-              { value: 'Sub & Dub', label: 'Sub & Dub', color: 'from-violet-500 to-purple-500' },
-              { value: 'Dual Audio', label: 'Dual Audio', color: 'from-indigo-500 to-blue-500' },
-            ]}
-          />
-          <CustomSelect
-            label="Status"
-            value={editForm.status}
-            onChange={(v) => setEditForm({ ...editForm, status: v })}
-            options={[
-              { value: 'Ongoing', label: 'Ongoing', color: 'from-yellow-500 to-orange-500' },
-              { value: 'Complete', label: 'Complete', color: 'from-green-500 to-emerald-500' },
-            ]}
-          />
-          <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1">Thumbnail URL</label>
-            <input type="url" value={editForm.thumbnail} onChange={e => setEditForm({ ...editForm, thumbnail: e.target.value })}
-              className="w-full bg-gray-800/60 border border-gray-700 rounded-lg text-white px-3 py-2.5 text-sm focus:ring-1 focus:ring-blue-500"
-              placeholder="https://..." />
-          </div>
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-slate-300 mb-1">Description</label>
-          <ClickToExpandTextarea
-            value={editForm.description}
-            onChange={e => setEditForm({ ...editForm, description: e.target.value })}
-            className="w-full bg-gray-800/60 border border-gray-700 rounded-lg text-white px-3 py-2.5 text-sm focus:ring-1 focus:ring-blue-500"
-            placeholder="Anime description..."
-            minHeight="6rem"
-            previewLines={3}
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-slate-300 mb-1">Genres (comma separated)</label>
-          <input type="text" value={editForm.genreList.join(', ')} onChange={handleGenreChange}
-            className="w-full bg-gray-800/60 border border-gray-700 rounded-lg text-white px-3 py-2.5 text-sm focus:ring-1 focus:ring-blue-500"
-            placeholder="Action, Adventure, Fantasy" />
-        </div>
-
-        <div className="pt-3 border-t border-white/10">
-          <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-            <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
-            SEO Settings
+  const renderEditForm = (anime: AnimeWithId) => {
+    const isBusy = savingEdit;
+    return (
+      <div className="py-2">
+        <div className="flex justify-between items-center mb-3 gap-2">
+          <h4 className="text-sm sm:text-base font-semibold text-white flex items-center gap-2 min-w-0">
+            <svg className="w-4 h-4 text-blue-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+            <span className="truncate">Edit: {anime.title}</span>
           </h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <button
+            onClick={handleAutoGenerateSEO}
+            disabled={isBusy}
+            className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-3 py-1.5 rounded text-xs flex items-center gap-1 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            Auto SEO
+          </button>
+        </div>
+        <form onSubmit={handleEditSubmit} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">
-                SEO Title <span className={`text-xs ml-1 ${editForm.seoTitle.length > 60 ? 'text-red-400' : 'text-green-400'}`}>({editForm.seoTitle.length}/60)</span>
-              </label>
-              <input type="text" value={editForm.seoTitle} onChange={e => setEditForm({ ...editForm, seoTitle: e.target.value })}
-                className="w-full bg-gray-800/60 border border-gray-700 rounded-lg text-white px-3 py-2.5 text-sm focus:ring-1 focus:ring-green-500" maxLength={60} />
+              <label className="block text-xs font-medium text-slate-300 mb-1">Title *</label>
+              <input type="text" value={editForm.title} onChange={handleTitleChange} disabled={isBusy}
+                className="w-full bg-gray-800/60 border border-gray-700 rounded-lg text-white px-3 py-2.5 text-sm focus:ring-1 focus:ring-blue-500 disabled:opacity-60" required />
             </div>
+            <CustomSelect
+              label="Content Type"
+              value={editForm.contentType}
+              onChange={(v) => setEditForm({ ...editForm, contentType: v as any })}
+              options={[
+                { value: 'Anime', label: 'Anime', color: 'from-blue-500 to-cyan-500' },
+                { value: 'Ai Anime', label: 'Ai Anime', color: 'from-violet-500 to-fuchsia-500' },
+                { value: 'Manga', label: 'Manga', color: 'from-emerald-500 to-teal-500' },
+                { value: 'Ai Manhwa', label: 'Ai Manhwa', color: 'from-fuchsia-500 to-purple-500' },
+                { value: 'Movie', label: 'Movie (Legacy)', color: 'from-purple-500 to-pink-500' },
+                { value: 'Hollywood Movie', label: 'Hollywood Movie', color: 'from-amber-500 to-orange-500' },
+                { value: 'Bollywood Movie', label: 'Bollywood Movie', color: 'from-red-500 to-rose-500' },
+                { value: 'Web Series', label: 'Web Series', color: 'from-indigo-500 to-blue-500' },
+              ]}
+            />
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">
-                URL Slug <span className="text-xs text-blue-400 ml-1 break-all">/detail/{editForm.slug || 'slug'}</span>
-              </label>
-              <input type="text" value={editForm.slug} onChange={e => setEditForm({ ...editForm, slug: e.target.value })}
-                className="w-full bg-gray-800/60 border border-gray-700 rounded-lg text-white px-3 py-2.5 text-sm focus:ring-1 focus:ring-blue-500"
-                placeholder="anime-title-hindi-dub" />
+              <label className="block text-xs font-medium text-slate-300 mb-1">Release Year</label>
+              <input type="number" value={editForm.releaseYear} onChange={e => setEditForm({ ...editForm, releaseYear: Number(e.target.value) })} disabled={isBusy}
+                className="w-full bg-gray-800/60 border border-gray-700 rounded-lg text-white px-3 py-2.5 text-sm focus:ring-1 focus:ring-blue-500 disabled:opacity-60" min="1900" max="2030" />
             </div>
-            <div className="md:col-span-2">
-              <label className="block text-xs font-medium text-slate-300 mb-1">
-                SEO Description <span className={`text-xs ml-1 ${editForm.seoDescription.length > 160 ? 'text-red-400' : 'text-green-400'}`}>({editForm.seoDescription.length}/160)</span>
-              </label>
-              <ClickToExpandTextarea
-                value={editForm.seoDescription}
-                onChange={e => setEditForm({ ...editForm, seoDescription: e.target.value })}
-                className="w-full bg-gray-800/60 border border-gray-700 rounded-lg text-white px-3 py-2.5 text-sm focus:ring-1 focus:ring-green-500"
-                maxLength={160}
-                minHeight="6rem"
-                previewLines={3}
-              />
-            </div>
-            <div className="md:col-span-2">
-              <label className="block text-xs font-medium text-slate-300 mb-1">SEO Keywords</label>
-              <ClickToExpandTextarea
-                value={editForm.seoKeywords}
-                onChange={e => setEditForm({ ...editForm, seoKeywords: e.target.value })}
-                className="w-full bg-gray-800/60 border border-gray-700 rounded-lg text-white px-3 py-2.5 text-sm focus:ring-1 focus:ring-green-500"
-                placeholder="naruto hindi dub, watch naruto online..."
-                minHeight="6rem"
-                previewLines={3}
-              />
+            <CustomSelect
+              label="Sub/Dub"
+              value={editForm.subDubStatus}
+              onChange={(v) => handleSubDubStatusChange(v)}
+              options={[
+                { value: 'Hindi Dub', label: 'Hindi Dub', color: 'from-red-500 to-orange-500' },
+                { value: 'Hindi Sub', label: 'Hindi Sub', color: 'from-orange-500 to-amber-500' },
+                { value: 'English Sub', label: 'English Sub', color: 'from-blue-500 to-cyan-500' },
+                { value: 'Both', label: 'Both', color: 'from-purple-500 to-pink-500' },
+                { value: 'Subbed', label: 'Subbed', color: 'from-green-500 to-emerald-500' },
+                { value: 'Dubbed', label: 'Dubbed', color: 'from-yellow-500 to-orange-500' },
+                { value: 'Sub & Dub', label: 'Sub & Dub', color: 'from-violet-500 to-purple-500' },
+                { value: 'Dual Audio', label: 'Dual Audio', color: 'from-indigo-500 to-blue-500' },
+              ]}
+            />
+            <CustomSelect
+              label="Status"
+              value={editForm.status}
+              onChange={(v) => setEditForm({ ...editForm, status: v })}
+              options={[
+                { value: 'Ongoing', label: 'Ongoing', color: 'from-yellow-500 to-orange-500' },
+                { value: 'Complete', label: 'Complete', color: 'from-green-500 to-emerald-500' },
+              ]}
+            />
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">Thumbnail URL</label>
+              <input type="url" value={editForm.thumbnail} onChange={e => setEditForm({ ...editForm, thumbnail: e.target.value })} disabled={isBusy}
+                className="w-full bg-gray-800/60 border border-gray-700 rounded-lg text-white px-3 py-2.5 text-sm focus:ring-1 focus:ring-blue-500 disabled:opacity-60"
+                placeholder="https://..." />
             </div>
           </div>
-        </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-300 mb-1">Description</label>
+            <ClickToExpandTextarea
+              value={editForm.description}
+              onChange={e => setEditForm({ ...editForm, description: e.target.value })}
+              className="w-full bg-gray-800/60 border border-gray-700 rounded-lg text-white px-3 py-2.5 text-sm focus:ring-1 focus:ring-blue-500"
+              placeholder="Anime description..."
+              minHeight="6rem"
+              previewLines={3}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-300 mb-1">Genres (comma separated)</label>
+            <input type="text" value={editForm.genreList.join(', ')} onChange={handleGenreChange} disabled={isBusy}
+              className="w-full bg-gray-800/60 border border-gray-700 rounded-lg text-white px-3 py-2.5 text-sm focus:ring-1 focus:ring-blue-500 disabled:opacity-60"
+              placeholder="Action, Adventure, Fantasy" />
+          </div>
 
-        <div className="flex gap-3 pt-2">
-          <button type="submit"
-            className="flex-1 sm:flex-none bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-medium py-2.5 px-4 rounded-lg text-sm flex items-center justify-center gap-2">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7"/></svg>
-            Save Changes
-          </button>
-          <button type="button" onClick={handleCancelEdit}
-            className="flex-1 sm:flex-none bg-white/10 hover:bg-white/20 text-white font-medium py-2.5 px-4 rounded-lg text-sm">
-            Cancel
-          </button>
-        </div>
-      </form>
-    </div>
-  );
+          <div className="pt-3 border-t border-white/10">
+            <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+              <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+              SEO Settings
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  SEO Title <span className={`text-xs ml-1 ${editForm.seoTitle.length > 60 ? 'text-red-400' : 'text-green-400'}`}>({editForm.seoTitle.length}/60)</span>
+                </label>
+                <input type="text" value={editForm.seoTitle} onChange={e => setEditForm({ ...editForm, seoTitle: e.target.value })} disabled={isBusy}
+                  className="w-full bg-gray-800/60 border border-gray-700 rounded-lg text-white px-3 py-2.5 text-sm focus:ring-1 focus:ring-green-500 disabled:opacity-60" maxLength={60} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  URL Slug <span className="text-xs text-blue-400 ml-1 break-all">/detail/{editForm.slug || 'slug'}</span>
+                </label>
+                <input type="text" value={editForm.slug} onChange={e => setEditForm({ ...editForm, slug: e.target.value })} disabled={isBusy}
+                  className="w-full bg-gray-800/60 border border-gray-700 rounded-lg text-white px-3 py-2.5 text-sm focus:ring-1 focus:ring-blue-500 disabled:opacity-60"
+                  placeholder="anime-title-hindi-dub" />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  SEO Description <span className={`text-xs ml-1 ${editForm.seoDescription.length > 160 ? 'text-red-400' : 'text-green-400'}`}>({editForm.seoDescription.length}/160)</span>
+                </label>
+                <ClickToExpandTextarea
+                  value={editForm.seoDescription}
+                  onChange={e => setEditForm({ ...editForm, seoDescription: e.target.value })}
+                  className="w-full bg-gray-800/60 border border-gray-700 rounded-lg text-white px-3 py-2.5 text-sm focus:ring-1 focus:ring-green-500"
+                  maxLength={160}
+                  minHeight="6rem"
+                  previewLines={3}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-slate-300 mb-1">SEO Keywords</label>
+                <ClickToExpandTextarea
+                  value={editForm.seoKeywords}
+                  onChange={e => setEditForm({ ...editForm, seoKeywords: e.target.value })}
+                  className="w-full bg-gray-800/60 border border-gray-700 rounded-lg text-white px-3 py-2.5 text-sm focus:ring-1 focus:ring-green-500"
+                  placeholder="naruto hindi dub, watch naruto online..."
+                  minHeight="6rem"
+                  previewLines={3}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button type="submit" disabled={isBusy}
+              className="flex-1 sm:flex-none bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-medium py-2.5 px-4 rounded-lg text-sm flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
+              {isBusy ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-white/80 border-t-transparent rounded-full animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7"/></svg>
+                  Save Changes
+                </>
+              )}
+            </button>
+            <button type="button" onClick={handleCancelEdit} disabled={isBusy}
+              className="flex-1 sm:flex-none bg-white/10 hover:bg-white/20 text-white font-medium py-2.5 px-4 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed">
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    );
+  };
 
   return (
     <div className="py-4 px-3 sm:px-4 lg:px-6 space-y-6 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 min-h-screen">
@@ -792,13 +865,17 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
           <h1 className="text-xl sm:text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-pink-300">
             Anime List Manager
           </h1>
+          {fetchingList && (
+            <span className="w-4 h-4 border-2 border-purple-400/40 border-t-purple-400 rounded-full animate-spin" />
+          )}
         </div>
 
         {/* Select mode toggle */}
         {!isPartnerMode && (
           <button
             onClick={toggleSelectMode}
-            className={`px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${
+            disabled={bulkVisBusy}
+            className={`px-3 py-2 rounded-lg text-xs font-medium border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
               selectMode
                 ? 'bg-rose-600/30 hover:bg-rose-600/50 border-rose-500/40 text-rose-200'
                 : 'bg-indigo-600/20 hover:bg-indigo-600/40 border-indigo-500/30 text-indigo-200'
@@ -812,19 +889,21 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
       {/* Bulk hide/show toolbar */}
       {selectMode && (
         <div className="flex items-center justify-between flex-wrap gap-3 p-3 bg-indigo-500/10 border border-indigo-500/30 rounded-2xl">
-          <span className="text-sm text-indigo-200 font-medium">
+          <span className="text-sm text-indigo-200 font-medium flex items-center gap-2">
+            {bulkVisBusy && <span className="w-3.5 h-3.5 border-2 border-indigo-300/60 border-t-indigo-300 rounded-full animate-spin" />}
             {selectedIds.size} selected
           </span>
           <div className="flex gap-2 flex-wrap">
             <button
               onClick={allVisibleSelected ? clearSelection : selectAllVisible}
-              className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium"
+              disabled={bulkVisBusy}
+              className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {allVisibleSelected ? 'Deselect All' : 'Select All'}
             </button>
             <button
               onClick={clearSelection}
-              disabled={selectedIds.size === 0}
+              disabled={selectedIds.size === 0 || bulkVisBusy}
               className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium disabled:opacity-40"
             >
               Clear
@@ -832,16 +911,24 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
             <button
               onClick={() => bulkSetVisibility(false)}
               disabled={selectedIds.size === 0 || bulkVisBusy}
-              className="px-3 py-1.5 bg-green-600/30 hover:bg-green-600/50 border border-green-500/40 text-green-200 rounded-lg text-xs font-semibold disabled:opacity-40"
+              className="px-3 py-1.5 bg-green-600/30 hover:bg-green-600/50 border border-green-500/40 text-green-200 rounded-lg text-xs font-semibold disabled:opacity-40 flex items-center gap-1.5"
             >
-              {bulkVisBusy ? '...' : `👁 Show Selected`}
+              {bulkVisBusy ? (
+                <><span className="w-3 h-3 border-2 border-green-200/60 border-t-green-200 rounded-full animate-spin" /> Working...</>
+              ) : (
+                <>👁 Show Selected</>
+              )}
             </button>
             <button
               onClick={() => bulkSetVisibility(true)}
               disabled={selectedIds.size === 0 || bulkVisBusy}
-              className="px-3 py-1.5 bg-yellow-600/30 hover:bg-yellow-600/50 border border-yellow-500/40 text-yellow-200 rounded-lg text-xs font-semibold disabled:opacity-40"
+              className="px-3 py-1.5 bg-yellow-600/30 hover:bg-yellow-600/50 border border-yellow-500/40 text-yellow-200 rounded-lg text-xs font-semibold disabled:opacity-40 flex items-center gap-1.5"
             >
-              {bulkVisBusy ? '...' : `🔒 Hide Selected`}
+              {bulkVisBusy ? (
+                <><span className="w-3 h-3 border-2 border-yellow-200/60 border-t-yellow-200 rounded-full animate-spin" /> Working...</>
+              ) : (
+                <>🔒 Hide Selected</>
+              )}
             </button>
           </div>
         </div>
@@ -870,15 +957,18 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
             <div className="flex justify-end gap-3">
               <button
                 onClick={cancelDelete}
-                className="bg-white/10 hover:bg-white/20 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition"
+                disabled={deletingAnime}
+                className="bg-white/10 hover:bg-white/20 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
               <button
                 onClick={confirmDelete}
-                className="bg-red-600 hover:bg-red-500 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition shadow-lg shadow-red-600/20"
+                disabled={deletingAnime}
+                className="bg-red-600 hover:bg-red-500 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition shadow-lg shadow-red-600/20 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
               >
-                Delete Permanently
+                {deletingAnime && <span className="w-4 h-4 border-2 border-white/80 border-t-transparent rounded-full animate-spin" />}
+                {deletingAnime ? 'Deleting...' : 'Delete Permanently'}
               </button>
             </div>
           </div>
@@ -984,6 +1074,9 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
               const isEditingThis = !isPartnerMode && editingAnimeId === anime.id;
               const isSelected = selectedIds.has(anime.id);
               const isSelectable = selectMode && !isPartnerMode;
+              const isHidingThis = hidingId === anime.id;
+              const isSavingThis = isSavingThisEdit(anime.id);
+              const isDeletingThis = deletingAnime && deleteConfirm?.animeId === anime.id;
               return (
                 <div
                   key={`card-${uniqueKey}`}
@@ -992,7 +1085,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
                     isSelectable ? 'cursor-pointer hover:border-purple-500/50' : ''
                   } ${
                     isSelected ? 'border-purple-500/60 bg-purple-500/5' : 'border-white/10'
-                  }`}
+                  } ${isDeletingThis ? 'opacity-50 pointer-events-none' : ''}`}
                 >
                   <div className="flex gap-3 p-3">
                     {/* selection checkbox */}
@@ -1054,14 +1147,14 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
                         <>
                           <button
                             onClick={() => handleToggleHide(anime)}
-                            disabled={hidingId === anime.id}
-                            className={`flex-1 min-w-[90px] px-2 py-2 border rounded-lg text-xs font-medium flex items-center justify-center gap-1 disabled:opacity-50 ${
+                            disabled={isHidingThis || isSavingThis || isDeletingThis}
+                            className={`flex-1 min-w-[90px] px-2 py-2 border rounded-lg text-xs font-medium flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed ${
                               anime.isHidden
                                 ? 'bg-green-500/20 hover:bg-green-500/40 border-green-500/30 text-green-200'
                                 : 'bg-yellow-500/20 hover:bg-yellow-500/40 border-yellow-500/30 text-yellow-200'
                             }`}
                           >
-                            {hidingId === anime.id ? (
+                            {isHidingThis ? (
                               <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
@@ -1069,7 +1162,8 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
                             ) : anime.isHidden ? 'Show' : 'Hide'}
                           </button>
                           <button onClick={() => handleEdit(anime)}
-                            className={`flex-1 min-w-[90px] px-2 py-2 border rounded-lg text-xs font-medium flex items-center justify-center gap-1 ${
+                            disabled={isHidingThis || isSavingThis || isDeletingThis}
+                            className={`flex-1 min-w-[90px] px-2 py-2 border rounded-lg text-xs font-medium flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed ${
                               isEditingThis
                                 ? 'bg-yellow-500/20 hover:bg-yellow-500/40 border-yellow-500/30 text-yellow-200'
                                 : 'bg-indigo-500/20 hover:bg-indigo-500/40 border-indigo-500/30 text-indigo-200'
@@ -1078,7 +1172,8 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
                           </button>
                           {!isEditingThis && (
                             <button onClick={() => handleDelete(anime.id)}
-                              className="flex-1 min-w-[90px] px-2 py-2 bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 rounded-lg text-red-200 text-xs font-medium flex items-center justify-center gap-1">
+                              disabled={isHidingThis || isSavingThis || isDeletingThis}
+                              className="flex-1 min-w-[90px] px-2 py-2 bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 rounded-lg text-red-200 text-xs font-medium flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed">
                               Delete
                             </button>
                           )}
@@ -1135,6 +1230,9 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
                     const isSelected = selectedIds.has(anime.id);
                     const isRowSelectable = selectMode && !isPartnerMode;
                     const colCount = 7 + (!isPartnerMode ? 3 : 0) + (selectMode && !isPartnerMode ? 1 : 0);
+                    const isHidingThis = hidingId === anime.id;
+                    const isSavingThis = isSavingThisEdit(anime.id);
+                    const isDeletingThis = deletingAnime && deleteConfirm?.animeId === anime.id;
                     return (
                       <React.Fragment key={uniqueKey}>
                         <tr
@@ -1142,7 +1240,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
                           onClick={isRowSelectable ? () => toggleSelectItem(anime.id) : undefined}
                           className={`hover:bg-white/5 transition ${isRowSelectable ? 'cursor-pointer' : ''} ${
                             editingAnimeId === anime.id ? 'bg-white/10' : isSelected ? 'bg-purple-500/10' : ''
-                          }`}
+                          } ${isDeletingThis ? 'opacity-50' : ''}`}
                         >
                           {selectMode && !isPartnerMode && (
                             <td className="px-3 py-3 align-middle">
@@ -1225,14 +1323,14 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
                             <td className={`px-3 py-3 whitespace-nowrap ${selectMode ? 'pointer-events-none' : ''}`}>
                               <button
                                 onClick={() => handleToggleHide(anime)}
-                                disabled={hidingId === anime.id || selectMode}
-                                className={`px-2 py-1.5 border rounded-lg text-xs font-medium transition-all flex items-center gap-1 disabled:opacity-50 ${
+                                disabled={isHidingThis || isSavingThis || isDeletingThis || selectMode}
+                                className={`px-2 py-1.5 border rounded-lg text-xs font-medium transition-all flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed ${
                                   anime.isHidden
                                     ? 'bg-green-500/20 hover:bg-green-500/40 border-green-500/30 text-green-200'
                                     : 'bg-yellow-500/20 hover:bg-yellow-500/40 border-yellow-500/30 text-yellow-200'
                                 }`}
                               >
-                                {hidingId === anime.id ? (
+                                {isHidingThis ? (
                                   <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
                                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
@@ -1256,8 +1354,9 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
                                 </button>
                               ) : !isPartnerMode && (
                                 <>
-                                  <button onClick={() => handleEdit(anime)} disabled={selectMode}
-                                    className={`px-2 py-1.5 border rounded-lg text-xs font-medium flex items-center gap-1 disabled:opacity-40 ${
+                                  <button onClick={() => handleEdit(anime)}
+                                    disabled={selectMode || isHidingThis || isSavingThis || isDeletingThis}
+                                    className={`px-2 py-1.5 border rounded-lg text-xs font-medium flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed ${
                                       editingAnimeId === anime.id
                                         ? 'bg-yellow-500/20 hover:bg-yellow-500/40 border-yellow-500/30 text-yellow-200'
                                         : 'bg-indigo-500/20 hover:bg-indigo-500/40 border-indigo-500/30 text-indigo-200'
@@ -1269,10 +1368,14 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
                                     )}
                                   </button>
                                   {editingAnimeId !== anime.id && (
-                                    <button onClick={() => handleDelete(anime.id)} disabled={selectMode}
-                                      className="px-2 py-1.5 bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 rounded-lg text-red-200 text-xs font-medium flex items-center gap-1 disabled:opacity-40">
-                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                                      Delete
+                                    <button onClick={() => handleDelete(anime.id)}
+                                      disabled={selectMode || isHidingThis || isSavingThis || isDeletingThis}
+                                      className="px-2 py-1.5 bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 rounded-lg text-red-200 text-xs font-medium flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed">
+                                      {isDeletingThis ? (
+                                        <><span className="w-3 h-3 border-2 border-red-200/60 border-t-red-200 rounded-full animate-spin" />Deleting...</>
+                                      ) : (
+                                        <><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>Delete</>
+                                      )}
                                     </button>
                                   )}
                                 </>

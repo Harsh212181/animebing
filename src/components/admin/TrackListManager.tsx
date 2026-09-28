@@ -1,5 +1,5 @@
 // src/components/admin/TrackListManager.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import {
@@ -71,7 +71,6 @@ const TrackListManager: React.FC = () => {
   const [linkBaselineMin, setLinkBaselineMin] = useState('');
   const [savingLink, setSavingLink] = useState(false);
 
-  // 🆕 Strict Chronology Mode states
   const [linkStrictChronology, setLinkStrictChronology] = useState(false);
   const [linkChronologyFloorDate, setLinkChronologyFloorDate] = useState('');
   const [linkChronologyGraceGap, setLinkChronologyGraceGap] = useState('0');
@@ -127,9 +126,26 @@ const TrackListManager: React.FC = () => {
 
   const [showChannelFeed, setShowChannelFeed] = useState<Record<string, boolean>>({});
 
-  // ✅ FIX — use the correct token based on which dashboard this was opened from
-  // Super-admin dashboard → localStorage.adminToken
-  // Sub-admin dashboard   → sessionStorage.subAdminToken
+  // 🆕 Global network guard — prevents double-firing async actions on slow networks
+  const pendingRef = useRef<Set<string>>(new Set());
+
+  /**
+   * Wraps any async action so it can NEVER double-fire even if the user
+   * double-clicks fast on a slow connection. Silent no-op on second call.
+   * Errors are swallowed here because each action already shows its own toast.
+   */
+  const guarded = async (key: string, fn: () => Promise<void>) => {
+    if (pendingRef.current.has(key)) return;
+    pendingRef.current.add(key);
+    try {
+      await fn();
+    } catch {
+      // each action shows its own toast
+    } finally {
+      pendingRef.current.delete(key);
+    }
+  };
+
   const isSubAdminContext = !!sessionStorage.getItem('subAdminToken')
   const token = isSubAdminContext
     ? sessionStorage.getItem('subAdminToken')
@@ -203,21 +219,23 @@ const TrackListManager: React.FC = () => {
 
   // ============ CHANNEL ACTIONS ============
   const runAllNow = async () => {
-    setRunningAll(true);
-    try {
-      const { data } = await axios.post(`${API_BASE}/track/run-all-now`, {}, authHeaders());
-      toast.success(
-        `Test run complete! ${data.channelsChecked} channels checked, ${data.updatesFound} updates found${
-          data.errorCount > 0 ? `, ${data.errorCount} error` : ''
-        }`
-      );
-      setShowRunHistory(true);
-      loadData();
-    } catch {
-      toast.error('Test run failed');
-    } finally {
-      setRunningAll(false);
-    }
+    await guarded('run-all-now', async () => {
+      setRunningAll(true);
+      try {
+        const { data } = await axios.post(`${API_BASE}/track/run-all-now`, {}, authHeaders());
+        toast.success(
+          `Test run complete! ${data.channelsChecked} channels checked, ${data.updatesFound} updates found${
+            data.errorCount > 0 ? `, ${data.errorCount} error` : ''
+          }`
+        );
+        setShowRunHistory(true);
+        loadData();
+      } catch {
+        toast.error('Test run failed');
+      } finally {
+        setRunningAll(false);
+      }
+    });
   };
 
   const clearAllLogs = () => {
@@ -230,17 +248,19 @@ const TrackListManager: React.FC = () => {
   };
 
   const confirmClearLogs = async () => {
-    setDeletingNotification(true);
-    try {
-      const { data } = await axios.delete(`${API_BASE}/track/logs/clear-all`, authHeaders());
-      toast.success(`${data.count} logs cleared`);
-      loadData();
-    } catch {
-      toast.error('Could not clear');
-    } finally {
-      setDeletingNotification(false);
-      setNotificationDeleteConfirm(null);
-    }
+    await guarded('clear-logs', async () => {
+      setDeletingNotification(true);
+      try {
+        const { data } = await axios.delete(`${API_BASE}/track/logs/clear-all`, authHeaders());
+        toast.success(`${data.count} logs cleared`);
+        loadData();
+      } catch {
+        toast.error('Could not clear');
+      } finally {
+        setDeletingNotification(false);
+        setNotificationDeleteConfirm(null);
+      }
+    });
   };
 
   const clearAllRuns = () => {
@@ -253,36 +273,44 @@ const TrackListManager: React.FC = () => {
   };
 
   const confirmClearRuns = async () => {
-    setDeletingNotification(true);
-    try {
-      const { data } = await axios.delete(`${API_BASE}/track/runs/clear-all`, authHeaders());
-      toast.success(`${data.count} runs cleared`);
-      loadData();
-    } catch {
-      toast.error('Could not clear');
-    } finally {
-      setDeletingNotification(false);
-      setNotificationDeleteConfirm(null);
-    }
+    await guarded('clear-runs', async () => {
+      setDeletingNotification(true);
+      try {
+        const { data } = await axios.delete(`${API_BASE}/track/runs/clear-all`, authHeaders());
+        toast.success(`${data.count} runs cleared`);
+        loadData();
+      } catch {
+        toast.error('Could not clear');
+      } finally {
+        setDeletingNotification(false);
+        setNotificationDeleteConfirm(null);
+      }
+    });
   };
 
   const addChannel = async () => {
-    if (!newHandle.trim()) return;
-    setAdding(true);
-    try {
-      const { data } = await axios.post(`${API_BASE}/track/channel/add`, { handle: newHandle.trim() }, authHeaders());
-      if (data.success) {
-        toast.success(`"${data.channelName}" added`);
-        setNewHandle('');
-        loadData();
-      } else {
-        toast.error(data.error || 'Could not add');
+    await guarded('add-channel', async () => {
+      if (!newHandle.trim()) return;
+      setAdding(true);
+      try {
+        const { data } = await axios.post(`${API_BASE}/track/channel/add`, { handle: newHandle.trim() }, authHeaders());
+        if (data.success) {
+          toast.success(
+            data.alreadyTracked
+              ? `"${data.channelName}" already tracked — added to your list, now add your title`
+              : `"${data.channelName}" added`
+          )
+          setNewHandle('');
+          loadData();
+        } else {
+          toast.error(data.error || 'Could not add');
+        }
+      } catch (err: any) {
+        toast.error(err.response?.data?.error || 'Could not add');
+      } finally {
+        setAdding(false);
       }
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Could not add');
-    } finally {
-      setAdding(false);
-    }
+    });
   };
 
   const removeChannel = (channelId: string, channelName: string) => {
@@ -290,90 +318,100 @@ const TrackListManager: React.FC = () => {
   };
 
   const confirmDeleteChannel = async () => {
-    if (!channelDeleteConfirm) return;
-    setDeletingChannel(true);
-    try {
-      await axios.delete(`${API_BASE}/track/channel/${channelDeleteConfirm.channelId}`, authHeaders());
-      toast.success('Channel removed');
-      if (selectedChannelId === channelDeleteConfirm.channelId) setSelectedChannelId(null);
-      loadData();
-    } catch {
-      toast.error('Could not remove');
-    } finally {
-      setDeletingChannel(false);
-      setChannelDeleteConfirm(null);
-    }
+    await guarded('delete-channel', async () => {
+      if (!channelDeleteConfirm) return;
+      setDeletingChannel(true);
+      try {
+        await axios.delete(`${API_BASE}/track/channel/${channelDeleteConfirm.channelId}`, authHeaders());
+        toast.success('Channel removed');
+        if (selectedChannelId === channelDeleteConfirm.channelId) setSelectedChannelId(null);
+        loadData();
+      } catch {
+        toast.error('Could not remove');
+      } finally {
+        setDeletingChannel(false);
+        setChannelDeleteConfirm(null);
+      }
+    });
   };
 
   const refreshChannelInfo = async (channelId: string) => {
-    setRefreshingInfo((prev) => ({ ...prev, [channelId]: true }));
-    try {
-      await axios.post(`${API_BASE}/track/channel/${channelId}/refresh-info`, {}, authHeaders());
-      toast.success('Logo/name updated');
-      loadData();
-    } catch {
-      toast.error('Could not refresh');
-    } finally {
-      setRefreshingInfo((prev) => ({ ...prev, [channelId]: false }));
-    }
+    await guarded(`refresh-info-${channelId}`, async () => {
+      setRefreshingInfo((prev) => ({ ...prev, [channelId]: true }));
+      try {
+        await axios.post(`${API_BASE}/track/channel/${channelId}/refresh-info`, {}, authHeaders());
+        toast.success('Logo/name updated');
+        loadData();
+      } catch {
+        toast.error('Could not refresh');
+      } finally {
+        setRefreshingInfo((prev) => ({ ...prev, [channelId]: false }));
+      }
+    });
   };
 
   const togglePause = async (channelId: string) => {
-    setTogglingPause((prev) => ({ ...prev, [channelId]: true }));
-    try {
-      const { data } = await axios.post(`${API_BASE}/track/channel/${channelId}/toggle-pause`, {}, authHeaders());
-      toast.success(data.paused ? 'Channel paused' : 'Channel resumed (error counter reset)');
-      loadData();
-    } catch {
-      toast.error('Pause/Resume failed');
-    } finally {
-      setTogglingPause((prev) => ({ ...prev, [channelId]: false }));
-    }
+    await guarded(`toggle-pause-${channelId}`, async () => {
+      setTogglingPause((prev) => ({ ...prev, [channelId]: true }));
+      try {
+        const { data } = await axios.post(`${API_BASE}/track/channel/${channelId}/toggle-pause`, {}, authHeaders());
+        toast.success(data.paused ? 'Channel paused' : 'Channel resumed (error counter reset)');
+        loadData();
+      } catch {
+        toast.error('Pause/Resume failed');
+      } finally {
+        setTogglingPause((prev) => ({ ...prev, [channelId]: false }));
+      }
+    });
   };
 
   const checkNow = async (channelId: string) => {
-    setCheckingNow((prev) => ({ ...prev, [channelId]: true }));
-    try {
-      const { data } = await axios.post(`${API_BASE}/track/channel/${channelId}/check-now`, {}, authHeaders());
-      toast.success(data.updatesFound > 0 ? `${data.updatesFound} new update(s) found!` : 'No new update found');
-      loadData();
-    } catch {
-      toast.error('Check failed (if this keeps happening, the channel may get auto-paused)');
-      loadData();
-    } finally {
-      setCheckingNow((prev) => ({ ...prev, [channelId]: false }));
-    }
+    await guarded(`check-now-${channelId}`, async () => {
+      setCheckingNow((prev) => ({ ...prev, [channelId]: true }));
+      try {
+        const { data } = await axios.post(`${API_BASE}/track/channel/${channelId}/check-now`, {}, authHeaders());
+        toast.success(data.updatesFound > 0 ? `${data.updatesFound} new update(s) found!` : 'No new update found');
+        loadData();
+      } catch {
+        toast.error('Check failed (if this keeps happening, the channel may get auto-paused)');
+        loadData();
+      } finally {
+        setCheckingNow((prev) => ({ ...prev, [channelId]: false }));
+      }
+    });
   };
 
   // ============ PREVIEW ============
   const runPreview = async (channelId: string, depth?: number) => {
-    const keyword = titleInputs[channelId]?.trim();
-    if (!keyword) {
-      toast.error('Write a keyword first, then press Preview');
-      return;
-    }
-    const excludeKeywords = (excludeKeywordsInputs[channelId] || '').split(',').map((s) => s.trim()).filter(Boolean);
-    const useDepth = depth ?? previewScanDepth;
-    const threshold = matchThresholdInputs[channelId] ?? 0.7;
-    setPreviewLoading(true);
-    setPreviewResults(null);
-    setPreviewSelectedIds(new Set());
-    setPreviewEpisodeOverrides({});
-    try {
-      const { data } = await axios.post(
-        `${API_BASE}/track/channel/${channelId}/title/test-match`,
-        { keyword, scanDepth: useDepth, excludeKeywords, matchThreshold: threshold },
-        authHeaders()
-      );
-      setPreviewResults({ matchedCount: data.matchedCount, videos: data.videos });
-      if (data.matchedCount === 0) {
-        toast('No video matched this keyword — try changing the keyword');
+    await guarded(`preview-${channelId}`, async () => {
+      const keyword = titleInputs[channelId]?.trim();
+      if (!keyword) {
+        toast.error('Write a keyword first, then press Preview');
+        return;
       }
-    } catch {
-      toast.error('Could not load preview');
-    } finally {
-      setPreviewLoading(false);
-    }
+      const excludeKeywords = (excludeKeywordsInputs[channelId] || '').split(',').map((s) => s.trim()).filter(Boolean);
+      const useDepth = depth ?? previewScanDepth;
+      const threshold = matchThresholdInputs[channelId] ?? 0.7;
+      setPreviewLoading(true);
+      setPreviewResults(null);
+      setPreviewSelectedIds(new Set());
+      setPreviewEpisodeOverrides({});
+      try {
+        const { data } = await axios.post(
+          `${API_BASE}/track/channel/${channelId}/title/test-match`,
+          { keyword, scanDepth: useDepth, excludeKeywords, matchThreshold: threshold },
+          authHeaders()
+        );
+        setPreviewResults({ matchedCount: data.matchedCount, videos: data.videos });
+        if (data.matchedCount === 0) {
+          toast('No video matched this keyword — try changing the keyword');
+        }
+      } catch {
+        toast.error('Could not load preview');
+      } finally {
+        setPreviewLoading(false);
+      }
+    });
   };
 
   const scanPreviewDeeper = (channelId: string) => {
@@ -414,65 +452,71 @@ const TrackListManager: React.FC = () => {
   };
 
   const doPreviewBulkAdd = async (channelId: string) => {
-    const keyword = titleInputs[channelId]?.trim();
-    if (!keyword || !previewBulkPageId || previewSelectedIds.size === 0) return;
-    setPreviewAdding(true);
-    try {
-      const overridesToSend: Record<string, string> = {};
-      for (const vid of previewSelectedIds) {
-        const raw = previewEpisodeOverrides[vid];
-        if (raw !== undefined && raw.trim() !== '') {
-          overridesToSend[vid] = raw.trim();
+    await guarded(`preview-add-${channelId}`, async () => {
+      const keyword = titleInputs[channelId]?.trim();
+      if (!keyword || !previewBulkPageId || previewSelectedIds.size === 0) return;
+      setPreviewAdding(true);
+      try {
+        const overridesToSend: Record<string, string> = {};
+        for (const vid of previewSelectedIds) {
+          const raw = previewEpisodeOverrides[vid];
+          if (raw !== undefined && raw.trim() !== '') {
+            overridesToSend[vid] = raw.trim();
+          }
         }
+        const { data } = await axios.post(
+          `${API_BASE}/track/channel/${channelId}/quick-bulk-add`,
+          { keyword, downloadPageId: previewBulkPageId, videoIds: Array.from(previewSelectedIds), episodeOverrides: overridesToSend },
+          authHeaders()
+        );
+        toast.success(`${data.added} episodes added directly!`);
+        setPreviewSelectedIds(new Set());
+        setPreviewEpisodeOverrides({});
+      } catch (err: any) {
+        toast.error(err.response?.data?.error || 'Could not add');
+      } finally {
+        setPreviewAdding(false);
       }
-      const { data } = await axios.post(
-        `${API_BASE}/track/channel/${channelId}/quick-bulk-add`,
-        { keyword, downloadPageId: previewBulkPageId, videoIds: Array.from(previewSelectedIds), episodeOverrides: overridesToSend },
-        authHeaders()
-      );
-      toast.success(`${data.added} episodes added directly!`);
-      setPreviewSelectedIds(new Set());
-      setPreviewEpisodeOverrides({});
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Could not add');
-    } finally {
-      setPreviewAdding(false);
-    }
+    });
   };
 
   // ============ TITLE ACTIONS ============
   const addTitle = async (channelId: string, keyword: string, excludeKeywords: string[]) => {
-    const kw = keyword.trim();
-    if (!kw) return;
-    try {
-      await axios.post(
-        `${API_BASE}/track/channel/${channelId}/title/add`,
-        { keyword: kw, currentKnownPart: 0, excludeKeywords, matchThreshold: matchThresholdInputs[channelId] ?? 0.7, autoInit: true },
-        authHeaders()
-      );
-      toast.success(`"${kw}" added`);
-      setTitleInputs({ ...titleInputs, [channelId]: '' });
-      setExcludeKeywordsInputs({ ...excludeKeywordsInputs, [channelId]: '' });
-      setPreviewResults(null);
-      setPreviewForChannel(null);
-      loadData();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Could not add title');
-    }
+    await guarded(`add-title-${channelId}`, async () => {
+      const kw = keyword.trim();
+      if (!kw) return;
+      try {
+        await axios.post(
+          `${API_BASE}/track/channel/${channelId}/title/add`,
+          { keyword: kw, currentKnownPart: 0, excludeKeywords, matchThreshold: matchThresholdInputs[channelId] ?? 0.7, autoInit: true },
+          authHeaders()
+        );
+        toast.success(`"${kw}" added`);
+        setTitleInputs({ ...titleInputs, [channelId]: '' });
+        setExcludeKeywordsInputs({ ...excludeKeywordsInputs, [channelId]: '' });
+        setPreviewResults(null);
+        setPreviewForChannel(null);
+        loadData();
+      } catch (err: any) {
+        toast.error(err.response?.data?.error || 'Could not add title');
+      }
+    });
   };
 
   const addBulkTitles = async (channelId: string, bulkTextValue: string) => {
-    const lines = bulkTextValue.split('\n').map((l) => l.trim()).filter(Boolean);
-    if (lines.length === 0) return;
-    try {
-      const { data } = await axios.post(`${API_BASE}/track/channel/${channelId}/title/bulk-add`, { keywords: lines }, authHeaders());
-      toast.success(`${data.added} titles added${data.skipped?.length ? `, ${data.skipped.length} already existed` : ''}`);
-      setBulkText('');
-      setBulkModeChannel(null);
-      loadData();
-    } catch {
-      toast.error('Something failed in bulk add');
-    }
+    await guarded(`bulk-titles-${channelId}`, async () => {
+      const lines = bulkTextValue.split('\n').map((l) => l.trim()).filter(Boolean);
+      if (lines.length === 0) return;
+      try {
+        const { data } = await axios.post(`${API_BASE}/track/channel/${channelId}/title/bulk-add`, { keywords: lines }, authHeaders());
+        toast.success(`${data.added} titles added${data.skipped?.length ? `, ${data.skipped.length} already existed` : ''}`);
+        setBulkText('');
+        setBulkModeChannel(null);
+        loadData();
+      } catch {
+        toast.error('Something failed in bulk add');
+      }
+    });
   };
 
   const cancelEditTitle = () => {
@@ -482,28 +526,32 @@ const TrackListManager: React.FC = () => {
   };
 
   const saveEditTitle = async (channelId: string, titleId: string, keyword: string, lastPart: number) => {
-    try {
-      await axios.put(
-        `${API_BASE}/track/channel/${channelId}/title/${titleId}/edit`,
-        { keyword: keyword.trim(), lastKnownPart: lastPart || 0 },
-        authHeaders()
-      );
-      toast.success('Title updated');
-      cancelEditTitle();
-      loadData();
-    } catch {
-      toast.error('Could not update');
-    }
+    await guarded(`save-edit-${titleId}`, async () => {
+      try {
+        await axios.put(
+          `${API_BASE}/track/channel/${channelId}/title/${titleId}/edit`,
+          { keyword: keyword.trim(), lastKnownPart: lastPart || 0 },
+          authHeaders()
+        );
+        toast.success('Title updated');
+        cancelEditTitle();
+        loadData();
+      } catch {
+        toast.error('Could not update');
+      }
+    });
   };
 
   const removeTitle = async (channelId: string, titleId: string) => {
-    try {
-      await axios.delete(`${API_BASE}/track/channel/${channelId}/title/${titleId}`, authHeaders());
-      toast.success('Title removed');
-      loadData();
-    } catch {
-      toast.error('Could not remove');
-    }
+    await guarded(`remove-title-${titleId}`, async () => {
+      try {
+        await axios.delete(`${API_BASE}/track/channel/${channelId}/title/${titleId}`, authHeaders());
+        toast.success('Title removed');
+        loadData();
+      } catch {
+        toast.error('Could not remove');
+      }
+    });
   };
 
   // ============ LINK FORM ============
@@ -519,7 +567,6 @@ const TrackListManager: React.FC = () => {
     setLinkLimit(String(anyT.episodeLimit || 0));
     setLinkMergeMode(anyT.mergeMode !== false);
     setLinkBaselineMin(anyT.baselineEpisodeDurationSec ? String(Math.round(anyT.baselineEpisodeDurationSec / 60)) : '');
-    // 🆕 Strict Chronology fields
     setLinkStrictChronology(anyT.strictChronology === true);
     setLinkChronologyFloorDate(anyT.chronologyFloorDate || '');
     setLinkChronologyGraceGap(String(anyT.chronologyGraceGap ?? 0));
@@ -534,57 +581,59 @@ const TrackListManager: React.FC = () => {
     setLinkBaselineMin('');
     setPagesForAnime([]);
     setLinkMergeMode(true);
-    // 🆕 Reset Strict Chronology fields
     setLinkStrictChronology(false);
     setLinkChronologyFloorDate('');
     setLinkChronologyGraceGap('0');
   };
 
   const saveLinkForm = async (channelId: string) => {
-    if (!linkFormTitleId) return;
-    setSavingLink(true);
-    try {
-      const { data } = await axios.put(
-        `${API_BASE}/track/channel/${channelId}/title/${linkFormTitleId}/link`,
-        {
-          linkedAnimeId: linkAnimeId || null,
-          linkedDownloadPageId: linkPageId || null,
-          episodeLimit: Number(linkLimit) || 0,
-          mergeMode: linkMergeMode,
-          baselineEpisodeMinutes: linkBaselineMin ? Number(linkBaselineMin) : undefined,
-          // 🆕 Include Strict Chronology
-          strictChronology: linkStrictChronology,
-          chronologyFloorDate: linkChronologyFloorDate || null,
-          chronologyGraceGap: Number(linkChronologyGraceGap) || 0,
-        },
-        authHeaders()
-      );
-      if (data.warning) {
-        toast(data.warning, { duration: 6000 });
-      } else {
-        toast.success('Page linked!');
+    await guarded('save-link', async () => {
+      if (!linkFormTitleId) return;
+      setSavingLink(true);
+      try {
+        const { data } = await axios.put(
+          `${API_BASE}/track/channel/${channelId}/title/${linkFormTitleId}/link`,
+          {
+            linkedAnimeId: linkAnimeId || null,
+            linkedDownloadPageId: linkPageId || null,
+            episodeLimit: Number(linkLimit) || 0,
+            mergeMode: linkMergeMode,
+            baselineEpisodeMinutes: linkBaselineMin ? Number(linkBaselineMin) : undefined,
+            strictChronology: linkStrictChronology,
+            chronologyFloorDate: linkChronologyFloorDate || null,
+            chronologyGraceGap: Number(linkChronologyGraceGap) || 0,
+          },
+          authHeaders()
+        );
+        if (data.warning) {
+          toast(data.warning, { duration: 6000 });
+        } else {
+          toast.success('Page linked!');
+        }
+        closeLinkForm();
+        loadData();
+      } catch {
+        toast.error('Could not save link');
+      } finally {
+        setSavingLink(false);
       }
-      closeLinkForm();
-      loadData();
-    } catch {
-      toast.error('Could not save link');
-    } finally {
-      setSavingLink(false);
-    }
+    });
   };
 
   const unlinkTitle = async (channelId: string, titleId: string) => {
-    try {
-      await axios.put(
-        `${API_BASE}/track/channel/${channelId}/title/${titleId}/link`,
-        { linkedAnimeId: null, linkedDownloadPageId: null, episodeLimit: 0, resetSeason: true },
-        authHeaders()
-      );
-      toast.success('Unlinked');
-      loadData();
-    } catch {
-      toast.error('Unlink failed');
-    }
+    await guarded(`unlink-${titleId}`, async () => {
+      try {
+        await axios.put(
+          `${API_BASE}/track/channel/${channelId}/title/${titleId}/link`,
+          { linkedAnimeId: null, linkedDownloadPageId: null, episodeLimit: 0, resetSeason: true },
+          authHeaders()
+        );
+        toast.success('Unlinked');
+        loadData();
+      } catch {
+        toast.error('Unlink failed');
+      }
+    });
   };
 
   // ============ ALL TITLES BROWSE ============
@@ -597,7 +646,6 @@ const TrackListManager: React.FC = () => {
     }))
   );
 
-  // ✅ NEW — Needs Attention stats
   const approvalPendingCount = allTitlesFlat.filter((t: any) => t.initialized === false).length;
   const manualReviewCount = notifications.filter(n => n.notifType === 'manual_review' && !n.isRead).length;
   const pausedOrErrorCount = channels.filter(ch => ch.paused || (ch.consecutiveErrors && ch.consecutiveErrors > 0)).length;
@@ -608,7 +656,6 @@ const TrackListManager: React.FC = () => {
     return t.keyword.toLowerCase().includes(q) || t.channelName?.toLowerCase().includes(q);
   });
 
-  // ✅ NEW — Item 9 helper: sequential low-risk detection
   const isSequentialLowRisk = (videos: any[]): boolean => {
     const parts = Array.from(
       new Set(videos.filter((v: any) => v.part !== null).map((v: any) => v.part))
@@ -620,46 +667,44 @@ const TrackListManager: React.FC = () => {
     return true;
   };
 
-  // ✅ NEW — Item 9: Quick Approve (Sequential) — bulk add + finalize together
   const quickApproveSequential = async () => {
-    if (!browsingTitle || !bulkPageId || !browseData?.videos) {
-      toast.error('Select a page and load videos first');
-      return;
-    }
-    const allIds = browseData.videos.map((v: any) => v.videoId);
-    setSelectedVideoIds(new Set(allIds));
-    setFinalizing(true);
-    try {
-      const overridesToSend: Record<string, string> = {};
-      for (const vid of allIds) {
-        const raw = episodeOverrides[vid];
-        if (raw !== undefined && raw.trim() !== '') {
-          overridesToSend[vid] = raw.trim();
-        }
+    await guarded('quick-approve', async () => {
+      if (!browsingTitle || !bulkPageId || !browseData?.videos) {
+        toast.error('Select a page and load videos first');
+        return;
       }
-      // Step 1: bulk add all videos
-      await axios.post(
-        `${API_BASE}/track/channel/${browsingTitle.channelId}/title/${browsingTitle.titleId}/bulk-add`,
-        { downloadPageId: bulkPageId, videoIds: allIds, episodeOverrides: overridesToSend },
-        authHeaders()
-      );
-      // Step 2: finalize (approve)
-      await axios.post(
-        `${API_BASE}/track/channel/${browsingTitle.channelId}/title/${browsingTitle.titleId}/finalize-initial`,
-        {},
-        authHeaders()
-      );
-      toast.success('Quick Approve done — all episodes added + auto-tracking ON!');
-      closeBrowseTitle();
-      loadData();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Quick approve failed');
-    } finally {
-      setFinalizing(false);
-    }
+      const allIds = browseData.videos.map((v: any) => v.videoId);
+      setSelectedVideoIds(new Set(allIds));
+      setFinalizing(true);
+      try {
+        const overridesToSend: Record<string, string> = {};
+        for (const vid of allIds) {
+          const raw = episodeOverrides[vid];
+          if (raw !== undefined && raw.trim() !== '') {
+            overridesToSend[vid] = raw.trim();
+          }
+        }
+        await axios.post(
+          `${API_BASE}/track/channel/${browsingTitle.channelId}/title/${browsingTitle.titleId}/bulk-add`,
+          { downloadPageId: bulkPageId, videoIds: allIds, episodeOverrides: overridesToSend },
+          authHeaders()
+        );
+        await axios.post(
+          `${API_BASE}/track/channel/${browsingTitle.channelId}/title/${browsingTitle.titleId}/finalize-initial`,
+          {},
+          authHeaders()
+        );
+        toast.success('Quick Approve done — all episodes added + auto-tracking ON!');
+        closeBrowseTitle();
+        loadData();
+      } catch (err: any) {
+        toast.error(err.response?.data?.error || 'Quick approve failed');
+      } finally {
+        setFinalizing(false);
+      }
+    });
   };
 
-  // ✅ NEW — openBrowseTitle with auto-fill linked anime/page
   const openBrowseTitle = async (channelId: string, titleId: string, keyword: string, depth?: number) => {
     const useDepth = depth ?? 150;
     if (browsingTitle?.titleId === titleId && browsingTitle?.channelId === channelId && !depth) {
@@ -674,7 +719,6 @@ const TrackListManager: React.FC = () => {
       setSelectedVideoIds(new Set());
       setEpisodeOverrides({});
 
-      // ✅ NEW — if already linked anime/page, auto-select it
       const ch = channels.find((c) => c._id === channelId);
       const t = ch?.titles.find((tt: any) => tt.id === titleId) as any;
       if (t?.linkedAnimeId && t?.linkedDownloadPageId) {
@@ -741,77 +785,85 @@ const TrackListManager: React.FC = () => {
   };
 
   const doBulkAdd = async () => {
-    if (!browsingTitle || !bulkPageId || selectedVideoIds.size === 0) return;
-    setFinalizing(true);
-    try {
-      const overridesToSend: Record<string, string> = {};
-      for (const vid of selectedVideoIds) {
-        const raw = episodeOverrides[vid];
-        if (raw !== undefined && raw.trim() !== '') {
-          overridesToSend[vid] = raw.trim();
+    await guarded('bulk-add', async () => {
+      if (!browsingTitle || !bulkPageId || selectedVideoIds.size === 0) return;
+      setFinalizing(true);
+      try {
+        const overridesToSend: Record<string, string> = {};
+        for (const vid of selectedVideoIds) {
+          const raw = episodeOverrides[vid];
+          if (raw !== undefined && raw.trim() !== '') {
+            overridesToSend[vid] = raw.trim();
+          }
         }
+        const { data } = await axios.post(
+          `${API_BASE}/track/channel/${browsingTitle.channelId}/title/${browsingTitle.titleId}/bulk-add`,
+          { downloadPageId: bulkPageId, videoIds: Array.from(selectedVideoIds), episodeOverrides: overridesToSend },
+          authHeaders()
+        );
+        toast.success(`${data.added} episodes added!`);
+        setSelectedVideoIds(new Set());
+        setEpisodeOverrides({});
+        openBrowseTitle(browsingTitle.channelId, browsingTitle.titleId, browsingTitle.keyword);
+      } catch (err: any) {
+        toast.error(err.response?.data?.error || 'Could not add');
+      } finally {
+        setFinalizing(false);
       }
-      const { data } = await axios.post(
-        `${API_BASE}/track/channel/${browsingTitle.channelId}/title/${browsingTitle.titleId}/bulk-add`,
-        { downloadPageId: bulkPageId, videoIds: Array.from(selectedVideoIds), episodeOverrides: overridesToSend },
-        authHeaders()
-      );
-      toast.success(`${data.added} episodes added!`);
-      setSelectedVideoIds(new Set());
-      setEpisodeOverrides({});
-      openBrowseTitle(browsingTitle.channelId, browsingTitle.titleId, browsingTitle.keyword);
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Could not add');
-    } finally {
-      setFinalizing(false);
-    }
+    });
   };
 
   const ignoreVideo = async (videoId: string) => {
-    if (!browsingTitle) return;
-    try {
-      await axios.post(`${API_BASE}/track/channel/${browsingTitle.channelId}/title/${browsingTitle.titleId}/ignore-video`, { videoId }, authHeaders());
-      toast.success('Video ignored, it will never show again');
-      openBrowseTitle(browsingTitle.channelId, browsingTitle.titleId, browsingTitle.keyword);
-    } catch {
-      toast.error('Ignore failed');
-    }
+    await guarded(`ignore-video-${videoId}`, async () => {
+      if (!browsingTitle) return;
+      try {
+        await axios.post(`${API_BASE}/track/channel/${browsingTitle.channelId}/title/${browsingTitle.titleId}/ignore-video`, { videoId }, authHeaders());
+        toast.success('Video ignored, it will never show again');
+        openBrowseTitle(browsingTitle.channelId, browsingTitle.titleId, browsingTitle.keyword);
+      } catch {
+        toast.error('Ignore failed');
+      }
+    });
   };
 
   const bulkIgnoreSelected = async () => {
-    if (!browsingTitle || selectedVideoIds.size === 0) return;
-    setBulkIgnoring(true);
-    try {
-      const ids = Array.from(selectedVideoIds);
-      await axios.post(
-        `${API_BASE}/track/channel/${browsingTitle.channelId}/title/${browsingTitle.titleId}/ignore-videos-bulk`,
-        { videoIds: ids },
-        authHeaders()
-      );
-      toast.success(`${ids.length} video(s) ignored`);
-      setSelectedVideoIds(new Set());
-      setEpisodeOverrides({});
-      openBrowseTitle(browsingTitle.channelId, browsingTitle.titleId, browsingTitle.keyword);
-    } catch {
-      toast.error('Something failed in bulk ignore');
-    } finally {
-      setBulkIgnoring(false);
-    }
+    await guarded('bulk-ignore', async () => {
+      if (!browsingTitle || selectedVideoIds.size === 0) return;
+      setBulkIgnoring(true);
+      try {
+        const ids = Array.from(selectedVideoIds);
+        await axios.post(
+          `${API_BASE}/track/channel/${browsingTitle.channelId}/title/${browsingTitle.titleId}/ignore-videos-bulk`,
+          { videoIds: ids },
+          authHeaders()
+        );
+        toast.success(`${ids.length} video(s) ignored`);
+        setSelectedVideoIds(new Set());
+        setEpisodeOverrides({});
+        openBrowseTitle(browsingTitle.channelId, browsingTitle.titleId, browsingTitle.keyword);
+      } catch {
+        toast.error('Something failed in bulk ignore');
+      } finally {
+        setBulkIgnoring(false);
+      }
+    });
   };
 
   const finalizeApproval = async () => {
-    if (!browsingTitle) return;
-    setFinalizing(true);
-    try {
-      await axios.post(`${API_BASE}/track/channel/${browsingTitle.channelId}/title/${browsingTitle.titleId}/finalize-initial`, {}, authHeaders());
-      toast.success('Approved! New episodes will now be added automatically.');
-      closeBrowseTitle();
-      loadData();
-    } catch {
-      toast.error('Finalize failed');
-    } finally {
-      setFinalizing(false);
-    }
+    await guarded('finalize-approval', async () => {
+      if (!browsingTitle) return;
+      setFinalizing(true);
+      try {
+        await axios.post(`${API_BASE}/track/channel/${browsingTitle.channelId}/title/${browsingTitle.titleId}/finalize-initial`, {}, authHeaders());
+        toast.success('Approved! New episodes will now be added automatically.');
+        closeBrowseTitle();
+        loadData();
+      } catch {
+        toast.error('Finalize failed');
+      } finally {
+        setFinalizing(false);
+      }
+    });
   };
 
   const scanBrowseDeeper = () => {
@@ -822,12 +874,14 @@ const TrackListManager: React.FC = () => {
 
   // ============ NOTIFICATION ACTIONS ============
   const markDone = async (id: string) => {
-    try {
-      await axios.post(`${API_BASE}/track/notifications/${id}/read`, {}, authHeaders());
-      loadData();
-    } catch {
-      toast.error('Could not mark');
-    }
+    await guarded(`mark-done-${id}`, async () => {
+      try {
+        await axios.post(`${API_BASE}/track/notifications/${id}/read`, {}, authHeaders());
+        loadData();
+      } catch {
+        toast.error('Could not mark');
+      }
+    });
   };
 
   const deleteNotification = (id: string) => {
@@ -842,30 +896,34 @@ const TrackListManager: React.FC = () => {
   };
 
   const confirmDeleteNotification = async () => {
-    if (!notificationDeleteConfirm) return;
-    setDeletingNotification(true);
-    try {
-      await axios.delete(`${API_BASE}/track/notifications/${notificationDeleteConfirm.notificationId}`, authHeaders());
-      toast.success('Removed');
-      loadData();
-    } catch {
-      toast.error('Could not remove');
-    } finally {
-      setDeletingNotification(false);
-      setNotificationDeleteConfirm(null);
-    }
+    await guarded('delete-notification', async () => {
+      if (!notificationDeleteConfirm) return;
+      setDeletingNotification(true);
+      try {
+        await axios.delete(`${API_BASE}/track/notifications/${notificationDeleteConfirm.notificationId}`, authHeaders());
+        toast.success('Removed');
+        loadData();
+      } catch {
+        toast.error('Could not remove');
+      } finally {
+        setDeletingNotification(false);
+        setNotificationDeleteConfirm(null);
+      }
+    });
   };
 
   const markAllDoneInList = async (list: TrackNotification[]) => {
-    const unread = list.filter((n) => !n.isRead);
-    if (unread.length === 0) return;
-    try {
-      await Promise.all(unread.map((n) => axios.post(`${API_BASE}/track/notifications/${n._id}/read`, {}, authHeaders())));
-      toast.success(`${unread.length} updates marked "Done"`);
-      loadData();
-    } catch {
-      toast.error('Mark all failed');
-    }
+    await guarded('mark-all-done', async () => {
+      const unread = list.filter((n) => !n.isRead);
+      if (unread.length === 0) return;
+      try {
+        await Promise.all(unread.map((n) => axios.post(`${API_BASE}/track/notifications/${n._id}/read`, {}, authHeaders())));
+        toast.success(`${unread.length} updates marked "Done"`);
+        loadData();
+      } catch {
+        toast.error('Mark all failed');
+      }
+    });
   };
 
   const deleteAllInList = (list: TrackNotification[]) => {
@@ -882,20 +940,22 @@ const TrackListManager: React.FC = () => {
   const pendingBulkDeleteRef = React.useRef<TrackNotification[]>([]);
 
   const confirmBulkDeleteNotifications = async () => {
-    if (!notificationDeleteConfirm || notificationDeleteConfirm.notificationId !== 'bulk-notifications') return;
-    setDeletingNotification(true);
-    try {
-      const currentList = pendingBulkDeleteRef.current;
-      await Promise.all(currentList.map((n) => axios.delete(`${API_BASE}/track/notifications/${n._id}`, authHeaders())));
-      toast.success(`${currentList.length} updates removed`);
-      loadData();
-    } catch {
-      toast.error('Clear all failed');
-    } finally {
-      setDeletingNotification(false);
-      setNotificationDeleteConfirm(null);
-      pendingBulkDeleteRef.current = [];
-    }
+    await guarded('bulk-delete-notifications', async () => {
+      if (!notificationDeleteConfirm || notificationDeleteConfirm.notificationId !== 'bulk-notifications') return;
+      setDeletingNotification(true);
+      try {
+        const currentList = pendingBulkDeleteRef.current;
+        await Promise.all(currentList.map((n) => axios.delete(`${API_BASE}/track/notifications/${n._id}`, authHeaders())));
+        toast.success(`${currentList.length} updates removed`);
+        loadData();
+      } catch {
+        toast.error('Clear all failed');
+      } finally {
+        setDeletingNotification(false);
+        setNotificationDeleteConfirm(null);
+        pendingBulkDeleteRef.current = [];
+      }
+    });
   };
 
   const shareVideo = async (url: string) => {
@@ -908,22 +968,24 @@ const TrackListManager: React.FC = () => {
   };
 
   const resolveSeasonChange = async (notif: TrackNotification) => {
-    const slug = prompt('Enter the new season page slug (e.g. series-name-season-2):');
-    if (!slug) return;
-    const channel = channels.find((ch) => (ch.titles || []).some((t: any) => t.keyword === notif.titleKeyword));
-    const title = channel?.titles.find((t: any) => t.keyword === notif.titleKeyword) as any;
-    if (!title || !channel) {
-      toast.error('Title/channel not found');
-      return;
-    }
-    try {
-      await axios.post(`${API_BASE}/track/channel/${channel._id}/title/${title.id}/resolve-season`, { newSlug: slug }, authHeaders());
-      toast.success('New page created, season change resolved!');
-      markDone(notif._id);
-      loadData();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Failed');
-    }
+    await guarded(`resolve-season-${notif._id}`, async () => {
+      const slug = prompt('Enter the new season page slug (e.g. series-name-season-2):');
+      if (!slug) return;
+      const channel = channels.find((ch) => (ch.titles || []).some((t: any) => t.keyword === notif.titleKeyword));
+      const title = channel?.titles.find((t: any) => t.keyword === notif.titleKeyword) as any;
+      if (!title || !channel) {
+        toast.error('Title/channel not found');
+        return;
+      }
+      try {
+        await axios.post(`${API_BASE}/track/channel/${channel._id}/title/${title.id}/resolve-season`, { newSlug: slug }, authHeaders());
+        toast.success('New page created, season change resolved!');
+        markDone(notif._id);
+        loadData();
+      } catch (err: any) {
+        toast.error(err.response?.data?.error || 'Failed');
+      }
+    });
   };
 
   // ============ UNDO ============
@@ -936,25 +998,27 @@ const TrackListManager: React.FC = () => {
   };
 
   const confirmUndoNotification = async () => {
-    if (!notificationDeleteConfirm || !notificationDeleteConfirm.notificationId.startsWith('undo-')) return;
-    const notifId = notificationDeleteConfirm.notificationId.replace('undo-', '');
-    const n = notifications.find((n) => n._id === notifId);
-    if (!n) {
-      setNotificationDeleteConfirm(null);
-      return;
-    }
+    await guarded('undo-notification', async () => {
+      if (!notificationDeleteConfirm || !notificationDeleteConfirm.notificationId.startsWith('undo-')) return;
+      const notifId = notificationDeleteConfirm.notificationId.replace('undo-', '');
+      const n = notifications.find((n) => n._id === notifId);
+      if (!n) {
+        setNotificationDeleteConfirm(null);
+        return;
+      }
 
-    setDeletingNotification(true);
-    try {
-      await axios.post(`${API_BASE}/track/notifications/${n._id}/undo`, {}, authHeaders());
-      toast.success('Undone — link removed from page');
-      loadData();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Undo failed');
-    } finally {
-      setDeletingNotification(false);
-      setNotificationDeleteConfirm(null);
-    }
+      setDeletingNotification(true);
+      try {
+        await axios.post(`${API_BASE}/track/notifications/${n._id}/undo`, {}, authHeaders());
+        toast.success('Undone — link removed from page');
+        loadData();
+      } catch (err: any) {
+        toast.error(err.response?.data?.error || 'Undo failed');
+      } finally {
+        setDeletingNotification(false);
+        setNotificationDeleteConfirm(null);
+      }
+    });
   };
 
   // ============ DERIVED DATA ============
@@ -1174,24 +1238,60 @@ const TrackListManager: React.FC = () => {
         </div>
       )}
 
-      {/* ✅ NEW — Needs Attention widget */}
+      {/* ✅ Clean, subtle Needs Attention widget */}
       {(approvalPendingCount > 0 || manualReviewCount > 0 || pausedOrErrorCount > 0) && (
-        <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-4">
-          <h4 className="text-xs font-semibold text-amber-300 uppercase tracking-wide mb-3 flex items-center gap-1.5">
-            {Icon.warn('w-3.5 h-3.5')} Needs Attention
-          </h4>
-          <div className="grid grid-cols-3 gap-3">
-            <button onClick={() => setShowAllTitles(true)} className="text-left bg-black/20 hover:bg-black/30 rounded-xl p-3 transition">
-              <p className="text-xl font-bold text-amber-300">{approvalPendingCount}</p>
-              <p className="text-[10px] text-slate-400">Approval Pending</p>
+        <div className="bg-slate-800/40 backdrop-blur-xl border border-white/10 rounded-2xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-amber-400/80">{Icon.warn('w-4 h-4')}</span>
+            <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wide">
+              Needs Attention
+            </h4>
+            <span className="text-[10px] text-slate-500 font-medium ml-1">
+              {approvalPendingCount + manualReviewCount + pausedOrErrorCount} item{approvalPendingCount + manualReviewCount + pausedOrErrorCount !== 1 ? 's' : ''}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
+            <button
+              onClick={() => setShowAllTitles(true)}
+              className="text-left rounded-xl p-3 bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 hover:border-white/15 transition-colors"
+            >
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <span className="text-amber-400/80">{Icon.clock('w-3.5 h-3.5')}</span>
+                <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wide">
+                  Approval
+                </span>
+              </div>
+              <p className="text-lg font-bold text-slate-200 leading-none tabular-nums">
+                {approvalPendingCount}
+              </p>
             </button>
-            <button onClick={() => setShowGlobalFeed(true)} className="text-left bg-black/20 hover:bg-black/30 rounded-xl p-3 transition">
-              <p className="text-xl font-bold text-orange-300">{manualReviewCount}</p>
-              <p className="text-[10px] text-slate-400">Manual Review</p>
+
+            <button
+              onClick={() => setShowGlobalFeed(true)}
+              className="text-left rounded-xl p-3 bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 hover:border-white/15 transition-colors"
+            >
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <span className="text-orange-400/70">{Icon.bell('w-3.5 h-3.5')}</span>
+                <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wide">
+                  Review
+                </span>
+              </div>
+              <p className="text-lg font-bold text-slate-200 leading-none tabular-nums">
+                {manualReviewCount}
+              </p>
             </button>
-            <div className="text-left bg-black/20 rounded-xl p-3">
-              <p className="text-xl font-bold text-red-300">{pausedOrErrorCount}</p>
-              <p className="text-[10px] text-slate-400">Paused / Error Channels</p>
+
+            <div className="text-left rounded-xl p-3 bg-white/[0.03] border border-white/5">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <span className="text-red-400/70">{Icon.ban('w-3.5 h-3.5')}</span>
+                <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wide">
+                  Paused
+                </span>
+              </div>
+              <p className="text-lg font-bold text-slate-200 leading-none tabular-nums">
+                {pausedOrErrorCount}
+              </p>
             </div>
           </div>
         </div>
@@ -1544,18 +1644,14 @@ const TrackListManager: React.FC = () => {
         linkBaselineMin={linkBaselineMin}
         setLinkBaselineMin={setLinkBaselineMin}
         savingLink={savingLink}
-        // ✅ Item 9 — Quick Approve props
         quickApproveSequential={quickApproveSequential}
         isSequentialLowRisk={isSequentialLowRisk}
-        // 🆕 Strict Chronology Mode
         linkStrictChronology={linkStrictChronology}
         setLinkStrictChronology={setLinkStrictChronology}
         linkChronologyFloorDate={linkChronologyFloorDate}
         setLinkChronologyFloorDate={setLinkChronologyFloorDate}
-        // 🆕 Grace Gap
         linkChronologyGraceGap={linkChronologyGraceGap}
         setLinkChronologyGraceGap={setLinkChronologyGraceGap}
-        // 🆕 Sub-admin context
         isSubAdmin={isSubAdminContext}
       />
 

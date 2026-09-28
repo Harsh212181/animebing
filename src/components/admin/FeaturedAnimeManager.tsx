@@ -1,4 +1,4 @@
- // src/components/admin/FeaturedAnimeManager.tsx – Premium UI, no emojis
+// src/components/admin/FeaturedAnimeManager.tsx – Premium UI, no emojis
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Anime } from '../../types';
 
@@ -79,6 +79,28 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [savingOrder, setSavingOrder] = useState(false);
 
+  // 🆕 Double-click / slow-network guard — synchronous Set of in-flight keys.
+  // Prevents duplicate API calls even if user clicks again before React re-renders
+  // and disables buttons via state.
+  const pendingRef = useRef<Set<string>>(new Set());
+
+  /**
+   * Wrap any async action with this helper. If the same key is already in-flight,
+   * the second call becomes a silent no-op. Errors are swallowed here because
+   * every action already shows its own feedback.
+   */
+  const guarded = async (key: string, fn: () => Promise<void>) => {
+    if (pendingRef.current.has(key)) return;
+    pendingRef.current.add(key);
+    try {
+      await fn();
+    } catch {
+      /* each action handles its own errors */
+    } finally {
+      setTimeout(() => { pendingRef.current.delete(key); }, 250);
+    }
+  };
+
   const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
   const enqueueWrite = useCallback((task: () => Promise<void>) => {
     writeQueueRef.current = writeQueueRef.current.then(task).catch((err) => {
@@ -113,110 +135,116 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
   }, [forceRefresh, activeSection]);
 
   const fetchSectionVisibility = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/anime/settings/section-visibility`);
-      const json = await res.json();
-      if (json.success) setSectionVisibility(json.data);
-    } catch (err) {
-      console.error('Failed to fetch section visibility', err);
-    }
+    await guarded('fetch-visibility', async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/anime/settings/section-visibility`);
+        const json = await res.json();
+        if (json.success) setSectionVisibility(json.data);
+      } catch (err) {
+        console.error('Failed to fetch section visibility', err);
+      }
+    });
   };
 
   const toggleSectionVisibility = async (section: SectionType) => {
-    const currentlyHidden = sectionVisibility[section] ?? false;
-    const token = getAdminToken();
-    try {
-      const res = await fetch(`${API_BASE}/api/anime/settings/section-visibility`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token && { 'Authorization': `Bearer ${token}` })
-        },
-        body: JSON.stringify({ section, hidden: !currentlyHidden })
-      });
-      if (res.ok) {
-        setSectionVisibility(prev => ({ ...prev, [section]: !currentlyHidden }));
+    await guarded(`toggle-visibility-${section}`, async () => {
+      const currentlyHidden = sectionVisibility[section] ?? false;
+      const token = getAdminToken();
+      try {
+        const res = await fetch(`${API_BASE}/api/anime/settings/section-visibility`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token && { 'Authorization': `Bearer ${token}` })
+          },
+          body: JSON.stringify({ section, hidden: !currentlyHidden })
+        });
+        if (res.ok) {
+          setSectionVisibility(prev => ({ ...prev, [section]: !currentlyHidden }));
+        }
+      } catch (err) {
+        console.error('Error toggling visibility', err);
       }
-    } catch (err) {
-      console.error('Error toggling visibility', err);
-    }
+    });
   };
 
   const fetchAnimes = async (): Promise<void> => {
-    setApiStatus('Fetching animes...');
-    setLoading(true);
-    const PAGE_SIZE = 100;
-    const MAX_PAGES = 50;
-    try {
-      const endpointBuilders = [
-        (page: number) => `${API_BASE}/api/anime?limit=${PAGE_SIZE}&page=${page}`,
-        (page: number) => `${API_BASE}/api/animes?limit=${PAGE_SIZE}&page=${page}`,
-      ];
+    await guarded('fetch-animes', async () => {
+      setApiStatus('Fetching animes...');
+      setLoading(true);
+      const PAGE_SIZE = 100;
+      const MAX_PAGES = 50;
+      try {
+        const endpointBuilders = [
+          (page: number) => `${API_BASE}/api/anime?limit=${PAGE_SIZE}&page=${page}`,
+          (page: number) => `${API_BASE}/api/animes?limit=${PAGE_SIZE}&page=${page}`,
+        ];
 
-      const extractArray = (result: any): Anime[] | null => {
-        if (Array.isArray(result)) return result;
-        if (Array.isArray(result?.data)) return result.data;
-        if (Array.isArray(result?.animes)) return result.animes;
-        if (Array.isArray(result?.content)) return result.content;
-        return null;
-      };
+        const extractArray = (result: any): Anime[] | null => {
+          if (Array.isArray(result)) return result;
+          if (Array.isArray(result?.data)) return result.data;
+          if (Array.isArray(result?.animes)) return result.animes;
+          if (Array.isArray(result?.content)) return result.content;
+          return null;
+        };
 
-      for (const buildEndpoint of endpointBuilders) {
-        try {
-          let allFetched: Anime[] = [];
-          let page = 1;
-          let keepGoing = true;
+        for (const buildEndpoint of endpointBuilders) {
+          try {
+            let allFetched: Anime[] = [];
+            let page = 1;
+            let keepGoing = true;
 
-          while (keepGoing && page <= MAX_PAGES) {
-            setApiStatus(`Fetching animes... (${allFetched.length} loaded)`);
-            const response = await fetch(buildEndpoint(page));
-            if (!response.ok) break;
-            const result = await response.json();
-            const pageItems = extractArray(result);
-            if (!pageItems || pageItems.length === 0) break;
+            while (keepGoing && page <= MAX_PAGES) {
+              setApiStatus(`Fetching animes... (${allFetched.length} loaded)`);
+              const response = await fetch(buildEndpoint(page));
+              if (!response.ok) break;
+              const result = await response.json();
+              const pageItems = extractArray(result);
+              if (!pageItems || pageItems.length === 0) break;
 
-            allFetched = allFetched.concat(pageItems);
-            keepGoing = pageItems.length === PAGE_SIZE;
-            page++;
+              allFetched = allFetched.concat(pageItems);
+              keepGoing = pageItems.length === PAGE_SIZE;
+              page++;
+            }
+
+            if (allFetched.length > 0) {
+              const seen = new Set<string>();
+              const deduped = allFetched.filter(a => {
+                const id = a._id || a.id || '';
+                if (!id) return true;
+                if (seen.has(id)) return false;
+                seen.add(id);
+                return true;
+              });
+              setAllAnimes(deduped);
+              localStorage.setItem('animeList', JSON.stringify(deduped));
+              setApiStatus(`Loaded ${deduped.length} animes`);
+              return;
+            }
+          } catch (error) {
+            console.log(`Failed with endpoint builder:`, error);
           }
-
-          if (allFetched.length > 0) {
-            const seen = new Set<string>();
-            const deduped = allFetched.filter(a => {
-              const id = a._id || a.id || '';
-              if (!id) return true;
-              if (seen.has(id)) return false;
-              seen.add(id);
-              return true;
-            });
-            setAllAnimes(deduped);
-            localStorage.setItem('animeList', JSON.stringify(deduped));
-            setApiStatus(`Loaded ${deduped.length} animes`);
+        }
+        const stored = localStorage.getItem('animeList');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setAllAnimes(parsed);
+            setApiStatus(`Loaded ${parsed.length} animes from cache`);
             return;
           }
-        } catch (error) {
-          console.log(`Failed with endpoint builder:`, error);
         }
+        const sampleData = getSampleAnimes();
+        setAllAnimes(sampleData);
+        localStorage.setItem('animeList', JSON.stringify(sampleData));
+        setApiStatus('Using sample data');
+      } catch (error) {
+        console.error('Error fetching animes:', error);
+        setApiStatus('Error loading animes');
+      } finally {
+        setLoading(false);
       }
-      const stored = localStorage.getItem('animeList');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setAllAnimes(parsed);
-          setApiStatus(`Loaded ${parsed.length} animes from cache`);
-          return;
-        }
-      }
-      const sampleData = getSampleAnimes();
-      setAllAnimes(sampleData);
-      localStorage.setItem('animeList', JSON.stringify(sampleData));
-      setApiStatus('Using sample data');
-    } catch (error) {
-      console.error('Error fetching animes:', error);
-      setApiStatus('Error loading animes');
-    } finally {
-      setLoading(false);
-    }
+    });
   };
 
   const getSampleAnimes = (): Anime[] => {
@@ -279,7 +307,12 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
 
   const addToFeatured = (anime: Anime): void => {
     const animeId = getAnimeId(anime);
-    if (!animeId || pendingIds.has(animeId)) return;
+    if (!animeId) return;
+
+    // 🛡️ Synchronous double-click guard (fires before React re-renders).
+    if (pendingRef.current.has(`add-featured-${animeId}`)) return;
+    if (pendingIds.has(animeId)) return;
+    pendingRef.current.add(`add-featured-${animeId}`);
 
     let wasAlreadyFeatured = false;
     setFeaturedAnimes(prev => {
@@ -289,7 +322,11 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
       localStorage.setItem(`featuredAnimes_${activeSection}`, JSON.stringify(updated));
       return updated;
     });
-    if (wasAlreadyFeatured) return;
+
+    if (wasAlreadyFeatured) {
+      pendingRef.current.delete(`add-featured-${animeId}`);
+      return;
+    }
 
     const section = activeSection;
     markPending(animeId);
@@ -316,12 +353,18 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
         console.log('API call failed, but stored locally');
       } finally {
         clearPending(animeId);
+        setTimeout(() => { pendingRef.current.delete(`add-featured-${animeId}`); }, 250);
       }
     });
   };
 
   const removeFromFeatured = (animeId: string): void => {
-    if (!animeId || pendingIds.has(animeId)) return;
+    if (!animeId) return;
+
+    // 🛡️ Synchronous double-click guard.
+    if (pendingRef.current.has(`remove-featured-${animeId}`)) return;
+    if (pendingIds.has(animeId)) return;
+    pendingRef.current.add(`remove-featured-${animeId}`);
 
     setFeaturedAnimes(prev => {
       const updated = prev.filter(anime => getAnimeId(anime) !== animeId);
@@ -352,12 +395,18 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
         console.log('API call failed, but removed locally');
       } finally {
         clearPending(animeId);
+        setTimeout(() => { pendingRef.current.delete(`remove-featured-${animeId}`); }, 250);
       }
     });
   };
 
   const applyReorder = (fromIndex: number, toIndex: number): void => {
     if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return;
+
+    // 🛡️ Guard: only one reorder write at a time (per section).
+    if (pendingRef.current.has(`reorder-${activeSection}`)) return;
+    pendingRef.current.add(`reorder-${activeSection}`);
+
     const section = activeSection;
     fetchRequestIdRef.current++;
 
@@ -396,6 +445,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
         console.log('Order update API failed, but stored locally');
       } finally {
         setSavingOrder(false);
+        setTimeout(() => { pendingRef.current.delete(`reorder-${activeSection}`); }, 250);
       }
     });
   };
@@ -471,6 +521,9 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
   };
   const apiColors = getApiStatusColor();
 
+  // 🆕 Whether the header refresh button should show a spinner
+  const isFetchingAnimes = pendingRef.current.has('fetch-animes');
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] bg-[#0b0a14]">
@@ -507,6 +560,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
         {SECTIONS.map(sec => {
           const isHidden = sectionVisibility[sec.key] ?? false;
           const isActive = activeSection === sec.key;
+          const isToggling = pendingRef.current.has(`toggle-visibility-${sec.key}`);
           return (
             <div
               key={sec.key}
@@ -526,8 +580,9 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); toggleSectionVisibility(sec.key); }}
+                disabled={isToggling}
                 title={isHidden ? 'Hidden on site — click to show' : 'Visible on site — click to hide'}
-                className={`flex items-center gap-1.5 px-2.5 py-2 text-[10px] font-bold uppercase tracking-wider border-l transition-all duration-200 ${
+                className={`flex items-center gap-1.5 px-2.5 py-2 text-[10px] font-bold uppercase tracking-wider border-l transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed ${
                   isActive ? 'border-white/10' : 'border-white/[0.06]'
                 } ${
                   isHidden
@@ -535,7 +590,11 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
                     : 'bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25'
                 }`}
               >
-                <span className={`w-1.5 h-1.5 rounded-full ${isHidden ? 'bg-rose-400' : 'bg-emerald-400 animate-pulse'}`} />
+                {isToggling ? (
+                  <span className="w-1.5 h-1.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <span className={`w-1.5 h-1.5 rounded-full ${isHidden ? 'bg-rose-400' : 'bg-emerald-400 animate-pulse'}`} />
+                )}
                 {isHidden ? 'Hidden' : 'Live'}
               </button>
             </div>
@@ -684,7 +743,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
                       {index > 0 && (
                         <button
                           onClick={(e) => { e.stopPropagation(); reorderFeatured(index, index - 1); }}
-                          disabled={isPending}
+                          disabled={isPending || savingOrder}
                           className="w-6 h-6 flex items-center justify-center bg-black/60 hover:bg-amber-600 backdrop-blur-sm rounded-md text-white/80 hover:text-white transition-all disabled:opacity-40"
                           title="Move up"
                         >
@@ -694,7 +753,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
                       {index < featuredAnimes.length - 1 && (
                         <button
                           onClick={(e) => { e.stopPropagation(); reorderFeatured(index, index + 1); }}
-                          disabled={isPending}
+                          disabled={isPending || savingOrder}
                           className="w-6 h-6 flex items-center justify-center bg-black/60 hover:bg-amber-600 backdrop-blur-sm rounded-md text-white/80 hover:text-white transition-all disabled:opacity-40"
                           title="Move down"
                         >
@@ -769,10 +828,15 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
           <div className="flex gap-2">
             <button
               onClick={handleForceRefresh}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] rounded-xl text-gray-300 hover:text-white text-xs font-bold transition-all"
+              disabled={isFetchingAnimes}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] rounded-xl text-gray-300 hover:text-white text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <SvgIcon d={ICONS.refresh} className="w-3.5 h-3.5" />
-              Refresh
+              {isFetchingAnimes ? (
+                <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <SvgIcon d={ICONS.refresh} className="w-3.5 h-3.5" />
+              )}
+              {isFetchingAnimes ? 'Refreshing...' : 'Refresh'}
             </button>
             <button
               onClick={() => {

@@ -210,15 +210,17 @@ interface ConfirmModalProps {
   message: string;
   onConfirm: () => void;
   onCancel: () => void;
+  /** 🆕 Shows spinner on the Delete button when a delete is in-flight */
+  loading?: boolean;
 }
 
-const ConfirmModal: React.FC<ConfirmModalProps> = ({ open, title, message, onConfirm, onCancel }) => {
+const ConfirmModal: React.FC<ConfirmModalProps> = ({ open, title, message, onConfirm, onCancel, loading = false }) => {
   if (!open) return null;
 
   return (
     <div
       className="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
-      onClick={onCancel}
+      onClick={loading ? undefined : onCancel}
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -237,15 +239,20 @@ const ConfirmModal: React.FC<ConfirmModalProps> = ({ open, title, message, onCon
         <div className="mt-6 flex justify-end gap-2.5">
           <button
             onClick={onCancel}
-            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/70 transition-all hover:bg-white/10 hover:text-white"
+            disabled={loading}
+            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/70 transition-all hover:bg-white/10 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
-            className="rounded-xl px-4 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-95 bg-gradient-to-r from-red-600 to-red-700 shadow-red-500/25 hover:shadow-red-500/40"
+            disabled={loading}
+            className="rounded-xl px-4 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-95 bg-gradient-to-r from-red-600 to-red-700 shadow-red-500/25 hover:shadow-red-500/40 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center gap-1.5"
           >
-            Delete
+            {loading && (
+              <span className="w-3 h-3 border-2 border-white/80 border-t-transparent rounded-full animate-spin" />
+            )}
+            {loading ? 'Deleting...' : 'Delete'}
           </button>
         </div>
       </div>
@@ -272,14 +279,46 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
 
   const [pageLinksMap, setPageLinksMap] = useState<Record<string, { episodeLimit: number; keyword: string; channelName: string }>>({});
 
-  const fetchPageLinks = async () => {
+  // 🆕 Double-click / slow-network guard — synchronous Set of in-flight keys.
+  // Prevents duplicate API calls even if user clicks again before React re-renders
+  // and disables buttons via state.
+  const pendingRef = useRef<Set<string>>(new Set());
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+
+  /**
+   * Wrap any async action with this helper. If the same key is already in-flight,
+   * the second call becomes a silent no-op. Errors are swallowed here because
+   * every action already shows its own toast/error UI.
+   */
+  const guarded = async (key: string, fn: () => Promise<void>) => {
+    if (pendingRef.current.has(key)) return;
+    pendingRef.current.add(key);
+    setPendingAction(key);
     try {
-      const token = resolveToken();
-      const res = await fetch(`${API_BASE}/track/page-links`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {}
-      });
-      if (res.ok) setPageLinksMap(await res.json());
-    } catch { /* silent */ }
+      await fn();
+    } catch {
+      /* each action handles its own errors */
+    } finally {
+      // short grace period so fast networks still show the visual feedback
+      setTimeout(() => {
+        pendingRef.current.delete(key);
+        setPendingAction((prev) => (prev === key ? null : prev));
+      }, 250);
+    }
+  };
+
+  const isPending = (key: string) => pendingAction === key;
+
+  const fetchPageLinks = async () => {
+    await guarded('fetch-page-links', async () => {
+      try {
+        const token = resolveToken();
+        const res = await fetch(`${API_BASE}/track/page-links`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        if (res.ok) setPageLinksMap(await res.json());
+      } catch { /* silent */ }
+    });
   };
 
   const initialLinkCountsRef = useRef<{ download: number; watch: number }>({ download: 0, watch: 0 });
@@ -302,65 +341,69 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
   const [playerModeFilter, setPlayerModeFilter] = useState<'all' | 'custom' | 'default'>('all');
 
   const fetchPages = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const token = resolveToken();
-      const res = await fetch(`${API_BASE}/download-pages`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {}
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        setPages(data.map((p: any) => ({ ...p, links: Array.isArray(p.links) ? p.links : [] })));
-      } else if (data.data && Array.isArray(data.data)) {
-        setPages(data.data.map((p: any) => ({ ...p, links: Array.isArray(p.links) ? p.links : [] })));
-      } else {
+    await guarded('fetch-pages', async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const token = resolveToken();
+        const res = await fetch(`${API_BASE}/download-pages`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setPages(data.map((p: any) => ({ ...p, links: Array.isArray(p.links) ? p.links : [] })));
+        } else if (data.data && Array.isArray(data.data)) {
+          setPages(data.data.map((p: any) => ({ ...p, links: Array.isArray(p.links) ? p.links : [] })));
+        } else {
+          setPages([]);
+        }
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Failed to fetch pages');
         setPages([]);
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to fetch pages');
-      setPages([]);
-    } finally {
-      setLoading(false);
-    }
+    });
   };
 
   const fetchAnime = async () => {
-    try {
-      const token = resolveToken();
-      const url = `${API_BASE}/admin/protected/anime-list`;
-      const res = await fetch(url, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {}
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      const animeArray = json.data || json;
-      if (Array.isArray(animeArray)) {
-        const normalizeThumb = (a: any) => {
-          let thumb = a.thumbnail || a.image || a.poster || a.cover;
-          if (thumb && !thumb.startsWith('http')) {
-            thumb = `${API_BASE}${thumb.startsWith('/') ? '' : '/'}${thumb}`;
-          }
-          return thumb;
-        };
-        setAnimeOptions(animeArray.map((a: any) => ({
-          _id: a._id,
-          title: a.title,
-          thumbnail: normalizeThumb(a)
-        })));
-        const map = new Map<string, string>();
-        animeArray.forEach((a: any) => {
-          const thumb = normalizeThumb(a);
-          if (thumb) map.set(a._id, thumb);
+    await guarded('fetch-anime', async () => {
+      try {
+        const token = resolveToken();
+        const url = `${API_BASE}/admin/protected/anime-list`;
+        const res = await fetch(url, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
         });
-        setAnimeThumbnails(map);
-      } else {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        const animeArray = json.data || json;
+        if (Array.isArray(animeArray)) {
+          const normalizeThumb = (a: any) => {
+            let thumb = a.thumbnail || a.image || a.poster || a.cover;
+            if (thumb && !thumb.startsWith('http')) {
+              thumb = `${API_BASE}${thumb.startsWith('/') ? '' : '/'}${thumb}`;
+            }
+            return thumb;
+          };
+          setAnimeOptions(animeArray.map((a: any) => ({
+            _id: a._id,
+            title: a.title,
+            thumbnail: normalizeThumb(a)
+          })));
+          const map = new Map<string, string>();
+          animeArray.forEach((a: any) => {
+            const thumb = normalizeThumb(a);
+            if (thumb) map.set(a._id, thumb);
+          });
+          setAnimeThumbnails(map);
+        } else {
+          setAnimeOptions([]);
+        }
+      } catch {
         setAnimeOptions([]);
       }
-    } catch {
-      setAnimeOptions([]);
-    }
+    });
   };
 
   const getNextStartingEpisode = async (animeId: string): Promise<number> => {
@@ -445,13 +488,15 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
       setEditingPage(prev => prev ? { ...prev, animeId: '' } : null);
       return;
     }
-    setCalculatingNext(true);
-    const next = await getNextStartingEpisode(animeId);
-    setEditingPage(prev => {
-      if (!prev) return null;
-      return { ...prev, animeId, episodeNumber: next };
+    await guarded(`new-anime-${animeId}`, async () => {
+      setCalculatingNext(true);
+      const next = await getNextStartingEpisode(animeId);
+      setEditingPage(prev => {
+        if (!prev) return null;
+        return { ...prev, animeId, episodeNumber: next };
+      });
+      setCalculatingNext(false);
     });
-    setCalculatingNext(false);
   };
 
   const handleEditAnimeChange = (option: AnimeOption | null) => {
@@ -466,33 +511,37 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
       showToast('Please enter a valid episode number', 'error'); return;
     }
 
-    const method = pageToSave._id ? 'PUT' : 'POST';
-    const url = pageToSave._id
-      ? `${API_BASE}/download-pages/${pageToSave._id}`
-      : `${API_BASE}/download-pages`;
+    // 🛡️ Guard key includes page id — but only ONE save at a time is allowed
+    // across the whole component because the form closes on success.
+    await guarded('save-page', async () => {
+      const method = pageToSave._id ? 'PUT' : 'POST';
+      const url = pageToSave._id
+        ? `${API_BASE}/download-pages/${pageToSave._id}`
+        : `${API_BASE}/download-pages`;
 
-    try {
-      const token = resolveToken();
-      const res = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify(pageToSave),
-      });
-      if (res.ok) {
-        fetchPages();
-        setEditingPage(null);
-        setShowNewForm(false);
-        showToast(pageToSave._id ? 'Page updated successfully!' : 'Page created successfully!', 'success');
-      } else {
-        const err = await res.json().catch(() => ({ error: 'Unknown error' }));
-        showToast(err.error || 'Save failed', 'error');
+      try {
+        const token = resolveToken();
+        const res = await fetch(url, {
+          method,
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify(pageToSave),
+        });
+        if (res.ok) {
+          fetchPages();
+          setEditingPage(null);
+          setShowNewForm(false);
+          showToast(pageToSave._id ? 'Page updated successfully!' : 'Page created successfully!', 'success');
+        } else {
+          const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+          showToast(err.error || 'Save failed', 'error');
+        }
+      } catch {
+        showToast('Network error. Check console.', 'error');
       }
-    } catch {
-      showToast('Network error. Check console.', 'error');
-    }
+    });
   };
 
   const requestDelete = (id: string) => {
@@ -501,169 +550,184 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
 
   const confirmDelete = async () => {
     if (!deleteConfirm.id) return;
-    try {
-      const token = resolveToken();
-      const res = await fetch(`${API_BASE}/download-pages/${deleteConfirm.id}`, {
-        method: 'DELETE',
-        headers: token ? { Authorization: `Bearer ${token}` } : {}
-      });
-      if (res.ok) {
-        fetchPages();
-        showToast('Page deleted successfully', 'success');
-      } else {
-        showToast('Delete failed', 'error');
+    const id = deleteConfirm.id;
+    await guarded(`delete-page-${id}`, async () => {
+      try {
+        const token = resolveToken();
+        const res = await fetch(`${API_BASE}/download-pages/${id}`, {
+          method: 'DELETE',
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        if (res.ok) {
+          fetchPages();
+          showToast('Page deleted successfully', 'success');
+        } else {
+          showToast('Delete failed', 'error');
+        }
+      } catch {
+        showToast('Network error while deleting', 'error');
+      } finally {
+        setDeleteConfirm({ show: false, id: null });
       }
-    } catch {
-      showToast('Network error while deleting', 'error');
-    } finally {
-      setDeleteConfirm({ show: false, id: null });
-    }
+    });
   };
 
   const handleSetPrimary = async (pageId: string) => {
-    setSettingPrimaryId(pageId);
-    try {
-      const token = resolveToken();
-      const res = await fetch(`${API_BASE}/download-pages/${pageId}/set-primary-episode-count`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        fetchPages();
-        showToast(`Primary set ho gaya! Ab badge episode ${data.currentEpisode} dikhayega.`, 'success');
-      } else {
-        showToast('Set primary fail ho gaya', 'error');
+    await guarded(`set-primary-${pageId}`, async () => {
+      setSettingPrimaryId(pageId);
+      try {
+        const token = resolveToken();
+        const res = await fetch(`${API_BASE}/download-pages/${pageId}/set-primary-episode-count`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          fetchPages();
+          showToast(`Primary set ho gaya! Ab badge episode ${data.currentEpisode} dikhayega.`, 'success');
+        } else {
+          showToast('Set primary fail ho gaya', 'error');
+        }
+      } catch {
+        showToast('Network error', 'error');
+      } finally {
+        setSettingPrimaryId(null);
       }
-    } catch {
-      showToast('Network error', 'error');
-    } finally {
-      setSettingPrimaryId(null);
-    }
+    });
   };
 
   const handleUnsetPrimary = async (pageId: string) => {
-    setSettingPrimaryId(pageId);
-    try {
-      const token = resolveToken();
-      const res = await fetch(`${API_BASE}/download-pages/${pageId}/unset-primary-episode-count`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        fetchPages();
-        showToast(`Primary hata diya. Ab badge episode ${data.currentEpisode} dikhayega.`, 'success');
-      } else {
-        showToast('Unset primary fail ho gaya', 'error');
+    await guarded(`unset-primary-${pageId}`, async () => {
+      setSettingPrimaryId(pageId);
+      try {
+        const token = resolveToken();
+        const res = await fetch(`${API_BASE}/download-pages/${pageId}/unset-primary-episode-count`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          fetchPages();
+          showToast(`Primary hata diya. Ab badge episode ${data.currentEpisode} dikhayega.`, 'success');
+        } else {
+          showToast('Unset primary fail ho gaya', 'error');
+        }
+      } catch {
+        showToast('Network error', 'error');
+      } finally {
+        setSettingPrimaryId(null);
       }
-    } catch {
-      showToast('Network error', 'error');
-    } finally {
-      setSettingPrimaryId(null);
-    }
+    });
   };
 
   const handleTogglePlayerMode = async (pageId: string, currentMode: 'custom' | 'default') => {
     const nextMode = currentMode === 'custom' ? 'default' : 'custom';
-    setTogglingPlayerModeId(pageId);
-    try {
-      const token = resolveToken();
-      const res = await fetch(`${API_BASE}/download-pages/${pageId}/player-mode`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({ defaultPlayerMode: nextMode }),
-      });
-      if (res.ok) {
-        setPages(prev => prev.map(p => p._id === pageId ? { ...p, defaultPlayerMode: nextMode } : p));
-        showToast(`Player mode set to ${nextMode === 'custom' ? 'Custom' : 'Default'}`, 'success');
-      } else {
-        showToast('Failed to update player mode', 'error');
+    await guarded(`toggle-player-${pageId}`, async () => {
+      setTogglingPlayerModeId(pageId);
+      try {
+        const token = resolveToken();
+        const res = await fetch(`${API_BASE}/download-pages/${pageId}/player-mode`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ defaultPlayerMode: nextMode }),
+        });
+        if (res.ok) {
+          setPages(prev => prev.map(p => p._id === pageId ? { ...p, defaultPlayerMode: nextMode } : p));
+          showToast(`Player mode set to ${nextMode === 'custom' ? 'Custom' : 'Default'}`, 'success');
+        } else {
+          showToast('Failed to update player mode', 'error');
+        }
+      } catch {
+        showToast('Network error', 'error');
+      } finally {
+        setTogglingPlayerModeId(null);
       }
-    } catch {
-      showToast('Network error', 'error');
-    } finally {
-      setTogglingPlayerModeId(null);
-    }
+    });
   };
 
   const addDownloadLink = async () => {
     if (!editingPage || !editingPage.animeId) return;
-    setCalculatingNext(true);
-    const baseEpisode = await getNextStartingEpisode(editingPage.animeId);
-    setEditingPage(prev => {
-      if (!prev) return null;
-      const downloadCount = prev.links.filter(l => l.type === 'download').length;
-      const newInSessionCount = Math.max(0, downloadCount - initialLinkCountsRef.current.download);
-      const newLink: DownloadPageLink = {
-        episode: baseEpisode + newInSessionCount,
-        url: '',
-        type: 'download',
-        quality: '',
-        language: ''
-      };
-      return { ...prev, links: [...prev.links, newLink] };
+    await guarded('add-download-link', async () => {
+      setCalculatingNext(true);
+      const baseEpisode = await getNextStartingEpisode(editingPage.animeId);
+      setEditingPage(prev => {
+        if (!prev) return null;
+        const downloadCount = prev.links.filter(l => l.type === 'download').length;
+        const newInSessionCount = Math.max(0, downloadCount - initialLinkCountsRef.current.download);
+        const newLink: DownloadPageLink = {
+          episode: baseEpisode + newInSessionCount,
+          url: '',
+          type: 'download',
+          quality: '',
+          language: ''
+        };
+        return { ...prev, links: [...prev.links, newLink] };
+      });
+      setCalculatingNext(false);
     });
-    setCalculatingNext(false);
   };
 
   const addWatchLink = async () => {
     if (!editingPage || !editingPage.animeId) return;
-    setCalculatingNext(true);
-    const baseEpisode = await getNextStartingEpisode(editingPage.animeId);
-    setEditingPage(prev => {
-      if (!prev) return null;
-      const watchCount = prev.links.filter(l => l.type === 'watch').length;
-      const newInSessionCount = Math.max(0, watchCount - initialLinkCountsRef.current.watch);
-      const newLink: DownloadPageLink = {
-        episode: baseEpisode + newInSessionCount,
-        url: '',
-        type: 'watch',
-        quality: '',
-        language: ''
-      };
-      return { ...prev, links: [...prev.links, newLink] };
+    await guarded('add-watch-link', async () => {
+      setCalculatingNext(true);
+      const baseEpisode = await getNextStartingEpisode(editingPage.animeId);
+      setEditingPage(prev => {
+        if (!prev) return null;
+        const watchCount = prev.links.filter(l => l.type === 'watch').length;
+        const newInSessionCount = Math.max(0, watchCount - initialLinkCountsRef.current.watch);
+        const newLink: DownloadPageLink = {
+          episode: baseEpisode + newInSessionCount,
+          url: '',
+          type: 'watch',
+          quality: '',
+          language: ''
+        };
+        return { ...prev, links: [...prev.links, newLink] };
+      });
+      setCalculatingNext(false);
     });
-    setCalculatingNext(false);
   };
 
   const addBothLinks = async () => {
     if (!editingPage || !editingPage.animeId) return;
-    setCalculatingNext(true);
-    const baseEpisode = await getNextStartingEpisode(editingPage.animeId);
-    setEditingPage(prev => {
-      if (!prev) return null;
-      const downloadCount = prev.links.filter(l => l.type === 'download').length;
-      const watchCount = prev.links.filter(l => l.type === 'watch').length;
-      const newDownloadInSession = Math.max(0, downloadCount - initialLinkCountsRef.current.download);
-      const newWatchInSession = Math.max(0, watchCount - initialLinkCountsRef.current.watch);
+    await guarded('add-both-links', async () => {
+      setCalculatingNext(true);
+      const baseEpisode = await getNextStartingEpisode(editingPage.animeId);
+      setEditingPage(prev => {
+        if (!prev) return null;
+        const downloadCount = prev.links.filter(l => l.type === 'download').length;
+        const watchCount = prev.links.filter(l => l.type === 'watch').length;
+        const newDownloadInSession = Math.max(0, downloadCount - initialLinkCountsRef.current.download);
+        const newWatchInSession = Math.max(0, watchCount - initialLinkCountsRef.current.watch);
 
-      const newDownloadLink: DownloadPageLink = {
-        episode: baseEpisode + newDownloadInSession,
-        url: '',
-        type: 'download',
-        quality: '',
-        language: ''
-      };
-      const newWatchLink: DownloadPageLink = {
-        episode: baseEpisode + newWatchInSession,
-        url: '',
-        type: 'watch',
-        quality: '',
-        language: ''
-      };
-      return { ...prev, links: [...prev.links, newDownloadLink, newWatchLink] };
+        const newDownloadLink: DownloadPageLink = {
+          episode: baseEpisode + newDownloadInSession,
+          url: '',
+          type: 'download',
+          quality: '',
+          language: ''
+        };
+        const newWatchLink: DownloadPageLink = {
+          episode: baseEpisode + newWatchInSession,
+          url: '',
+          type: 'watch',
+          quality: '',
+          language: ''
+        };
+        return { ...prev, links: [...prev.links, newDownloadLink, newWatchLink] };
+      });
+      setCalculatingNext(false);
     });
-    setCalculatingNext(false);
   };
 
   const updateLink = (index: number, field: keyof DownloadPageLink, value: any) => {
@@ -764,6 +828,8 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
     </div>
   );
 
+  const isDeleting = isPending('delete-page-' + deleteConfirm.id);
+
   return (
     <div className="p-3 sm:p-6 space-y-4 min-h-screen bg-[#0b0a14] text-white">
       <Toast toast={toast} onClose={closeToast} />
@@ -773,6 +839,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
         message="Are you sure you want to delete this download page? This action cannot be undone."
         onConfirm={confirmDelete}
         onCancel={() => setDeleteConfirm({ show: false, id: null })}
+        loading={isDeleting}
       />
 
       {/* ─── Header ───────────────────────────────────── */}
@@ -846,6 +913,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
               removeLink={removeLink}
               watchCount={editingPage.links.filter(l => l.type === 'watch').length}
               downloadCount={editingPage.links.filter(l => l.type === 'download').length}
+              saving={isPending('save-page')}
             />
           </div>
         )}
@@ -1004,12 +1072,15 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
               : 'No episodes';
 
             const isEditingThis = editingPage?._id === page._id;
+            const isDeletingThis = isPending(`delete-page-${page._id}`);
+            const isPrimaryToggling = settingPrimaryId === page._id;
+            const isPlayerToggling = togglingPlayerModeId === page._id;
 
             return (
               <React.Fragment key={page._id}>
                 <div className={`relative bg-white/[0.03] border rounded-2xl overflow-hidden transition-all hover:border-white/[0.12] ${
                   hidden ? 'border-rose-500/25' : 'border-white/[0.06]'
-                } ${isEditingThis ? 'border-purple-500/30' : ''}`}>
+                } ${isEditingThis ? 'border-purple-500/30' : ''} ${isDeletingThis ? 'opacity-50 pointer-events-none' : ''}`}>
                   <span className={`absolute left-0 top-3 bottom-3 w-0.5 rounded-r-full ${
                     hidden ? 'bg-gradient-to-b from-rose-500 to-red-500' : 'bg-gradient-to-b from-purple-400 to-pink-400'
                   }`} />
@@ -1193,7 +1264,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
                       {hasYouTubeWatchLink(page) && (
                         <button
                           onClick={() => handleTogglePlayerMode(page._id, page.defaultPlayerMode || 'default')}
-                          disabled={togglingPlayerModeId === page._id}
+                          disabled={isPlayerToggling}
                           title={
                             (page.defaultPlayerMode || 'default') === 'custom'
                               ? 'Custom Player active — click to switch to Default YouTube Player'
@@ -1205,7 +1276,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
                               : 'bg-white/[0.04] border-white/[0.08] text-gray-400 hover:bg-rose-500/10 hover:border-rose-500/25 hover:text-rose-300'
                           }`}
                         >
-                          {togglingPlayerModeId === page._id ? (
+                          {isPlayerToggling ? (
                             <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin block" />
                           ) : (
                             <SvgIcon d={ICONS.youtube} className="w-4 h-4" fill />
@@ -1220,7 +1291,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
                               ? handleUnsetPrimary(page._id)
                               : handleSetPrimary(page._id)
                           }
-                          disabled={settingPrimaryId === page._id}
+                          disabled={isPrimaryToggling}
                           title={
                             (page as any).isPrimaryForEpisodeCount
                               ? 'Primary hatao (wapas combined-max pe jao)'
@@ -1232,7 +1303,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
                               : 'bg-white/[0.04] border-white/[0.08] text-gray-400 hover:bg-cyan-500/10 hover:border-cyan-500/25 hover:text-cyan-300'
                           }`}
                         >
-                          {settingPrimaryId === page._id ? (
+                          {isPrimaryToggling ? (
                             <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin block" />
                           ) : (
                             <SvgIcon d={ICONS.star} className="w-4 h-4" fill={(page as any).isPrimaryForEpisodeCount} />
@@ -1241,10 +1312,15 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
                       )}
                       <button
                         onClick={() => requestDelete(page._id)}
+                        disabled={isDeletingThis}
                         title="Delete page"
-                        className="p-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-gray-400 hover:bg-rose-500/10 hover:border-rose-500/25 hover:text-rose-300 transition-all"
+                        className="p-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-gray-400 hover:bg-rose-500/10 hover:border-rose-500/25 hover:text-rose-300 transition-all disabled:opacity-50"
                       >
-                        <SvgIcon d={ICONS.trash} className="w-4 h-4" />
+                        {isDeletingThis ? (
+                          <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin block" />
+                        ) : (
+                          <SvgIcon d={ICONS.trash} className="w-4 h-4" />
+                        )}
                       </button>
                     </div>
                   </div>
@@ -1272,6 +1348,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
                         removeLink={removeLink}
                         watchCount={editingPage.links.filter(l => l.type === 'watch').length}
                         downloadCount={editingPage.links.filter(l => l.type === 'download').length}
+                        saving={isPending('save-page')}
                       />
                     </div>
                   )}
@@ -1301,6 +1378,8 @@ const PageForm: React.FC<{
   removeLink: (index: number) => void;
   watchCount: number;
   downloadCount: number;
+  /** 🆕 disables the Save button + shows spinner while saving */
+  saving?: boolean;
 }> = ({
   editingPage,
   setEditingPage,
@@ -1315,7 +1394,8 @@ const PageForm: React.FC<{
   updateLink,
   removeLink,
   watchCount,
-  downloadCount
+  downloadCount,
+  saving = false,
 }) => {
   const [hostnameSuggestions, setHostnameSuggestions] = useState<{ hostname: string; label: string }[]>([]);
 
@@ -1329,7 +1409,7 @@ const PageForm: React.FC<{
       .catch(() => {});
   }, []);
 
-  const inputCls = "w-full px-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-xs text-white placeholder-gray-500 outline-none transition-all focus:border-purple-500/50 focus:bg-white/[0.06] focus:ring-2 focus:ring-purple-500/20";
+  const inputCls = "w-full px-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-xs text-white placeholder-gray-500 outline-none transition-all focus:border-purple-500/50 focus:bg-white/[0.06] focus:ring-2 focus:ring-purple-500/20 disabled:opacity-60";
 
   return (
     <div className="space-y-4">
@@ -1358,6 +1438,7 @@ const PageForm: React.FC<{
           onChange={e => setEditingPage(prev => prev ? { ...prev, slug: e.target.value } : null)}
           className={`${inputCls} font-mono`}
           placeholder="e.g., naruto-eps-1-10"
+          disabled={saving}
         />
       </div>
 
@@ -1374,6 +1455,7 @@ const PageForm: React.FC<{
           onChange={e => setEditingPage(prev => prev ? { ...prev, episodeNumber: parseInt(e.target.value) || 1 } : null)}
           className={inputCls}
           placeholder="e.g., 1"
+          disabled={saving}
         />
         <p className="text-[10px] text-gray-500 mt-1">
           This is just a reference. It does NOT affect link numbering.
@@ -1391,6 +1473,7 @@ const PageForm: React.FC<{
           onChange={e => setEditingPage(prev => prev ? { ...prev, title: e.target.value } : null)}
           className={inputCls}
           placeholder="Download"
+          disabled={saving}
         />
       </div>
 
@@ -1412,6 +1495,7 @@ const PageForm: React.FC<{
                   className={inputCls}
                   min="1"
                   title="Range ka starting episode"
+                  disabled={saving}
                 />
               </div>
               <div className="sm:col-span-1">
@@ -1423,6 +1507,7 @@ const PageForm: React.FC<{
                   onChange={e => updateLink(idx, 'episode', parseInt(e.target.value) || 1)}
                   className={inputCls}
                   min="1"
+                  disabled={saving}
                 />
               </div>
               <div className="sm:col-span-1">
@@ -1431,6 +1516,7 @@ const PageForm: React.FC<{
                   value={link.type}
                   onChange={e => updateLink(idx, 'type', e.target.value as 'download' | 'watch')}
                   className={inputCls}
+                  disabled={saving}
                 >
                   <option value="download" className="bg-slate-900">Download</option>
                   <option value="watch" className="bg-slate-900">Watch</option>
@@ -1445,6 +1531,7 @@ const PageForm: React.FC<{
                   onChange={e => updateLink(idx, 'url', e.target.value)}
                   list="hostname-suggestions"
                   className={`${inputCls} font-mono`}
+                  disabled={saving}
                 />
                 <datalist id="hostname-suggestions">
                   {hostnameSuggestions.map(h => (
@@ -1455,7 +1542,8 @@ const PageForm: React.FC<{
               <div className="sm:col-span-2 flex sm:justify-end">
                 <button
                   onClick={() => removeLink(idx)}
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1 px-3 py-2 bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/25 text-rose-300 rounded-lg text-[11px] font-bold transition-all"
+                  disabled={saving}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1 px-3 py-2 bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/25 text-rose-300 rounded-lg text-[11px] font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <SvgIcon d={ICONS.trash} className="w-3 h-3" />
                   Remove
@@ -1469,6 +1557,7 @@ const PageForm: React.FC<{
                 value={link.quality || ''}
                 onChange={e => updateLink(idx, 'quality', e.target.value)}
                 className={inputCls}
+                disabled={saving}
               />
               <input
                 type="text"
@@ -1476,6 +1565,7 @@ const PageForm: React.FC<{
                 value={link.language || ''}
                 onChange={e => updateLink(idx, 'language', e.target.value)}
                 className={inputCls}
+                disabled={saving}
               />
             </div>
           </div>
@@ -1484,7 +1574,7 @@ const PageForm: React.FC<{
         <div className="flex gap-2 mt-2 flex-wrap">
           <button
             onClick={addDownloadLink}
-            disabled={calculatingNext}
+            disabled={calculatingNext || saving}
             className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/25 text-blue-300 text-[11px] font-bold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {calculatingNext ? (
@@ -1496,7 +1586,7 @@ const PageForm: React.FC<{
           </button>
           <button
             onClick={addWatchLink}
-            disabled={calculatingNext}
+            disabled={calculatingNext || saving}
             className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/25 text-emerald-300 text-[11px] font-bold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {calculatingNext ? (
@@ -1508,7 +1598,7 @@ const PageForm: React.FC<{
           </button>
           <button
             onClick={addBothLinks}
-            disabled={calculatingNext}
+            disabled={calculatingNext || saving}
             className="inline-flex items-center gap-1.5 px-3 py-2 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/25 text-purple-300 text-[11px] font-bold rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <SvgIcon d={ICONS.plus} className="w-3.5 h-3.5" />
@@ -1520,17 +1610,28 @@ const PageForm: React.FC<{
       <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-4 border-t border-white/[0.06]">
         <button
           onClick={onCancel}
-          className="inline-flex items-center justify-center gap-1.5 px-5 py-2.5 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] rounded-xl text-gray-300 text-xs font-bold transition-all"
+          disabled={saving}
+          className="inline-flex items-center justify-center gap-1.5 px-5 py-2.5 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] rounded-xl text-gray-300 text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <SvgIcon d={ICONS.close} className="w-3.5 h-3.5" />
           Cancel
         </button>
         <button
           onClick={onSave}
-          className="inline-flex items-center justify-center gap-1.5 px-5 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-purple-500/20 transition-all"
+          disabled={saving}
+          className="inline-flex items-center justify-center gap-1.5 px-5 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-purple-500/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:from-purple-600 disabled:hover:to-pink-600"
         >
-          <SvgIcon d={ICONS.save} className="w-3.5 h-3.5" />
-          Save
+          {saving ? (
+            <>
+              <span className="w-3.5 h-3.5 border-2 border-white/80 border-t-transparent rounded-full animate-spin" />
+              Saving...
+            </>
+          ) : (
+            <>
+              <SvgIcon d={ICONS.save} className="w-3.5 h-3.5" />
+              Save
+            </>
+          )}
         </button>
       </div>
     </div>

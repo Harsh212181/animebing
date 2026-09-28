@@ -1,5 +1,5 @@
 // src/components/admin/MyStorageManager.tsx — Sub-admin self-service R2 connect (Premium UI)
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 const API_BASE = import.meta.env.VITE_API_BASE ||
   'https://animabing-backend.animabingwatch.workers.dev/api';
@@ -47,15 +47,16 @@ const ConfirmModal: React.FC<{
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
+  loading?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
-}> = ({ open, title, message, confirmLabel = 'Confirm', cancelLabel = 'Cancel', danger = true, onConfirm, onCancel }) => {
+}> = ({ open, title, message, confirmLabel = 'Confirm', cancelLabel = 'Cancel', danger = true, loading = false, onConfirm, onCancel }) => {
   if (!open) return null;
 
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
-      onClick={onCancel}
+      onClick={loading ? undefined : onCancel}
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -76,19 +77,22 @@ const ConfirmModal: React.FC<{
         <div className="mt-6 flex justify-end gap-2.5">
           <button
             onClick={onCancel}
-            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/70 transition-all hover:bg-white/10 hover:text-white"
+            disabled={loading}
+            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/70 transition-all hover:bg-white/10 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {cancelLabel}
           </button>
           <button
             onClick={onConfirm}
-            className={`rounded-xl px-4 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-95 ${
+            disabled={loading}
+            className={`rounded-xl px-4 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100 inline-flex items-center gap-1.5 ${
               danger
                 ? 'bg-gradient-to-r from-red-600 to-red-700 shadow-red-500/25 hover:shadow-red-500/40'
                 : 'bg-gradient-to-r from-purple-600 to-pink-600 shadow-purple-500/25 hover:shadow-purple-500/40'
             }`}
           >
-            {confirmLabel}
+            {loading && <span className="w-3 h-3 border-2 border-white/80 border-t-transparent rounded-full animate-spin" />}
+            {loading ? 'Disconnecting...' : confirmLabel}
           </button>
         </div>
       </div>
@@ -119,32 +123,56 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
   const [bucketOptions, setBucketOptions] = useState<string[]>([]);
   const [fetchingBuckets, setFetchingBuckets] = useState(false);
 
+  // 🆕 Double-click / slow-network guard — synchronous Set of in-flight keys.
+  // Prevents duplicate API calls even if user clicks before React re-renders.
+  const pendingRef = useRef<Set<string>>(new Set());
+
+  /**
+   * Wrap any async action with this helper. If the same key is already in-flight,
+   * the second call becomes a silent no-op. Errors are swallowed here because
+   * every action already handles its own error state.
+   */
+  const guarded = async (key: string, fn: () => Promise<void>) => {
+    if (pendingRef.current.has(key)) return;
+    pendingRef.current.add(key);
+    try {
+      await fn();
+    } catch {
+      /* each action handles its own errors */
+    } finally {
+      setTimeout(() => { pendingRef.current.delete(key); }, 250);
+    }
+  };
+
   // ── Confirm modal state ─────────────────────────────────────────────
   const [confirmModal, setConfirmModal] = useState<{
     open: boolean;
     title: string;
     message: string;
     confirmLabel?: string;
+    loading: boolean;
     onConfirm: () => void;
-  }>({ open: false, title: '', message: '', confirmLabel: 'Confirm', onConfirm: () => {} });
+  }>({ open: false, title: '', message: '', confirmLabel: 'Confirm', loading: false, onConfirm: () => {} });
 
-  const closeConfirmModal = () => setConfirmModal(prev => ({ ...prev, open: false }));
+  const closeConfirmModal = () => setConfirmModal(prev => ({ ...prev, open: false, loading: false }));
 
   const fetchStatus = async () => {
-    setLoading(true);
-    try {
-      const token = resolveToken();
-      const res = await fetch(`${API_BASE}/uploads/my-provider`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      const data = await res.json();
-      setStatus(data);
-      setPublicUrl(data.publicBaseUrl || '');
-    } catch {
-      setError('Failed to load status');
-    } finally {
-      setLoading(false);
-    }
+    await guarded('fetch-status', async () => {
+      setLoading(true);
+      try {
+        const token = resolveToken();
+        const res = await fetch(`${API_BASE}/uploads/my-provider`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        const data = await res.json();
+        setStatus(data);
+        setPublicUrl(data.publicBaseUrl || '');
+      } catch {
+        setError('Failed to load status');
+      } finally {
+        setLoading(false);
+      }
+    });
   };
 
   useEffect(() => { fetchStatus(); }, []);
@@ -154,38 +182,40 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
       setError('Please fill Account ID, Access Key, and Secret Key first');
       return;
     }
-    setError(''); setSuccess('');
-    setFetchingBuckets(true);
-    try {
-      const token = resolveToken();
-      const res = await fetch(`${API_BASE}/uploads/list-buckets`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          accountId: form.accountId,
-          accessKeyId: form.accessKeyId,
-          secretAccessKey: form.secretAccessKey,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setBucketOptions(data.buckets || []);
-        if (data.buckets?.length) {
-          setForm(prev => ({ ...prev, bucketName: data.buckets[0] }));
+    await guarded('fetch-buckets', async () => {
+      setError(''); setSuccess('');
+      setFetchingBuckets(true);
+      try {
+        const token = resolveToken();
+        const res = await fetch(`${API_BASE}/uploads/list-buckets`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            accountId: form.accountId,
+            accessKeyId: form.accessKeyId,
+            secretAccessKey: form.secretAccessKey,
+          }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setBucketOptions(data.buckets || []);
+          if (data.buckets?.length) {
+            setForm(prev => ({ ...prev, bucketName: data.buckets[0] }));
+          } else {
+            setError('No buckets found in this account');
+          }
         } else {
-          setError('No buckets found in this account');
+          setError(data.error || 'Could not fetch buckets — please check your credentials');
         }
-      } else {
-        setError(data.error || 'Could not fetch buckets — please check your credentials');
+      } catch {
+        setError('Network error');
+      } finally {
+        setFetchingBuckets(false);
       }
-    } catch {
-      setError('Network error');
-    } finally {
-      setFetchingBuckets(false);
-    }
+    });
   };
 
   const updateCred = (field: 'accountId' | 'accessKeyId' | 'secretAccessKey', value: string) => {
@@ -199,31 +229,33 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
       setError('Please fill all fields and select a bucket');
       return;
     }
-    setSaving(true);
-    try {
-      const token = resolveToken();
-      const res = await fetch(`${API_BASE}/uploads/my-provider`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify(form),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setSuccess('Bucket connected! It will now appear on the Video Upload page.');
-        setForm({ bucketName: '', accountId: '', accessKeyId: '', secretAccessKey: '' });
-        setBucketOptions([]);
-        fetchStatus();
-      } else {
-        setError(data.error || 'Could not connect');
+    await guarded('connect-storage', async () => {
+      setSaving(true);
+      try {
+        const token = resolveToken();
+        const res = await fetch(`${API_BASE}/uploads/my-provider`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify(form),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setSuccess('Bucket connected! It will now appear on the Video Upload page.');
+          setForm({ bucketName: '', accountId: '', accessKeyId: '', secretAccessKey: '' });
+          setBucketOptions([]);
+          fetchStatus();
+        } else {
+          setError(data.error || 'Could not connect');
+        }
+      } catch {
+        setError('Network error');
+      } finally {
+        setSaving(false);
       }
-    } catch {
-      setError('Network error');
-    } finally {
-      setSaving(false);
-    }
+    });
   };
 
   const handleDisconnect = () => {
@@ -232,40 +264,47 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
       title: 'Disconnect Storage?',
       message: 'Do you want to disconnect your storage? Previously uploaded videos will remain in R2, they will just be removed from the dropdown.',
       confirmLabel: 'Disconnect',
+      loading: false,
       onConfirm: async () => {
-        closeConfirmModal();
-        try {
-          const token = resolveToken();
-          await fetch(`${API_BASE}/uploads/my-provider`, {
-            method: 'DELETE',
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
-          });
-          fetchStatus();
-        } catch {
-          setError('Disconnect failed');
-        }
+        setConfirmModal(prev => ({ ...prev, loading: true }));
+        await guarded('disconnect-storage', async () => {
+          try {
+            const token = resolveToken();
+            await fetch(`${API_BASE}/uploads/my-provider`, {
+              method: 'DELETE',
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+            });
+            setConfirmModal(prev => ({ ...prev, open: false, loading: false }));
+            fetchStatus();
+          } catch {
+            setError('Disconnect failed');
+            setConfirmModal(prev => ({ ...prev, loading: false }));
+          }
+        });
       },
     });
   };
 
   const savePublicUrl = async () => {
     setError(''); setSuccess('');
-    setSavingPublicUrl(true);
-    try {
-      const token = resolveToken();
-      const res = await fetch(`${API_BASE}/uploads/my-provider/public-url`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ publicBaseUrl: publicUrl.trim() }),
-      });
-      const data = await res.json();
-      if (res.ok) setSuccess('Public URL saved!');
-      else setError(data.error || 'Could not save');
-    } catch { setError('Network error'); }
-    finally { setSavingPublicUrl(false); }
+    await guarded('save-public-url', async () => {
+      setSavingPublicUrl(true);
+      try {
+        const token = resolveToken();
+        const res = await fetch(`${API_BASE}/uploads/my-provider/public-url`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ publicBaseUrl: publicUrl.trim() }),
+        });
+        const data = await res.json();
+        if (res.ok) setSuccess('Public URL saved!');
+        else setError(data.error || 'Could not save');
+      } catch { setError('Network error'); }
+      finally { setSavingPublicUrl(false); }
+    });
   };
 
-  const inputCls = "w-full px-3 py-2.5 bg-white/[0.04] border border-white/[0.08] rounded-xl text-xs text-white placeholder-gray-500 outline-none transition-all focus:border-purple-500/50 focus:bg-white/[0.06] focus:ring-2 focus:ring-purple-500/20";
+  const inputCls = "w-full px-3 py-2.5 bg-white/[0.04] border border-white/[0.08] rounded-xl text-xs text-white placeholder-gray-500 outline-none transition-all focus:border-purple-500/50 focus:bg-white/[0.06] focus:ring-2 focus:ring-purple-500/20 disabled:opacity-60 disabled:cursor-not-allowed";
 
   if (loading) {
     return (
@@ -348,14 +387,15 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
                 <input
                   value={publicUrl}
                   onChange={e => setPublicUrl(e.target.value)}
+                  disabled={savingPublicUrl}
                   placeholder="https://pub-xxxx.r2.dev"
-                  className="w-full pl-9 pr-3 py-2.5 bg-white/[0.04] border border-white/[0.08] rounded-xl text-xs text-white placeholder-gray-500 outline-none transition-all focus:border-sky-500/50 focus:bg-white/[0.06] focus:ring-2 focus:ring-sky-500/20 font-mono"
+                  className="w-full pl-9 pr-3 py-2.5 bg-white/[0.04] border border-white/[0.08] rounded-xl text-xs text-white placeholder-gray-500 outline-none transition-all focus:border-sky-500/50 focus:bg-white/[0.06] focus:ring-2 focus:ring-sky-500/20 font-mono disabled:opacity-60 disabled:cursor-not-allowed"
                 />
               </div>
               <button
                 onClick={savePublicUrl}
                 disabled={savingPublicUrl}
-                className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/25 text-sky-300 text-xs font-bold rounded-xl transition-all disabled:opacity-40"
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/25 text-sky-300 text-xs font-bold rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {savingPublicUrl ? (
                   <><span className="w-3.5 h-3.5 border-2 border-sky-300/30 border-t-sky-300 rounded-full animate-spin" /> Saving...</>
@@ -377,7 +417,8 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
             </p>
             <button
               onClick={handleDisconnect}
-              className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/25 text-rose-300 text-xs font-bold rounded-xl transition-all"
+              disabled={confirmModal.loading}
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/25 text-rose-300 text-xs font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <SvgIcon d={ICONS.trash} className="w-3.5 h-3.5" /> Disconnect Storage
             </button>
@@ -406,6 +447,7 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
                 type="text"
                 value={form.accountId}
                 onChange={e => updateCred('accountId', e.target.value)}
+                disabled={saving}
                 className={`${inputCls} font-mono`}
                 placeholder="32-character hex ID"
               />
@@ -418,6 +460,7 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
                 type="text"
                 value={form.accessKeyId}
                 onChange={e => updateCred('accessKeyId', e.target.value)}
+                disabled={saving}
                 className={`${inputCls} font-mono`}
                 placeholder="Access Key ID"
               />
@@ -430,6 +473,7 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
                 type="password"
                 value={form.secretAccessKey}
                 onChange={e => updateCred('secretAccessKey', e.target.value)}
+                disabled={saving}
                 className={`${inputCls} font-mono`}
                 placeholder="Secret Access Key"
               />
@@ -444,7 +488,7 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
             </div>
             <button
               onClick={fetchBuckets}
-              disabled={fetchingBuckets || !form.accountId || !form.accessKeyId || !form.secretAccessKey}
+              disabled={fetchingBuckets || saving || !form.accountId || !form.accessKeyId || !form.secretAccessKey}
               className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2.5 bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/25 text-blue-300 text-xs font-bold rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {fetchingBuckets ? (
@@ -469,6 +513,7 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
                 <select
                   value={form.bucketName}
                   onChange={e => setForm(prev => ({ ...prev, bucketName: e.target.value }))}
+                  disabled={saving}
                   className={`${inputCls} appearance-none pl-9 pr-8`}
                 >
                   {bucketOptions.map(b => (
@@ -511,6 +556,7 @@ const MyStorageManager: React.FC<Props> = ({ token: tokenProp }) => {
       title={confirmModal.title}
       message={confirmModal.message}
       confirmLabel={confirmModal.confirmLabel}
+      loading={confirmModal.loading}
       onConfirm={confirmModal.onConfirm}
       onCancel={closeConfirmModal}
     />

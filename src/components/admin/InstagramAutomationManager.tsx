@@ -95,7 +95,10 @@ const GradientButton: React.FC<{
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className={`relative inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 font-semibold text-white shadow-lg shadow-purple-500/25 transition-all hover:shadow-purple-500/40 hover:scale-[1.02] active:scale-95 disabled:opacity-50 ${sizeClasses[size]}`}
+      className={`relative inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 font-semibold text-white shadow-lg shadow-purple-500/25 transition-all hover:shadow-purple-500/40 hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100`}
+      // fix: keep size classes in className too
+      data-size={size}
+      style={undefined}
     >
       {children}
     </button>
@@ -107,7 +110,8 @@ const OutlineButton: React.FC<{
   onClick?: (e?: React.MouseEvent) => void;
   color?: 'indigo' | 'green' | 'yellow' | 'red' | 'gray';
   size?: 'sm' | 'md';
-}> = ({ children, onClick, color = 'gray', size = 'md' }) => {
+  disabled?: boolean;
+}> = ({ children, onClick, color = 'gray', size = 'md', disabled }) => {
   const colorMap: Record<string, string> = {
     indigo: 'border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/20 hover:border-indigo-400/50',
     green: 'border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20 hover:border-emerald-400/50',
@@ -117,7 +121,11 @@ const OutlineButton: React.FC<{
   };
   const sizeClasses = size === 'sm' ? 'px-2 py-1 text-xs' : 'px-3 py-2 text-xs';
   return (
-    <button onClick={onClick} className={`inline-flex items-center gap-1.5 rounded-xl border backdrop-blur-sm transition-all ${colorMap[color]} ${sizeClasses}`}>
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex items-center gap-1.5 rounded-xl border backdrop-blur-sm transition-all ${colorMap[color]} ${sizeClasses} disabled:opacity-50 disabled:cursor-not-allowed`}
+    >
       {children}
     </button>
   );
@@ -127,12 +135,14 @@ const StyledSelect: React.FC<{
   value: string;
   onChange: (value: string) => void;
   options: { value: string; label: string }[];
-}> = ({ value, onChange, options }) => (
+  disabled?: boolean;
+}> = ({ value, onChange, options, disabled }) => (
   <div className="relative">
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full appearance-none rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 pr-10 text-sm text-white outline-none transition-all focus:border-purple-500/50 focus:bg-white/10"
+      disabled={disabled}
+      className="w-full appearance-none rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 pr-10 text-sm text-white outline-none transition-all focus:border-purple-500/50 focus:bg-white/10 disabled:opacity-60 disabled:cursor-not-allowed"
     >
       {options.map(opt => (
         <option key={opt.value} value={opt.value} className="bg-slate-900 text-white">{opt.label}</option>
@@ -151,7 +161,8 @@ const PostPickerGrid: React.FC<{
   selectedPostId: string;
   onSelect: (id: string) => void;
   excludePostIds?: string[];
-}> = ({ posts, loading, selectedPostId, onSelect, excludePostIds = [] }) => {
+  disabled?: boolean;
+}> = ({ posts, loading, selectedPostId, onSelect, excludePostIds = [], disabled = false }) => {
   if (loading) {
     return <p className="py-4 text-center text-xs text-white/30">Loading posts...</p>;
   }
@@ -159,12 +170,13 @@ const PostPickerGrid: React.FC<{
   const availablePosts = posts.filter(p => !excludePostIds.includes(p.id));
 
   return (
-    <div>
+    <div className={disabled ? 'opacity-60 pointer-events-none' : ''}>
       <p className="mb-2 text-xs font-medium text-white/60">Apply to:</p>
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 md:grid-cols-6">
         <button
           type="button"
           onClick={() => onSelect('')}
+          disabled={disabled}
           className={`relative flex aspect-square flex-col items-center justify-center gap-1 rounded-xl border p-2 text-center transition-all ${
             selectedPostId === ''
               ? 'border-purple-500/60 bg-purple-500/20 ring-2 ring-purple-500/40'
@@ -183,6 +195,7 @@ const PostPickerGrid: React.FC<{
               type="button"
               key={post.id}
               onClick={() => onSelect(post.id)}
+              disabled={disabled}
               className={`group relative aspect-square overflow-hidden rounded-xl border transition-all ${
                 isSelected
                   ? 'border-purple-500/60 ring-2 ring-purple-500/40'
@@ -218,13 +231,20 @@ const RuleCard: React.FC<{
   onToggle: (id: string, isActive: boolean) => void;
   onDelete: (id: string) => void;
   onSave: (id: string, updates: { keyword: string; matchType: 'exact' | 'contains'; dmMessage: string }) => void;
-}> = ({ rule, onToggle, onDelete, onSave }) => {
+  /** 🆕 true when any action on this rule is in-flight */
+  pendingAction?: string | null;
+}> = ({ rule, onToggle, onDelete, onSave, pendingAction }) => {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
     keyword: rule.keyword,
     matchType: rule.matchType,
     dmMessage: rule.dmMessage,
   });
+
+  const isSaving = pendingAction === `update-rule-${rule._id}`;
+  const isToggling = pendingAction === `toggle-rule-${rule._id}`;
+  const isDeleting = pendingAction === `delete-rule-${rule._id}`;
+  const isBusy = isSaving || isToggling || isDeleting;
 
   const handleSave = () => {
     if (!form.keyword.trim() || !form.dmMessage.trim()) return;
@@ -233,7 +253,7 @@ const RuleCard: React.FC<{
   };
 
   return (
-    <div className="group relative rounded-2xl border border-white/5 bg-white/[0.02] p-4 transition-all hover:border-white/10 hover:bg-white/[0.04]">
+    <div className={`group relative rounded-2xl border border-white/5 bg-white/[0.02] p-4 transition-all hover:border-white/10 hover:bg-white/[0.04] ${isDeleting ? 'opacity-50 pointer-events-none' : ''}`}>
       <div className="flex flex-wrap items-start gap-3">
         {/* Post thumbnail */}
         <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/5">
@@ -264,11 +284,13 @@ const RuleCard: React.FC<{
                 value={form.keyword}
                 onChange={(e) => setForm({ ...form, keyword: e.target.value })}
                 placeholder="Keyword"
-                className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white outline-none focus:border-purple-500/50"
+                disabled={isSaving}
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white outline-none focus:border-purple-500/50 disabled:opacity-60"
               />
               <StyledSelect
                 value={form.matchType}
                 onChange={(v) => setForm({ ...form, matchType: v as 'exact' | 'contains' })}
+                disabled={isSaving}
                 options={[
                   { value: 'contains', label: 'Contains (anywhere)' },
                   { value: 'exact', label: 'Exact match' },
@@ -279,7 +301,8 @@ const RuleCard: React.FC<{
                 onChange={(e) => setForm({ ...form, dmMessage: e.target.value })}
                 rows={2}
                 placeholder="DM message"
-                className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white outline-none focus:border-purple-500/50"
+                disabled={isSaving}
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white outline-none focus:border-purple-500/50 disabled:opacity-60"
               />
             </div>
           )}
@@ -294,18 +317,34 @@ const RuleCard: React.FC<{
 
           {!editing ? (
             <>
-              <OutlineButton onClick={() => setEditing(true)} color="indigo" size="sm">Edit</OutlineButton>
-              <OutlineButton onClick={() => onToggle(rule._id, rule.isActive)} color={rule.isActive ? 'yellow' : 'green'} size="sm">
+              <OutlineButton onClick={() => setEditing(true)} color="indigo" size="sm" disabled={isBusy}>
+                Edit
+              </OutlineButton>
+              <OutlineButton onClick={() => onToggle(rule._id, rule.isActive)} color={rule.isActive ? 'yellow' : 'green'} size="sm" disabled={isBusy}>
+                {isToggling && <span className="w-2.5 h-2.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
                 {rule.isActive ? 'Pause' : 'Resume'}
               </OutlineButton>
-              <OutlineButton onClick={() => onDelete(rule._id)} color="red" size="sm">
-                {Icons.trash('h-3.5 w-3.5')}
+              <OutlineButton onClick={() => onDelete(rule._id)} color="red" size="sm" disabled={isBusy}>
+                {isDeleting ? (
+                  <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  Icons.trash('h-3.5 w-3.5')
+                )}
               </OutlineButton>
             </>
           ) : (
             <>
-              <OutlineButton onClick={handleSave} color="green" size="sm">Save</OutlineButton>
-              <OutlineButton onClick={() => { setForm({ keyword: rule.keyword, matchType: rule.matchType, dmMessage: rule.dmMessage }); setEditing(false); }} size="sm">Cancel</OutlineButton>
+              <OutlineButton onClick={handleSave} color="green" size="sm" disabled={isSaving}>
+                {isSaving && <span className="w-2.5 h-2.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
+                {isSaving ? 'Saving...' : 'Save'}
+              </OutlineButton>
+              <OutlineButton
+                onClick={() => { setForm({ keyword: rule.keyword, matchType: rule.matchType, dmMessage: rule.dmMessage }); setEditing(false); }}
+                size="sm"
+                disabled={isSaving}
+              >
+                Cancel
+              </OutlineButton>
             </>
           )}
         </div>
@@ -360,15 +399,16 @@ const ConfirmModal: React.FC<{
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
+  loading?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
-}> = ({ open, title, message, confirmLabel = 'Delete', cancelLabel = 'Cancel', danger = true, onConfirm, onCancel }) => {
+}> = ({ open, title, message, confirmLabel = 'Delete', cancelLabel = 'Cancel', danger = true, loading = false, onConfirm, onCancel }) => {
   if (!open) return null;
 
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
-      onClick={onCancel}
+      onClick={loading ? undefined : onCancel}
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -389,19 +429,22 @@ const ConfirmModal: React.FC<{
         <div className="mt-6 flex justify-end gap-2.5">
           <button
             onClick={onCancel}
-            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/70 transition-all hover:bg-white/10 hover:text-white"
+            disabled={loading}
+            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/70 transition-all hover:bg-white/10 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {cancelLabel}
           </button>
           <button
             onClick={onConfirm}
-            className={`rounded-xl px-4 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-95 ${
+            disabled={loading}
+            className={`rounded-xl px-4 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100 inline-flex items-center gap-1.5 ${
               danger
                 ? 'bg-gradient-to-r from-red-600 to-red-700 shadow-red-500/25 hover:shadow-red-500/40'
                 : 'bg-gradient-to-r from-purple-600 to-pink-600 shadow-purple-500/25 hover:shadow-purple-500/40'
             }`}
           >
-            {confirmLabel}
+            {loading && <span className="w-3 h-3 border-2 border-white/80 border-t-transparent rounded-full animate-spin" />}
+            {loading ? 'Deleting...' : confirmLabel}
           </button>
         </div>
       </div>
@@ -413,7 +456,7 @@ const ConfirmModal: React.FC<{
 interface InstagramAutomationManagerProps {
   token?: string;
   apiBase?: string;
-  subAdminMode?: boolean;   // 👈 new
+  subAdminMode?: boolean;
 }
 
 const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({ token: tokenProp, apiBase, subAdminMode = false }) => {
@@ -434,9 +477,11 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
 
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [newAccount, setNewAccount] = useState({ igUsername: '', igUserId: '', accessToken: '' });
+  const [addingAccount, setAddingAccount] = useState(false);
 
   const [showAddRule, setShowAddRule] = useState(false);
   const [newRule, setNewRule] = useState({ keyword: '', matchType: 'contains' as 'exact' | 'contains', dmMessage: '' });
+  const [addingRule, setAddingRule] = useState(false);
 
   // Logs filtering
   const [logFilter, setLogFilter] = useState<'all' | 'sent' | 'failed'>('all');
@@ -447,50 +492,83 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
     open: boolean;
     title: string;
     message: string;
+    loading: boolean;
     onConfirm: () => void;
-  }>({ open: false, title: '', message: '', onConfirm: () => {} });
+  }>({ open: false, title: '', message: '', loading: false, onConfirm: () => {} });
 
-  const closeConfirmModal = () => setConfirmModal(prev => ({ ...prev, open: false }));
+  const closeConfirmModal = () => setConfirmModal(prev => ({ ...prev, open: false, loading: false }));
 
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [, forceTick] = useState(0);
   const refreshInterval = useRef<NodeJS.Timeout | null>(null);
   const tickInterval = useRef<NodeJS.Timeout | null>(null);
 
-  // Fetch all data
-  const fetchAll = async () => {
-    setLoading(true);
+  // 🆕 Double-click / slow-network guard — synchronous Set of in-flight keys.
+  // Prevents duplicate API calls even if user clicks again before React re-renders.
+  const pendingRef = useRef<Set<string>>(new Set());
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+
+  /**
+   * Wrap any async action with this helper. If the same key is already in-flight,
+   * the second call becomes a silent no-op. Errors are swallowed here because
+   * every action already shows its own toast.
+   */
+  const guarded = async (key: string, fn: () => Promise<void>) => {
+    if (pendingRef.current.has(key)) return;
+    pendingRef.current.add(key);
+    setPendingAction(key);
     try {
-      const [accRes, ruleRes, logRes] = await Promise.all([
-        axios.get(`${API}/instagram-automation/accounts`, authHeaders),
-        axios.get(`${API}/instagram-automation/rules`, authHeaders),
-        axios.get(`${API}/instagram-automation/logs`, authHeaders),
-      ]);
-      const accData = accRes.data.accounts || [];
-      setAccounts(accData);
-      setRules(ruleRes.data.rules || []);
-      setLogs(logRes.data.logs || []);
-      if (accData.length > 0 && !selectedAccountId) {
-        setSelectedAccountId(accData[0].igUserId);
-        fetchPosts(accData[0]._id);
-      }
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Failed to load Instagram data');
+      await fn();
+    } catch {
+      /* each action handles its own errors */
     } finally {
-      setLoading(false);
+      setTimeout(() => {
+        pendingRef.current.delete(key);
+        setPendingAction(prev => (prev === key ? null : prev));
+      }, 250);
     }
   };
 
+  const isPending = (key: string) => pendingAction === key;
+
+  // Fetch all data
+  const fetchAll = async () => {
+    await guarded('fetch-all', async () => {
+      setLoading(true);
+      try {
+        const [accRes, ruleRes, logRes] = await Promise.all([
+          axios.get(`${API}/instagram-automation/accounts`, authHeaders),
+          axios.get(`${API}/instagram-automation/rules`, authHeaders),
+          axios.get(`${API}/instagram-automation/logs`, authHeaders),
+        ]);
+        const accData = accRes.data.accounts || [];
+        setAccounts(accData);
+        setRules(ruleRes.data.rules || []);
+        setLogs(logRes.data.logs || []);
+        if (accData.length > 0 && !selectedAccountId) {
+          setSelectedAccountId(accData[0].igUserId);
+          fetchPosts(accData[0]._id);
+        }
+      } catch (err: any) {
+        toast.error(err.response?.data?.error || 'Failed to load Instagram data');
+      } finally {
+        setLoading(false);
+      }
+    });
+  };
+
   const fetchPosts = async (accountMongoId: string) => {
-    setPostsLoading(true);
-    try {
-      const res = await axios.get(`${API}/instagram-automation/accounts/${accountMongoId}/posts`, authHeaders);
-      setPosts(res.data.posts || []);
-    } catch (err: any) {
-      console.error('Posts fetch error:', err.response?.data || err.message);
-    } finally {
-      setPostsLoading(false);
-    }
+    await guarded(`fetch-posts-${accountMongoId}`, async () => {
+      setPostsLoading(true);
+      try {
+        const res = await axios.get(`${API}/instagram-automation/accounts/${accountMongoId}/posts`, authHeaders);
+        setPosts(res.data.posts || []);
+      } catch (err: any) {
+        console.error('Posts fetch error:', err.response?.data || err.message);
+      } finally {
+        setPostsLoading(false);
+      }
+    });
   };
 
   useEffect(() => {
@@ -506,11 +584,12 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
   useEffect(() => {
     if (autoRefresh && selectedAccountId) {
       refreshInterval.current = setInterval(() => {
-        axios.get(`${API}/instagram-automation/logs`, authHeaders)
-          .then(res => {
+        guarded('auto-refresh-logs', async () => {
+          try {
+            const res = await axios.get(`${API}/instagram-automation/logs`, authHeaders);
             if (res.data.logs) setLogs(res.data.logs);
-          })
-          .catch(() => {});
+          } catch { /* ignore */ }
+        });
       }, 15000);
     } else if (refreshInterval.current) {
       clearInterval(refreshInterval.current);
@@ -525,26 +604,34 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
   const handleAddAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newAccount.igUsername || !newAccount.igUserId || !newAccount.accessToken) return;
-    const toastId = toast.loading('Adding account...');
-    try {
-      await axios.post(`${API}/instagram-automation/accounts`, newAccount, authHeaders);
-      toast.success('Account connected!', { id: toastId });
-      setNewAccount({ igUsername: '', igUserId: '', accessToken: '' });
-      setShowAddAccount(false);
-      fetchAll();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Failed to add account', { id: toastId });
-    }
+
+    await guarded('add-account', async () => {
+      setAddingAccount(true);
+      const toastId = toast.loading('Adding account...');
+      try {
+        await axios.post(`${API}/instagram-automation/accounts`, newAccount, authHeaders);
+        toast.success('Account connected!', { id: toastId });
+        setNewAccount({ igUsername: '', igUserId: '', accessToken: '' });
+        setShowAddAccount(false);
+        fetchAll();
+      } catch (err: any) {
+        toast.error(err.response?.data?.error || 'Failed to add account', { id: toastId });
+      } finally {
+        setAddingAccount(false);
+      }
+    });
   };
 
   const handleToggleAccount = async (id: string, isActive: boolean) => {
-    try {
-      await axios.put(`${API}/instagram-automation/accounts/${id}`, { isActive: !isActive }, authHeaders);
-      toast.success(!isActive ? 'Account resumed' : 'Account paused');
-      fetchAll();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Update failed');
-    }
+    await guarded(`toggle-account-${id}`, async () => {
+      try {
+        await axios.put(`${API}/instagram-automation/accounts/${id}`, { isActive: !isActive }, authHeaders);
+        toast.success(!isActive ? 'Account resumed' : 'Account paused');
+        fetchAll();
+      } catch (err: any) {
+        toast.error(err.response?.data?.error || 'Update failed');
+      }
+    });
   };
 
   const handleDeleteAccount = (id: string) => {
@@ -552,16 +639,21 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
       open: true,
       title: 'Remove Instagram Account?',
       message: 'Remove this Instagram account? All its rules will be deleted. This action cannot be undone.',
+      loading: false,
       onConfirm: async () => {
-        closeConfirmModal();
-        const toastId = toast.loading('Removing...');
-        try {
-          await axios.delete(`${API}/instagram-automation/accounts/${id}`, authHeaders);
-          toast.success('Account removed', { id: toastId });
-          fetchAll();
-        } catch (err: any) {
-          toast.error(err.response?.data?.error || 'Remove failed', { id: toastId });
-        }
+        setConfirmModal(prev => ({ ...prev, loading: true }));
+        await guarded(`delete-account-${id}`, async () => {
+          const toastId = toast.loading('Removing...');
+          try {
+            await axios.delete(`${API}/instagram-automation/accounts/${id}`, authHeaders);
+            toast.success('Account removed', { id: toastId });
+            setConfirmModal(prev => ({ ...prev, open: false, loading: false }));
+            fetchAll();
+          } catch (err: any) {
+            toast.error(err.response?.data?.error || 'Remove failed', { id: toastId });
+            setConfirmModal(prev => ({ ...prev, loading: false }));
+          }
+        });
       },
     });
   };
@@ -569,46 +661,56 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
   const handleAddRule = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedAccountId || !newRule.keyword || !newRule.dmMessage) return;
-    const toastId = toast.loading('Adding rule...');
-    const selectedPostObj = posts.find(p => p.id === selectedPostId);
-    try {
-      await axios.post(`${API}/instagram-automation/rules`, {
-        accountId: selectedAccountId,
-        postId: selectedPostId || null,
-        postThumbnail: selectedPostObj
-          ? (selectedPostObj.media_type === 'VIDEO' ? selectedPostObj.thumbnail_url : selectedPostObj.media_url)
-          : null,
-        postCaption: selectedPostObj?.caption || null,
-        ...newRule,
-      }, authHeaders);
-      toast.success('Rule created', { id: toastId });
-      setNewRule({ keyword: '', matchType: 'contains', dmMessage: '' });
-      setSelectedPostId('');
-      setShowAddRule(false);
-      fetchAll();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Failed to add rule', { id: toastId });
-    }
+
+    await guarded('add-rule', async () => {
+      setAddingRule(true);
+      const toastId = toast.loading('Adding rule...');
+      const selectedPostObj = posts.find(p => p.id === selectedPostId);
+      try {
+        await axios.post(`${API}/instagram-automation/rules`, {
+          accountId: selectedAccountId,
+          postId: selectedPostId || null,
+          postThumbnail: selectedPostObj
+            ? (selectedPostObj.media_type === 'VIDEO' ? selectedPostObj.thumbnail_url : selectedPostObj.media_url)
+            : null,
+          postCaption: selectedPostObj?.caption || null,
+          ...newRule,
+        }, authHeaders);
+        toast.success('Rule created', { id: toastId });
+        setNewRule({ keyword: '', matchType: 'contains', dmMessage: '' });
+        setSelectedPostId('');
+        setShowAddRule(false);
+        fetchAll();
+      } catch (err: any) {
+        toast.error(err.response?.data?.error || 'Failed to add rule', { id: toastId });
+      } finally {
+        setAddingRule(false);
+      }
+    });
   };
 
   const handleToggleRule = async (id: string, isActive: boolean) => {
-    try {
-      await axios.put(`${API}/instagram-automation/rules/${id}`, { isActive: !isActive }, authHeaders);
-      fetchAll();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Update failed');
-    }
+    await guarded(`toggle-rule-${id}`, async () => {
+      try {
+        await axios.put(`${API}/instagram-automation/rules/${id}`, { isActive: !isActive }, authHeaders);
+        fetchAll();
+      } catch (err: any) {
+        toast.error(err.response?.data?.error || 'Update failed');
+      }
+    });
   };
 
   const handleUpdateRule = async (id: string, updates: { keyword: string; matchType: 'exact' | 'contains'; dmMessage: string }) => {
-    const toastId = toast.loading('Updating rule...');
-    try {
-      await axios.put(`${API}/instagram-automation/rules/${id}`, updates, authHeaders);
-      toast.success('Rule updated', { id: toastId });
-      fetchAll();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Update failed', { id: toastId });
-    }
+    await guarded(`update-rule-${id}`, async () => {
+      const toastId = toast.loading('Updating rule...');
+      try {
+        await axios.put(`${API}/instagram-automation/rules/${id}`, updates, authHeaders);
+        toast.success('Rule updated', { id: toastId });
+        fetchAll();
+      } catch (err: any) {
+        toast.error(err.response?.data?.error || 'Update failed', { id: toastId });
+      }
+    });
   };
 
   const handleDeleteRule = (id: string) => {
@@ -616,15 +718,20 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
       open: true,
       title: 'Delete This Rule?',
       message: 'This automation rule will be permanently deleted. This action cannot be undone.',
+      loading: false,
       onConfirm: async () => {
-        closeConfirmModal();
-        try {
-          await axios.delete(`${API}/instagram-automation/rules/${id}`, authHeaders);
-          toast.success('Rule deleted');
-          fetchAll();
-        } catch (err: any) {
-          toast.error(err.response?.data?.error || 'Delete failed');
-        }
+        setConfirmModal(prev => ({ ...prev, loading: true }));
+        await guarded(`delete-rule-${id}`, async () => {
+          try {
+            await axios.delete(`${API}/instagram-automation/rules/${id}`, authHeaders);
+            toast.success('Rule deleted');
+            setConfirmModal(prev => ({ ...prev, open: false, loading: false }));
+            fetchAll();
+          } catch (err: any) {
+            toast.error(err.response?.data?.error || 'Delete failed');
+            setConfirmModal(prev => ({ ...prev, loading: false }));
+          }
+        });
       },
     });
   };
@@ -661,6 +768,9 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
     );
   }
 
+  const isAddingAccount = isPending('add-account') || addingAccount;
+  const isAddingRule = isPending('add-rule') || addingRule;
+
   return (
     <div className="space-y-8 px-1 py-4">
       {/* Header */}
@@ -693,7 +803,7 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
         </div>
       </div>
 
-      {/* Add account form - visible only for main admin (subAdminMode = false) */}
+      {/* Add account form */}
       {!subAdminMode && showAddAccount && (
         <form onSubmit={handleAddAccount} className="rounded-3xl border border-white/10 bg-white/[0.02] p-6 backdrop-blur-md space-y-4">
           <p className="text-xs text-white/40">Get User ID & Access Token from Meta Developer Dashboard.</p>
@@ -705,7 +815,8 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
                 value={newAccount.igUsername}
                 onChange={(e) => setNewAccount({ ...newAccount, igUsername: e.target.value })}
                 placeholder="animebingofficial"
-                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none transition-all focus:border-purple-500/50 focus:bg-white/10"
+                disabled={isAddingAccount}
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none transition-all focus:border-purple-500/50 focus:bg-white/10 disabled:opacity-60"
               />
             </div>
             <div>
@@ -715,7 +826,8 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
                 value={newAccount.igUserId}
                 onChange={(e) => setNewAccount({ ...newAccount, igUserId: e.target.value })}
                 placeholder="17841479995368916"
-                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none transition-all focus:border-purple-500/50 focus:bg-white/10"
+                disabled={isAddingAccount}
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none transition-all focus:border-purple-500/50 focus:bg-white/10 disabled:opacity-60"
               />
             </div>
             <div>
@@ -725,13 +837,21 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
                 value={newAccount.accessToken}
                 onChange={(e) => setNewAccount({ ...newAccount, accessToken: e.target.value })}
                 placeholder="IGQVJ..."
-                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none transition-all focus:border-purple-500/50 focus:bg-white/10"
+                disabled={isAddingAccount}
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none transition-all focus:border-purple-500/50 focus:bg-white/10 disabled:opacity-60"
               />
             </div>
           </div>
           <div className="flex gap-3">
-            <GradientButton type="submit">Save Account</GradientButton>
-            <OutlineButton onClick={() => setShowAddAccount(false)}>Cancel</OutlineButton>
+            <button
+              type="submit"
+              disabled={isAddingAccount}
+              className="relative inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-500/25 transition-all hover:shadow-purple-500/40 hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+            >
+              {isAddingAccount && <span className="w-3.5 h-3.5 border-2 border-white/80 border-t-transparent rounded-full animate-spin" />}
+              {isAddingAccount ? 'Saving...' : 'Save Account'}
+            </button>
+            <OutlineButton onClick={() => setShowAddAccount(false)} disabled={isAddingAccount}>Cancel</OutlineButton>
           </div>
         </form>
       )}
@@ -743,54 +863,73 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
             No Instagram accounts connected yet.
           </div>
         ) : (
-          accounts.map((acc) => (
-            <div
-              key={acc._id}
-              onClick={() => {
-                setSelectedAccountId(acc.igUserId);
-                fetchPosts(acc._id);
-                setSelectedPostId('');
-              }}
-              className={`group flex cursor-pointer flex-wrap items-center justify-between gap-3 rounded-3xl border p-4 backdrop-blur-sm transition-all ${
-                selectedAccountId === acc.igUserId
-                  ? 'border-purple-500/40 bg-purple-500/10'
-                  : 'border-white/10 bg-white/[0.02] hover:border-white/20'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-500/20">
-                  {acc.profilePictureUrl ? (
-                    <img src={acc.profilePictureUrl} alt={acc.igUsername} className="h-full w-full object-cover" />
-                  ) : (
-                    Icons.instagram('h-5 w-5')
-                  )}
+          accounts.map((acc) => {
+            const isToggling = isPending(`toggle-account-${acc._id}`);
+            const isDeleting = isPending(`delete-account-${acc._id}`);
+            return (
+              <div
+                key={acc._id}
+                onClick={() => {
+                  setSelectedAccountId(acc.igUserId);
+                  fetchPosts(acc._id);
+                  setSelectedPostId('');
+                }}
+                className={`group flex cursor-pointer flex-wrap items-center justify-between gap-3 rounded-3xl border p-4 backdrop-blur-sm transition-all ${
+                  selectedAccountId === acc.igUserId
+                    ? 'border-purple-500/40 bg-purple-500/10'
+                    : 'border-white/10 bg-white/[0.02] hover:border-white/20'
+                } ${isDeleting ? 'opacity-50 pointer-events-none' : ''}`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-500/20">
+                    {acc.profilePictureUrl ? (
+                      <img src={acc.profilePictureUrl} alt={acc.igUsername} className="h-full w-full object-cover" />
+                    ) : (
+                      Icons.instagram('h-5 w-5')
+                    )}
+                  </div>
+                  <div>
+                    <p className="font-semibold text-white">@{acc.igUsername}</p>
+                    <p className="text-xs text-white/40">ID: {acc.igUserId}</p>
+                    {!subAdminMode && (
+                      <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] text-indigo-300">
+                        👤 Added by {acc.createdByUsername || 'Admin'}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <p className="font-semibold text-white">@{acc.igUsername}</p>
-                  <p className="text-xs text-white/40">ID: {acc.igUserId}</p>
-                  {!subAdminMode && (
-                    <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] text-indigo-300">
-                      👤 Added by {acc.createdByUsername || 'Admin'}
-                    </span>
-                  )}
+                <div className="flex items-center gap-2">
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-medium border ${
+                    acc.isActive ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-white/10 bg-white/5 text-white/40'
+                  }`}>
+                    {acc.isActive ? Icons.check('h-3 w-3') : Icons.block('h-3 w-3')}
+                    {acc.isActive ? 'Active' : 'Paused'}
+                  </span>
+                  <OutlineButton
+                    onClick={(e) => { e?.stopPropagation(); handleToggleAccount(acc._id, acc.isActive); }}
+                    color={acc.isActive ? 'yellow' : 'green'}
+                    size="sm"
+                    disabled={isToggling || isDeleting}
+                  >
+                    {isToggling && <span className="w-2.5 h-2.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
+                    {isToggling ? '...' : (acc.isActive ? 'Pause' : 'Resume')}
+                  </OutlineButton>
+                  <OutlineButton
+                    onClick={(e) => { e?.stopPropagation(); handleDeleteAccount(acc._id); }}
+                    color="red"
+                    size="sm"
+                    disabled={isToggling || isDeleting}
+                  >
+                    {isDeleting ? (
+                      <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      Icons.trash('h-3.5 w-3.5')
+                    )}
+                  </OutlineButton>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-medium border ${
-                  acc.isActive ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-white/10 bg-white/5 text-white/40'
-                }`}>
-                  {acc.isActive ? Icons.check('h-3 w-3') : Icons.block('h-3 w-3')}
-                  {acc.isActive ? 'Active' : 'Paused'}
-                </span>
-                <OutlineButton onClick={(e) => { e?.stopPropagation(); handleToggleAccount(acc._id, acc.isActive); }} color={acc.isActive ? 'yellow' : 'green'} size="sm">
-                  {acc.isActive ? 'Pause' : 'Resume'}
-                </OutlineButton>
-                <OutlineButton onClick={(e) => { e?.stopPropagation(); handleDeleteAccount(acc._id); }} color="red" size="sm">
-                  {Icons.trash('h-3.5 w-3.5')}
-                </OutlineButton>
-              </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 
@@ -804,7 +943,11 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
                 Rules — <span className="text-purple-300">@{selectedAccount?.igUsername}</span>
                 <span className="ml-2 text-xs font-normal text-white/40">({rulesForSelected.length})</span>
               </h3>
-              <OutlineButton onClick={() => setShowAddRule(!showAddRule)} color="indigo">
+              <OutlineButton
+                onClick={() => setShowAddRule(!showAddRule)}
+                color="indigo"
+                disabled={isAddingRule}
+              >
                 {Icons.plus('h-3.5 w-3.5')} Add Rule
               </OutlineButton>
             </div>
@@ -817,6 +960,7 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
                   selectedPostId={selectedPostId}
                   onSelect={setSelectedPostId}
                   excludePostIds={rulesForSelected.filter(r => r.postId).map(r => r.postId as string)}
+                  disabled={isAddingRule}
                 />
 
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -825,11 +969,13 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
                     placeholder="Keyword (e.g., ANIME)"
                     value={newRule.keyword}
                     onChange={(e) => setNewRule({ ...newRule, keyword: e.target.value })}
-                    className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-purple-500/50"
+                    disabled={isAddingRule}
+                    className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-purple-500/50 disabled:opacity-60"
                   />
                   <StyledSelect
                     value={newRule.matchType}
                     onChange={(v) => setNewRule({ ...newRule, matchType: v as 'exact' | 'contains' })}
+                    disabled={isAddingRule}
                     options={[
                       { value: 'contains', label: 'Contains (anywhere)' },
                       { value: 'exact', label: 'Exact match' },
@@ -841,11 +987,19 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
                   value={newRule.dmMessage}
                   onChange={(e) => setNewRule({ ...newRule, dmMessage: e.target.value })}
                   rows={3}
-                  className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-purple-500/50"
+                  disabled={isAddingRule}
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-purple-500/50 disabled:opacity-60"
                 />
                 <div className="flex gap-3">
-                  <GradientButton type="submit">Save Rule</GradientButton>
-                  <OutlineButton onClick={() => setShowAddRule(false)}>Cancel</OutlineButton>
+                  <button
+                    type="submit"
+                    disabled={isAddingRule}
+                    className="relative inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-500/25 transition-all hover:shadow-purple-500/40 hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                  >
+                    {isAddingRule && <span className="w-3.5 h-3.5 border-2 border-white/80 border-t-transparent rounded-full animate-spin" />}
+                    {isAddingRule ? 'Saving...' : 'Save Rule'}
+                  </button>
+                  <OutlineButton onClick={() => setShowAddRule(false)} disabled={isAddingRule}>Cancel</OutlineButton>
                 </div>
               </form>
             )}
@@ -861,13 +1015,14 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
                     onToggle={handleToggleRule}
                     onDelete={handleDeleteRule}
                     onSave={handleUpdateRule}
+                    pendingAction={pendingAction}
                   />
                 ))
               )}
             </div>
           </div>
 
-          {/* Logs section — redesigned */}
+          {/* Logs section */}
           <div className="border-t border-white/5 pt-6">
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
               <div className="flex items-center gap-2.5">
@@ -975,11 +1130,12 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
         </div>
       )}
 
-      {/* 🆕 Confirm Modal */}
+      {/* Confirm Modal */}
       <ConfirmModal
         open={confirmModal.open}
         title={confirmModal.title}
         message={confirmModal.message}
+        loading={confirmModal.loading}
         onConfirm={confirmModal.onConfirm}
         onCancel={closeConfirmModal}
       />

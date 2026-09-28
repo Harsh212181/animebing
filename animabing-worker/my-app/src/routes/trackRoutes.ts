@@ -35,7 +35,7 @@ async function getAllowedAnimeIds(admin: any, mongoUri: string, dbName: string):
   return Array.from(new Set([...createdIds, ...assignedIds]))
 }
 
-// ============ 🆕 HELPER: kya ye admin is specific TITLE ko manage kar sakta hai ============
+// ============ HELPER: kya ye admin is specific TITLE ko manage kar sakta hai ============
 function canManageTitle(admin: any, title: any, allowedAnimeIds: string[] | null): boolean {
   if (admin.role !== 'subadmin') return true
   if (allowedAnimeIds === null) return true // animeAccess:'all'
@@ -44,26 +44,26 @@ function canManageTitle(admin: any, title: any, allowedAnimeIds: string[] | null
   return false
 }
 
-// ============ 🆕 HELPER: channelIds visible to sub-admin (YouTube channelId, not _id) ============
-async function getVisibleChannelIds(admin: any, mongoUri: string, dbName: string): Promise<string[] | null> {
-  const allowedAnimeIds = await getAllowedAnimeIds(admin, mongoUri, dbName)
-  if (allowedAnimeIds === null) return null
-
-  const allowedSet = new Set(allowedAnimeIds)
-  const allChannels = await findMany<ITrackedChannel>('trackedChannels', {}, {}, mongoUri, dbName)
-
-  // ✅ CHANGED: ab sirf apne titles (createdBy) ya apne linked-anime wale
-  // titles ki wajah se channel "visible" maana jaayega — channel.createdBy
-  // ab role nahi khelta (kyunki channel shared ho sakta hai)
-  const visible = allChannels.filter(ch =>
-    (ch.titles || []).some((t: any) =>
-      t.createdBy === admin.id || (t.linkedAnimeId && allowedSet.has(t.linkedAnimeId))
-    )
+// ============ HELPER: kya ye admin is CHANNEL ko dekh/manage kar sakta hai ============
+function canSeeChannel(admin: any, ch: any, allowedAnimeIds: string[] | null): boolean {
+  if (admin.role !== 'subadmin') return true
+  if (ch.createdBy === admin.id) return true
+  if ((ch.visibleTo || []).includes(admin.id)) return true
+  const allowedSet = new Set(allowedAnimeIds || [])
+  return (ch.titles || []).some((t: any) =>
+    t.createdBy === admin.id || (t.linkedAnimeId && allowedSet.has(t.linkedAnimeId))
   )
-  return visible.map(ch => ch.channelId)
 }
 
-// ============ 🆕 HELPER: is admin ko visible titleKeywords per channel ============
+// ============ HELPER: channelIds visible to sub-admin (YouTube channelId, not _id) ============
+async function getVisibleChannelIds(admin: any, mongoUri: string, dbName: string): Promise<string[] | null> {
+  if (admin.role !== 'subadmin') return null
+  const allowedAnimeIds = await getAllowedAnimeIds(admin, mongoUri, dbName)
+  const allChannels = await findMany<ITrackedChannel>('trackedChannels', {}, {}, mongoUri, dbName)
+  return allChannels.filter(ch => canSeeChannel(admin, ch, allowedAnimeIds)).map(ch => ch.channelId)
+}
+
+// ============ HELPER: is admin ko visible titleKeywords per channel ============
 async function getVisibleTitleKeywords(admin: any, mongoUri: string, dbName: string): Promise<{ channelId: string; keyword: string }[] | null> {
   const allowedAnimeIds = await getAllowedAnimeIds(admin, mongoUri, dbName)
   if (allowedAnimeIds === null) return null
@@ -82,6 +82,7 @@ async function getVisibleTitleKeywords(admin: any, mongoUri: string, dbName: str
 
 // ============ CHANNEL ADD ============
 trackRoutes.post('/channel/add', async (c) => {
+  const admin = c.get('admin')
   const { handle } = await c.req.json()
   if (!handle) return c.json({ success: false, error: 'Handle is required' }, 400)
 
@@ -92,20 +93,24 @@ trackRoutes.post('/channel/add', async (c) => {
     'trackedChannels', { channelId: info.channelId }, c.env.MONGODB_URI, c.env.MONGODB_DB
   )
 
-  // ✅ NEW: agar channel pehle se track ho raha hai, error mat do —
+  // Agar channel pehle se track ho raha hai, error mat do —
   // existing channel hi return kar do taaki dusra sub-admin usi par
   // apna naya title add kar sake (1 channel, multiple sub-admins ke titles)
   if (existing) {
+    if (admin?.role === 'subadmin' && existing.createdBy !== admin.id
+        && !(existing.visibleTo || []).includes(admin.id)) {
+      await updateOne('trackedChannels', { _id: existing._id! },
+        { visibleTo: [...(existing.visibleTo || []), admin.id] },
+        c.env.MONGODB_URI, c.env.MONGODB_DB)
+    }
     return c.json({
       success: true,
       alreadyTracked: true,
       channelName: existing.channelName,
       id: existing._id,
-      message: 'This channel is already tracked. Add your title under it.',
     })
   }
 
-  const admin = c.get('admin')
   const result = await insertOne('trackedChannels', {
     channelId: info.channelId,
     channelName: info.channelName,
@@ -116,6 +121,7 @@ trackRoutes.post('/channel/add', async (c) => {
     consecutiveErrors: 0,
     createdBy: admin?.id,
     createdByUsername: admin?.username,
+    visibleTo: admin?.role === 'subadmin' ? [admin.id] : [],
   }, c.env.MONGODB_URI, c.env.MONGODB_DB)
 
   await logActivity({
@@ -142,13 +148,9 @@ trackRoutes.post('/channel/:channelId/refresh-info', async (c) => {
   if (!channel) return c.json({ success: false, error: 'Channel not found' }, 404)
 
   const admin = c.get('admin')
-  // 🆕 channel-level destructive action — sub-admin ko tabhi allowed jab
-  // wo us channel ka koi bhi title own karta ho
-  if (admin.role === 'subadmin') {
-    const ownsAny = (channel.titles || []).some((t: any) => t.createdBy === admin.id)
-    if (!ownsAny) {
-      return c.json({ success: false, error: 'You do not have permission to manage this channel.' }, 403)
-    }
+  const allowedAnimeIds = await getAllowedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+  if (!canSeeChannel(admin, channel, allowedAnimeIds)) {
+    return c.json({ success: false, error: 'You do not have permission to manage this channel.' }, 403)
   }
 
   const info = await fetchChannelInfoByHandle(channel.channelHandle, c.env.YOUTUBE_API_KEY)
@@ -168,25 +170,20 @@ trackRoutes.get('/channels', async (c) => {
   const allChannels = await findMany<ITrackedChannel>(
     'trackedChannels', {}, { sort: { createdAt: -1 } }, c.env.MONGODB_URI, c.env.MONGODB_DB
   )
+  if (admin.role !== 'subadmin') return c.json(allChannels)
 
   const allowedAnimeIds = await getAllowedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
-  if (allowedAnimeIds === null) return c.json(allChannels)
+  const allowedSet = new Set(allowedAnimeIds || [])
 
-  const allowedSet = new Set(allowedAnimeIds)
-
-  // ✅ CHANGED: ab channel khud filter nahi hota (sabko channel dikhega taaki
-  // wo usi channel par apna naya title add kar sake) — sirf uske andar ke
-  // titles filter honge (sirf apne-created ya apne-linked-anime wale titles)
-  const filteredChannels = allChannels.map(ch => {
-    const visibleTitles = (ch.titles || []).filter((t: any) => {
-      if (t.createdBy === admin.id) return true
-      if (t.linkedAnimeId) return allowedSet.has(t.linkedAnimeId)
-      return false
-    })
-    return { ...ch, titles: visibleTitles }
-  })
-
-  return c.json(filteredChannels)
+  const result = allChannels
+    .filter(ch => canSeeChannel(admin, ch, allowedAnimeIds))
+    .map(ch => ({
+      ...ch,
+      titles: (ch.titles || []).filter((t: any) =>
+        t.createdBy === admin.id || (t.linkedAnimeId && allowedSet.has(t.linkedAnimeId))
+      ),
+    }))
+  return c.json(result)
 })
 
 // ============ CHANNEL PAUSE/RESUME ============
@@ -200,13 +197,11 @@ trackRoutes.post('/channel/:channelId/toggle-pause', async (c) => {
   if (!channel) return c.json({ success: false, error: 'Channel not found' }, 404)
 
   const admin = c.get('admin')
-  // 🆕 channel-level destructive action — sub-admin ko tabhi allowed jab
-  // wo us channel ka koi bhi title own karta ho
+
+  // Pause channel-wide hai (ek sub-admin pause kare to dusre ke titles bhi ruk jaayenge),
+  // isliye sirf super admin allow hai.
   if (admin.role === 'subadmin') {
-    const ownsAny = (channel.titles || []).some((t: any) => t.createdBy === admin.id)
-    if (!ownsAny) {
-      return c.json({ success: false, error: 'You do not have permission to manage this channel.' }, 403)
-    }
+    return c.json({ success: false, error: 'Only super admin can pause a shared channel' }, 403)
   }
 
   const nowPaused = !channel.paused
@@ -225,28 +220,65 @@ trackRoutes.delete('/channel/:channelId', async (c) => {
   const channelId = c.req.param('channelId')
   if (!isValidObjectId(channelId)) return c.json({ success: false, error: 'Invalid ID' }, 400)
 
-  const channel = await findOne<ITrackedChannel>('trackedChannels', { _id: toObjectId(channelId) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+  const channel = await findOne<ITrackedChannel>(
+    'trackedChannels', { _id: toObjectId(channelId) }, c.env.MONGODB_URI, c.env.MONGODB_DB
+  )
   if (!channel) return c.json({ success: false, error: 'Channel not found' }, 404)
 
   const admin = c.get('admin')
-  // 🆕 channel-level destructive action — sub-admin ko tabhi allowed jab
-  // wo us channel ka koi bhi title own karta ho
-  if (admin.role === 'subadmin') {
-    const ownsAny = (channel.titles || []).some((t: any) => t.createdBy === admin.id)
-    if (!ownsAny) {
-      return c.json({ success: false, error: 'You do not have permission to manage this channel.' }, 403)
-    }
+  const allowedAnimeIds = await getAllowedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+  if (!canSeeChannel(admin, channel, allowedAnimeIds)) {
+    return c.json({ success: false, error: 'You do not have permission to manage this channel.' }, 403)
   }
 
+  // ---------- SUB-ADMIN: sirf apna hissa hatao ----------
+  if (admin.role === 'subadmin') {
+    const myTitles = (channel.titles || []).filter((t: any) => t.createdBy === admin.id)
+    const remainingTitles = (channel.titles || []).filter((t: any) => t.createdBy !== admin.id)
+
+    // Is sub-admin ki notifications hatao (sirf apne titles ke liye)
+    for (const t of myTitles) {
+      const notifs = await findMany<ITrackNotification>(
+        'trackNotifications',
+        { channelId: channel.channelId, titleKeyword: t.keyword },
+        {}, c.env.MONGODB_URI, c.env.MONGODB_DB
+      )
+      for (const n of notifs) {
+        await deleteOne('trackNotifications', { _id: n._id! }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+      }
+    }
+
+    const remainingVisible = (channel.visibleTo || []).filter(id => id !== admin.id)
+
+    if (remainingTitles.length === 0 && remainingVisible.length === 0 &&
+        (channel.createdBy === admin.id || !channel.createdBy)) {
+      await deleteOne('trackedChannels', { _id: toObjectId(channelId) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    } else {
+      await updateOne('trackedChannels', { _id: toObjectId(channelId) }, {
+        titles: remainingTitles,
+        visibleTo: remainingVisible,
+        ...(channel.createdBy === admin.id ? { createdBy: null } : {}),
+      }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    }
+
+    await logActivity({
+      actorId: admin.id, actorUsername: admin.username, actorRole: 'subadmin',
+      action: 'Tracked channel removed from own list',
+      targetType: 'trackedChannel', targetId: channelId, targetTitle: channel.channelName,
+    }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    return c.json({ success: true })
+  }
+
+  // ---------- SUPER ADMIN: poora delete ----------
   await deleteOne('trackedChannels', { _id: toObjectId(channelId) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-  if (channel) {
-    const relatedNotifs = await findMany<ITrackNotification>(
-      'trackNotifications', { channelId: channel.channelId }, {}, c.env.MONGODB_URI, c.env.MONGODB_DB
-    )
-    for (const n of relatedNotifs) {
-      await deleteOne('trackNotifications', { _id: n._id! }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    }
+  const relatedNotifs = await findMany<ITrackNotification>(
+    'trackNotifications', { channelId: channel.channelId }, {}, c.env.MONGODB_URI, c.env.MONGODB_DB
+  )
+  for (const n of relatedNotifs) {
+    await deleteOne('trackNotifications', { _id: n._id! }, c.env.MONGODB_URI, c.env.MONGODB_DB)
   }
 
   await logActivity({
@@ -401,13 +433,16 @@ trackRoutes.post('/channel/:channelId/title/add', async (c) => {
   )
   if (!channel) return c.json({ success: false, error: 'Channel not found' }, 404)
 
-  // 🆕 OWNERSHIP stamp ke liye admin fetch
+  // OWNERSHIP stamp ke liye admin fetch
   const admin = c.get('admin')
 
   const keywordLower = keyword.trim().toLowerCase()
   const alreadyExists = (channel.titles || []).some(t => t.keyword.trim().toLowerCase() === keywordLower)
   if (alreadyExists) {
-    return c.json({ success: false, error: `"${keyword}" is already being tracked in this channel` }, 400)
+    return c.json({
+      success: false,
+      error: `"${keyword}" is already being tracked on this channel (by you or another admin)`,
+    }, 400)
   }
 
   let lastKnownPart = Number(currentKnownPart) || 0
@@ -440,7 +475,7 @@ trackRoutes.post('/channel/:channelId/title/add', async (c) => {
   const newTitleObj: any = {
     id: crypto.randomUUID(),
     keyword,
-    // 🆕 OWNERSHIP stamp
+    // OWNERSHIP stamp
     createdBy: admin?.id,
     createdByUsername: admin?.username,
     lastKnownPart,
@@ -479,7 +514,7 @@ trackRoutes.post('/channel/:channelId/title/bulk-add', async (c) => {
   )
   if (!channel) return c.json({ success: false, error: 'Channel not found' }, 404)
 
-  // 🆕 ownership stamp ke liye
+  // ownership stamp ke liye
   const admin = c.get('admin')
 
   const existingLower = new Set((channel.titles || []).map(t => t.keyword.trim().toLowerCase()))
@@ -496,7 +531,7 @@ trackRoutes.post('/channel/:channelId/title/bulk-add', async (c) => {
       id: crypto.randomUUID(),
       keyword,
       lastKnownPart: 0,
-      // 🆕 OWNERSHIP stamp
+      // OWNERSHIP stamp
       createdBy: admin?.id,
       createdByUsername: admin?.username,
     })
@@ -522,7 +557,7 @@ trackRoutes.put('/channel/:channelId/title/:titleId/edit', async (c) => {
   )
   if (!channel) return c.json({ success: false, error: 'Channel not found' }, 404)
 
-  // 🆕 OWNERSHIP CHECK — sirf apna title edit kar sake
+  // OWNERSHIP CHECK — sirf apna title edit kar sake
   const targetTitle = (channel.titles || []).find(t => t.id === titleId)
   if (!targetTitle) return c.json({ success: false, error: 'Title not found' }, 404)
   const admin = c.get('admin')
@@ -562,7 +597,7 @@ trackRoutes.put('/channel/:channelId/title/:titleId/settings', async (c) => {
   )
   if (!channel) return c.json({ success: false, error: 'Channel not found' }, 404)
 
-  // 🆕 OWNERSHIP CHECK
+  // OWNERSHIP CHECK
   const targetTitle = (channel.titles || []).find(t => t.id === titleId)
   if (!targetTitle) return c.json({ success: false, error: 'Title not found' }, 404)
   const admin = c.get('admin')
@@ -599,7 +634,7 @@ trackRoutes.delete('/channel/:channelId/title/:titleId', async (c) => {
   )
   if (!channel) return c.json({ success: false, error: 'Channel not found' }, 404)
 
-  // 🆕 OWNERSHIP CHECK
+  // OWNERSHIP CHECK
   const titleToRemove = (channel.titles || []).find(t => t.id === titleId)
   if (!titleToRemove) return c.json({ success: false, error: 'Title not found' }, 404)
   const admin = c.get('admin')
@@ -627,7 +662,7 @@ trackRoutes.delete('/channel/:channelId/title/:titleId', async (c) => {
   return c.json({ success: true })
 })
 
-// ============ 🆕 CAPACITY METER — sub-admin sees count of only their visible channels ============
+// ============ CAPACITY METER ============
 trackRoutes.get('/capacity', async (c) => {
   const admin = c.get('admin')
   const visibleChannelIds = await getVisibleChannelIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -644,14 +679,14 @@ trackRoutes.get('/capacity', async (c) => {
   })
 })
 
-// ============ 🆕 NOTIFICATIONS — title-level filtering ============
+// ============ NOTIFICATIONS — title-level filtering ============
 trackRoutes.get('/notifications', async (c) => {
   const admin = c.get('admin')
   const visiblePairs = await getVisibleTitleKeywords(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
   const filter: any = {}
   if (visiblePairs !== null) {
     filter.$or = visiblePairs.map(p => ({ channelId: p.channelId, titleKeyword: p.keyword }))
-    if (filter.$or.length === 0) filter.$or = [{ _id: null }] // kuch bhi match na kare
+    if (filter.$or.length === 0) filter.$or = [{ _id: null }]
   }
 
   const notifs = await findMany<ITrackNotification>(
@@ -735,7 +770,7 @@ trackRoutes.delete('/notifications/:id', async (c) => {
   return c.json({ success: true })
 })
 
-// ============ 🆕 mark-all-read — title-level filtering ============
+// ============ mark-all-read ============
 trackRoutes.post('/notifications/mark-all-read', async (c) => {
   const admin = c.get('admin')
   const visiblePairs = await getVisibleTitleKeywords(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -752,7 +787,7 @@ trackRoutes.post('/notifications/mark-all-read', async (c) => {
   return c.json({ success: true, count: notifs.length })
 })
 
-// ============ 🆕 clear-all — title-level filtering ============
+// ============ clear-all ============
 trackRoutes.delete('/notifications/clear-all', async (c) => {
   const admin = c.get('admin')
   const visiblePairs = await getVisibleTitleKeywords(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -780,13 +815,10 @@ trackRoutes.post('/channel/:channelId/check-now', async (c) => {
   if (!channel) return c.json({ success: false, error: 'Channel not found' }, 404)
 
   const admin = c.get('admin')
-  // 🆕 channel-level action — sub-admin ko tabhi allowed jab
-  // wo us channel ka koi bhi title own karta ho
-  if (admin.role === 'subadmin') {
-    const ownsAny = (channel.titles || []).some((t: any) => t.createdBy === admin.id)
-    if (!ownsAny) {
-      return c.json({ success: false, error: 'You do not have permission to manage this channel.' }, 403)
-    }
+  const allowedAnimeIds = await getAllowedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+  if (!canSeeChannel(admin, channel, allowedAnimeIds)) {
+    return c.json({ success: false, error: 'You do not have permission to manage this channel.' }, 403)
   }
 
   if (channel.paused) {
@@ -824,7 +856,7 @@ trackRoutes.post('/channel/:channelId/check-now', async (c) => {
   }
 })
 
-// ============ 🆕 RUN HISTORY — this is a global cron batch, meaningless for sub-admin, so empty ============
+// ============ RUN HISTORY ============
 trackRoutes.get('/runs', async (c) => {
   const admin = c.get('admin')
   if (admin.role === 'subadmin') return c.json([])
@@ -836,7 +868,7 @@ trackRoutes.get('/runs', async (c) => {
   return c.json(runs)
 })
 
-// ============ 🆕 CLEAR RUN HISTORY — super admin only ============
+// ============ CLEAR RUN HISTORY ============
 trackRoutes.delete('/runs/clear-all', async (c) => {
   const admin = c.get('admin')
   if (admin.role === 'subadmin') return c.json({ success: false, error: 'Only the super admin can perform this action' }, 403)
@@ -848,7 +880,7 @@ trackRoutes.delete('/runs/clear-all', async (c) => {
   return c.json({ success: true, count: runs.length })
 })
 
-// ============ 🆕 SUB-ADMIN STATS — how many channels/titles each sub-admin has tracked ============
+// ============ SUB-ADMIN STATS ============
 trackRoutes.get('/sub-admin-stats', async (c) => {
   const admin = c.get('admin')
   if (admin.role === 'subadmin') return c.json({ success: false, error: 'Only the super admin can view this' }, 403)
@@ -904,7 +936,7 @@ trackRoutes.get('/analytics', async (c) => {
   return c.json({ mostActiveChannels, inactiveChannels })
 })
 
-// ============ 🆕 CONFLICT PANEL — sub-admin sees only conflicts of their visible channels ============
+// ============ CONFLICT PANEL ============
 trackRoutes.get('/conflicts', async (c) => {
   const admin = c.get('admin')
   const visibleChannelIds = await getVisibleChannelIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -960,7 +992,7 @@ trackRoutes.put('/channel/:channelId/title/:titleId/link', async (c) => {
   )
   if (!channel) return c.json({ success: false, error: 'Channel not found' }, 404)
 
-  // 🆕 OWNERSHIP CHECK
+  // OWNERSHIP CHECK
   const targetTitle = (channel.titles || []).find(t => t.id === titleId)
   if (!targetTitle) return c.json({ success: false, error: 'Title not found' }, 404)
   const admin = c.get('admin')
@@ -1032,7 +1064,7 @@ trackRoutes.get('/channel/:channelId/title/:titleId/all-videos', async (c) => {
   const channel = await findOne<ITrackedChannel>('trackedChannels', { _id: toObjectId(channelId) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
   if (!channel) return c.json({ success: false, error: 'Channel not found' }, 404)
 
-  // 🆕 OWNERSHIP CHECK
+  // OWNERSHIP CHECK
   const title = (channel.titles || []).find(t => t.id === titleId)
   if (!title) return c.json({ success: false, error: 'Title not found' }, 404)
   const admin = c.get('admin')
@@ -1091,7 +1123,7 @@ trackRoutes.post('/channel/:channelId/title/:titleId/bulk-add', async (c) => {
   const title = (channel.titles || []).find(t => t.id === titleId)
   if (!title) return c.json({ success: false, error: 'Title not found' }, 404)
 
-  // 🆕 OWNERSHIP CHECK
+  // OWNERSHIP CHECK
   const admin = c.get('admin')
   const allowedAnimeIds = await getAllowedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
   if (!canManageTitle(admin, title, allowedAnimeIds)) {
@@ -1160,7 +1192,7 @@ trackRoutes.post('/channel/:channelId/title/:titleId/finalize-initial', async (c
   const title = (channel.titles || []).find(t => t.id === titleId)
   if (!title) return c.json({ success: false, error: 'Title not found' }, 404)
 
-  // 🆕 OWNERSHIP CHECK
+  // OWNERSHIP CHECK
   const admin = c.get('admin')
   const allowedAnimeIds = await getAllowedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
   if (!canManageTitle(admin, title, allowedAnimeIds)) {
@@ -1228,7 +1260,7 @@ trackRoutes.post('/channel/:channelId/title/:titleId/sync-with-page', async (c) 
   const title = (channel.titles || []).find(t => t.id === titleId)
   if (!title) return c.json({ success: false, error: 'Title not found' }, 404)
 
-  // 🆕 OWNERSHIP CHECK
+  // OWNERSHIP CHECK
   const admin = c.get('admin')
   const allowedAnimeIds = await getAllowedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
   if (!canManageTitle(admin, title, allowedAnimeIds)) {
@@ -1274,7 +1306,7 @@ trackRoutes.post('/channel/:channelId/title/:titleId/sync-episode-status', async
   const title = (channel.titles || []).find(t => t.id === titleId)
   if (!title) return c.json({ success: false, error: 'Title not found' }, 404)
 
-  // 🆕 OWNERSHIP CHECK
+  // OWNERSHIP CHECK
   const admin = c.get('admin')
   const allowedAnimeIds = await getAllowedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
   if (!canManageTitle(admin, title, allowedAnimeIds)) {
@@ -1303,7 +1335,7 @@ trackRoutes.post('/channel/:channelId/title/:titleId/resolve-season', async (c) 
   const title = (channel.titles || []).find(t => t.id === titleId)
   if (!title || !title.linkedAnimeId) return c.json({ success: false, error: 'Title is not linked to any anime' }, 400)
 
-  // 🆕 OWNERSHIP CHECK
+  // OWNERSHIP CHECK
   const admin = c.get('admin')
   const allowedAnimeIds = await getAllowedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
   if (!canManageTitle(admin, title, allowedAnimeIds)) {
@@ -1359,7 +1391,7 @@ trackRoutes.post('/channel/:channelId/title/:titleId/ignore-video', async (c) =>
   )
   if (!channel) return c.json({ success: false, error: 'Channel not found' }, 404)
 
-  // 🆕 OWNERSHIP CHECK
+  // OWNERSHIP CHECK
   const targetTitle = (channel.titles || []).find(t => t.id === titleId)
   if (!targetTitle) return c.json({ success: false, error: 'Title not found' }, 404)
   const admin = c.get('admin')
@@ -1389,7 +1421,7 @@ trackRoutes.post('/channel/:channelId/title/:titleId/ignore-videos-bulk', async 
   )
   if (!channel) return c.json({ success: false, error: 'Channel not found' }, 404)
 
-  // 🆕 OWNERSHIP CHECK
+  // OWNERSHIP CHECK
   const targetTitle = (channel.titles || []).find(t => t.id === titleId)
   if (!targetTitle) return c.json({ success: false, error: 'Title not found' }, 404)
   const admin = c.get('admin')
@@ -1418,7 +1450,7 @@ trackRoutes.get('/activity-logs', async (c) => {
   return c.json(logs)
 })
 
-// ============ 🆕 CHECK LOGS — title-level filtering ============
+// ============ CHECK LOGS ============
 trackRoutes.get('/logs', async (c) => {
   const admin = c.get('admin')
   const visiblePairs = await getVisibleTitleKeywords(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -1435,7 +1467,7 @@ trackRoutes.get('/logs', async (c) => {
   return c.json(logs)
 })
 
-// ============ 🆕 CLEAR ALL CHECK LOGS — super admin only ============
+// ============ CLEAR ALL CHECK LOGS ============
 trackRoutes.delete('/logs/clear-all', async (c) => {
   const admin = c.get('admin')
   if (admin.role === 'subadmin') return c.json({ success: false, error: 'Only the super admin can perform this action' }, 403)
@@ -1465,7 +1497,7 @@ trackRoutes.get('/page-links', async (c) => {
   return c.json(map)
 })
 
-// ============ 🆕 RUN ALL NOW — super admin only (global batch, meaningless for sub-admin) ============
+// ============ RUN ALL NOW ============
 trackRoutes.post('/run-all-now', async (c) => {
   const admin = c.get('admin')
   if (admin.role === 'subadmin') return c.json({ success: false, error: 'Only the super admin can perform this action' }, 403)

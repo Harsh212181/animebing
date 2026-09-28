@@ -549,6 +549,9 @@ export interface ITrackedChannel {
 
   defaultStrictChronology?: boolean
   defaultChronologyGraceGap?: number
+
+  // sub-admin IDs jinhone ye channel add kiya (sirf unhe dikhega)
+  visibleTo?: string[]
 }
 
 // ============ TRACK NOTIFICATION (Updates Feed) ============
