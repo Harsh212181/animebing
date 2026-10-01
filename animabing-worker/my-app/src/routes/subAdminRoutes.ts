@@ -60,7 +60,7 @@ subAdminRoutes.post('/login', async (c) => {
       role: 'subadmin',
       permissions: subAdmin.permissions || [],
       animeAccess: subAdmin.animeAccess || 'own'
-    }, c.env.JWT_SECRET, 12)
+    }, c.env.JWT_SECRET, 6)
 
     await db.collection('subadmins').updateOne({ _id: subAdmin._id }, { $set: { lastLogin: new Date() } })
     await logActivity({

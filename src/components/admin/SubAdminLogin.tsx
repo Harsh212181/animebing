@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import { saveSubAdminSession } from '../../../utils/authToken';
 
 const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
 
@@ -21,10 +22,7 @@ const SubAdminLogin: React.FC<SubAdminLoginProps> = ({ onLogin }) => {
     try {
       const { data } = await axios.post(`${API_BASE}/sub-admin/login`, { username, password });
       if (data.success) {
-        sessionStorage.setItem('subAdminToken', data.token);
-        sessionStorage.setItem('subAdminUsername', data.subAdmin.username);
-        sessionStorage.setItem('subAdminPermissions', JSON.stringify(data.subAdmin.permissions || []));
-        sessionStorage.setItem('subAdminAnimeAccess', data.subAdmin.animeAccess || 'own');
+        saveSubAdminSession(data.token, data.subAdmin);
         onLogin(data.token, data.subAdmin.username);
       } else {
         setError(data.error || 'Login failed');

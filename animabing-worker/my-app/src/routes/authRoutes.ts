@@ -1,4 +1,4 @@
- import { Hono } from 'hono'
+import { Hono } from 'hono'
 import { getDb } from '../services/mongoService'
 import type { Env, Variables } from '../index'
 
@@ -159,12 +159,12 @@ async function createJWT(payload: Record<string, any>, secret: string): Promise<
   return `${header}.${body}.${sigB64}`
 }
 
-// ─── Sub-Admin JWT Helper (12 hours) ──────────────────────────────────────────
+// ─── Sub-Admin JWT Helper (6 hours) ──────────────────────────────────────────
 async function createSubAdminJWT(payload: Record<string, any>, secret: string): Promise<string> {
   const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
     .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
   const body = btoa(
-    JSON.stringify({ ...payload, exp: Math.floor(Date.now() / 1000) + 12 * 60 * 60 })
+    JSON.stringify({ ...payload, exp: Math.floor(Date.now() / 1000) + 6 * 60 * 60 })   // 12 → 6
   ).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
   const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${header}.${body}`))

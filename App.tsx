@@ -1,4 +1,4 @@
- // App.tsx -  
+// App.tsx -  
 import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
@@ -20,6 +20,17 @@ import AnimeDetailWrapper from './components/AnimeDetailWrapper';
 import PublicFormPage from  './src/components/PublicFormPage'; // ✅ NEW
 
 import { AnimeProvider } from './src/context/AnimeContext';
+
+// ✅ AUTH TOKEN UTILITIES  (path fixed: root me App.tsx hai, utils/ sibling hai)
+import {
+  getAdminToken,
+  getAdminUsername,
+  saveAdminSession,
+  clearAdminSession,
+  getSubAdminToken,
+  clearSubAdminSession,
+  isSuperAdminSession,
+} from './utils/authToken';
 
 // ✅ LAZY LOADED IMPORTS
 const AdminLogin = React.lazy(() => import('./src/components/admin/AdminLogin'));
@@ -558,19 +569,20 @@ const AdminLoginPage: React.FC<{ onLogin: (token: string, username: string) => v
   );
 };
 
-// ✅ Admin Dashboard wrapper — instant token check (no artificial delay).
+// ✅ Admin Dashboard wrapper — lazy-init token check (no flash).
 //    AdminDashboard.tsx already shows its own loading screen while it
 //    fetches real data, so no duplicate loader needed here.
 const AdminDashboardPage: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
-  const token = localStorage.getItem('adminToken');
+  // ✅ Lazy init — token read happens once at mount, no extra render
+  const [adminToken] = useState<string | null>(() => getAdminToken());
 
   useEffect(() => {
-    if (!token) {
+    if (!adminToken) {
       window.location.href = '/';
     }
-  }, [token]);
+  }, [adminToken]);
 
-  if (!token) return null;
+  if (!adminToken) return null;
 
   return (
     <Suspense fallback={<SimpleLoadingScreen />}>
@@ -593,25 +605,23 @@ const SubAdminLoginPage: React.FC = () => {
   );
 };
 
-// ✅ Sub-Admin Dashboard guard — instant token check (no artificial delay).
+// ✅ Sub-Admin Dashboard guard — lazy-init token check (no flash).
 const SubAdminDashboardPage: React.FC = () => {
-  const token = sessionStorage.getItem('subAdminToken');
+  // ✅ Lazy init — sub-admin token read once at mount
+  const [subToken] = useState<string | null>(() => getSubAdminToken());
 
   useEffect(() => {
-    if (!token) {
+    if (!subToken) {
       window.location.href = '/sub-admin-login';
     }
-  }, [token]);
+  }, [subToken]);
 
-  if (!token) return null;
+  if (!subToken) return null;
 
   return (
     <Suspense fallback={<SimpleLoadingScreen />}>
       <SubAdminDashboard onLogout={() => {
-        sessionStorage.removeItem('subAdminToken');
-        sessionStorage.removeItem('subAdminUsername');
-        sessionStorage.removeItem('subAdminPermissions');
-        sessionStorage.removeItem('subAdminAnimeAccess');
+        clearSubAdminSession();
         window.location.href = '/sub-admin-login';
       }} />
     </Suspense>
@@ -642,6 +652,10 @@ const MainApp: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
+
+  // ✅ LAZY INIT — token & username read once on mount (no extra render, no flash)
+  const [adminToken, setAdminToken] = useState<string | null>(() => getAdminToken());
+  const [adminUsername, setAdminUsername] = useState<string | null>(() => getAdminUsername());
 
   const [adminView, setAdminView] = useState<AdminViewType | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -675,10 +689,12 @@ const MainApp: React.FC = () => {
       const startTime = Date.now();
 
       try {
-        const token = localStorage.getItem('adminToken');
-        const username = localStorage.getItem('adminUsername');
-        if (token && username) {
+        // ✅ FIX: Refresh par dashboard seedha khule agar session valid + dashboard open tha
+        if (isSuperAdminSession() && adminUsername) {
           setIsAdminAuthenticated(true);
+          if (localStorage.getItem('adminDashboardOpen') === '1') {
+            setAdminView('dashboard');   // refresh par seedha dashboard
+          }
         }
       } catch (error) {
         if (import.meta.env.DEV) {
@@ -695,6 +711,7 @@ const MainApp: React.FC = () => {
     };
 
     initializeApp();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ✅ SECRET CODE KEYBOARD LISTENER
@@ -749,15 +766,23 @@ const MainApp: React.FC = () => {
   }, [typedText]);
 
   const handleAdminLogin = (token: string, username: string) => {
-    localStorage.setItem('adminToken', token);
-    localStorage.setItem('adminUsername', username);
+    // ✅ Save via auth utils (single source of truth) + update local state
+    saveAdminSession(token, username);
+    // ✅ FIX: mark dashboard as "open" so refresh lands directly on dashboard
+    localStorage.setItem('adminDashboardOpen', '1');
+    setAdminToken(token);
+    setAdminUsername(username);
     setIsAdminAuthenticated(true);
     setAdminView('dashboard');
   };
 
   const handleAdminLogout = () => {
-    localStorage.removeItem('adminToken');
-    localStorage.removeItem('adminUsername');
+    // ✅ Clear via auth utils + reset state
+    clearAdminSession();
+    // ✅ FIX: remove the "dashboard open" flag so refresh goes to public site
+    localStorage.removeItem('adminDashboardOpen');
+    setAdminToken(null);
+    setAdminUsername(null);
     setIsAdminAuthenticated(false);
     setAdminView(null);
     window.location.href = window.location.origin + '/';

@@ -1,5 +1,6 @@
- import React, { useState } from 'react';
+import React, { useState } from 'react';
 import axios from 'axios';
+import { saveAdminSession } from '../../../utils/authToken';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 
   'https://animabing-backend.animabingwatch.workers.dev/api';
@@ -23,9 +24,8 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
       const { data } = await axios.post(`${API_BASE}/admin/login`, form);
       
       if (data.success) {
-        localStorage.setItem('adminToken', data.token);
-        localStorage.setItem('adminUsername', data.username);
-        onLogin(data.token, data.username);
+        saveAdminSession(data.token, form.username);
+        onLogin(data.token, form.username);
       }
     } catch (err: any) {
       setError(err.response?.data?.error || 'Login failed');
@@ -150,7 +150,6 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
               </>
             ) : (
               <>
-                Login
                 <svg className="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.5">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
                 </svg>
@@ -164,7 +163,7 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
               <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
             </svg>
             <p className="text-sm text-purple-200/80">
-              Default credentials check karo <code className="text-purple-300 bg-purple-900/50 px-1.5 py-0.5 rounded text-xs font-mono">.env</code> file mein
+              Check Default credentials<code className="text-purple-300 bg-purple-900/50 px-1.5 py-0.5 rounded text-xs font-mono">.env</code> file mein
             </p>
           </div>
         </form>

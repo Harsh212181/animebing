@@ -1,4 +1,4 @@
- // src/components/admin/SubAdminDashboard.tsx — SUB-ADMIN ONLY (Premium Purple Theme)
+// src/components/admin/SubAdminDashboard.tsx — SUB-ADMIN ONLY (Premium Purple Theme)
 import React, { useState, useEffect, useRef } from 'react';
 import { Toaster, toast } from 'react-hot-toast';
 import AnimeListTable from './AnimeListTable';
@@ -23,6 +23,7 @@ import SubAdminMyEarnings from './SubAdminMyEarnings';
 import MyStorageManager from './MyStorageManager';
 import Spinner from '../Spinner';
 import axios from 'axios';
+import { getSubAdminToken, getSubAdminPermissions, clearSubAdminSession } from '../../../utils/authToken';
 
 const API_BASE = import.meta.env.VITE_API_BASE ||
   'https://animabing-backend.animabingwatch.workers.dev/api';
@@ -393,13 +394,71 @@ const ScrollToTopButton: React.FC = () => {
   );
 };
 
+// ─── Logout Confirm Modal ────────────────────────────────────────────────────
+const LogoutConfirmModal: React.FC<{
+  open: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}> = ({ open, onCancel, onConfirm }) => {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onCancel]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      onClick={onCancel}
+      className="fixed inset-0 z-[100] flex items-center justify-center px-4 bg-black/70 backdrop-blur-sm"
+      style={{ animation: 'lcm-fade 0.2s ease both' }}
+    >
+      <style>{`
+        @keyframes lcm-fade { from { opacity: 0 } to { opacity: 1 } }
+        @keyframes lcm-pop { from { opacity: 0; transform: translateY(12px) scale(0.95) } to { opacity: 1; transform: translateY(0) scale(1) } }
+      `}</style>
+
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#13111f] p-6 shadow-2xl shadow-black/60 text-center"
+        style={{ animation: 'lcm-pop 0.25s cubic-bezier(0.16,1,0.3,1) both' }}
+      >
+        <div className="mx-auto mb-4 w-14 h-14 rounded-2xl bg-gradient-to-br from-rose-500/20 to-red-500/10 border border-rose-500/30 flex items-center justify-center">
+          <svg className="w-7 h-7 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+          </svg>
+        </div>
+
+        <h3 className="text-lg font-bold text-white mb-1">Do you want to log out?</h3>
+        <p className="text-sm text-gray-400 mb-6">
+          You will be signed out of the sub-admin panel. You'll need to log in again.
+        </p>
+
+        <div className="flex gap-3">
+          <button
+            onClick={onCancel}
+            className="flex-1 py-2.5 rounded-xl text-sm font-medium text-gray-200 bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] transition"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 shadow-lg shadow-rose-600/30 transition"
+          >
+            Logout
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────
 const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
-  const token = sessionStorage.getItem('subAdminToken') || '';
-  const permissions: string[] = (() => {
-    try { return JSON.parse(sessionStorage.getItem('subAdminPermissions') || '[]'); }
-    catch { return []; }
-  })();
+  const token = getSubAdminToken();
+  const permissions: string[] = getSubAdminPermissions();
 
   const canAccessTab = (tabId: string): boolean => {
     const required = TAB_PERMISSIONS[tabId];
@@ -414,6 +473,9 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
 
   const [activeTab, setActiveTab] = useState(visibleTabs[0] || 'list');
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set([visibleTabs[0] || 'list']));
+
+  // 🆕 Logout confirm modal state
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   useEffect(() => {
     if (!canAccessTab(activeTab)) return;
@@ -524,10 +586,7 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
       const msg = err.response?.data?.error || err.message || 'Failed to load dashboard data.';
       setError(msg);
       if (err.response?.status === 401 || err.response?.status === 403) {
-        sessionStorage.removeItem('subAdminToken');
-        sessionStorage.removeItem('subAdminUsername');
-        sessionStorage.removeItem('subAdminPermissions');
-        sessionStorage.removeItem('subAdminAnimeAccess');
+        clearSubAdminSession();
         window.location.href = '/sub-admin-login';
       }
     } finally {
@@ -535,11 +594,12 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
-  const handleLogout = () => {
-    sessionStorage.removeItem('subAdminToken');
-    sessionStorage.removeItem('subAdminUsername');
-    sessionStorage.removeItem('subAdminPermissions');
-    sessionStorage.removeItem('subAdminAnimeAccess');
+  // 🆕 Logout — opens the custom purple popup
+  const handleLogout = () => setShowLogoutConfirm(true);
+
+  const confirmLogout = () => {
+    setShowLogoutConfirm(false);
+    clearSubAdminSession();
     if (onLogout) onLogout();
     else window.location.href = '/sub-admin-login';
   };
@@ -827,6 +887,13 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
       </div>
 
       <ScrollToTopButton />
+
+      {/* 🆕 Logout Confirm Popup (custom purple theme) */}
+      <LogoutConfirmModal
+        open={showLogoutConfirm}
+        onCancel={() => setShowLogoutConfirm(false)}
+        onConfirm={confirmLogout}
+      />
     </div>
   );
 };

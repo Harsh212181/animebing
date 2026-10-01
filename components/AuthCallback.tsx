@@ -1,5 +1,6 @@
- import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { saveSubAdminSession, clearSubAdminSession } from '../utils/authToken'
 
 const BACKEND = 'https://animabing-backend.animabingwatch.workers.dev/api/auth'
 
@@ -29,10 +30,7 @@ const AuthCallback: React.FC = () => {
       localStorage.removeItem('shortUserName')
       localStorage.removeItem('shortUsername')
     } else {
-      sessionStorage.removeItem('subAdminToken')
-      sessionStorage.removeItem('subAdminUsername')
-      sessionStorage.removeItem('subAdminPermissions')
-      sessionStorage.removeItem('subAdminAnimeAccess')
+      clearSubAdminSession()
     }
 
     fetch(`${BACKEND}/google/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(intent)}`)
@@ -41,10 +39,7 @@ const AuthCallback: React.FC = () => {
         sessionStorage.removeItem('oauthIntent') // cleanup
 
         if (data.success && data.token && data.role === 'subadmin') {
-          sessionStorage.setItem('subAdminToken', data.token)
-          sessionStorage.setItem('subAdminUsername', data.subAdmin.username)
-          sessionStorage.setItem('subAdminPermissions', JSON.stringify(data.subAdmin.permissions || []))
-          sessionStorage.setItem('subAdminAnimeAccess', data.subAdmin.animeAccess || 'own')
+          saveSubAdminSession(data.token, data.subAdmin)
           navigate('/sub-admin-dashboard')
 
         } else if (data.success && data.token) {
@@ -107,7 +102,6 @@ const AuthCallback: React.FC = () => {
               {isSubAdmin ? 'Sub-Admin login ho raha hai...' : 'Google se login ho raha hai...'}
             </p>
             <p style={{ color: subTextColor, fontSize: 13, marginTop: 6 }}>
-              Wait for login..⏳
             </p>
           </>
         ) : (
@@ -115,7 +109,7 @@ const AuthCallback: React.FC = () => {
             <div style={{ fontSize: 44, marginBottom: 12 }}>❌</div>
             <p style={{ color: '#d85a30', fontWeight: 600 }}>Login fail</p>
             <p style={{ color: subTextColor, fontSize: 13 }}>
-              We’re going back…
+              We re going back…
             </p>
           </>
         )}
