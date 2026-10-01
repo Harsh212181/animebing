@@ -1,67 +1,70 @@
-// load-test.js
-// ============================================================================
-// Ye script k6 (https://k6.io) ke saath chalta hai — ek free, open-source
-// load-testing tool. Isse pata chalega ki tumhara actual server kitne
-// concurrent users pe struggle karna shuru karta hai.
+// load-test.js  (v2 - error codes + sahi error rate + quick mode)
 //
-// ✅ INSTALL (ek baar):
-//   Mac:     brew install k6
-//   Windows: winget install k6 --source winget   (ya choco install k6)
-//   Linux:   sudo apt install k6  (ya https://k6.io/docs/get-started/installation/ dekho)
-//
-// ✅ RUN:
+// FULL TEST (~7.5 min):
 //   k6 run load-test.js
 //
-// ✅ BASE_URL apna daalo (neeche env var se ya seedha edit karke):
+// QUICK TEST (60 sec, 60 VUs) - pehle isse chalao:
+//   k6 run -e MODE=quick load-test.js
+//
+// Alag URL:
 //   k6 run -e BASE_URL=https://your-worker.workers.dev load-test.js
-// ============================================================================
 
 import http from 'k6/http'
 import { check, sleep } from 'k6'
-import { Rate, Trend } from 'k6/metrics'
+import { Rate, Trend, Counter } from 'k6/metrics'
 
 const BASE_URL = __ENV.BASE_URL || 'https://animabing-backend.animabingwatch.workers.dev'
+const MODE = __ENV.MODE || 'full'
 
-// ✅ Custom metrics — inse pata chalega ki KAUNSA route sabse pehle toot raha hai
+// ---------- Custom metrics ----------
 const errorRate = new Rate('errors')
 const homepageLatency = new Trend('homepage_latency')
+const featuredLatency = new Trend('featured_latency')
 const animeDetailLatency = new Trend('anime_detail_latency')
 const downloadPageLatency = new Trend('download_page_latency')
 const pageviewLatency = new Trend('pageview_latency')
 
-// ============================================================================
-// ✅ STAGES — max 100 concurrent VUs tak hi jaate hain is version mein.
-// Dheere dheere load badhao: 30s me 10 tak, 1min baseline, phir 30-30-60
-// karke 100 tak. Jahan bhi errors badhna shuru hon, wahi tumhari "safe
-// capacity" ke aas paas hai.
-// ============================================================================
+// Status code counters (status_0 = timeout / connection fail)
+const statusCounters = {}
+function countStatus(code) {
+  const key = `status_${code}`
+  if (!statusCounters[key]) statusCounters[key] = new Counter(key)
+  statusCounters[key].add(1)
+}
+
+// ---------- Stages ----------
+const fullStages = [
+  { duration: '30s', target: 10 },
+  { duration: '1m', target: 10 },
+  { duration: '30s', target: 40 },
+  { duration: '1m', target: 40 },
+  { duration: '30s', target: 70 },
+  { duration: '1m', target: 70 },
+  { duration: '30s', target: 100 },
+  { duration: '2m', target: 100 },
+  { duration: '30s', target: 0 },
+]
+
+const quickStages = [
+  { duration: '10s', target: 60 },
+  { duration: '40s', target: 60 },
+  { duration: '10s', target: 0 },
+]
+
 export const options = {
-  stages: [
-    { duration: '30s', target: 10 },   // warm-up
-    { duration: '1m', target: 10 },    // baseline
-    { duration: '30s', target: 40 },
-    { duration: '1m', target: 40 },
-    { duration: '30s', target: 70 },
-    { duration: '1m', target: 70 },
-    { duration: '30s', target: 100 },
-    { duration: '2m', target: 100 },   // ✅ 100 users pe zyada der tak hold karo
-    { duration: '30s', target: 0 },    // cool-down
-  ],
+  stages: MODE === 'quick' ? quickStages : fullStages,
   thresholds: {
-    // Agar 95% requests 2 second se zyada lein, ya 5% se zyada fail hon,
-    // to k6 test ko "failed" mark karega — tumhe turant pata chal jayega.
     http_req_duration: ['p(95)<2000'],
     errors: ['rate<0.05'],
   },
 }
 
-// ✅ Real anime detail slugs (animebing.in/detail/... se liye gaye)
+// ---------- Real slugs ----------
 const SAMPLE_ANIME_SLUGS = [
   'the-extras-academy-survival-guide-manhwa-explation',
   'the-necromancer-familys-young-heir',
 ]
 
-// ✅ Real download-page slugs (animebing.in/download/... se liye gaye)
 const SAMPLE_DOWNLOAD_SLUGS = [
   'takopis-original-sin-jhfiurt83y4u3',
   'mob-psycho-100-season-2-hindi-dub-bsdhfbw',
@@ -72,26 +75,42 @@ function randomFrom(arr) {
   return arr[Math.floor(Math.random() * arr.length)]
 }
 
+// ---------- Helper: check + error log + status count ----------
+function track(name, res, okStatuses, latencyTrend) {
+  if (latencyTrend) latencyTrend.add(res.timings.duration)
+  countStatus(res.status)
+
+  const ok = okStatuses.includes(res.status)
+  errorRate.add(ok ? 0 : 1)
+  check(res, { [`${name}: status ok`]: () => ok })
+
+  if (!ok && Math.random() < 0.2) { // 20% sample, console spam se bachne ke liye
+    console.log(
+      `FAIL [${name}] status=${res.status} time=${Math.round(res.timings.duration)}ms ` +
+      `err=${res.error || '-'} body=${String(res.body).slice(0, 150)}`
+    )
+  }
+  return ok
+}
+
 export default function () {
-  // 1) Homepage — sabse zyada traffic yahan aata hai
+  // 1) Homepage
   let res = http.get(`${BASE_URL}/api/anime?page=1&limit=24`)
-  homepageLatency.add(res.timings.duration)
-  check(res, { 'homepage: status 200': (r) => r.status === 200 }) || errorRate.add(1)
+  track('homepage', res, [200], homepageLatency)
   sleep(0.5)
 
-  // 2) Featured anime
+  // 2) Featured
   res = http.get(`${BASE_URL}/api/anime/featured`)
-  check(res, { 'featured: status 200': (r) => r.status === 200 }) || errorRate.add(1)
+  track('featured', res, [200], featuredLatency)
   sleep(0.3)
 
-  // 3) Anime detail page (real user browsing pattern)
+  // 3) Anime detail
   const slug = randomFrom(SAMPLE_ANIME_SLUGS)
   res = http.get(`${BASE_URL}/api/anime/slug/${slug}`)
-  animeDetailLatency.add(res.timings.duration)
-  check(res, { 'anime detail: status 200 or 404': (r) => r.status === 200 || r.status === 404 }) || errorRate.add(1)
-  sleep(1) // user "reads" the page
+  track('anime_detail', res, [200, 404], animeDetailLatency)
+  sleep(1)
 
-  // 4) Pageview tracking (fires on every real page load)
+  // 4) Pageview
   res = http.post(
     `${BASE_URL}/api/analytics/pageview`,
     JSON.stringify({
@@ -103,14 +122,12 @@ export default function () {
     }),
     { headers: { 'Content-Type': 'application/json' } }
   )
-  pageviewLatency.add(res.timings.duration)
-  check(res, { 'pageview: status 200': (r) => r.status === 200 }) || errorRate.add(1)
+  track('pageview', res, [200], pageviewLatency)
   sleep(0.3)
 
-  // 5) Download page (highest-connection-count route before your fixes)
+  // 5) Download page
   const dlSlug = randomFrom(SAMPLE_DOWNLOAD_SLUGS)
   res = http.get(`${BASE_URL}/api/download-pages/${dlSlug}`)
-  downloadPageLatency.add(res.timings.duration)
-  check(res, { 'download page: status 200 or 404': (r) => r.status === 200 || r.status === 404 }) || errorRate.add(1)
+  track('download_page', res, [200, 404], downloadPageLatency)
   sleep(1)
 }

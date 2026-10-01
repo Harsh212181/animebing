@@ -69,7 +69,6 @@ const SubAdminLogin: React.FC<SubAdminLoginProps> = ({ onLogin }) => {
           </div>
 
           <h1 className="text-xl sm:text-2xl font-bold text-white mt-3 sm:mt-4">
-            Sub-Admin Login
           </h1>
           <div className="flex items-center justify-center gap-2 mt-1.5 sm:mt-2">
             <div className="h-px w-6 sm:w-8 bg-gradient-to-r from-transparent to-cyan-500/50" />

@@ -1,6 +1,7 @@
 // src/components/admin/FeaturedAnimeManager.tsx – Premium UI, no emojis
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Anime } from '../../types';
+import { getAdminToken } from '../../../utils/authToken';
 
 const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev';
 
@@ -57,10 +58,6 @@ const getOptimizedImageUrl = (url: string | undefined, width: number, height: nu
     }
   }
   return cleanUrl;
-};
-
-const getAdminToken = (): string | null => {
-  return localStorage.getItem('adminToken') || localStorage.getItem('token');
 };
 
 const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
@@ -196,7 +193,10 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
 
             while (keepGoing && page <= MAX_PAGES) {
               setApiStatus(`Fetching animes... (${allFetched.length} loaded)`);
-              const response = await fetch(buildEndpoint(page));
+              const t = getAdminToken();
+              const response = await fetch(buildEndpoint(page), {
+                headers: t ? { Authorization: `Bearer ${t}` } : {}
+              });
               if (!response.ok) break;
               const result = await response.json();
               const pageItems = extractArray(result);
@@ -271,7 +271,10 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
           const url = new URL(endpoint);
           url.searchParams.set('section', section);
           url.searchParams.set('_', Date.now().toString());
-          const response = await fetch(url.toString());
+          const t = getAdminToken();
+          const response = await fetch(url.toString(), {
+            headers: t ? { Authorization: `Bearer ${t}` } : {}
+          });
           if (!response.ok) continue;
           const result = await response.json();
           if (Array.isArray(result)) fetchedFeatured = result;

@@ -5,6 +5,7 @@ import SearchableDropdown from './SearchableDropdown';
 import Spinner from '../Spinner';
 import { CONTENT_TYPE_OPTIONS } from '../../utils/contentGroup';
 import { isYouTubeUrl } from '@components/utils/videoHelpers';
+import { getAdminToken } from '../../../utils/authToken';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 
   'https://animabing-backend.animabingwatch.workers.dev/api';
@@ -265,7 +266,7 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
   token: tokenProp,
   subAdminMode = false,
 }) => {
-  const resolveToken = () => tokenProp || localStorage.getItem('adminToken') || '';
+  const resolveToken = () => tokenProp || getAdminToken();
 
   const [pages, setPages] = useState<DownloadPage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1400,7 +1401,7 @@ const PageForm: React.FC<{
   const [hostnameSuggestions, setHostnameSuggestions] = useState<{ hostname: string; label: string }[]>([]);
 
   useEffect(() => {
-    const token = localStorage.getItem('adminToken') || sessionStorage.getItem('subAdminToken') || '';
+    const token = getAdminToken() || '';
     fetch(`${API_BASE}/r2-providers/hostnames`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {}
     })
