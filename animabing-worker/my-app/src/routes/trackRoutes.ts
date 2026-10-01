@@ -9,13 +9,24 @@ import {
   findMany, findOne, insertOne, updateOne, deleteOne, countDocuments, toObjectId, isValidObjectId, getDb
 } from '../services/mongoService'
 import { ITrackedChannel, ITrackNotification } from '../models/types'
-import { processChannelUpdates, fetchChannelInfoByHandle, fetchRecentVideos, fetchVideoDurations, matchAndParseVideos, parseEpisodeOverride, notifyOnce, processInBatches } from '../services/youtubeCheckService'
+import {
+  processChannelUpdates, fetchChannelInfoByHandle, fetchRecentVideos, fetchVideoDurations,
+  fetchVideosByIds, fetchPlaylistChunk, matchAndParseVideos, parseEpisodeOverride, notifyOnce,
+  processInBatches, type ParsedVideoItem
+} from '../services/youtubeCheckService'
 import { logActivity } from '../services/activityLogService'
 import { syncPageDerivedData } from '../services/episodeSyncService'
 
 const trackRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
 const AUTO_PAUSE_ERROR_THRESHOLD = 5
+
+const MAX_SCAN_DEPTH = 10000
+const clampDepth = (d: any, fallback = 1500) =>
+  Math.min(MAX_SCAN_DEPTH, typeof d === 'number' && d > 0 ? Math.floor(d) : fallback)
+
+const PAGES_PER_CHUNK = 20            // free plan safe. Paid plan par 100 tak kar sakte ho
+const SINGLE_REQUEST_MAX_DEPTH = 2000 // jo routes ek hi request mein scan karte hain unki limit
 
 trackRoutes.use('*', adminAuth)
 trackRoutes.use('*', requirePermission('tracklist'))
@@ -323,7 +334,7 @@ trackRoutes.post('/channel/:channelId/title/test-match', async (c) => {
   )
   if (!channel) return c.json({ success: false, error: 'Channel not found' }, 404)
 
-  const depth = typeof scanDepth === 'number' && scanDepth > 0 ? scanDepth : 1500
+  const depth = Math.min(SINGLE_REQUEST_MAX_DEPTH, clampDepth(scanDepth))
   const recentVideos = await fetchRecentVideos(channel.uploadsPlaylistId, c.env.YOUTUBE_API_KEY, depth)
   const matched = matchAndParseVideos(recentVideos, String(keyword).trim(), [], {
     threshold: typeof matchThreshold === 'number' ? matchThreshold : undefined,
@@ -353,12 +364,65 @@ trackRoutes.post('/channel/:channelId/title/test-match', async (c) => {
   })
 })
 
+// ============ TEST MATCH — CHUNKED (5k/10k+ ke liye) ============
+trackRoutes.post('/channel/:channelId/title/test-match-chunk', async (c) => {
+  const channelId = c.req.param('channelId')
+  if (!isValidObjectId(channelId)) return c.json({ success: false, error: 'Invalid ID' }, 400)
+  const { keyword, matchThreshold, excludeKeywords, pageToken, pages } = await c.req.json()
+  if (!keyword || !String(keyword).trim()) return c.json({ success: false, error: 'Keyword is required' }, 400)
+
+  const channel = await findOne<ITrackedChannel>(
+    'trackedChannels', { _id: toObjectId(channelId) }, c.env.MONGODB_URI, c.env.MONGODB_DB
+  )
+  if (!channel) return c.json({ success: false, error: 'Channel not found' }, 404)
+
+  const admin = c.get('admin')
+  const allowedAnimeIds = await getAllowedAnimeIds(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+  if (!canSeeChannel(admin, channel, allowedAnimeIds)) {
+    return c.json({ success: false, error: 'You do not have permission to manage this channel.' }, 403)
+  }
+
+  const maxPages = Math.min(PAGES_PER_CHUNK, Math.max(1, Math.floor(Number(pages)) || PAGES_PER_CHUNK))
+  const { videos, nextPageToken } = await fetchPlaylistChunk(
+    channel.uploadsPlaylistId, c.env.YOUTUBE_API_KEY,
+    { pageToken: pageToken || undefined, maxPages }
+  )
+
+  const matched = matchAndParseVideos(videos, String(keyword).trim(), [], {
+    threshold: typeof matchThreshold === 'number' ? matchThreshold : undefined,
+    excludeKeywords: Array.isArray(excludeKeywords) ? excludeKeywords : undefined,
+  })
+  const durations = await fetchVideoDurations(matched.map(m => m.video.videoId), c.env.YOUTUBE_API_KEY)
+
+  return c.json({
+    success: true,
+    scannedCount: videos.length,
+    matchedCount: matched.length,
+    nextPageToken: nextPageToken || null,
+    videos: matched.map(v => ({
+      videoId: v.video.videoId,
+      videoTitle: v.video.title,
+      description: v.video.description,
+      thumbnail: v.video.thumbnail,
+      publishedAt: v.video.publishedAt,
+      part: v.part,
+      isRange: v.isRange,
+      rangeStart: v.rangeStart,
+      matchedFormat: v.matchedFormat,
+      matchScore: v.matchScore,
+      fromDescription: v.fromDescription,
+      durationSec: durations[v.video.videoId] ?? null,
+    })),
+  })
+})
+
 // ============ QUICK BULK ADD FROM PREVIEW ============
 trackRoutes.post('/channel/:channelId/quick-bulk-add', async (c) => {
   const channelId = c.req.param('channelId')
-  const { keyword, matchThreshold, excludeKeywords, downloadPageId, videoIds, episodeOverrides } = await c.req.json() as {
+  const { keyword, matchThreshold, excludeKeywords, downloadPageId, videoIds, episodeOverrides, scanDepth } = await c.req.json() as {
     keyword: string; matchThreshold?: number; excludeKeywords?: string[];
-    downloadPageId: string; videoIds: string[]; episodeOverrides?: Record<string, number>
+    downloadPageId: string; videoIds: string[]; episodeOverrides?: Record<string, string | number>;
+    scanDepth?: number
   }
   if (!isValidObjectId(channelId) || !isValidObjectId(downloadPageId)) return c.json({ success: false, error: 'Invalid ID' }, 400)
   if (!keyword || !String(keyword).trim()) return c.json({ success: false, error: 'Keyword is required' }, 400)
@@ -370,26 +434,49 @@ trackRoutes.post('/channel/:channelId/quick-bulk-add', async (c) => {
   const page = await findOne<any>('downloadpages', { _id: toObjectId(downloadPageId) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
   if (!page) return c.json({ success: false, error: 'Page not found' }, 404)
 
-  const recentVideos = await fetchRecentVideos(channel.uploadsPlaylistId, c.env.YOUTUBE_API_KEY, 50)
-  const matched = matchAndParseVideos(recentVideos, String(keyword).trim(), [], {
-    threshold: typeof matchThreshold === 'number' ? matchThreshold : undefined,
-    excludeKeywords: Array.isArray(excludeKeywords) ? excludeKeywords : undefined,
-  })
+  const kw = String(keyword).trim()
+  const hasOverride = (id: string) => episodeOverrides?.[id] !== undefined
+  let selected: ParsedVideoItem[] = []
+  let durations: Record<string, number> = {}
+  let method: 'direct' | 'scan' = 'direct'
 
-  const selected = matched.filter(v =>
-    videoIds.includes(v.video.videoId) && (v.part !== null || episodeOverrides?.[v.video.videoId] !== undefined)
-  )
+  // ---------- METHOD 1: videoIds seedha fetch (subrequest limit safe) ----------
+  try {
+    const direct = await fetchVideosByIds(videoIds, c.env.YOUTUBE_API_KEY)
+    durations = direct.durations
+    // threshold 0: user ne ye videos khud select kiye hain, dobara fuzzy filter nahi lagana
+    const parsed = matchAndParseVideos(direct.items, kw, [], { threshold: 0 })
+    selected = parsed.filter(v => v.part !== null || hasOverride(v.video.videoId))
+  } catch (err) {
+    console.error('quick-bulk-add direct fetch failed', err)
+  }
+
+  // ---------- METHOD 2 (fallback): preview wali depth tak scan ----------
+  if (selected.length === 0) {
+    method = 'scan'
+    const depth = Math.min(SINGLE_REQUEST_MAX_DEPTH, clampDepth(scanDepth))
+    const recentVideos = await fetchRecentVideos(channel.uploadsPlaylistId, c.env.YOUTUBE_API_KEY, depth)
+    const matched = matchAndParseVideos(recentVideos, kw, [], {
+      threshold: typeof matchThreshold === 'number' ? matchThreshold : undefined,
+      excludeKeywords: Array.isArray(excludeKeywords) ? excludeKeywords : undefined,
+    })
+    selected = matched.filter(v =>
+      videoIds.includes(v.video.videoId) && (v.part !== null || hasOverride(v.video.videoId))
+    )
+    if (selected.length > 0) {
+      durations = await fetchVideoDurations(selected.map(v => v.video.videoId), c.env.YOUTUBE_API_KEY)
+    }
+  }
+
   if (selected.length === 0) return c.json({ success: false, error: 'No valid videos found' }, 400)
-
-  const durations = await fetchVideoDurations(selected.map(v => v.video.videoId), c.env.YOUTUBE_API_KEY)
 
   const existingLinks = page.links || []
   const existingUrls = new Set(existingLinks.map((l: any) => l.url))
   const newLinks = selected
     .filter(v => !existingUrls.has(`https://youtube.com/watch?v=${v.video.videoId}`))
     .map(v => {
-      const override = episodeOverrides?.[v.video.videoId] !== undefined
-        ? parseEpisodeOverride(episodeOverrides[v.video.videoId])
+      const override = hasOverride(v.video.videoId)
+        ? parseEpisodeOverride(episodeOverrides![v.video.videoId])
         : null
       return {
         episode: override ? override.episode : (v.part as number),
@@ -418,7 +505,7 @@ trackRoutes.post('/channel/:channelId/quick-bulk-add', async (c) => {
     targetTitle: page.slug,
   }, c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-  return c.json({ success: true, added: newLinks.length })
+  return c.json({ success: true, added: newLinks.length, method })
 })
 
 // ============ TITLE ADD ============
@@ -454,21 +541,26 @@ trackRoutes.post('/channel/:channelId/title/add', async (c) => {
   let lastKnownIsRange: boolean | undefined
 
   if (autoInit) {
-    const recentVideos = await fetchRecentVideos(channel.uploadsPlaylistId, c.env.YOUTUBE_API_KEY, 1500)
-    const matched = matchAndParseVideos(recentVideos, keyword.trim(), [], {
+    const matchOpts = {
       threshold: typeof matchThreshold === 'number' ? matchThreshold : undefined,
       excludeKeywords: Array.isArray(excludeKeywords) ? excludeKeywords : undefined,
-    })
-    const withPart = matched.filter(v => v.part !== null).sort((a, b) => a.part! - b.part!)
-    if (withPart.length > 0) {
-      const latest = withPart[withPart.length - 1]
-      lastKnownPart = latest.part!
-      lastKnownVideoId = latest.video.videoId
-      lastKnownVideoTitle = latest.video.title
-      lastKnownThumbnail = latest.video.thumbnail
-      lastKnownPublishedAt = latest.video.publishedAt
-      lastKnownIsRange = latest.isRange
-      initialized = true
+    }
+    // pehle 100 videos, kuch na mile to ek baar 500 tak (max ~20 API calls)
+    for (const depth of [100, 500]) {
+      const recentVideos = await fetchRecentVideos(channel.uploadsPlaylistId, c.env.YOUTUBE_API_KEY, depth)
+      const matched = matchAndParseVideos(recentVideos, keyword.trim(), [], matchOpts)
+      const withPart = matched.filter(v => v.part !== null).sort((a, b) => a.part! - b.part!)
+      if (withPart.length > 0) {
+        const latest = withPart[withPart.length - 1]
+        lastKnownPart = latest.part!
+        lastKnownVideoId = latest.video.videoId
+        lastKnownVideoTitle = latest.video.title
+        lastKnownThumbnail = latest.video.thumbnail
+        lastKnownPublishedAt = latest.video.publishedAt
+        lastKnownIsRange = latest.isRange
+        initialized = true
+        break
+      }
     }
   }
 
@@ -974,12 +1066,12 @@ trackRoutes.get('/conflicts', async (c) => {
 trackRoutes.put('/channel/:channelId/title/:titleId/link', async (c) => {
   const channelId = c.req.param('channelId')
   const titleId = c.req.param('titleId')
-  const { 
-    linkedAnimeId, 
-    linkedDownloadPageId, 
-    episodeLimit, 
-    resetSeason, 
-    mergeMode, 
+  const {
+    linkedAnimeId,
+    linkedDownloadPageId,
+    episodeLimit,
+    resetSeason,
+    mergeMode,
     baselineEpisodeMinutes,
     strictChronology,
     chronologyFloorDate,
@@ -1074,7 +1166,11 @@ trackRoutes.get('/channel/:channelId/title/:titleId/all-videos', async (c) => {
   }
 
   const depthParam = c.req.query('depth')
-  const scanDepth = depthParam ? Number(depthParam) : (title.initialized ? 50 : 1500)
+  const rawDepth = depthParam ? Number(depthParam) : (title.initialized ? 50 : 1500)
+  const scanDepth = Math.min(
+    SINGLE_REQUEST_MAX_DEPTH,
+    typeof rawDepth === 'number' && rawDepth > 0 ? Math.floor(rawDepth) : 1500
+  )
 
   const { fetchAllVideosForTitle } = await import('../services/youtubeCheckService')
   const videos = await fetchAllVideosForTitle(channel, title, c.env.YOUTUBE_API_KEY, undefined, scanDepth)
@@ -1145,7 +1241,7 @@ trackRoutes.post('/channel/:channelId/title/:titleId/bulk-add', async (c) => {
 
   const existingLinks = page.links || []
   const existingUrls = new Set(existingLinks.map((l: any) => l.url))
-  
+
   const newLinks = selected
     .filter(v => !existingUrls.has(`https://youtube.com/watch?v=${v.video.videoId}`))
     .map(v => {
@@ -1454,17 +1550,58 @@ trackRoutes.get('/activity-logs', async (c) => {
 trackRoutes.get('/logs', async (c) => {
   const admin = c.get('admin')
   const visiblePairs = await getVisibleTitleKeywords(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
   const filter: any = {}
   if (visiblePairs !== null) {
-    filter.$or = visiblePairs.map(p => ({ channelId: p.channelId, titleKeyword: p.keyword }))
-    if (filter.$or.length === 0) filter.$or = [{ _id: null }]
+    // checkLogs me keyword titles[] ke andar hota hai, isliye pehle channelId se narrow karo
+    filter.channelId = { $in: Array.from(new Set(visiblePairs.map(p => p.channelId))) }
   }
 
   const logs = await findMany<any>(
     'checkLogs', filter, { sort: { runAt: -1 }, limit: 40 },
     c.env.MONGODB_URI, c.env.MONGODB_DB
   )
-  return c.json(logs)
+  if (visiblePairs === null) return c.json(logs)
+
+  // phir har log ke titles me se sirf is sub-admin ke titles rakho
+  const allowed = new Set(visiblePairs.map(p => `${p.channelId}::${p.keyword}`))
+  const scoped = logs
+    .map((l: any) => ({
+      ...l,
+      titles: (l.titles || []).filter((t: any) => allowed.has(`${l.channelId}::${t.keyword}`)),
+    }))
+    .filter((l: any) => l.titles.length > 0)
+
+  return c.json(scoped)
+})
+
+// ============ AUTO-UPDATE HISTORY ============
+trackRoutes.get('/auto-history', async (c) => {
+  const admin = c.get('admin')
+  const visiblePairs = await getVisibleTitleKeywords(admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+  const filter: any = {
+    'titles.entries.action': { $in: ['added', 'replaced', 'reuploaded'] },
+  }
+  if (visiblePairs !== null) {
+    filter.channelId = { $in: Array.from(new Set(visiblePairs.map(p => p.channelId))) }
+  }
+
+  const logs = await findMany<any>(
+    'checkLogs', filter, { sort: { runAt: -1 }, limit: 300 },
+    c.env.MONGODB_URI, c.env.MONGODB_DB
+  )
+  if (visiblePairs === null) return c.json(logs)
+
+  const allowed = new Set(visiblePairs.map(p => `${p.channelId}::${p.keyword}`))
+  return c.json(
+    logs
+      .map((l: any) => ({
+        ...l,
+        titles: (l.titles || []).filter((t: any) => allowed.has(`${l.channelId}::${t.keyword}`)),
+      }))
+      .filter((l: any) => l.titles.length > 0)
+  )
 })
 
 // ============ CLEAR ALL CHECK LOGS ============

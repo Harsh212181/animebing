@@ -17,6 +17,7 @@ interface TrackListLogsProps {
   clearAllRuns: () => void;
   clearingRuns: boolean;
   isSubAdmin?: boolean;   // 🆕
+  historyLogs?: any[];     // 🆕 separate (non-truncated) source for Auto-Update History
 }
 
 // ============ small local helpers ============
@@ -44,6 +45,7 @@ function SearchIcon({ className = 'w-3.5 h-3.5' }: { className?: string }) {
 const ACTION_META: Record<string, { label: string; className: string; dot: string }> = {
   added: { label: 'Added', className: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20', dot: 'bg-emerald-400' },
   replaced: { label: 'Replaced', className: 'bg-sky-500/10 text-sky-300 border-sky-500/20', dot: 'bg-sky-400' },
+  reuploaded: { label: 'Reuploaded', className: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20', dot: 'bg-indigo-400' },
   'already-known': { label: 'Already known', className: 'bg-white/5 text-slate-500 border-white/10', dot: 'bg-slate-500' },
   'no-format-detected': { label: 'No format', className: 'bg-amber-500/10 text-amber-300 border-amber-500/20', dot: 'bg-amber-400' },
   'season-blocked': { label: 'Season blocked', className: 'bg-amber-500/10 text-amber-300 border-amber-500/20', dot: 'bg-amber-400' },
@@ -82,6 +84,7 @@ const TrackListLogs: React.FC<TrackListLogsProps> = ({
   clearAllRuns,
   clearingRuns,
   isSubAdmin = false,   // 🆕
+  historyLogs,          // 🆕
 }) => {
   const [logSearch, setLogSearch] = useState('');
   const [actionFilter, setActionFilter] = useState<(typeof ACTION_FILTERS)[number]>('all');
@@ -126,13 +129,14 @@ const TrackListLogs: React.FC<TrackListLogsProps> = ({
       .filter(Boolean);
   }, [logs, logSearch, actionFilter]);
 
-  // ✅ Item 4 — group only added/replaced entries date-wise
+  // ✅ Item 4 — group only added/replaced/reuploaded entries date-wise.
+  // Uses `historyLogs` if provided (non-truncated source), otherwise falls back to `logs`.
   const updateHistoryByDate = useMemo(() => {
     const groups: Record<
       string,
       { channelName: string; keyword: string; videoTitle: string; action: string }[]
     > = {};
-    for (const log of logs) {
+    for (const log of (historyLogs ?? logs)) {
       const dateKey = new Date(log.runAt).toLocaleDateString('en-IN', {
         timeZone: 'Asia/Kolkata',
         day: '2-digit',
@@ -141,7 +145,7 @@ const TrackListLogs: React.FC<TrackListLogsProps> = ({
       });
       for (const t of log.titles) {
         for (const e of t.entries) {
-          if (e.action === 'added' || e.action === 'replaced') {
+          if (e.action === 'added' || e.action === 'replaced' || e.action === 'reuploaded') {
             if (!groups[dateKey]) groups[dateKey] = [];
             groups[dateKey].push({
               channelName: log.channelName,
@@ -154,7 +158,7 @@ const TrackListLogs: React.FC<TrackListLogsProps> = ({
       }
     }
     return groups;
-  }, [logs]);
+  }, [logs, historyLogs]);
 
   // logs already come in runAt-desc order from backend (sort: { runAt: -1 })
   const updateHistoryDates = Object.keys(updateHistoryByDate);
@@ -194,24 +198,25 @@ const TrackListLogs: React.FC<TrackListLogsProps> = ({
                     {dateKey}
                   </p>
                   <div className="space-y-1.5 pl-2">
-                    {updateHistoryByDate[dateKey].map((e, i) => (
-                      <div
-                        key={i}
-                        className="flex items-center gap-2 text-[11px] bg-black/20 rounded-lg px-2.5 py-1.5"
-                      >
-                        <span
-                          className={`px-1.5 py-0.5 rounded border flex-shrink-0 font-medium ${
-                            e.action === 'replaced' ? ACTION_META.replaced.className : ACTION_META.added.className
-                          }`}
+                    {updateHistoryByDate[dateKey].map((e, i) => {
+                      const meta = ACTION_META[e.action] || ACTION_META.added;
+                      return (
+                        <div
+                          key={i}
+                          className="flex items-center gap-2 text-[11px] bg-black/20 rounded-lg px-2.5 py-1.5"
                         >
-                          {e.action === 'replaced' ? 'Replaced' : 'Added'}
-                        </span>
-                        <span className="text-slate-400 truncate">
-                          <span className="text-white">{e.keyword}</span> — {e.videoTitle}
-                          <span className="text-slate-600"> · {e.channelName}</span>
-                        </span>
-                      </div>
-                    ))}
+                          <span
+                            className={`px-1.5 py-0.5 rounded border flex-shrink-0 font-medium ${meta.className}`}
+                          >
+                            {meta.label}
+                          </span>
+                          <span className="text-slate-400 truncate">
+                            <span className="text-white">{e.keyword}</span> — {e.videoTitle}
+                            <span className="text-slate-600"> · {e.channelName}</span>
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               ))
@@ -340,7 +345,8 @@ const TrackListLogs: React.FC<TrackListLogsProps> = ({
         </div>
       )}
 
-      {/* ============ Check Logs ============ */}
+      {/* ============ Check Logs (only for super admin) ============ */}
+      {!isSubAdmin && (
       <div className="bg-slate-800/30 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden">
         <div
           onClick={() => setShowLogs((v) => !v)}
@@ -489,6 +495,7 @@ const TrackListLogs: React.FC<TrackListLogsProps> = ({
           </div>
         )}
       </div>
+      )}
     </>
   );
 };

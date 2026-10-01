@@ -17,10 +17,13 @@ import { Icon, formatIST, HighResThumb } from '../../utils/trackUtils';
 import TrackChannelsPanel from './TrackChannelsPanel';
 import TrackListLogs from './TrackListLogs';
 import TrackNotificationsPanel from './TrackNotificationsPanel';
+import TrackTitleBrowsePanel from './TrackTitleBrowsePanel';
 
 const API_BASE =
   import.meta.env.VITE_API_BASE ||
   'https://animabing-backend.animabingwatch.workers.dev/api';
+
+const MAX_SCAN_DEPTH = 10000;
 
 const TrackListManager: React.FC = () => {
   // ============ STATE ============
@@ -104,6 +107,12 @@ const TrackListManager: React.FC = () => {
   const [browseScanDepth, setBrowseScanDepth] = useState(150);
   const [expandedInfoId, setExpandedInfoId] = useState<string | null>(null);
 
+  // 🆕 Chunked preview scan state
+  const [lastPreviewDepth, setLastPreviewDepth] = useState<Record<string, number>>({});
+  const [previewProgress, setPreviewProgress] = useState<{ scanned: number; target: number } | null>(null);
+  const previewCursorRef = useRef<Record<string, string | null>>({});
+  const previewCancelRef = useRef(false);
+
   const [enlargedVideoId, setEnlargedVideoId] = useState<string | null>(null);
 
   const [conflicts, setConflicts] = useState<ConflictEntry[]>([]);
@@ -129,11 +138,6 @@ const TrackListManager: React.FC = () => {
   // 🆕 Global network guard — prevents double-firing async actions on slow networks
   const pendingRef = useRef<Set<string>>(new Set());
 
-  /**
-   * Wraps any async action so it can NEVER double-fire even if the user
-   * double-clicks fast on a slow connection. Silent no-op on second call.
-   * Errors are swallowed here because each action already shows its own toast.
-   */
   const guarded = async (key: string, fn: () => Promise<void>) => {
     if (pendingRef.current.has(key)) return;
     pendingRef.current.add(key);
@@ -146,11 +150,11 @@ const TrackListManager: React.FC = () => {
     }
   };
 
-  const isSubAdminContext = !!sessionStorage.getItem('subAdminToken')
+  const isSubAdminContext = !!sessionStorage.getItem('subAdminToken');
   const token = isSubAdminContext
     ? sessionStorage.getItem('subAdminToken')
-    : localStorage.getItem('adminToken')
-  const authHeaders = () => ({ headers: { Authorization: `Bearer ${token}` } })
+    : localStorage.getItem('adminToken');
+  const authHeaders = () => ({ headers: { Authorization: `Bearer ${token}` } });
 
   // ============ DATA LOADING ============
   const loadData = async () => {
@@ -299,7 +303,7 @@ const TrackListManager: React.FC = () => {
             data.alreadyTracked
               ? `"${data.channelName}" already tracked — added to your list, now add your title`
               : `"${data.channelName}" added`
-          )
+          );
           setNewHandle('');
           loadData();
         } else {
@@ -382,42 +386,101 @@ const TrackListManager: React.FC = () => {
   };
 
   // ============ PREVIEW ============
-  const runPreview = async (channelId: string, depth?: number) => {
+  const cancelPreview = () => {
+    previewCancelRef.current = true;
+  };
+
+  const byPart = (a: PreviewVideo, b: PreviewVideo) =>
+    a.part === null && b.part === null
+      ? 0
+      : a.part === null
+      ? 1
+      : b.part === null
+      ? -1
+      : a.part - b.part;
+
+  const runPreview = async (channelId: string, continueScan = false) => {
     await guarded(`preview-${channelId}`, async () => {
       const keyword = titleInputs[channelId]?.trim();
       if (!keyword) {
         toast.error('Write a keyword first, then press Preview');
         return;
       }
-      const excludeKeywords = (excludeKeywordsInputs[channelId] || '').split(',').map((s) => s.trim()).filter(Boolean);
-      const useDepth = depth ?? previewScanDepth;
+      const excludeKeywords = (excludeKeywordsInputs[channelId] || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
       const threshold = matchThresholdInputs[channelId] ?? 0.7;
+
+      const alreadyScanned = continueScan ? lastPreviewDepth[channelId] ?? 0 : 0;
+      const target = continueScan
+        ? Math.min(MAX_SCAN_DEPTH, alreadyScanned + 1500)
+        : Math.min(MAX_SCAN_DEPTH, previewScanDepth);
+
+      let token: string | undefined = continueScan ? previewCursorRef.current[channelId] || undefined : undefined;
+      if (continueScan && !token) {
+        toast('Channel ke sabse purane video tak scan ho chuka hai');
+        return;
+      }
+
+      const map = new Map<string, PreviewVideo>(
+        continueScan
+          ? (previewResults?.videos ?? []).map((v) => [v.videoId, v] as [string, PreviewVideo])
+          : []
+      );
+      if (!continueScan) {
+        setPreviewResults(null);
+        setPreviewSelectedIds(new Set());
+        setPreviewEpisodeOverrides({});
+        previewCursorRef.current[channelId] = null;
+      }
+
+      previewCancelRef.current = false;
       setPreviewLoading(true);
-      setPreviewResults(null);
-      setPreviewSelectedIds(new Set());
-      setPreviewEpisodeOverrides({});
+      let scanned = alreadyScanned;
+      setPreviewProgress({ scanned, target });
+
       try {
-        const { data } = await axios.post(
-          `${API_BASE}/track/channel/${channelId}/title/test-match`,
-          { keyword, scanDepth: useDepth, excludeKeywords, matchThreshold: threshold },
-          authHeaders()
-        );
-        setPreviewResults({ matchedCount: data.matchedCount, videos: data.videos });
-        if (data.matchedCount === 0) {
-          toast('No video matched this keyword — try changing the keyword');
+        while (scanned < target && !previewCancelRef.current) {
+          const pages = Math.max(1, Math.min(20, Math.ceil((target - scanned) / 50)));
+          const body = { keyword, excludeKeywords, matchThreshold: threshold, pageToken: token, pages };
+          const url = `${API_BASE}/track/channel/${channelId}/title/test-match-chunk`;
+
+          let data: any;
+          try {
+            ({ data } = await axios.post(url, body, authHeaders()));
+          } catch {
+            ({ data } = await axios.post(url, body, authHeaders())); // 1 auto-retry
+          }
+
+          scanned += data.scannedCount;
+          for (const v of data.videos) map.set(v.videoId, v); // dedupe
+          token = data.nextPageToken || undefined;
+
+          const videos = Array.from(map.values()).sort(byPart);
+          setPreviewResults({ matchedCount: videos.length, videos });
+          setPreviewProgress({ scanned, target });
+          previewCursorRef.current[channelId] = token ?? null;
+          setLastPreviewDepth((prev) => ({ ...prev, [channelId]: scanned }));
+
+          if (!token) break; // channel ke purane video khatam
         }
-      } catch {
-        toast.error('Could not load preview');
+        if (map.size === 0) toast('No video matched this keyword — try changing the keyword');
+      } catch (err: any) {
+        toast.error('Preview beech mein ruk gaya — ab tak ka result dikh raha hai, "Search Older" se aage badho');
       } finally {
         setPreviewLoading(false);
+        setPreviewProgress(null);
       }
     });
   };
 
   const scanPreviewDeeper = (channelId: string) => {
-    const next = previewScanDepth + 1500;
-    setPreviewScanDepth(next);
-    runPreview(channelId, next);
+    if ((lastPreviewDepth[channelId] ?? 0) >= MAX_SCAN_DEPTH) {
+      toast('Max depth (10000) reached');
+      return;
+    }
+    runPreview(channelId, true);
   };
 
   const fetchPreviewBulkPages = async (animeId: string) => {
@@ -456,27 +519,57 @@ const TrackListManager: React.FC = () => {
       const keyword = titleInputs[channelId]?.trim();
       if (!keyword || !previewBulkPageId || previewSelectedIds.size === 0) return;
       setPreviewAdding(true);
-      try {
-        const overridesToSend: Record<string, string> = {};
-        for (const vid of previewSelectedIds) {
-          const raw = previewEpisodeOverrides[vid];
-          if (raw !== undefined && raw.trim() !== '') {
-            overridesToSend[vid] = raw.trim();
-          }
+
+      const overridesToSend: Record<string, string> = {};
+      for (const vid of previewSelectedIds) {
+        const raw = previewEpisodeOverrides[vid];
+        if (raw !== undefined && raw.trim() !== '') overridesToSend[vid] = raw.trim();
+      }
+
+      const ids = Array.from(previewSelectedIds);
+      const BATCH = 250;
+      let added = 0;
+      let failedBatches = 0;
+      let lastError = '';
+
+      for (let i = 0; i < ids.length; i += BATCH) {
+        const batch = ids.slice(i, i + BATCH);
+        const batchOverrides: Record<string, string> = {};
+        for (const id of batch) if (overridesToSend[id] !== undefined) batchOverrides[id] = overridesToSend[id];
+        try {
+          const { data } = await axios.post(
+            `${API_BASE}/track/channel/${channelId}/quick-bulk-add`,
+            {
+              keyword,
+              matchThreshold: matchThresholdInputs[channelId] ?? 0.7,
+              excludeKeywords: (excludeKeywordsInputs[channelId] || '')
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean),
+              scanDepth: Math.min(2000, lastPreviewDepth[channelId] ?? previewScanDepth),
+              downloadPageId: previewBulkPageId,
+              videoIds: batch,
+              episodeOverrides: batchOverrides,
+            },
+            authHeaders()
+          );
+          added += data.added || 0;
+        } catch (err: any) {
+          failedBatches++;
+          lastError = err.response?.data?.error || 'Could not add';
         }
-        const { data } = await axios.post(
-          `${API_BASE}/track/channel/${channelId}/quick-bulk-add`,
-          { keyword, downloadPageId: previewBulkPageId, videoIds: Array.from(previewSelectedIds), episodeOverrides: overridesToSend },
-          authHeaders()
-        );
-        toast.success(`${data.added} episodes added directly!`);
+      }
+
+      if (failedBatches === 0) {
+        toast.success(`${added} episodes added directly!`);
         setPreviewSelectedIds(new Set());
         setPreviewEpisodeOverrides({});
-      } catch (err: any) {
-        toast.error(err.response?.data?.error || 'Could not add');
-      } finally {
-        setPreviewAdding(false);
+      } else {
+        toast.error(
+          `${added} added, ${failedBatches} batch fail (${lastError}). Dobara "Add Selected" dabana safe hai, duplicates skip ho jaate hain.`
+        );
       }
+      setPreviewAdding(false);
     });
   };
 
@@ -488,7 +581,13 @@ const TrackListManager: React.FC = () => {
       try {
         await axios.post(
           `${API_BASE}/track/channel/${channelId}/title/add`,
-          { keyword: kw, currentKnownPart: 0, excludeKeywords, matchThreshold: matchThresholdInputs[channelId] ?? 0.7, autoInit: true },
+          {
+            keyword: kw,
+            currentKnownPart: 0,
+            excludeKeywords,
+            matchThreshold: matchThresholdInputs[channelId] ?? 0.7,
+            autoInit: true,
+          },
           authHeaders()
         );
         toast.success(`"${kw}" added`);
@@ -647,19 +746,24 @@ const TrackListManager: React.FC = () => {
   );
 
   const approvalPendingCount = allTitlesFlat.filter((t: any) => t.initialized === false).length;
-  const manualReviewCount = notifications.filter(n => n.notifType === 'manual_review' && !n.isRead).length;
-  const pausedOrErrorCount = channels.filter(ch => ch.paused || (ch.consecutiveErrors && ch.consecutiveErrors > 0)).length;
+  const manualReviewCount = notifications.filter((n) => n.notifType === 'manual_review' && !n.isRead).length;
+  const pausedOrErrorCount = channels.filter((ch) => ch.paused || (ch.consecutiveErrors && ch.consecutiveErrors > 0)).length;
 
   const filteredAllTitles = allTitlesFlat.filter((t: any) => {
     const q = allTitlesSearch.trim().toLowerCase();
     if (!q) return true;
-    return t.keyword.toLowerCase().includes(q) || t.channelName?.toLowerCase().includes(q);
+    const animeTitle = (animeOptions.find((a) => a._id === t.linkedAnimeId)?.title || '').toLowerCase();
+    return (
+      t.keyword.toLowerCase().includes(q) ||
+      t.channelName?.toLowerCase().includes(q) ||
+      animeTitle.includes(q)
+    );
   });
 
   const isSequentialLowRisk = (videos: any[]): boolean => {
-    const parts = Array.from(
-      new Set(videos.filter((v: any) => v.part !== null).map((v: any) => v.part))
-    ).sort((a: any, b: any) => a - b);
+    const parts = Array.from(new Set(videos.filter((v: any) => v.part !== null).map((v: any) => v.part))).sort(
+      (a: any, b: any) => a - b
+    );
     if (parts.length < 2) return false;
     for (let i = 1; i < parts.length; i++) {
       if (parts[i] !== parts[i - 1] + 1) return false;
@@ -817,7 +921,11 @@ const TrackListManager: React.FC = () => {
     await guarded(`ignore-video-${videoId}`, async () => {
       if (!browsingTitle) return;
       try {
-        await axios.post(`${API_BASE}/track/channel/${browsingTitle.channelId}/title/${browsingTitle.titleId}/ignore-video`, { videoId }, authHeaders());
+        await axios.post(
+          `${API_BASE}/track/channel/${browsingTitle.channelId}/title/${browsingTitle.titleId}/ignore-video`,
+          { videoId },
+          authHeaders()
+        );
         toast.success('Video ignored, it will never show again');
         openBrowseTitle(browsingTitle.channelId, browsingTitle.titleId, browsingTitle.keyword);
       } catch {
@@ -1034,7 +1142,18 @@ const TrackListManager: React.FC = () => {
   const channelPercent = Math.min(100, (capacity.channelsUsed / capacity.channelsLimit) * 100);
   const unitsPercent = Math.min(100, (capacity.unitsUsedPerCheck / capacity.unitsLimit) * 100);
 
-  const quickExcludes = ['Sub', 'English Dub', 'Tamil dub', 'Telugu dub', 'English sub', 'Hindi dub', 'Tamil sub', 'Telugu sub', 'Preview', 'EN Sub'];
+  const quickExcludes = [
+    'Sub',
+    'English Dub',
+    'Tamil dub',
+    'Telugu dub',
+    'English sub',
+    'Hindi dub',
+    'Tamil sub',
+    'Telugu sub',
+    'Preview',
+    'EN Sub',
+  ];
 
   const addToExclude = (channelId: string, word: string) => {
     setExcludeKeywordsInputs((prev) => {
@@ -1045,6 +1164,51 @@ const TrackListManager: React.FC = () => {
         return { ...prev, [channelId]: newValue };
       }
       return prev;
+    });
+  };
+
+  /* ---------- ✅ Inline expand/collapse + sync helpers for All Titles panel ---------- */
+  const toggleTitleInline = (t: any) => {
+    const isOpen = browsingTitle?.channelId === t.channelId && browsingTitle?.titleId === t.id;
+    if (isOpen) closeBrowseTitle();
+    else openBrowseTitle(t.channelId, t.id, t.keyword);
+  };
+
+  const syncTitleWithPage = async (channelId: string, titleId: string) => {
+    await guarded(`sync-page-${titleId}`, async () => {
+      setSyncingPage((p) => ({ ...p, [titleId]: true }));
+      try {
+        const { data } = await axios.post(
+          `${API_BASE}/track/channel/${channelId}/title/${titleId}/sync-with-page`,
+          {},
+          authHeaders()
+        );
+        toast.success(`Synced — now last known part: ${data.syncedToPart}`);
+        loadData();
+      } catch (err: any) {
+        toast.error(err.response?.data?.error || 'Sync failed');
+      } finally {
+        setSyncingPage((p) => ({ ...p, [titleId]: false }));
+      }
+    });
+  };
+
+  const syncTitleEpisode = async (channelId: string, titleId: string) => {
+    await guarded(`sync-ep-${titleId}`, async () => {
+      setSyncingEpStatus((p) => ({ ...p, [titleId]: true }));
+      try {
+        const { data } = await axios.post(
+          `${API_BASE}/track/channel/${channelId}/title/${titleId}/sync-episode-status`,
+          {},
+          authHeaders()
+        );
+        toast.success(`Ep Status updated — Current: ${data.currentEpisode}`);
+        loadData();
+      } catch (err: any) {
+        toast.error(err.response?.data?.error || 'Ep Status update failed');
+      } finally {
+        setSyncingEpStatus((p) => ({ ...p, [titleId]: false }));
+      }
     });
   };
 
@@ -1247,7 +1411,8 @@ const TrackListManager: React.FC = () => {
               Needs Attention
             </h4>
             <span className="text-[10px] text-slate-500 font-medium ml-1">
-              {approvalPendingCount + manualReviewCount + pausedOrErrorCount} item{approvalPendingCount + manualReviewCount + pausedOrErrorCount !== 1 ? 's' : ''}
+              {approvalPendingCount + manualReviewCount + pausedOrErrorCount} item
+              {approvalPendingCount + manualReviewCount + pausedOrErrorCount !== 1 ? 's' : ''}
             </span>
           </div>
 
@@ -1405,7 +1570,10 @@ const TrackListManager: React.FC = () => {
                     </p>
                     <div className="space-y-1">
                       {cf.titles.map((t) => (
-                        <div key={`${t.channelId}-${t.titleId}`} className="flex items-center justify-between text-[11px] bg-black/20 rounded-lg px-2 py-1.5">
+                        <div
+                          key={`${t.channelId}-${t.titleId}`}
+                          className="flex items-center justify-between text-[11px] bg-black/20 rounded-lg px-2 py-1.5"
+                        >
                           <span className="text-slate-300 truncate">
                             "{t.keyword}" <span className="text-slate-500">· {t.channelName}</span>
                           </span>
@@ -1473,48 +1641,166 @@ const TrackListManager: React.FC = () => {
         )}
 
         {showAllTitles && (
-          <div className="mt-3 bg-slate-800/30 backdrop-blur-xl border border-white/10 rounded-2xl p-4 max-h-[500px] overflow-y-auto">
+          <div
+            className={`mt-3 bg-slate-800/30 backdrop-blur-xl border border-white/10 rounded-2xl p-4 overflow-y-auto ${
+              browsingTitle ? 'max-h-[85vh]' : 'max-h-[500px]'
+            }`}
+          >
             <div className="relative mb-3">
               {Icon.search('w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2')}
               <input
                 value={allTitlesSearch}
                 onChange={(e) => setAllTitlesSearch(e.target.value)}
-                placeholder="Search title or channel..."
+                placeholder="Search title, anime or channel..."
                 className="w-full bg-gray-800/60 border border-gray-700 rounded-lg pl-8 pr-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-white/20"
               />
             </div>
 
             <div className="space-y-2">
               {filteredAllTitles.length === 0 ? (
-                <p className="text-sm text-slate-500 text-center py-4">{allTitlesSearch ? 'No title found' : 'No titles tracked yet'}</p>
+                <p className="text-sm text-slate-500 text-center py-4">
+                  {allTitlesSearch ? 'No title found' : 'No titles tracked yet'}
+                </p>
               ) : (
-                filteredAllTitles.map((t: any) => (
-                  <button
-                    key={`${t.channelId}-${t.id}`}
-                    onClick={() => jumpToTitleInChannel(t.channelId, t.id, t.keyword)}
-                    className="w-full flex items-center justify-between bg-black/20 hover:bg-black/40 rounded-lg px-3 py-2 text-left transition"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="w-6 h-6 rounded-full bg-slate-700 border border-white/10 flex items-center justify-center overflow-hidden flex-shrink-0">
-                        {t.channelThumbnail ? (
-                          <img src={t.channelThumbnail} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="text-[9px] font-bold text-slate-400">{t.channelName?.charAt(0).toUpperCase() || '?'}</span>
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs text-white font-medium truncate">{t.keyword}</p>
-                        <p className="text-[9px] text-slate-500 truncate flex items-center gap-1">
-                          <span>
-                            {t.channelName} · part {t.lastKnownPart}
-                          </span>
-                          {t.initialized === false && <span className="text-amber-400">{Icon.clock('w-2.5 h-2.5')}</span>}
-                        </p>
-                      </div>
+                filteredAllTitles.map((t: any) => {
+                  const linkedAnime = t.linkedAnimeId ? animeOptions.find((a) => a._id === t.linkedAnimeId) : null;
+                  const isLinked = !!t.linkedAnimeId;
+                  const isOpen = browsingTitle?.channelId === t.channelId && browsingTitle?.titleId === t.id;
+
+                  return (
+                    <div
+                      key={`${t.channelId}-${t.id}`}
+                      className={`rounded-lg border transition ${
+                        isOpen ? 'border-sky-500/30 bg-sky-500/[0.04]' : 'border-transparent'
+                      }`}
+                    >
+                      <button
+                        onClick={() => toggleTitleInline(t)}
+                        className="w-full flex items-center justify-between bg-black/20 hover:bg-black/40 rounded-lg px-3 py-2 text-left transition"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {isLinked ? (
+                            linkedAnime?.thumbnail ? (
+                              <img
+                                src={linkedAnime.thumbnail}
+                                alt=""
+                                className="w-9 h-12 object-cover rounded-md flex-shrink-0 ring-1 ring-white/10"
+                              />
+                            ) : (
+                              <div className="w-9 h-12 rounded-md bg-slate-800 flex items-center justify-center flex-shrink-0 ring-1 ring-white/10 text-slate-600">
+                                {Icon.file('w-4 h-4')}
+                              </div>
+                            )
+                          ) : (
+                            <div className="w-9 h-9 rounded-full bg-slate-700 border border-white/10 flex items-center justify-center overflow-hidden flex-shrink-0">
+                              {t.channelThumbnail ? (
+                                <img src={t.channelThumbnail} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                <span className="text-[10px] font-bold text-slate-400">
+                                  {t.channelName?.charAt(0).toUpperCase() || '?'}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          <div className="min-w-0">
+                            <p className="text-xs text-white font-medium truncate">{t.keyword}</p>
+                            {isLinked ? (
+                              <p className="text-[10px] text-sky-300 truncate flex items-center gap-1 mt-0.5">
+                                {Icon.file('w-2.5 h-2.5 flex-shrink-0')}
+                                <span className="truncate">{linkedAnime?.title || 'Linked Anime'}</span>
+                              </p>
+                            ) : (
+                              <p className="text-[10px] text-slate-600 mt-0.5">Not linked</p>
+                            )}
+                            <p className="text-[9px] text-slate-500 truncate flex items-center gap-1 mt-0.5">
+                              {isLinked && t.channelThumbnail && (
+                                <img src={t.channelThumbnail} alt="" className="w-3 h-3 rounded-full object-cover flex-shrink-0" />
+                              )}
+                              <span className="truncate">
+                                {t.channelName} · part {t.lastKnownPart}
+                              </span>
+                              {t.initialized === false && (
+                                <span className="text-amber-400 flex-shrink-0">{Icon.clock('w-2.5 h-2.5')}</span>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                        <span className={`text-slate-500 flex-shrink-0 ml-2 transition-transform ${isOpen ? 'rotate-90' : ''}`}>
+                          {Icon.chevronRight('w-3.5 h-3.5')}
+                        </span>
+                      </button>
+
+                      {isOpen && (
+                        <div className="px-2 pb-2 pt-2 space-y-2">
+                          {/* Quick actions */}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {isLinked && t.linkedDownloadPageId && (
+                              <>
+                                <button
+                                  onClick={() => syncTitleWithPage(t.channelId, t.id)}
+                                  disabled={!!syncingPage[t.id]}
+                                  className="text-[10px] px-2.5 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 transition disabled:opacity-50 flex items-center gap-1"
+                                >
+                                  {syncingPage[t.id] && Icon.spinner('w-3 h-3')} {syncingPage[t.id] ? 'Syncing...' : 'Sync'}
+                                </button>
+                                <button
+                                  onClick={() => syncTitleEpisode(t.channelId, t.id)}
+                                  disabled={!!syncingEpStatus[t.id]}
+                                  className="text-[10px] px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition disabled:opacity-50 flex items-center gap-1"
+                                >
+                                  {syncingEpStatus[t.id] && Icon.spinner('w-3 h-3')} {syncingEpStatus[t.id] ? 'Updating...' : 'Update Ep'}
+                                </button>
+                                <button
+                                  onClick={() => unlinkTitle(t.channelId, t.id)}
+                                  className="text-[10px] px-2.5 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 transition"
+                                >
+                                  Unlink
+                                </button>
+                              </>
+                            )}
+                            <button
+                              onClick={() => jumpToTitleInChannel(t.channelId, t.id, t.keyword)}
+                              className="text-[10px] px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 transition sm:ml-auto"
+                              title="Edit link / edit title / more options"
+                            >
+                              More options (channel)
+                            </button>
+                          </div>
+
+                          <TrackTitleBrowsePanel
+                            browseData={browseData}
+                            browseLoading={browseLoading}
+                            selectedVideoIds={selectedVideoIds}
+                            episodeOverrides={episodeOverrides}
+                            setEpisodeOverrides={setEpisodeOverrides}
+                            toggleVideoSelect={toggleVideoSelect}
+                            selectAllVideos={selectAllVideos}
+                            doBulkAdd={doBulkAdd}
+                            bulkIgnoreSelected={bulkIgnoreSelected}
+                            finalizeApproval={finalizeApproval}
+                            ignoreVideo={ignoreVideo}
+                            expandedInfoId={expandedInfoId}
+                            setExpandedInfoId={setExpandedInfoId}
+                            scanBrowseDeeper={scanBrowseDeeper}
+                            closeBrowseTitle={closeBrowseTitle}
+                            setEnlargedVideoId={setEnlargedVideoId}
+                            animeOptions={animeOptions}
+                            bulkAnimeId={bulkAnimeId}
+                            bulkPageId={bulkPageId}
+                            setBulkPageId={setBulkPageId}
+                            fetchBulkPages={fetchBulkPages}
+                            bulkPages={bulkPages}
+                            finalizing={finalizing}
+                            bulkIgnoring={bulkIgnoring}
+                            quickApproveSequential={quickApproveSequential}
+                            isSequentialLowRisk={isSequentialLowRisk}
+                          />
+                        </div>
+                      )}
                     </div>
-                    <span className="text-slate-500 flex-shrink-0 ml-2">{Icon.chevronRight('w-3.5 h-3.5')}</span>
-                  </button>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
@@ -1653,6 +1939,8 @@ const TrackListManager: React.FC = () => {
         linkChronologyGraceGap={linkChronologyGraceGap}
         setLinkChronologyGraceGap={setLinkChronologyGraceGap}
         isSubAdmin={isSubAdminContext}
+        previewProgress={previewProgress}
+        cancelPreview={cancelPreview}
       />
 
       {/* Run History + Check Logs */}

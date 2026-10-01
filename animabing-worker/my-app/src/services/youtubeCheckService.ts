@@ -1,4 +1,4 @@
- // ============================================================
+// ============================================================
 // animabing-worker/my-app/src/services/youtubeCheckService.ts
 // ============================================================
 
@@ -157,6 +157,38 @@ export async function fetchRecentVideos(
   return results
 }
 
+// ============ ✅ NEW — Chunked playlist scan (pageToken se resume hota hai) ============
+export async function fetchPlaylistChunk(
+  uploadsPlaylistId: string,
+  apiKey: string,
+  opts: { pageToken?: string; maxPages?: number; quotaTracker?: QuotaTracker } = {}
+): Promise<{ videos: YouTubeVideoItem[]; nextPageToken?: string }> {
+  const maxPages = Math.max(1, opts.maxPages ?? 20)
+  const videos: YouTubeVideoItem[] = []
+  let pageToken = opts.pageToken
+
+  for (let p = 0; p < maxPages; p++) {
+    const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=50&key=${apiKey}${pageToken ? `&pageToken=${pageToken}` : ''}`
+    const res = await fetchWithRetry(url, 1)
+    addUnits(opts.quotaTracker, 1)
+    const data: any = await res.json()
+    if (!res.ok) throw new Error(data?.error?.message || `YouTube error ${res.status}`)
+
+    for (const item of data.items || []) {
+      videos.push({
+        videoId: item.snippet.resourceId.videoId,
+        title: item.snippet.title,
+        publishedAt: item.snippet.publishedAt,
+        thumbnail: item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url || '',
+        description: item.snippet.description || '',
+      })
+    }
+    pageToken = data.nextPageToken
+    if (!pageToken) break
+  }
+  return { videos, nextPageToken: pageToken }
+}
+
 // ============ Video Durations (batch) ============
 export async function fetchVideoDurations(
   videoIds: string[],
@@ -176,6 +208,34 @@ export async function fetchVideoDurations(
     }
   }
   return map
+}
+
+// ============ ✅ NEW — Direct fetch by video IDs (snippet + duration ek hi call me) ============
+export async function fetchVideosByIds(
+  videoIds: string[],
+  apiKey: string,
+  quotaTracker?: QuotaTracker
+): Promise<{ items: YouTubeVideoItem[]; durations: Record<string, number> }> {
+  const items: YouTubeVideoItem[] = []
+  const durations: Record<string, number> = {}
+  for (let i = 0; i < videoIds.length; i += 50) {
+    const batch = videoIds.slice(i, i + 50)
+    const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${batch.join(',')}&key=${apiKey}`
+    const res = await fetchWithRetry(url)
+    addUnits(quotaTracker, 1)
+    const data: any = await res.json()
+    for (const item of data.items || []) {
+      items.push({
+        videoId: item.id,
+        title: item.snippet?.title || '',
+        publishedAt: item.snippet?.publishedAt || '',
+        thumbnail: item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url || '',
+        description: item.snippet?.description || '',
+      })
+      durations[item.id] = parseISODuration(item.contentDetails?.duration || 'PT0S')
+    }
+  }
+  return { items, durations }
 }
 
 function parseISODuration(iso: string): number {

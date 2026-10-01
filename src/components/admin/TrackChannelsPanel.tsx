@@ -52,8 +52,8 @@ const CustomCheckbox: React.FC<{
   );
 };
 
-/* ---------- Searchable Dropdown ---------- */
-const SearchableDropdown: React.FC<{
+/* ---------- Searchable Dropdown (exported for reuse) ---------- */
+export const SearchableDropdown: React.FC<{
   options: AnimeOption[];
   value: AnimeOption | null;
   onChange: (option: AnimeOption | null) => void;
@@ -119,6 +119,209 @@ const SearchableDropdown: React.FC<{
                 <span className="truncate">{opt.title}</span>
               </div>
             ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ---------- 🆕 Depth Picker (custom UI) ---------- */
+const DEPTH_PRESETS = [50, 100, 250, 500, 1000, 1500, 3000, 5000, 7500, 10000];
+const MAX_DEPTH = 10000;
+const fmtDepth = (n: number) => (n >= 1000 ? `${n / 1000}k` : String(n));
+
+const DepthPicker: React.FC<{
+  value: number;
+  onChange: (n: number) => void;
+  disabled?: boolean;
+}> = ({ value, onChange, disabled }) => {
+  const [open, setOpen] = useState(false);
+  const [custom, setCustom] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const applyCustom = () => {
+    const n = Math.floor(Number(custom));
+    if (!n || n < 1) return;
+    onChange(Math.min(MAX_DEPTH, n));
+    setCustom('');
+    setOpen(false);
+  };
+
+  const isCustom = !DEPTH_PRESETS.includes(value);
+
+  return (
+    <div ref={ref} className="relative flex-shrink-0">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((o) => !o)}
+        title="How many recent videos to scan"
+        className={`h-full min-h-[36px] px-3 bg-black/40 border rounded-lg text-xs text-white flex items-center gap-1.5 transition disabled:opacity-60 ${
+          open ? 'border-sky-500/50 ring-2 ring-sky-500/20' : 'border-white/10 hover:border-white/25'
+        }`}
+      >
+        <span className="text-slate-400">Depth</span>
+        <span className="font-semibold tabular-nums text-sky-300">{value.toLocaleString('en-IN')}</span>
+        <span className={`text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`}>
+          {Icon.chevron('w-3 h-3')}
+        </span>
+      </button>
+
+      {open && (
+        <div className="absolute z-30 mt-1 left-0 w-64 bg-gray-900 border border-gray-700 rounded-xl shadow-xl p-3 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] uppercase tracking-wide font-semibold text-slate-400">
+              Scan depth (recent videos)
+            </p>
+            {isCustom && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30">
+                Custom
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-5 gap-1.5">
+            {DEPTH_PRESETS.map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => {
+                  onChange(d);
+                  setOpen(false);
+                }}
+                className={`py-1.5 rounded-lg text-[11px] font-semibold border transition ${
+                  value === d
+                    ? 'bg-sky-600 border-sky-400 text-white shadow-[0_0_8px_rgba(56,189,248,0.35)]'
+                    : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 hover:border-white/20'
+                }`}
+              >
+                {fmtDepth(d)}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex gap-1.5">
+            <input
+              type="number"
+              min={1}
+              max={MAX_DEPTH}
+              value={custom}
+              onChange={(e) => setCustom(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') applyCustom();
+              }}
+              placeholder="Custom (max 10000)"
+              className="flex-1 min-w-0 bg-gray-800/60 border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+            />
+            <button
+              type="button"
+              onClick={applyCustom}
+              disabled={!custom}
+              className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 disabled:opacity-40 text-white text-xs font-semibold"
+            >
+              Set
+            </button>
+          </div>
+
+          <p className="text-[9px] text-slate-500 leading-relaxed">
+            Bada depth chunks mein scan hota hai, progress bar dikhega.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ---------- 🆕 Page Dropdown (custom UI, native <select> ki jagah) ---------- */
+type PageDropdownOption = { value: string; label: string; hint?: string };
+
+const toPageOptions = (pages: any[]): PageDropdownOption[] =>
+  (pages || []).map((p: any, idx: number) => ({
+    value: p._id,
+    label: pageLabel(idx),
+    hint: `${(p.links || []).filter((l: any) => l.type === 'watch').length} watch`,
+  }));
+
+const PageDropdown: React.FC<{
+  options: PageDropdownOption[];
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+}> = ({ options, value, onChange, placeholder = '-- Select Page --', disabled }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
+
+  const selected = options.find((o) => o.value === value);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((o) => !o)}
+        className={`w-full bg-gray-800/60 border rounded-xl px-3 py-2 flex items-center gap-2 text-left text-sm min-h-[42px] transition ${
+          open ? 'border-sky-500/50 ring-2 ring-sky-500/20' : 'border-gray-700 hover:border-gray-600'
+        } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+      >
+        <span className="text-slate-400 flex-shrink-0">{Icon.file('w-3.5 h-3.5')}</span>
+        <span className={`flex-1 truncate ${selected ? 'text-white' : 'text-gray-500'}`}>
+          {selected?.label || placeholder}
+        </span>
+        {selected?.hint && <span className="text-[10px] text-slate-400 flex-shrink-0">{selected.hint}</span>}
+        <span className={`text-slate-400 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}>
+          {Icon.chevron('w-3.5 h-3.5')}
+        </span>
+      </button>
+
+      {open && (
+        <div
+          className={`absolute z-30 mt-1 w-full bg-gray-900 border border-gray-700 rounded-xl max-h-52 overflow-y-auto shadow-xl py-1 ${HIDE_SCROLLBAR}`}
+        >
+          {options.length === 0 ? (
+            <div className="px-3 py-4 text-sm text-gray-500 text-center">No pages found</div>
+          ) : (
+            options.map((o) => {
+              const isSel = o.value === value;
+              return (
+                <button
+                  key={o.value}
+                  type="button"
+                  onClick={() => {
+                    onChange(o.value);
+                    setOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition ${
+                    isSel ? 'bg-sky-500/10 text-sky-200' : 'text-white hover:bg-white/10'
+                  }`}
+                >
+                  <span className="flex-1 truncate">{o.label}</span>
+                  {o.hint && <span className="text-[10px] text-slate-400 flex-shrink-0">{o.hint}</span>}
+                  {isSel && <span className="text-sky-400 flex-shrink-0">{Icon.check('w-3.5 h-3.5')}</span>}
+                </button>
+              );
+            })
           )}
         </div>
       )}
@@ -227,7 +430,11 @@ interface TrackChannelsPanelProps {
   doPreviewBulkAdd: (channelId: string) => void;
   previewAdding: boolean;
   scanPreviewDeeper: (channelId: string) => void;
-  runPreview: (channelId: string, depth?: number) => void;
+  // ✅ UPDATED: runPreview now accepts continueScan flag
+  runPreview: (channelId: string, continueScan?: boolean) => void;
+  // ✅ NEW: preview scan progress + cancel
+  previewProgress: { scanned: number; target: number } | null;
+  cancelPreview: () => void;
   previewScanDepth: number;
   setPreviewScanDepth: (v: number) => void;
   titleInputs: Record<string, string>;
@@ -360,6 +567,8 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
   previewAdding,
   scanPreviewDeeper,
   runPreview,
+  previewProgress,
+  cancelPreview,
   previewScanDepth,
   setPreviewScanDepth,
   titleInputs,
@@ -697,19 +906,13 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
                   onChange={(opt) => fetchBulkPages(opt?._id || '')}
                   placeholder="-- Select Anime --"
                 />
-                <select
+                <PageDropdown
+                  options={toPageOptions(bulkPages)}
                   value={bulkPageId}
-                  onChange={(e) => setBulkPageId(e.target.value)}
+                  onChange={setBulkPageId}
                   disabled={!bulkAnimeId}
-                  className="bg-gray-800/60 border border-gray-700 rounded-xl px-3 py-2 text-xs text-white disabled:opacity-50 min-h-[42px]"
-                >
-                  <option value="">-- Select Page --</option>
-                  {bulkPages.map((p: any, idx: number) => (
-                    <option key={p._id} value={p._id}>
-                      {pageLabel(idx)}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="-- Select Page --"
+                />
               </div>
 
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -1019,22 +1222,8 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
             />
 
             {/* Row 2: depth + preview + add */}
-            <div className="flex gap-2">
-              <select
-                value={previewScanDepth}
-                onChange={(e) => setPreviewScanDepth(Number(e.target.value))}
-                title="How many recent videos to scan"
-                className="w-20 bg-black/40 border border-white/10 rounded-lg px-2 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-sky-500/40"
-              >
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-                <option value={250}>250</option>
-                <option value={500}>500</option>
-                <option value={1000}>1000</option>
-                <option value={1500}>1500</option>
-                <option value={3000}>3000</option>
-                <option value={5000}>5000</option>
-              </select>
+            <div className="flex gap-2 items-stretch">
+              <DepthPicker value={previewScanDepth} onChange={setPreviewScanDepth} disabled={previewLoading} />
               <button
                 onClick={() => {
                   setPreviewForChannel(ch._id);
@@ -1065,6 +1254,24 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
                 )}
               </button>
             </div>
+
+            {/* ✅ Preview progress bar — shows while scanning */}
+            {previewLoading && previewForChannel === ch._id && previewProgress && (
+              <div className="bg-black/20 rounded-lg px-3 py-2 space-y-1.5">
+                <div className="flex items-center justify-between text-[10px] text-slate-400">
+                  <span>Scanning… {previewProgress.scanned} / {previewProgress.target}</span>
+                  <button onClick={cancelPreview} className="text-red-300 hover:text-red-200 font-semibold">
+                    Stop
+                  </button>
+                </div>
+                <div className="w-full h-1.5 bg-black/30 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-sky-500 transition-all duration-300"
+                    style={{ width: `${Math.min(100, (previewProgress.scanned / previewProgress.target) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Row 3: Match slider */}
             <div className="bg-black/20 rounded-lg px-3 py-2 flex items-center gap-3">
@@ -1135,19 +1342,13 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
                           onChange={(opt) => fetchPreviewBulkPages(opt?._id || '')}
                           placeholder="-- Search Anime --"
                         />
-                        <select
+                        <PageDropdown
+                          options={toPageOptions(previewBulkPages)}
                           value={previewBulkPageId}
-                          onChange={(e) => setPreviewBulkPageId(e.target.value)}
+                          onChange={setPreviewBulkPageId}
                           disabled={!previewBulkAnimeId}
-                          className="bg-gray-800/60 border border-gray-700 rounded-xl px-3 py-2 text-[11px] text-white disabled:opacity-50 min-h-[42px]"
-                        >
-                          <option value="">-- Select Page --</option>
-                          {previewBulkPages.map((p: any, idx: number) => (
-                            <option key={p._id} value={p._id}>
-                              {pageLabel(idx)}
-                            </option>
-                          ))}
-                        </select>
+                          placeholder="-- Select Page --"
+                        />
                       </div>
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
@@ -1520,19 +1721,13 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
                         placeholder="-- Select Anime --"
                       />
 
-                      <select
+                      <PageDropdown
+                        options={toPageOptions(pagesForAnime)}
                         value={linkPageId}
-                        onChange={(e) => setLinkPageId(e.target.value)}
+                        onChange={setLinkPageId}
                         disabled={!linkAnimeId}
-                        className="w-full bg-gray-800/60 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white disabled:opacity-50 min-h-[42px]"
-                      >
-                        <option value="">-- Select Download Page --</option>
-                        {pagesForAnime.map((p, idx) => (
-                          <option key={p._id} value={p._id}>
-                            {pageLabel(idx)} ({(p.links || []).filter((l: any) => l.type === 'watch').length} watch)
-                          </option>
-                        ))}
-                      </select>
+                        placeholder="-- Select Download Page --"
+                      />
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <input
