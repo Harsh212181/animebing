@@ -163,6 +163,13 @@ const SIDEBAR_SECTIONS = [
   { id: 'analytics',   label: 'Insights',        tabs: ['pageviews', 'useractivity', 'myEarnings'] },
 ];
 
+// 🆕 Tab persistence via URL hash — page reload / back-forward ke baad bhi
+// wahi tab khula rehta hai.
+const readTabFromHash = (isAllowed: (id: string) => boolean): string | null => {
+  const h = decodeURIComponent(window.location.hash.replace('#', ''));
+  return h && TAB_LABELS[h] && isAllowed(h) ? h : null;
+};
+
 // ─── 🆕 Helper: element ko container ke andar smooth-scroll karke bring into view ──
 function scrollChildIntoContainer(
   container: HTMLElement | null,
@@ -471,8 +478,31 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
     .map(section => ({ ...section, tabs: section.tabs.filter(canAccessTab) }))
     .filter(section => section.tabs.length > 0);
 
-  const [activeTab, setActiveTab] = useState(visibleTabs[0] || 'list');
-  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set([visibleTabs[0] || 'list']));
+  // 🆕 Initial tab — URL hash se padho, fallback first visible tab
+  const initialTab = readTabFromHash(canAccessTab) || visibleTabs[0] || 'list';
+  const [activeTab, setActiveTab] = useState(initialTab);
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set([initialTab]));
+
+  // 🆕 Tab change => URL hash change => browser history entry (Back button kaam karega)
+  const changeTab = (tabId: string) => {
+    if (tabId === activeTab) return;
+    window.location.hash = tabId;
+  };
+
+  // 🆕 Back/Forward ya hash change hone par tab sync karo
+  useEffect(() => {
+    const onHashChange = () => {
+      const t = readTabFromHash(canAccessTab) || visibleTabs[0] || 'list';
+      setActiveTab(t);
+    };
+    window.addEventListener('hashchange', onHashChange);
+    window.addEventListener('popstate', onHashChange);
+    return () => {
+      window.removeEventListener('hashchange', onHashChange);
+      window.removeEventListener('popstate', onHashChange);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 🆕 Logout confirm modal state
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -548,7 +578,7 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
   };
 
   const handleMobileNavClick = (tabId: string) => {
-    setActiveTab(tabId);
+    changeTab(tabId);
     setMobileMenuOpen(false);
   };
 
@@ -573,6 +603,7 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
       setActiveTab(visibleTabs[0]);
     }
     loadInitialData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -585,6 +616,7 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
       } catch { /* ignore */ }
     }, 30000);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   const loadInitialData = async () => {
@@ -721,7 +753,7 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
               <button
                 key={tabId}
                 ref={el => { iconRailBtnRefs.current[tabId] = el; }}   /* 🆕 */
-                onClick={() => setActiveTab(tabId)}
+                onClick={() => changeTab(tabId)}
                 title={TAB_LABELS[tabId]}
                 className={`group relative w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 flex-shrink-0 ${
                   isActive
@@ -798,7 +830,7 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
                   key={tabId}
                   tabId={tabId}
                   activeTab={activeTab}
-                  onClick={setActiveTab}
+                  onClick={changeTab}
                   itemRef={el => { expandedNavBtnRefs.current[tabId] = el; }}   /* 🆕 */
                   badgeCount={
                     tabId === 'reports' ? pendingReportsCount :

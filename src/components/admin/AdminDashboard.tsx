@@ -185,6 +185,13 @@ const TAB_COLORS: Record<string, {
 const getTabColor = (tabId: string) =>
   TAB_COLORS[tabId] || TAB_COLORS.list;
 
+// 🆕 Tab persistence via URL hash — page reload / back-forward ke baad bhi
+// wahi tab khula rehta hai.
+const readTabFromHash = (): string | null => {
+  const h = decodeURIComponent(window.location.hash.replace('#', ''));
+  return h && TAB_LABELS[h] ? h : null;
+};
+
 // ─── renderTab function ──────────────────────────────────────────────────────
 function renderTab(tabId: string, token: string) {
   switch (tabId) {
@@ -458,7 +465,9 @@ const SimpleLoadingScreen: React.FC = () => {
 
 // ─── Main Dashboard ──────────────────────────────────────────────────────────
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
-  const [activeTab, setActiveTab] = useState('list');
+  // 🆕 Initial tab — URL hash se padho, fallback 'list'
+  const initialTab = readTabFromHash() || 'list';
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [sidebarPinned, setSidebarPinned] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -490,7 +499,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
   const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [tabRefreshVersions, setTabRefreshVersions] = useState<Record<string, number>>({});
-  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set(['list']));
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set([initialTab]));
 
   // 🆕 Logout confirm modal state
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -612,13 +621,34 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     finally { pendingRef.current.delete('pending-reports'); }
   };
 
+  // 🆕 Tab change => URL hash change => browser history entry (Back button kaam karega)
   const handleTabChange = (tabId: string) => {
-    setActiveTab(tabId);
+    if (tabId === activeTab) return;
+    window.location.hash = tabId;
     if (tabId === 'reports') {
       localStorage.setItem(REPORTS_SEEN_KEY, new Date().toISOString());
       setPendingReportsCount(0);
     }
   };
+
+  // 🆕 Back/Forward ya hash change hone par tab sync karo
+  useEffect(() => {
+    const onHashChange = () => {
+      const t = readTabFromHash() || 'list';
+      setActiveTab(t);
+      if (t === 'reports') {
+        localStorage.setItem(REPORTS_SEEN_KEY, new Date().toISOString());
+        setPendingReportsCount(0);
+      }
+    };
+    window.addEventListener('hashchange', onHashChange);
+    window.addEventListener('popstate', onHashChange);
+    return () => {
+      window.removeEventListener('hashchange', onHashChange);
+      window.removeEventListener('popstate', onHashChange);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!token) {
@@ -631,6 +661,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     fetchDownloadStats();
     fetchRestorePreview();
     fetchPendingReportsCount();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -655,6 +686,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       fetchPendingReportsCount();
     }, 30000);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   // 🆕 Scroll down => header hide, thoda sa scroll up => header show (3 sec tak click na ho to auto hide)

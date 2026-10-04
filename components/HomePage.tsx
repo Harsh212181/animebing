@@ -51,6 +51,102 @@ const getAnimeId = (anime: Anime): string => {
   return `${anime.title}-${anime.releaseYear || 'unknown'}`;
 };
 
+// ─── 🆕 Premium skeleton: banner + heading + grid ───────────────────────────
+const HomeLoadingSkeleton: React.FC = () => (
+  <>
+    <style>{`
+      @keyframes hlsShimmer {
+        0%   { background-position: -200% 0; }
+        100% { background-position: 200% 0; }
+      }
+      @keyframes hlsFloatIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes hlsOrb {
+        0%,100% { transform: translate(0,0) scale(1); }
+        50%     { transform: translate(20px,-15px) scale(1.05); }
+      }
+      .hls-base {
+        background-color: rgba(255,255,255,0.045);
+        position: relative;
+        overflow: hidden;
+      }
+      .hls-base::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          100deg,
+          transparent 20%,
+          rgba(168,85,247,0.14) 50%,
+          transparent 80%
+        );
+        background-size: 200% 100%;
+        animation: hlsShimmer 1.8s linear infinite;
+      }
+      .hls-fade-in { animation: hlsFloatIn 0.4s cubic-bezier(0.16,1,0.3,1) both; }
+      .hls-orb { animation: hlsOrb 12s ease-in-out infinite; }
+    `}</style>
+
+    <div className="relative min-h-screen w-full overflow-hidden bg-gradient-to-br from-[#0b0a14] via-[#120c22] to-[#0b0a14]">
+      {/* Ambient background orbs */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="hls-orb absolute -top-40 -left-40 w-[420px] h-[420px] rounded-full bg-purple-600/15 blur-[120px]" />
+        <div className="hls-orb absolute -bottom-40 -right-40 w-[460px] h-[460px] rounded-full bg-fuchsia-600/10 blur-[130px]" style={{ animationDelay: '-4s' }} />
+      </div>
+
+      <div className="relative mx-auto px-2 sm:px-3 py-2 lg:py-4 max-w-[1600px]">
+        {/* Banner / carousel skeleton */}
+        <div className="hls-fade-in relative w-full h-[220px] sm:h-[280px] md:h-[330px] rounded-2xl overflow-hidden hls-base mb-6 border border-white/[0.06]">
+          {/* Left content placeholder */}
+          <div className="absolute inset-0 flex flex-col justify-end p-6 sm:p-8">
+            <div className="max-w-md space-y-3">
+              <div className="h-6 sm:h-8 w-[70%] rounded-lg hls-base" />
+              <div className="h-3 sm:h-4 w-[50%] rounded-md hls-base" />
+              <div className="flex gap-2 pt-1">
+                <div className="h-9 w-24 rounded-xl hls-base" />
+                <div className="h-9 w-24 rounded-xl hls-base" />
+              </div>
+            </div>
+          </div>
+          {/* Dots placeholder (right side) */}
+          <div className="absolute bottom-4 right-6 flex gap-1.5">
+            {[0, 1, 2, 3, 4].map(i => (
+              <div key={i} className={`h-1.5 rounded-full hls-base ${i === 1 ? 'w-6' : 'w-1.5'}`} />
+            ))}
+          </div>
+        </div>
+
+        {/* Section heading placeholder */}
+        <div className="hls-fade-in mb-4" style={{ animationDelay: '120ms' }}>
+          <div className="h-7 sm:h-8 w-52 rounded-lg hls-base" />
+        </div>
+
+        {/* Filter pills placeholder (mobile-ish row) */}
+        <div className="hls-fade-in flex flex-wrap gap-2 mb-5" style={{ animationDelay: '180ms' }}>
+          {[70, 90, 82, 96, 78].map((w, i) => (
+            <div
+              key={i}
+              className="h-8 rounded-lg hls-base"
+              style={{ width: `${w}px` }}
+            />
+          ))}
+        </div>
+
+        {/* Card grid skeleton */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-6 gap-2">
+          {Array.from({ length: 18 }).map((_, i) => (
+            <div key={i} className="hls-fade-in" style={{ animationDelay: `${240 + i * 40}ms` }}>
+              <SkeletonLoader />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </>
+);
+
 const HomePage: React.FC<Props> = ({
   onAnimeSelect,
   searchQuery,
@@ -311,16 +407,12 @@ const HomePage: React.FC<Props> = ({
   const featuredReady = !featuredSectionsLoading;
   const bothReady = initialReady && featuredReady;
 
+  // 🆕 Premium loading skeleton (banner + heading + pills + grid)
   if (!bothReady && animeList.length === 0 && !isComingBackRef.current) {
     return (
       <>
         <SEO {...seoData} />
-        <div className="min-h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-purple-900 p-4">
-          <div className="h-[330px] w-full rounded-2xl bg-slate-800/40 animate-pulse mb-6" />
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-6 gap-3">
-            {Array.from({ length: 18 }).map((_, i) => <SkeletonLoader key={i} />)}
-          </div>
-        </div>
+        <HomeLoadingSkeleton />
       </>
     );
   }
@@ -371,11 +463,25 @@ const HomePage: React.FC<Props> = ({
             0%,100% { transform:translateY(0px); }
             50% { transform:translateY(-3px); }
           }
+          @keyframes skShimmerInline {
+            0%   { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+          }
           .card-hover-effect:hover { transform:translateY(-4px) scale(1.01); transition:transform 0.3s ease-out; }
           .border-transition { transition:background 0.8s ease-in-out; }
           .scrollbar-hide { -ms-overflow-style:none; scrollbar-width:none; }
           .scrollbar-hide::-webkit-scrollbar { display:none; }
           .homepage-content-container { padding:0.5rem !important; margin:0.1rem !important; }
+          .inline-shimmer {
+            background: linear-gradient(
+              100deg,
+              transparent 20%,
+              rgba(168,85,247,0.10) 50%,
+              transparent 80%
+            );
+            background-size: 200% 100%;
+            animation: skShimmerInline 1.8s linear infinite;
+          }
         `}</style>
 
         <div className="homepage-content-container mx-auto px-2 sm:px-3 py-2 lg:py-4">
@@ -500,7 +606,7 @@ const HomePage: React.FC<Props> = ({
                       key={`skeleton-${i}`}
                       className="relative rounded-xl border border-purple-700/40 p-1 bg-gradient-to-b from-purple-900/80 to-purple-800/70 overflow-hidden"
                     >
-                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-purple-700/10 to-transparent animate-shimmer" />
+                      <div className="absolute inset-0 inline-shimmer pointer-events-none" />
                       <SkeletonLoader />
                     </div>
                   ))}

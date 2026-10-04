@@ -629,7 +629,10 @@ animeRoutes.put('/settings/auto-rotate', adminAuth, async (c) => {
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
     await db.collection('settings').updateOne(
       { type: 'featuredAutoRotate' },
-      { $set: { [`sections.${section}`]: { hourly: !!hourly, daily: !!daily, perVisitor: !!perVisitor } } },
+      {
+        $set: { [`sections.${section}`]: { hourly: !!hourly, daily: !!daily, perVisitor: !!perVisitor } },
+        $setOnInsert: { key: 'featuredAutoRotate' },
+      },
       { upsert: true }
     )
     return c.json({ success: true, message: 'Auto-rotate updated' })
