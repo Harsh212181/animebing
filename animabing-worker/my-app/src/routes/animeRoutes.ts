@@ -8,21 +8,6 @@ import { withEdgeCache, fireAndForget, invalidateEdgeCache, getCachedJSON } from
 
 const animeRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
-// ============================================================================
-// ✅ CONNECTION-CONSOLIDATION FIX
-// Pehle: findMany/findOne/updateOne/countDocuments helpers har call pe apna
-// alag MongoClient connect+close karte the. Isliye jis route me 2-3 alag
-// operations the (jaise anime detail = findOne + updateOne(views) + findMany
-// episodes), wahan 2-3 alag MongoDB connections ban rahe the — ek single page
-// load ke liye.
-//
-// Fix: har route ab `getDb()` SIRF EK BAAR call karta hai, aur uske baad
-// `db.collection(...)` seedha use karke saare operations usi ek connection
-// pe chalata hai. Views/likes/dislikes bhi ab read-then-write ki jagah
-// atomic `$inc` se update hote hain (concurrent traffic me lost updates
-// nahi honge).
-// ============================================================================
-
 // ============ SECTION FIELD MAPPING ============
 const SECTION_FIELDS: Record<string, { flag: string; order: string }> = {
   content: { flag: 'featured', order: 'featuredOrder' },
@@ -31,6 +16,39 @@ const SECTION_FIELDS: Record<string, { flag: string; order: string }> = {
   manga: { flag: 'featuredMangaSection', order: 'featuredMangaOrder' },
   movie: { flag: 'featuredMovieSection', order: 'featuredMovieOrder' },
 }
+
+// ============ AUTO-ROTATE HELPERS ============
+const ROTATE_SECTIONS = ['banner', 'anime', 'manga', 'movie']
+
+function hashStr(s: string): number {
+  let h = 2166136261
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return h >>> 0
+}
+
+function mulberry32(seed: number) {
+  return function () {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+function seededShuffle<T>(arr: T[], seedStr: string): T[] {
+  const rnd = mulberry32(hashStr(seedStr))
+  const a = [...arr]
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1))
+    ;[a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
+}
+
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000
 
 // ✅ NEW — anime hide/block/delete/vote hone par uska apna detail-cache
 // turant clear karo, TTL wait nahi karna
@@ -69,18 +87,20 @@ async function throttledViewIncrement(c: any, lockName: string, matchFilter: any
   )
 }
 
-// ============ FEATURED (section-aware) — NOW CACHED (120s) ============
+// ============ FEATURED (section-aware) — NOW CACHED (120s) + AUTO-ROTATE ============
 animeRoutes.get('/featured', async (c) => {
   try {
     const section = c.req.query('section') || 'content'
+    const raw = c.req.query('raw') === '1'   // admin panel: asli order
+    const bucket = Math.min(Math.max(parseInt(c.req.query('v') || '0') || 0, 0), 9)
 
-    const response = await withEdgeCache(c, 120, async () => {
+    const build = async () => {
       const cfg = SECTION_FIELDS[section] || SECTION_FIELDS.content
       const filter: any = { [cfg.flag]: true, isHidden: { $ne: true }, isBlocked: { $ne: true } }
       const sort: any = { [cfg.order]: -1, createdAt: -1 }
 
-      const animes = await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'featured', (db) =>
-        db.collection('animes')
+      const { animes, rotate } = await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'featured', async (db) => {
+        const animes = await db.collection('animes')
           .find(filter, {
             projection: {
               title: 1, thumbnail: 1, releaseYear: 1, subDubStatus: 1, contentType: 1,
@@ -92,12 +112,24 @@ animeRoutes.get('/featured', async (c) => {
           .sort(sort)
           .limit(24)
           .toArray()
-      )
+        const s = await db.collection('settings').findOne({ type: 'featuredAutoRotate' })
+        return { animes, rotate: s?.sections?.[section] || null }
+      })
 
-      return { success: true, data: animes }
-    })
+      let data = animes
+      if (!raw && rotate && (rotate.hourly || rotate.daily || rotate.perVisitor)) {
+        const now = Date.now()
+        const parts: string[] = [section]
+        if (rotate.daily)      parts.push('d' + Math.floor((now + IST_OFFSET_MS) / 86400000))
+        if (rotate.hourly)     parts.push('h' + Math.floor(now / 3600000))
+        if (rotate.perVisitor) parts.push('v' + bucket)
+        data = seededShuffle(animes, parts.join('|'))
+      }
+      return { success: true, data }
+    }
 
-    return response
+    if (raw) return c.json(await build())
+    return await withEdgeCache(c, 120, build)
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
   }
@@ -572,6 +604,35 @@ animeRoutes.put('/settings/section-visibility', adminAuth, async (c) => {
       { upsert: true }
     )
     return c.json({ success: true, message: `Section ${section} ${hidden ? 'hidden' : 'shown'}` })
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 500)
+  }
+})
+
+// ============ AUTO-ROTATE SETTINGS ============
+animeRoutes.get('/settings/auto-rotate', adminAuth, async (c) => {
+  try {
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const s = await db.collection('settings').findOne({ type: 'featuredAutoRotate' })
+    return c.json({ success: true, data: s?.sections || {} })
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 500)
+  }
+})
+
+animeRoutes.put('/settings/auto-rotate', adminAuth, async (c) => {
+  try {
+    const { section, hourly, daily, perVisitor } = await c.req.json()
+    if (!ROTATE_SECTIONS.includes(section)) {
+      return c.json({ success: false, error: 'Invalid section' }, 400)
+    }
+    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    await db.collection('settings').updateOne(
+      { type: 'featuredAutoRotate' },
+      { $set: { [`sections.${section}`]: { hourly: !!hourly, daily: !!daily, perVisitor: !!perVisitor } } },
+      { upsert: true }
+    )
+    return c.json({ success: true, message: 'Auto-rotate updated' })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
   }

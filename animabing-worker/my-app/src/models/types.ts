@@ -780,3 +780,10 @@ export interface ISubAdminEarningsSummary {
   totalEarnings: number
   byAnime: ISubAdminAnimeEarning[]
 }
+
+// ============ FEATURED AUTO-ROTATE ============
+export interface IFeaturedAutoRotate {
+  hourly: boolean      // har ghante order badle
+  daily: boolean       // har 24 ghante (IST midnight) order badle
+  perVisitor: boolean  // har visitor ko alag order (same anime)
+}

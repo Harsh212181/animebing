@@ -7,6 +7,10 @@ const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev';
 
 type SectionType = 'banner' | 'anime' | 'manga' | 'movie';
 
+// ── Auto-rotate types ────────────────────────────────────────────────
+type RotateCfg = { hourly: boolean; daily: boolean; perVisitor: boolean };
+const DEFAULT_ROTATE: RotateCfg = { hourly: false, daily: false, perVisitor: false };
+
 const SECTIONS: { key: SectionType; label: string; contentType: string[] | null }[] = [
   { key: 'banner', label: 'Banner Slider', contentType: null },
   { key: 'anime',  label: 'Latest Anime',  contentType: ['Anime', 'Ai Anime', 'Web Series'] },
@@ -70,6 +74,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
   const [activeSection, setActiveSection] = useState<SectionType>('banner');
 
   const [sectionVisibility, setSectionVisibility] = useState<Record<string, boolean>>({});
+  const [autoRotate, setAutoRotate] = useState<Record<string, RotateCfg>>({});
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
 
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -127,6 +132,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
     fetchAnimes();
     fetchFeaturedAnimes(activeSection);
     fetchSectionVisibility();
+    fetchAutoRotate();
     setDragIndex(null);
     setDragOverIndex(null);
   }, [forceRefresh, activeSection]);
@@ -161,6 +167,46 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
         }
       } catch (err) {
         console.error('Error toggling visibility', err);
+      }
+    });
+  };
+
+  // ── Auto-rotate: fetch + toggle ────────────────────────────────────
+  const fetchAutoRotate = async () => {
+    await guarded('fetch-auto-rotate', async () => {
+      try {
+        const t = getAdminToken();
+        const res = await fetch(`${API_BASE}/api/anime/settings/auto-rotate`, {
+          headers: t ? { Authorization: `Bearer ${t}` } : {}
+        });
+        const json = await res.json();
+        if (json.success) setAutoRotate(json.data || {});
+      } catch (err) {
+        console.error('Failed to fetch auto-rotate', err);
+      }
+    });
+  };
+
+  const toggleAutoRotate = async (key: keyof RotateCfg) => {
+    const section = activeSection;
+    await guarded(`auto-rotate-${section}-${key}`, async () => {
+      const cur = autoRotate[section] ?? DEFAULT_ROTATE;
+      const next = { ...cur, [key]: !cur[key] };
+      setAutoRotate(prev => ({ ...prev, [section]: next }));   // optimistic
+      const token = getAdminToken();
+      try {
+        const res = await fetch(`${API_BASE}/api/anime/settings/auto-rotate`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token && { Authorization: `Bearer ${token}` })
+          },
+          body: JSON.stringify({ section, ...next })
+        });
+        if (!res.ok) throw new Error('save failed');
+      } catch (err) {
+        setAutoRotate(prev => ({ ...prev, [section]: cur }));  // revert
+        console.error('Error toggling auto-rotate', err);
       }
     });
   };
@@ -270,6 +316,7 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
         try {
           const url = new URL(endpoint);
           url.searchParams.set('section', section);
+          url.searchParams.set('raw', '1');
           url.searchParams.set('_', Date.now().toString());
           const t = getAdminToken();
           const response = await fetch(url.toString(), {
@@ -604,6 +651,55 @@ const FeaturedAnimeManager: React.FC<FeaturedAnimeManagerProps> = () => {
           );
         })}
       </div>
+
+      {/* ─── Auto Rotate ─────────────────────────── */}
+      {(() => {
+        const cfg = autoRotate[activeSection] ?? DEFAULT_ROTATE;
+        const items: { key: keyof RotateCfg; label: string; hint: string }[] = [
+          { key: 'hourly',     label: 'Every Hour',  hint: 'Order har ghante badlega' },
+          { key: 'daily',      label: 'Every 24h',   hint: 'Order roz IST midnight par badlega' },
+          { key: 'perVisitor', label: 'Per Visitor', hint: 'Har visitor ko alag order' },
+        ];
+        const anyOn = cfg.hourly || cfg.daily || cfg.perVisitor;
+        return (
+          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-4 space-y-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="w-1 h-4 bg-gradient-to-b from-amber-400 to-orange-400 rounded-full" />
+              <h2 className="text-xs font-bold uppercase tracking-wider text-gray-300">
+                Auto Rotate · {sectionMeta?.label}
+              </h2>
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border ${
+                anyOn ? 'text-emerald-300 bg-emerald-500/15 border-emerald-500/25'
+                      : 'text-gray-400 bg-white/[0.04] border-white/[0.08]'}`}>
+                {anyOn ? 'ON' : 'OFF'}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {items.map(it => {
+                const on = cfg[it.key];
+                const busy = pendingRef.current.has(`auto-rotate-${activeSection}-${it.key}`);
+                return (
+                  <button
+                    key={it.key}
+                    onClick={() => toggleAutoRotate(it.key)}
+                    disabled={busy}
+                    title={it.hint}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-bold transition-all disabled:opacity-60 ${
+                      on ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                         : 'bg-white/[0.03] text-gray-400 border-white/[0.08] hover:text-white'}`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${on ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'}`} />
+                    {it.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-gray-500">
+              Yahan hamesha asli (manual) order dikhta hai. Auto ON hone par sirf homepage par order shuffle hota hai.
+            </p>
+          </div>
+        );
+      })()}
 
       {/* ─── Stats Cards ──────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

@@ -321,10 +321,12 @@ const PollCard: React.FC<PollCardProps> = ({ onVoteSuccess, location }) => {
   }, [loadPolls]);
 
   // ✅ Auto-refresh sirf tab jab koi poll ho jisme user ne vote nahi kiya
+  // 🆕 Interval 45s kar diya + tab hidden hone par polling pause
   useEffect(() => {
     const anyUnvoted = polls.some(p => !p.userHasVoted);
     if (anyUnvoted) {
-      const interval = setInterval(loadPolls, 30000);
+      const tick = () => { if (!document.hidden) loadPolls() }
+      const interval = setInterval(tick, 45000);
       return () => clearInterval(interval);
     }
   }, [polls, loadPolls]);

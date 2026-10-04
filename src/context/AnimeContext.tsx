@@ -41,6 +41,20 @@ const ANIME_FIELDS = 'title,thumbnail,releaseYear,status,contentType,subDubStatu
 // ✅ Backend base URL (bina /api ke) — featured sections fetch ke liye
 const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev';
 
+// ✅ Per-visitor rotation ke liye fixed bucket (0-9), browser me save rehta hai
+const getVisitorBucket = (): string => {
+  try {
+    let v = localStorage.getItem('featBucket');
+    if (v === null) {
+      v = String(Math.floor(Math.random() * 10));
+      localStorage.setItem('featBucket', v);
+    }
+    return v;
+  } catch {
+    return '0';
+  }
+};
+
 // ✅ MODULE-LEVEL CACHE — component re-mount par bhi survive karta hai
 // Jab React component unmount/remount hoti hai, yeh variables reset NAHI hote
 let _animeListCache: Anime[] = [];
@@ -72,6 +86,9 @@ export const AnimeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [featuredSectionsLoading, setFeaturedSectionsLoading] = useState(true);
 
   const lastSearchQuery = useRef('');
+
+  // 🆕 Auto-rotate silent refresh ke liye — last successful fetch time
+  const lastSectionsFetchRef = useRef(0);
 
   // ✅ Cache sync wrappers — state aur module cache dono ek saath update hote hain
   const setAnimeList = useCallback((list: Anime[]) => {
@@ -109,15 +126,19 @@ export const AnimeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   // ✅ NEW — featured sections (banner / anime / manga / movie) + section visibility
-  const fetchFeaturedSections = useCallback(async () => {
-    setFeaturedSectionsLoading(true);
+  // 🆕 `v=` visitor bucket add kiya — per-visitor rotation ke liye
+  // 🆕 `silent` mode — background refresh me loading spinner na dikhe
+  const fetchFeaturedSections = useCallback(async (silent: boolean = false) => {
+    if (!silent) setFeaturedSectionsLoading(true);
+    lastSectionsFetchRef.current = Date.now();
     try {
+      const bucket = getVisitorBucket();
       const fetchSection = async (section: string) => {
         try {
-          const res = await fetch(`${API_BASE}/api/anime/featured?section=${section}`);
+          const res = await fetch(`${API_BASE}/api/anime/featured?section=${section}&v=${bucket}`);
           const result = await res.json();
           return result.data || [];
-        } catch { return []; }
+        } catch { return null; }   // null = fail, purana data na hatao
       };
       const [visRes, banner, animeSec, mangaSec, movieSec] = await Promise.all([
         fetch(`${API_BASE}/api/anime/settings/section-visibility`).then(r => r.json()).catch(() => null),
@@ -127,9 +148,14 @@ export const AnimeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         fetchSection('movie'),
       ]);
       if (visRes?.success) setSectionVisibility(visRes.data);
-      setFeaturedSections({ banner, anime: animeSec, manga: mangaSec, movie: movieSec });
+      setFeaturedSections(prev => ({
+        banner: banner ?? prev.banner,
+        anime: animeSec ?? prev.anime,
+        manga: mangaSec ?? prev.manga,
+        movie: movieSec ?? prev.movie,
+      }));
     } finally {
-      setFeaturedSectionsLoading(false);
+      if (!silent) setFeaturedSectionsLoading(false);
     }
   }, []);
 
@@ -212,6 +238,23 @@ export const AnimeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter, contentType]);
+
+  // ✅ Auto-rotate ke liye: tab dobara visible ho ya page khula rahe to
+  // featured sections silently refresh ho (max 5 min me ek baar)
+  useEffect(() => {
+    const REFRESH_MS = 5 * 60 * 1000;
+    const maybeRefresh = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - lastSectionsFetchRef.current < REFRESH_MS) return;
+      fetchFeaturedSections(true);
+    };
+    document.addEventListener('visibilitychange', maybeRefresh);
+    const interval = setInterval(maybeRefresh, REFRESH_MS);
+    return () => {
+      document.removeEventListener('visibilitychange', maybeRefresh);
+      clearInterval(interval);
+    };
+  }, [fetchFeaturedSections]);
 
   // Search debounce
   useEffect(() => {
