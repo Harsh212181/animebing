@@ -1,18 +1,5 @@
 import { MongoClient, Db, ObjectId, Filter, Document } from 'mongodb'
 
-// ============================================================================
-// ✅ IMPORTANT ARCHITECTURE NOTE
-// Cloudflare Workers isolates har request ke liye ek naya "context" banate hain.
-// Ek TCP socket (MongoClient connection) jo request A me bana ho, use request B
-// me reuse karna unsafe hai — Workers runtime aisi Promises ko cancel kar deta
-// hai jo cross-request resolve hoti hain ("Promise will never complete" / hang).
-//
-// Isliye ab hum HAR REQUEST ke liye NAYA client banate hain, use karte hain,
-// aur usi request ke andar hi guaranteed close karte hain (finally block me).
-// Connection banane me sirf ~300ms lagte hain (logs se confirmed) — ye trade-off
-// hang/cascading-failure se kahi behtar hai.
-// ============================================================================
-
 function log(...args: any[]) {
   console.log(`[DB ${new Date().toISOString()}]`, ...args)
 }
@@ -31,16 +18,20 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   })
 }
 
-// ============================================================================
-// ✅ getDb — kai routes seedha ise import karke apni custom queries chalate hain
-// (jaise db.collection('x').find(...)). Isliye backward-compatible rehna zaroori
-// hai. Ye har call pe naya connection banata hai (caching nahi karta — wahi
-// purana cross-request bug wapas laane se bachata hai). Client explicitly close
-// nahi hota yahan kyunki caller ko db object ke saath directly kaam karna hota
-// hai; isolate recycle hone pe ya socket idle timeout pe ye khud saaf ho jaata
-// hai. Jahan possible ho, upar wale findMany/findOne/etc. helpers use karo —
-// wo connect+query+close sab khud guarantee karte hain.
-// ============================================================================
+const MAX_CONCURRENT_DB = 8
+let activeDb = 0
+const dbQueue: Array<() => void> = []
+
+async function acquireDbSlot() {
+  if (activeDb < MAX_CONCURRENT_DB) { activeDb++; return }
+  await new Promise<void>((resolve) => dbQueue.push(resolve))
+}
+function releaseDbSlot() {
+  const next = dbQueue.shift()
+  if (next) next()      // slot seedha agle ko de do
+  else activeDb--
+}
+
 export async function getDb(mongoUri: string, dbName: string): Promise<Db> {
   const t0 = Date.now()
   const client = new MongoClient(mongoUri, {
@@ -64,17 +55,27 @@ export async function getDb(mongoUri: string, dbName: string): Promise<Db> {
 // 🆕 FIX: 'export' add kiya gaya — instagramWebhookRoutes.ts aur
 // instagramQueueService.ts dono is function ko directly import karte hain,
 // export missing hone ki wajah se wahan red/unresolved error aa raha tha.
+//
+// 🆕 UPDATE: opTimeoutMs optional param add kiya (default 8000ms). Lamba batch
+// chalane wale callers ab `withDb(..., 30000)` pass kar sakte hain.
+// socketTimeoutMS ko bhi 10000 -> 30000 kar diya taaki lamba batch beech me
+// na tute.
 export async function withDb<T>(
   mongoUri: string,
   dbName: string,
   label: string,
-  fn: (db: Db) => Promise<T>
+  fn: (db: Db) => Promise<T>,
+  opTimeoutMs = 8000
 ): Promise<T> {
+  // ✅ CONNECTION LIMITER: slot acquire karo (agar 8 already active hain to
+  // yahan await pe rukega jab tak koi release na kare)
+  await acquireDbSlot()
+
   const t0 = Date.now()
   const client = new MongoClient(mongoUri, {
     connectTimeoutMS: 5000,
     serverSelectionTimeoutMS: 5000,
-    socketTimeoutMS: 10000,
+    socketTimeoutMS: 30000,   // 🆕 10000 -> 30000 (lamba batch ke liye)
     maxPoolSize: 5,
     minPoolSize: 0,
   })
@@ -84,7 +85,7 @@ export async function withDb<T>(
     log(`connected (${Date.now() - t0}ms) for ${label}`)
 
     const db = client.db(dbName)
-    const result = await withTimeout(fn(db), 8000, `op[${label}]`)
+    const result = await withTimeout(fn(db), opTimeoutMs, `op[${label}]`)
     log(`${label} succeeded (${Date.now() - t0}ms total)`)
     return result
   } catch (err) {
@@ -98,6 +99,9 @@ export async function withDb<T>(
     } catch (closeErr) {
       logErr(`close FAILED for ${label} (ignored, isolate will GC it)`, closeErr)
     }
+    // ✅ CONNECTION LIMITER: sabse aakhir me slot release karo — queue me
+    // wait kar raha next caller ab aage badhega
+    releaseDbSlot()
   }
 }
 

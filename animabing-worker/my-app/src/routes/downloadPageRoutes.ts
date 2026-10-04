@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
-import { toObjectId, isValidObjectId, getDb } from '../services/mongoService'
+import { toObjectId, isValidObjectId, getDb, withDb } from '../services/mongoService'
 import { IDownloadPage } from '../models/types'
 import { syncPageDerivedData, syncAnimeEpisodeCountFromAnime } from '../services/episodeSyncService'
 import { prefetchR2Providers, isProtectedDomainSync, signDownloadUrlBatch } from '../services/signedUrlService'
@@ -67,14 +67,14 @@ downloadPageRoutes.get('/anime/:animeId', async (c) => {
     const animeId = c.req.param('animeId')
     if (!isValidObjectId(animeId)) return c.json({ error: 'Invalid animeId' }, 400)
 
-    const response = await withEdgeCache(c, 300, async () => {
-      const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-      const pages = await db.collection('downloadpages')
-        .find({ animeId: toObjectId(animeId) })
-        .sort({ episodeNumber: 1 })
-        .toArray()
-      return pages
-    })
+    const response = await withEdgeCache(c, 300, () =>
+      withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'dlPagesByAnime', (db) =>
+        db.collection('downloadpages')
+          .find({ animeId: toObjectId(animeId) })
+          .sort({ episodeNumber: 1 })
+          .toArray()
+      )
+    )
     return response
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -411,19 +411,21 @@ downloadPageRoutes.get('/:slug', async (c) => {
     const slug = c.req.param('slug')
 
     const response = await withEdgeCache(c, 300, async () => {
-      const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+      const { page, animeData } = await withDb(
+        c.env.MONGODB_URI, c.env.MONGODB_DB, 'downloadPage', async (db) => {
+          const page = await db.collection('downloadpages').findOne({ slug }) as IDownloadPage | null
+          if (!page || (page as any).isHidden) throw { __notFound: true }
 
-      const page = await db.collection('downloadpages').findOne({ slug }) as IDownloadPage | null
-      if (!page) throw { __notFound: true }
-      if ((page as any).isHidden) throw { __notFound: true }
-
-      const animeIdStr = (page as any).animeId?.toString()
-      const animeData = animeIdStr && isValidObjectId(animeIdStr)
-        ? await db.collection('animes').findOne(
-            { _id: toObjectId(animeIdStr) },
-            { projection: { title: 1, thumbnail: 1, description: 1, seoDescription: 1, contentType: 1 } }
-          )
-        : null
+          const animeIdStr = (page as any).animeId?.toString()
+          const animeData = animeIdStr && isValidObjectId(animeIdStr)
+            ? await db.collection('animes').findOne(
+                { _id: toObjectId(animeIdStr) },
+                { projection: { title: 1, thumbnail: 1, description: 1, seoDescription: 1, contentType: 1 } }
+              )
+            : null
+          return { page, animeData }
+        }
+      )
 
       const allLinks = (page as any).links || []
       const providerMap = await prefetchR2Providers(

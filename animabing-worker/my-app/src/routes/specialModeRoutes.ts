@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
-import { findMany, insertOne, updateOne, deleteOne, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
+import { findMany, insertOne, updateOne, deleteOne, toObjectId, isValidObjectId, getDb, withDb } from '../services/mongoService'
 import { ISpecialMode } from '../models/types'
 import { Db } from 'mongodb'
 // ⚠️ Path check kar lena — agar tumhare project me edgeCache service kisi aur path pe hai to adjust karo
@@ -13,26 +13,6 @@ const ALL_LOCATIONS: Array<'home' | 'detail' | 'downloadLink'> = ['home', 'detai
 
 const getModeLocations = (m: any): Array<'home' | 'detail' | 'downloadLink'> =>
   Array.isArray(m.displayLocations) && m.displayLocations.length > 0 ? m.displayLocations : ALL_LOCATIONS
-
-// ============================================================================
-// ✅ FIX: `getTodaysActiveModes`, `isForceLink5ModeActive`, aur
-// `syncSpecialModeLinks` ab EK OPTIONAL trailing `existingDb` param lete hain.
-//
-// Pehle: `isForceLink5ModeActive` khud apna connection kholta tha AUR andar
-// se `getTodaysActiveModes` ko call karta tha jo APNA ALAG connection kholta
-// tha — matlab 2 connections. Ye function `shortenerRoutes.ts` ke `/:code`
-// route se HAR REAL-USER CLICK pe chalta hai, isliye ye sabse zyada impact
-// wala fix hai is file me.
-//
-// `syncSpecialModeLinks` bhi wahi 2-connection pattern follow karta tha, aur
-// ye `linkSettingsRoutes.ts` ke `getSettings()` se chalta hai jo khud bahut
-// routes se call hota hai — is fix se wahan bhi connections kam honge.
-//
-// 🆕 FIX (aur ek): `invalidateEdgeCache` ko ab har admin write
-// (create/update/delete/master-toggle) ke turant baad call kiya gaya hai.
-// Pehle cache TTL (30s) khatam hone tak admin ke changes public
-// `/api/special-modes/active` pe reflect nahi hote the.
-// ============================================================================
 
 export async function getTodaysActiveModes(mongoUri: string, dbName: string, existingDb?: Db): Promise<ISpecialMode[]> {
   const db = existingDb || await getDb(mongoUri, dbName)
@@ -132,29 +112,32 @@ export async function syncSpecialModeLinks(mongoUri: string, dbName: string, exi
   }
 }
 
-// ============ PUBLIC: kya abhi koi mode(s) active hai(n)? — 3 connections combined into 1 ============
+// ============ PUBLIC: kya abhi koi mode(s) active hai(n)? ============
+// ✅ FIX: pehle getDb() manual tha (leak). Ab withDb (pooled connection) +
+// withEdgeCache (30s) — taaki frontend har page load pe hit kare to bhi
+// DB pe load na pade.
 specialModeRoutes.get('/active', async (c) => {
   try {
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB, db) // ✅ db pass kiya
+    const result = await withEdgeCache(c, 30, () =>
+      withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'specialActive', async (db) => {
+        await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB, db)
 
-    const settings = await db.collection('linksettings').findOne({})
-    const masterEnabled = settings?.autoModeEnabled !== false
+        const settings = await db.collection('linksettings').findOne({})
+        if (settings?.autoModeEnabled === false) return { active: false, modes: [] }
 
-    if (!masterEnabled) {
-      return c.json({ active: false, modes: [] })
-    }
+        const activeModes = await getTodaysActiveModes(c.env.MONGODB_URI, c.env.MONGODB_DB, db)
 
-    const activeModes = await getTodaysActiveModes(c.env.MONGODB_URI, c.env.MONGODB_DB, db) // ✅ db pass kiya
+        const modes = activeModes.map((m: any) => ({
+          name: m.name,
+          bannerText: m.bannerText || `Download all anime & movies without any ads – only during ${m.name}!`,
+          forceLink5Only: !!m.forceLink5Only,
+          displayLocations: getModeLocations(m),
+        }))
 
-    const modes = activeModes.map((m: any) => ({
-      name: m.name,
-      bannerText: m.bannerText || `Download all anime & movies without any ads – only during ${m.name}!`,
-      forceLink5Only: !!m.forceLink5Only,
-      displayLocations: getModeLocations(m)
-    }))
-
-    return c.json({ active: modes.length > 0, modes })
+        return { active: modes.length > 0, modes }
+      })
+    )
+    return result
   } catch (err: any) {
     return c.json({ active: false, modes: [], error: err.message }, 500)
   }

@@ -462,6 +462,32 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [sidebarPinned, setSidebarPinned] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // 🆕 Mobile header hide/show on scroll (YouTube style + auto-hide after 3s if no click)
+  const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+  const lastScrollY = useRef(0);
+  const headerHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearHeaderHideTimer = () => {
+    if (headerHideTimer.current) {
+      clearTimeout(headerHideTimer.current);
+      headerHideTimer.current = null;
+    }
+  };
+
+  // 3 sec tak header pe click na ho to auto hide
+  const scheduleHeaderAutoHide = () => {
+    clearHeaderHideTimer();
+    headerHideTimer.current = setTimeout(() => {
+      setIsHeaderVisible(false);
+    }, 3000);
+  };
+
+  // Jab user header pe click/touch kare to timer cancel + header visible rakho
+  const handleHeaderInteraction = () => {
+    clearHeaderHideTimer();
+  };
+
   const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [tabRefreshVersions, setTabRefreshVersions] = useState<Record<string, number>>({});
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set(['list']));
@@ -630,6 +656,38 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }, 30000);
     return () => clearInterval(interval);
   }, [token]);
+
+  // 🆕 Scroll down => header hide, thoda sa scroll up => header show (3 sec tak click na ho to auto hide)
+  useEffect(() => {
+    const el = document.getElementById('main-scroll');
+    if (!el) return;
+
+    lastScrollY.current = el.scrollTop;
+
+    const onScroll = () => {
+      const currentY = el.scrollTop;
+      const delta = currentY - lastScrollY.current;
+
+      if (currentY <= 20) {
+        setIsHeaderVisible(true);              // top par hamesha show
+        clearHeaderHideTimer();                 // top par timer clear
+      } else if (delta > 5) {
+        setIsHeaderVisible(false);             // neeche scroll => hide
+        clearHeaderHideTimer();
+      } else if (delta < -5) {
+        setIsHeaderVisible(true);              // thoda sa upar scroll => show
+        scheduleHeaderAutoHide();              // 3 sec tak click na ho to hide
+      }
+
+      lastScrollY.current = currentY;
+    };
+
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      clearHeaderHideTimer();
+    };
+  }, [loading, error]);
 
   const loadInitialData = async (isRefresh = false) => {
     // 🛡️ prevents duplicate refreshes when user spam-clicks the header refresh
@@ -1019,7 +1077,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
       {/* ─── Main Content ─────────────────────────────────────────── */}
       <div id="main-scroll" className="h-full flex flex-col overflow-y-auto sm:pl-[64px] [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
-        <header className="sticky top-0 z-40 h-16 flex-shrink-0 flex items-center px-4 sm:px-6 gap-3 bg-[#0f0e1a]/85 backdrop-blur-xl border-b border-white/[0.06]">
+        <header
+          onMouseDown={handleHeaderInteraction}
+          onTouchStart={handleHeaderInteraction}
+          className={`sticky top-0 z-40 h-16 flex-shrink-0 flex items-center px-4 sm:px-6 gap-3 bg-[#0f0e1a]/85 backdrop-blur-xl border-b border-white/[0.06] transition-transform duration-300 ease-out ${
+            isHeaderVisible ? 'translate-y-0' : '-translate-y-full sm:translate-y-0'
+          }`}
+        >
           <button
             onClick={() => setMobileMenuOpen(true)}
             className="sm:hidden flex-shrink-0 w-9 h-9 -ml-1 rounded-lg flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/[0.06] transition-colors"

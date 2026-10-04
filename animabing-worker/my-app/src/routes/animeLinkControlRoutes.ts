@@ -3,7 +3,7 @@ import { Env, Variables } from '../index'
 import { adminAuth, requirePermission } from '../middleware/auth'
 import {
   findMany, insertOne, updateOne, deleteOne,
-  toObjectId, isValidObjectId, getDb
+  toObjectId, isValidObjectId, getDb, withDb
 } from '../services/mongoService'
 import { IAnimeLinkControl } from '../models/types'
 import { withEdgeCache, invalidateEdgeCache } from '../utils/cache'
@@ -227,53 +227,50 @@ animeLinkControlRoutes.delete('/:id', adminAuth, requirePermission('link-control
 // Cache-key animeId ke hisab se automatically alag banega (URL alag hai),
 // isliye har anime ka apna cache hoga. Group create/update/delete pe
 // invalidateEffectiveCacheForAnimeIds se clear ho jaata hai.
+//
+// 🆕 UPDATE: getDb ki jagah withDb use kiya gaya — isse connection
+// guaranteed close hota hai (finally block me) aur connection limiter ke
+// through slot bhi release hota hai. Pehle getDb se jo client banta tha
+// wo explicit close nahi hota tha, jisse socket leak ho sakta tha.
 animeLinkControlRoutes.get('/effective/:animeId', async (c) => {
   try {
     const animeId = c.req.param('animeId')
 
-    const response = await withEdgeCache(c, 30, async () => {
-      const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const response = await withEdgeCache(c, 30, () =>
+      withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'linkEffective', async (db) => {
+        let globalSettings: any = await db.collection('linksettings').findOne({})
+        if (!globalSettings) {
+          globalSettings = { link1: true, link2: true, link3: true, link4: true, link5: true }
+        }
 
-      let globalSettings: any = await db.collection('linksettings').findOne({})
-      if (!globalSettings) {
-        globalSettings = { link1: true, link2: true, link3: true, link4: true, link5: true }
-      }
+        let effective = {
+          link1: globalSettings.link1,
+          link2: globalSettings.link2,
+          link3: globalSettings.link3,
+          link4: globalSettings.link4,
+          link5: globalSettings.link5,
+          source: 'global' as 'global' | 'override',
+          groupName: null as string | null
+        }
 
-      let effective = {
-        link1: globalSettings.link1,
-        link2: globalSettings.link2,
-        link3: globalSettings.link3,
-        link4: globalSettings.link4,
-        link5: globalSettings.link5,
-        source: 'global' as 'global' | 'override',
-        groupName: null as string | null
-      }
-
-      if (isValidObjectId(animeId)) {
-        const group = await db.collection('animelinkcontrols').findOne({ animeIds: animeId })
-        if (group) {
-          effective = {
-            link1: group.link1,
-            link2: group.link2,
-            link3: group.link3,
-            link4: group.link4,
-            link5: globalSettings.link5,
-            source: 'override',
-            groupName: group.name
+        if (isValidObjectId(animeId)) {
+          const group = await db.collection('animelinkcontrols').findOne({ animeIds: animeId })
+          if (group) {
+            effective = {
+              link1: group.link1, link2: group.link2, link3: group.link3, link4: group.link4,
+              link5: globalSettings.link5, source: 'override', groupName: group.name
+            }
           }
         }
-      }
 
-      if (globalSettings.link5) {
-        effective.link1 = false
-        effective.link2 = false
-        effective.link3 = false
-        effective.link4 = false
-        effective.link5 = true
-      }
-
-      return effective
-    })
+        if (globalSettings.link5) {
+          effective.link1 = false; effective.link2 = false
+          effective.link3 = false; effective.link4 = false
+          effective.link5 = true
+        }
+        return effective
+      })
+    )
 
     return response
   } catch (err: any) {

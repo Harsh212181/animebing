@@ -30,7 +30,9 @@ async function isAdminRequest(c: any): Promise<boolean> {
     const valid = await crypto.subtle.verify('HMAC', key, sig, encoder.encode(`${parts[0]}.${parts[1]}`))
     if (!valid) return false
 
-    const payload = JSON.parse(atob(parts[1]))
+    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4)
+    const payload = JSON.parse(atob(padded))
     if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return false
 
     return payload.role === 'admin' || payload.role === 'subadmin'
@@ -39,57 +41,87 @@ async function isAdminRequest(c: any): Promise<boolean> {
   }
 }
 
+// ============================================================================
+// ✅ FIX — STALE-WHILE-REVALIDATE (SWR)
+// Pehle: TTL khatam hote hi cache MISS hota tha, aur har request foreground
+// me MongoDB pe jaati thi. Load ke waqt stampede ban jaati thi.
+//
+// Ab: cached data ko uske TTL ke baad bhi 30x tak "stale" rakha jaata hai.
+//   • Fresh (TTL ke andar) → turant HIT, koi DB call nahi
+//   • Stale (TTL ke bahar, par 30x ke andar) → purana data turant serve,
+//     background me refresh chal jata hai (throttled — same key ke liye
+//     sirf ek inflight refresh)
+//   • Miss (cache bilkul khaali) → foreground me handler chalao
+// ============================================================================
+const inflightRefresh = new Map<string, Promise<void>>()
+const STALE_MULTIPLIER = 30 // fresh TTL ka 30x tak stale copy rakho
+
 export async function withEdgeCache(
   c: any,
   ttlSeconds: number,
   handler: () => Promise<any>,
   cacheKeyExtra?: string
 ): Promise<Response> {
-  // @ts-ignore — `caches.default` Cloudflare Workers runtime me globally available hai
+  // @ts-ignore
   const cache = caches.default
 
-  // ✅ Cache key normalize karo — known busting params hata do
   const cacheUrl = new URL(c.req.url)
   for (const p of CACHE_BUSTING_PARAMS) cacheUrl.searchParams.delete(p)
   if (cacheKeyExtra) cacheUrl.searchParams.set('_ck', cacheKeyExtra)
-  const cacheKey = new Request(cacheUrl.toString(), { method: 'GET' })
+  const keyStr = cacheUrl.toString()
+  const cacheKey = new Request(keyStr, { method: 'GET' })
 
-  // ✅ NEW: admin/sub-admin ho to cache READ skip
   const bypass = await isAdminRequest(c)
 
-  // 1) Try cache first (sirf normal visitors ke liye)
+  const buildStored = (data: any) =>
+    new Response(JSON.stringify(data), {
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': `public, max-age=${ttlSeconds * STALE_MULTIPLIER}`,
+        'X-Cached-At': String(Date.now()),
+      },
+    })
+
+  const refresh = () => {
+    if (inflightRefresh.has(keyStr)) return
+    const p = (async () => {
+      try {
+        const data = await handler()
+        await cache.put(cacheKey, buildStored(data))
+      } catch (e) {
+        console.error('[edgeCache] refresh failed:', e)
+      } finally {
+        inflightRefresh.delete(keyStr)
+      }
+    })()
+    inflightRefresh.set(keyStr, p)
+    c.executionCtx.waitUntil(p)
+  }
+
   if (!bypass) {
     const cached = await cache.match(cacheKey)
     if (cached) {
+      const cachedAt = Number(cached.headers.get('X-Cached-At') || 0)
+      const fresh = cachedAt > 0 && Date.now() - cachedAt < ttlSeconds * 1000
+      if (!fresh) refresh() // stale hai: purana abhi do, naya background mein lao
       const headers = new Headers(cached.headers)
-      headers.set('X-Cache', 'HIT')
+      headers.set('X-Cache', fresh ? 'HIT' : 'STALE')
+      headers.set('Cache-Control', `public, max-age=${ttlSeconds}`)
       return new Response(cached.body, { status: cached.status, headers })
     }
   }
 
-  // 2) Cache miss ya admin bypass — actual handler chalao (MongoDB call)
+  // Cache bilkul khaali (pehli baar) ya admin bypass: foreground mein lao
   const data = await handler()
+  c.executionCtx.waitUntil(cache.put(cacheKey, buildStored(data)))
 
-  const response = new Response(JSON.stringify(data), {
+  return new Response(JSON.stringify(data), {
     headers: {
       'Content-Type': 'application/json',
-      // Admin ko browser-cache bhi na mile, user ko normal TTL
       'Cache-Control': bypass ? 'no-store' : `public, max-age=${ttlSeconds}`,
       'X-Cache': bypass ? 'BYPASS' : 'MISS',
     },
   })
-
-  // 3) Cache me save. Admin ke bypass me bhi fresh data put karte hain,
-  // taaki is datacenter ka cache bhi turant naya ho jaye.
-  const toStore = new Response(JSON.stringify(data), {
-    headers: {
-      'Content-Type': 'application/json',
-      'Cache-Control': `public, max-age=${ttlSeconds}`,
-    },
-  })
-  await cache.put(cacheKey, toStore)
-
-  return response
 }
 
 export function fireAndForget(c: any, promise: Promise<any>) {
@@ -135,14 +167,16 @@ export async function getCachedJSON(
 
   const data = await handler()
 
-  await cache.put(
-    cacheKey,
-    new Response(JSON.stringify(data), {
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': `public, max-age=${ttlSeconds}`,
-      },
-    })
+  c.executionCtx.waitUntil(
+    cache.put(
+      cacheKey,
+      new Response(JSON.stringify(data), {
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': `public, max-age=${ttlSeconds}`,
+        },
+      })
+    )
   )
 
   return data

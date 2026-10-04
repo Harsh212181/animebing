@@ -38,6 +38,7 @@ import r2ProviderRoutes from './routes/r2ProviderRoutes' // ✅ NEW
 import uploadRoutes from './routes/uploadRoutes' // ✅ NEW
 import { aggregateAndPruneDay } from './services/dailyStatsService' // ✅ NEW — daily stats rollup
 import { aggregateAndPrunePageviewDay } from './services/dailyPageStatsService' // ✅ NEW — daily pageview rollup
+import { handlePageviewBatch } from './services/pageviewQueue'  
 
 export type Env = {
   MONGODB_URI: string
@@ -64,6 +65,7 @@ export type Env = {
   IG_USER_ID: string
   IG_ACCESS_TOKEN: string
   ENCRYPTION_KEY: string   // ✅ NEW
+  PAGEVIEW_QUEUE: Queue<any> // ✅ NEW — pageview queue producer binding
 }
 
 export type Variables = {
@@ -157,9 +159,23 @@ app.get('/health', (c) => {
   return c.json({ message: 'Animabing Backend Working! 🚀', status: 'ok' })
 })
 
-// ============ EXPORT (with scheduled) ============
+// ============ EXPORT (with scheduled + queue) ============
 export default {
   fetch: app.fetch,
+
+  // ✅ NEW — Pageview queue consumer.
+  // Producer: routes jahan PAGEVIEW_QUEUE.send(...) call hota hai.
+  // Consumer: handlePageviewBatch() batch me aaye messages ko MongoDB me bulk-insert karta hai.
+  async queue(batch: MessageBatch<any>, env: Env, ctx: ExecutionContext) {
+    try {
+      // ✅ FIX: pageviewQueue.ts ka signature (batch, env) hai — ctx pass mat karo
+      await handlePageviewBatch(batch, env)
+    } catch (err) {
+      console.error('Pageview queue batch failed:', err)
+      // Re-throw so Cloudflare retries the batch (per max_retries in wrangler.json)
+      throw err
+    }
+  },
 
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     // ✅ 🆕 Naya 5-minute cron sirf Instagram DM queue check karega — 

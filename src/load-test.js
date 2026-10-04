@@ -1,13 +1,10 @@
-// load-test.js  (v2 - error codes + sahi error rate + quick mode)
-//
-// FULL TEST (~7.5 min):
-//   k6 run load-test.js
+// load-test.js  (v3 - metrics init context fix)
 //
 // QUICK TEST (60 sec, 60 VUs) - pehle isse chalao:
 //   k6 run -e MODE=quick load-test.js
 //
-// Alag URL:
-//   k6 run -e BASE_URL=https://your-worker.workers.dev load-test.js
+// FULL TEST (~7.5 min):
+//   k6 run load-test.js
 
 import http from 'k6/http'
 import { check, sleep } from 'k6'
@@ -16,7 +13,7 @@ import { Rate, Trend, Counter } from 'k6/metrics'
 const BASE_URL = __ENV.BASE_URL || 'https://animabing-backend.animabingwatch.workers.dev'
 const MODE = __ENV.MODE || 'full'
 
-// ---------- Custom metrics ----------
+// ---------- Custom metrics (sab init context me) ----------
 const errorRate = new Rate('errors')
 const homepageLatency = new Trend('homepage_latency')
 const featuredLatency = new Trend('featured_latency')
@@ -25,11 +22,26 @@ const downloadPageLatency = new Trend('download_page_latency')
 const pageviewLatency = new Trend('pageview_latency')
 
 // Status code counters (status_0 = timeout / connection fail)
-const statusCounters = {}
+const status200 = new Counter('status_200')
+const status404 = new Counter('status_404')
+const status429 = new Counter('status_429')
+const status500 = new Counter('status_500')
+const status502 = new Counter('status_502')
+const status503 = new Counter('status_503')
+const status504 = new Counter('status_504')
+const status0 = new Counter('status_0_timeout')
+const statusOther = new Counter('status_other')
+
 function countStatus(code) {
-  const key = `status_${code}`
-  if (!statusCounters[key]) statusCounters[key] = new Counter(key)
-  statusCounters[key].add(1)
+  if (code === 200) status200.add(1)
+  else if (code === 404) status404.add(1)
+  else if (code === 429) status429.add(1)
+  else if (code === 500) status500.add(1)
+  else if (code === 502) status502.add(1)
+  else if (code === 503) status503.add(1)
+  else if (code === 504) status504.add(1)
+  else if (code === 0) status0.add(1)
+  else statusOther.add(1)
 }
 
 // ---------- Stages ----------
@@ -80,7 +92,7 @@ function track(name, res, okStatuses, latencyTrend) {
   if (latencyTrend) latencyTrend.add(res.timings.duration)
   countStatus(res.status)
 
-  const ok = okStatuses.includes(res.status)
+  const ok = okStatuses.indexOf(res.status) !== -1
   errorRate.add(ok ? 0 : 1)
   check(res, { [`${name}: status ok`]: () => ok })
 

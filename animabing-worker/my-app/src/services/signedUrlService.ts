@@ -1,6 +1,5 @@
 import { AwsClient } from 'aws4fetch'
-import { Db } from 'mongodb'
-import { getDb } from './mongoService'
+import { getDb, withDb } from './mongoService'
 import { decryptSecret } from './encryptionService'
 import { IR2Provider } from '../models/types'
 
@@ -73,10 +72,11 @@ export async function prefetchR2Providers(
   const map = new Map<string, IR2Provider>()
   if (hostnames.length === 0) return map
 
-  const db: Db = await getDb(mongoUri, dbName)
-  const providers = await db.collection('r2providers')
-    .find({ hostname: { $in: hostnames }, isActive: { $ne: false } })
-    .toArray()
+  const providers = await withDb(mongoUri, dbName, 'r2providers', (db) =>
+    db.collection('r2providers')
+      .find({ hostname: { $in: hostnames }, isActive: { $ne: false } })
+      .toArray()
+  )
 
   for (const p of providers) {
     map.set((p as any).hostname, p as any as IR2Provider)
@@ -217,49 +217,3 @@ export async function signDownloadUrl(
   const signedRequest = await client.sign(endpoint.toString(), { method: 'GET', aws: { signQuery: true } })
   return signedRequest.url
 }
-
-/*
-============================================================================
-📌 downloadPageRoutes.ts ke `/:slug` route me ye badlaav karo taaki naya
-batch-safe pattern use ho (per-link DB calls khatam ho jayein):
-
-// PEHLE (N links = kam se kam 2N DB connections):
-const signedLinks = await Promise.all(
-  ((page as any).links || []).map(async (link: any) => {
-    const protectedDomain = await isProtectedDomain(link.url, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    if (protectedDomain) {
-      const signed = await signDownloadUrl(link.url, {...}, link.type, c.env.MONGODB_URI, c.env.MONGODB_DB)
-      return { ...link, url: signed }
-    }
-    return link
-  })
-)
-
-// BAAD MEIN (poori page ke links ke liye sirf 1 DB query):
-import { prefetchR2Providers, isProtectedDomainSync, signDownloadUrlBatch } from '../services/signedUrlService'
-
-const allLinks = (page as any).links || []
-const providerMap = await prefetchR2Providers(
-  allLinks.map((l: any) => l.url), c.env.MONGODB_URI, c.env.MONGODB_DB
-)
-const signedLinks = await Promise.all(
-  allLinks.map(async (link: any) => {
-    if (isProtectedDomainSync(link.url, providerMap)) {
-      try {
-        const signed = await signDownloadUrlBatch(link.url, {
-          R2_ACCOUNT_ID: c.env.R2_ACCOUNT_ID,
-          R2_ACCESS_KEY_ID: c.env.R2_ACCESS_KEY_ID,
-          R2_SECRET_ACCESS_KEY: c.env.R2_SECRET_ACCESS_KEY,
-          ENCRYPTION_KEY: c.env.ENCRYPTION_KEY,
-        }, link.type, providerMap)
-        return { ...link, url: signed }
-      } catch (e) {
-        console.error('Signing failed for link:', link.url, e)
-        return link
-      }
-    }
-    return link
-  })
-)
-============================================================================
-*/

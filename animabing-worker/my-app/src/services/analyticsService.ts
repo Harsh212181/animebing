@@ -1,5 +1,5 @@
 // src/services/analyticsService.ts
-import { getDb } from './mongoService'
+import { getDb, withDb } from './mongoService'
 import { ObjectId, Db } from 'mongodb'
 import { EarningType, ISubAdminAnimeEarning, ISubAdminEarningsSummary } from '../models/types'
 import { getPageRollupForRange } from './dailyPageStatsService'
@@ -320,15 +320,22 @@ async function hadDetailVisit(
 
 // ═════════════════════════════════════════════════════════════════════════════
 // TRACK PAGE VIEW
+// ─────────────────────────────────────────────────────────────────────────────
+// ✅ NEW SPLIT:
+//   • trackPageViewDb(db, data, ctx, at, mongoUri, dbName) — pure DB work, caller
+//     already ke paas db handle hai (queue consumer / batch insert ke liye useful)
+//   • trackPageView(data, mongoUri, dbName, ctx) — backward-compatible wrapper jo
+//     withDb() pooled connection reuse karta hai
 // ═════════════════════════════════════════════════════════════════════════════
-export async function trackPageView(
+export async function trackPageViewDb(
+  db: Db,
   data: Omit<PageViewRecord, 'timestamp' | 'date' | 'earningType' | 'animeId' | 'subAdminId' | 'rateSnapshot' | 'activeLinks' | 'fromDetail' | 'testMode'>,
+  earningContext: EarningContext | undefined,
+  at: Date,
   mongoUri: string,
-  dbName: string,
-  earningContext?: EarningContext
+  dbName: string
 ): Promise<{ counted: boolean }> {
-  const db = await getDb(mongoUri, dbName)
-  const now = new Date()
+  const now = at
   const date = getISTDateStr(now)
 
   const countEveryView = earningContext?.countEveryView === true
@@ -412,6 +419,17 @@ export async function trackPageView(
     { upsert: true }
   )
   return { counted: true }
+}
+
+// ✅ Backward-compatible wrapper — pooled connection reuse
+export async function trackPageView(
+  data: Parameters<typeof trackPageViewDb>[1],
+  mongoUri: string,
+  dbName: string,
+  earningContext?: EarningContext
+): Promise<{ counted: boolean }> {
+  return withDb(mongoUri, dbName, 'trackPageView', (db) =>
+    trackPageViewDb(db, data, earningContext, new Date(), mongoUri, dbName))
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

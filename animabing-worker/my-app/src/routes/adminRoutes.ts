@@ -44,6 +44,38 @@ async function invalidateAnimeCache(c: any, id: string, slug?: string | null) {
   }
 }
 
+// 🆕 Anime delete cascade: anime + download pages + episodes + chapters + reports + cache
+async function cascadeDeleteAnime(c: any, db: Db, id: string, anime: any) {
+  const oid = toObjectId(id)
+
+  // Delete se PEHLE slugs lo (cache clear karne ke liye)
+  const pages = await db.collection('downloadpages')
+    .find({ animeId: oid }, { projection: { slug: 1 } })
+    .toArray()
+
+  await db.collection('animes').deleteOne({ _id: oid })
+  await Promise.all([
+    db.collection('downloadpages').deleteMany({ animeId: oid }),
+    db.collection('episodes').deleteMany({ animeId: oid }),
+    db.collection('chapters').deleteMany({ mangaId: oid }),
+    db.collection('reports').deleteMany({ animeId: oid }),
+  ])
+
+  try {
+    await invalidateAnimeCache(c, id, anime?.slug)
+    await invalidateEdgeCache(c, `/api/episodes/${id}`)
+    await invalidateEdgeCache(c, `/api/chapters/${id}`)
+    await invalidateEdgeCache(c, `/api/download-pages/anime/${id}`)
+    await Promise.all(
+      pages
+        .filter((p: any) => p.slug)
+        .map((p: any) => invalidateEdgeCache(c, `/api/download-pages/${p.slug}`))
+    )
+  } catch (err) {
+    console.error('[cascadeDeleteAnime] cache invalidate failed:', err)
+  }
+}
+
 // ============ RANDOM LIKES HELPER ============
 function getRandomLikes(): number {
   return Math.floor(Math.random() * 4851) + 150 
@@ -205,20 +237,17 @@ adminRoutes.put('/edit-anime/:id', adminAuth, requirePermission('edit-anime'), a
   }
 })
 
-// ============ DELETE ANIME — 3 connections combined into 1 ============
+// ============ DELETE ANIME — cascade ============
 adminRoutes.delete('/delete-anime', adminAuth, requirePermission('delete-anime'), async (c) => {
   try {
     const { id } = await c.req.json()
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
 
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const anime = await db.collection('animes').findOne({ _id: toObjectId(id) }) // ✅ NEW — slug fetch karne ke liye
-    await db.collection('animes').deleteOne({ _id: toObjectId(id) })
-    await db.collection('episodes').deleteMany({ animeId: toObjectId(id) })
-    await db.collection('reports').deleteMany({ animeId: toObjectId(id) })
+    const anime = await db.collection('animes').findOne({ _id: toObjectId(id) })
+    if (!anime) return c.json({ error: 'Anime not found' }, 404)
 
-    await invalidateAnimeCache(c, id, (anime as any)?.slug) // ✅ NEW
-
+    await cascadeDeleteAnime(c, db, id, anime)
     return c.json({ success: true, message: 'Deleted successfully!' })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -638,13 +667,10 @@ adminRoutes.delete('/protected/delete-anime', adminAuth, requirePermission('dele
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
 
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const anime = await db.collection('animes').findOne({ _id: toObjectId(id) }) // ✅ NEW — slug fetch karne ke liye
-    await db.collection('animes').deleteOne({ _id: toObjectId(id) })
-    await db.collection('episodes').deleteMany({ animeId: toObjectId(id) })
-    await db.collection('reports').deleteMany({ animeId: toObjectId(id) })
+    const anime = await db.collection('animes').findOne({ _id: toObjectId(id) })
+    if (!anime) return c.json({ error: 'Anime not found' }, 404)
 
-    await invalidateAnimeCache(c, id, (anime as any)?.slug) // ✅ NEW
-
+    await cascadeDeleteAnime(c, db, id, anime)
     return c.json({ success: true, message: 'Deleted successfully!' })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)

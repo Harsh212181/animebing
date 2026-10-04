@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { Env, Variables } from '../index'
-import { getDb, toObjectId, isValidObjectId } from '../services/mongoService'
+import { getDb, withDb, toObjectId, isValidObjectId } from '../services/mongoService'
 import { ObjectId, Db } from 'mongodb'
 import { IPoll } from '../models/types'
 import { getCachedJSON } from '../utils/cache'
@@ -30,8 +30,7 @@ async function autoDeactivateExpired(db: Db) {
 }
 
 // ✅ Vote lagne ke baad polls-active cache ko manually clear karo (same key
-// pattern jo getCachedJSON internally banata hai — /__cache_data__ prefix +
-// _key=polls-active)
+// pattern jo getCachedJSON internally banata hai — /__cache_data__ prefix + _key=polls-active)
 async function invalidatePollsActiveCache(c: any) {
   try {
     // @ts-ignore
@@ -57,14 +56,16 @@ pollRoutes.get('/active', async (c) => {
     const location = c.req.query('location') as 'home' | 'detail' | 'downloadLink' | undefined
 
     // ✅ Shared data — cached (30s), sabke liye same
-    const pollsRaw = await getCachedJSON(c, 30, 'polls-active', async () => {
-      const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-      await autoDeactivateExpired(db)
-      return await db.collection('polls').find({
-        isActive: true,
-        expiresAt: { $gt: new Date() }
-      }).sort({ createdAt: -1 }).toArray() as IPoll[]
-    })
+    // ✅ FIX: withDb se pooled connection reuse hota hai
+    const pollsRaw = await getCachedJSON(c, 30, 'polls-active', () =>
+      withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'pollsActive', async (db) => {
+        await autoDeactivateExpired(db)
+        return await db.collection('polls').find({
+          isActive: true,
+          expiresAt: { $gt: new Date() }
+        }).sort({ createdAt: -1 }).toArray() as IPoll[]
+      })
+    )
 
     const filtered = location
       ? pollsRaw.filter((p: any) => getPollLocations(p).includes(location))
@@ -125,55 +126,65 @@ pollRoutes.post('/vote', async (c) => {
       return c.json({ success: false, message: 'Invalid pollId or optionId' }, 400)
     }
 
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    // ✅ FIX: poora DB kaam ek withDb ke andar — pooled connection reuse
+    const result = await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'pollVote', async (db) => {
+      const updated = await db.collection('polls').findOneAndUpdate(
+        {
+          _id: toObjectId(pollId),
+          isActive: true,
+          expiresAt: { $gt: new Date() },
+          'voters.deviceId': { $ne: deviceId }, // ✅ atomic guard — already voted to match hi nahi hoga
+        },
+        {
+          $inc: { 'options.$[opt].votes': 1, totalVotes: 1 },
+          $push: {
+            voters: {
+              deviceId,
+              deviceType: deviceType || 'unknown',
+              votedAt: new Date(),
+              optionId: toObjectId(optionId),
+            },
+          } as any,
+        },
+        {
+          arrayFilters: [{ 'opt._id': toObjectId(optionId) }],
+          returnDocument: 'after',
+        }
+      )
 
-    const updated = await db.collection('polls').findOneAndUpdate(
-      {
-        _id: toObjectId(pollId),
-        isActive: true,
-        expiresAt: { $gt: new Date() },
-        'voters.deviceId': { $ne: deviceId }, // ✅ atomic guard — already voted to match hi nahi hoga
-      },
-      {
-        $inc: { 'options.$[opt].votes': 1, totalVotes: 1 },
-        $push: {
-          voters: {
-            deviceId,
-            deviceType: deviceType || 'unknown',
-            votedAt: new Date(),
-            optionId: toObjectId(optionId),
-          },
-        } as any,
-      },
-      {
-        arrayFilters: [{ 'opt._id': toObjectId(optionId) }],
-        returnDocument: 'after',
+      if (updated) {
+        return { ok: true as const, totalVotes: updated.totalVotes }
       }
-    )
 
-    if (updated) {
+      // Update match nahi hua — pata karo kyun (poll missing/expired ya already voted)
+      const poll = await db.collection('polls').findOne({ _id: toObjectId(pollId) }) as IPoll | null
+      if (!poll || !poll.isActive || new Date(poll.expiresAt) <= new Date()) {
+        return { ok: false as const, msg: 'Poll not found or expired' }
+      }
+      const alreadyVoted = poll.voters?.some((v: any) => v.deviceId === deviceId)
+      if (alreadyVoted) {
+        return { ok: false as const, msg: 'Already voted', voted: true }
+      }
+      return { ok: false as const, msg: 'Vote failed' }
+    })
+
+    if (result.ok) {
       // ✅ Vote hone ke turant baad cache invalidate karo — taaki naya vote
       // count agli hi request pe dikhe, 30s TTL khatam hone ka wait na ho
       c.executionCtx.waitUntil(invalidatePollsActiveCache(c))
 
       return c.json({
         success: true,
-        totalVotes: updated.totalVotes,
+        totalVotes: result.totalVotes,
         userHasVoted: true,
         userVoteOption: optionId,
       })
     }
 
-    // Update match nahi hua — pata karo kyun (poll missing/expired ya already voted)
-    const poll = await db.collection('polls').findOne({ _id: toObjectId(pollId) }) as IPoll | null
-    if (!poll || !poll.isActive || new Date(poll.expiresAt) <= new Date()) {
-      return c.json({ success: false, message: 'Poll not found or expired' }, 400)
-    }
-    const alreadyVoted = poll.voters?.some((v: any) => v.deviceId === deviceId)
-    if (alreadyVoted) {
-      return c.json({ success: false, message: 'Already voted', userHasVoted: true }, 400)
-    }
-    return c.json({ success: false, message: 'Vote failed' }, 400)
+    return c.json(
+      { success: false, message: result.msg, ...(result.voted ? { userHasVoted: true } : {}) },
+      400
+    )
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500)
   }
@@ -188,8 +199,11 @@ pollRoutes.get('/check-vote/:pollId', async (c) => {
     if (!deviceId) return c.json({ success: true, hasVoted: false, voteOption: null })
     if (!isValidObjectId(pollId)) return c.json({ success: true, hasVoted: false, voteOption: null })
 
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const poll = await db.collection('polls').findOne({ _id: toObjectId(pollId) }) as IPoll | null
+    // ✅ FIX: withDb wrapper — pooled connection reuse
+    const poll = await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'pollCheck', (db) =>
+      db.collection('polls').findOne({ _id: toObjectId(pollId) })
+    ) as IPoll | null
+
     if (!poll) return c.json({ success: true, hasVoted: false, voteOption: null })
 
     const voter = poll.voters?.find((v: any) => v.deviceId === deviceId)

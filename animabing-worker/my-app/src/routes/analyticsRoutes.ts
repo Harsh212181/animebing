@@ -4,7 +4,6 @@ import { Env, Variables } from '../index'
 import { adminAuth, requirePermission } from '../middleware/auth' // ✅ requirePermission add kiya
 import { getDb } from '../services/mongoService'
 import {
-  trackPageView,
   getPageViewStats,
   getPageDetail,
   getGeoDetail,
@@ -30,13 +29,8 @@ import {
   getMonthlyOverview,
   getMonthlyDetail,
 } from '../services/analyticsService'
-// 🆕 EARNINGS: reuse the existing "is a special mode forcing link5" check
-import { isForceLink5ModeActive } from './specialModeRoutes'
 // 🆕 Verify signed ?l= / ?ls= tags so linkUsed can't be spoofed
 import { signTag } from '../services/externalShortenerService'
-// 🆕 FIX: fire-and-forget helper — /pageview ab turant response dega,
-// saara DB kaam background me chalega
-import { fireAndForget } from '../utils/cache'
 // ✅ NEW — pageview daily rollup (backfill route ke liye)
 import { aggregateAndPrunePageviewDay } from '../services/dailyPageStatsService'
 
@@ -136,9 +130,10 @@ function detectPageType(path: string): string {
 }
 
 // ─── POST /api/analytics/pageview ────────────────────────────────────────
-// 🆕 FIX: /pageview route ab TURANT response deta hai, saara DB kaam
-// (dedupe check, earning context, trackPageView ke 8-10 sequential ops)
-// background me chalta hai (`c.executionCtx.waitUntil` / fireAndForget).
+// 🆕 FIX: /pageview route ab TURANT response deta hai — saara DB kaam
+// (dedupe, earning context, trackPageView ke 8-10 sequential ops) ab
+// PAGEVIEW_QUEUE (Cloudflare Queue) me chala jata hai. Consumer worker
+// usko uthakar process karta hai.
 //
 // Frontend ko pageview ka result kabhi dikhna hi nahi chahiye tha — ye
 // sirf analytics hai. Ab visitor turant response paata hai, backend apna
@@ -148,7 +143,8 @@ function detectPageType(path: string): string {
 // 🆕 TIME-ON-PAGE PING: frontend ab route change / tab close / visibility
 // change par ek "sirf timeOnPage" wala beacon bhejta hai. Us case me hum
 // NAYA pageview insert nahi karte — sirf usi session+path ke sabse recent
-// pageview doc ka `timeOnPage` field update karte hain.
+// pageview doc ka `timeOnPage` field update karte hain. Ye bhi ab queue
+// ke through hota hai (kind: 'time').
 analyticsRoutes.post('/pageview', async (c) => {
   try {
     const body = await c.req.json()
@@ -177,6 +173,9 @@ analyticsRoutes.post('/pageview', async (c) => {
     //   • bot check, l/ls parsing, earnings context — kuch nahi chalayenge
     //   • bas usi (sessionId|visitorId)+path+pageType ke sabse recent
     //     pageview doc ka `timeOnPage` set kar denge
+    //
+    // ✅ Yahan ab koi DB kaam nahi — sirf queue me message daal kar
+    // turant return. Consumer worker sab sambhal lega.
     // ================================================================
     if (typeof timeOnPage === 'number' && timeOnPage > 0) {
       const seconds = Math.max(1, Math.min(3600, Math.round(timeOnPage)))
@@ -189,44 +188,17 @@ analyticsRoutes.post('/pageview', async (c) => {
       // path se l/ls strip karo (agar beacon me aa gaye ho — normally nahi aate)
       const cleanPathForTime = rawPath.split('?')[0]
 
-      fireAndForget(c, (async () => {
-        try {
-          const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-
-          // Most-recent-match filter: same session/visitor + same path.
-          // Sirf last 2 hours ka doc consider karo (stale docs ko touch na karo).
-          const filter: any = {
-            path: cleanPathForTime,
-            timestamp: { $gte: new Date(Date.now() - 2 * 60 * 60 * 1000) },
-          }
-          if (typeof sessionId === 'string' && sessionId) filter.sessionId = sessionId
-          else if (typeof visitorId === 'string' && visitorId) filter.visitorId = visitorId.slice(0, 64)
-          // Agar dono missing hain (rare case) — IP+UA se best-effort match
-          else {
-            const ip =
-              c.req.header('cf-connecting-ip') ||
-              c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
-              '0.0.0.0'
-            filter.ip = ip
-            filter.userAgent = ua.slice(0, 200)
-          }
-
-          // findOneAndUpdate supports `sort` option in the Mongo driver.
-          // (updateOne does NOT — user ke snippet me wahi galti thi.)
-          await db.collection('pageviews').findOneAndUpdate(
-            filter,
-            {
-              $set: {
-                timeOnPage: seconds,
-                timeOnPageUpdatedAt: new Date(),
-              },
-            },
-            { sort: { timestamp: -1 } }
-          )
-        } catch (e) {
-          console.error('time-on-page update failed:', e)
-        }
-      })())
+      c.executionCtx.waitUntil(
+        c.env.PAGEVIEW_QUEUE.send({
+          kind: 'time',
+          path: cleanPathForTime,
+          seconds,
+          sessionId: typeof sessionId === 'string' ? sessionId : '',
+          visitorId: typeof visitorId === 'string' ? visitorId.slice(0, 64) : '',
+          ip: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || '0.0.0.0',
+          userAgent: ua.slice(0, 200),
+        })
+      )
 
       return c.json({ ok: true })
     }
@@ -270,38 +242,15 @@ analyticsRoutes.post('/pageview', async (c) => {
     const referrer = c.req.header('referer') || undefined
     const pageType = overridePageType === 'not-found' ? 'not-found' : detectPageType(path)
 
-    // 🆕 FIX: yahan se neeche — saara DB kaam ab BACKGROUND me chalta hai.
-    // Response ussi turant chala jaata hai, MongoDB ka wait nahi karna padta.
-    fireAndForget(c, (async () => {
-      let earningContext:
-        | { link5Active: boolean; specialModeForcing: boolean; countEveryView: boolean; dedupeWindowSec: number }
-        | undefined
-
-      if (pageType === 'download' || pageType === 'anime-detail' || pageType === 'episode') {
-        // ✅ DEFENSE-IN-DEPTH: earningContext build ko try/catch me wrap kiya.
-        // Agar isForceLink5ModeActive (ya linksettings fetch) kabhi bhi throw
-        // kare, toh bhi trackPageView chalta rahega — warna silently downloadViews
-        // 0 ho jaata kyunki poora background task crash ho jaata.
-        try {
-          const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-          const linkSettings: any = await db.collection('linksettings').findOne({})
-          const countEveryView = linkSettings?.countEveryView === true
-          const dedupeWindowSec = typeof linkSettings?.dedupeWindowSec === 'number' ? linkSettings.dedupeWindowSec : 86400
-
-          let link5Active = false
-          let specialModeForcing = false
-          if (pageType === 'download') {
-            link5Active = linkSettings?.link5 !== false
-            specialModeForcing = await isForceLink5ModeActive(c.env.MONGODB_URI, c.env.MONGODB_DB)
-          }
-          earningContext = { link5Active, specialModeForcing, countEveryView, dedupeWindowSec }
-        } catch (e) {
-          console.error('earningContext build failed, tracking view anyway:', e)
-        }
-      }
-
-      await trackPageView(
-        {
+    // 🆕 FIX: yahan se neeche — saara DB kaam ab QUEUE me chala jata hai.
+    // Route ab sirf ek message enqueue karta hai aur turant response
+    // de deta hai. Earning context (linksettings, isForceLink5ModeActive)
+    // aur actual trackPageView — sab consumer worker karega.
+    c.executionCtx.waitUntil(
+      c.env.PAGEVIEW_QUEUE.send({
+        kind: 'view',
+        at: Date.now(),
+        data: {
           path,
           pageType,
           slug: cleanSlug,
@@ -318,15 +267,12 @@ analyticsRoutes.post('/pageview', async (c) => {
           visitorId: typeof visitorId === 'string' ? visitorId.slice(0, 64) : undefined,
           userAgent: ua.slice(0, 200),
           linkUsed,
-          isAdminPreview: isAdminPreview === true, // 🆕 flag pass — trackPageView ise ignore/skip karega
+          isAdminPreview: isAdminPreview === true,
         },
-        c.env.MONGODB_URI,
-        c.env.MONGODB_DB,
-        earningContext
-      )
-    })())
+      })
+    )
 
-    // ✅ Response turant — background task ka wait nahi kiya
+    // ✅ Response turant — queue send ka wait nahi kiya (waitUntil use hua)
     return c.json({ ok: true })
   } catch (err: any) {
     console.error('Analytics track error:', err.message)

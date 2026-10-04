@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth, requirePermission } from '../middleware/auth'
-import { getDb, toObjectId, isValidObjectId } from '../services/mongoService'
+import { getDb, withDb, toObjectId, isValidObjectId } from '../services/mongoService'
 import { IAnime } from '../models/types'
 // 🆕 CACHING — edge cache + background tasks ke liye
 import { withEdgeCache, fireAndForget, invalidateEdgeCache, getCachedJSON } from '../utils/cache'
@@ -63,10 +63,9 @@ async function throttledViewIncrement(c: any, lockName: string, matchFilter: any
 
   fireAndForget(
     c,
-    (async () => {
-      const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-      await db.collection('animes').updateOne(matchFilter, { $inc: { views: 1 } })
-    })()
+    withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'viewInc', (db) =>
+      db.collection('animes').updateOne(matchFilter, { $inc: { views: 1 } })
+    )
   )
 }
 
@@ -80,19 +79,20 @@ animeRoutes.get('/featured', async (c) => {
       const filter: any = { [cfg.flag]: true, isHidden: { $ne: true }, isBlocked: { $ne: true } }
       const sort: any = { [cfg.order]: -1, createdAt: -1 }
 
-      const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-      const animes = await db.collection('animes')
-        .find(filter, {
-          projection: {
-            title: 1, thumbnail: 1, releaseYear: 1, subDubStatus: 1, contentType: 1,
-            updatedAt: 1, createdAt: 1, bannerImage: 1, rating: 1, slug: 1, seoTitle: 1,
-            likes: 1, dislikes: 1, monthlyLikes: 1, weeklyLikes: 1, currentEpisode: 1,
-            genreList: 1, description: 1, status: 1
-          }
-        })
-        .sort(sort)
-        .limit(24)
-        .toArray()
+      const animes = await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'featured', (db) =>
+        db.collection('animes')
+          .find(filter, {
+            projection: {
+              title: 1, thumbnail: 1, releaseYear: 1, subDubStatus: 1, contentType: 1,
+              updatedAt: 1, createdAt: 1, bannerImage: 1, rating: 1, slug: 1, seoTitle: 1,
+              likes: 1, dislikes: 1, monthlyLikes: 1, weeklyLikes: 1, currentEpisode: 1,
+              genreList: 1, description: 1, status: 1
+            }
+          })
+          .sort(sort)
+          .limit(24)
+          .toArray()
+      )
 
       return { success: true, data: animes }
     })
@@ -120,19 +120,24 @@ animeRoutes.get('/top100', async (c) => {
       if (type === 'monthly') sortField = 'monthlyLikes'
       else if (type === 'weekly') sortField = 'weeklyLikes'
 
-      const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-      const col = db.collection('animes')
+      const { animes, total } = await withDb(
+        c.env.MONGODB_URI, c.env.MONGODB_DB, 'top100', async (db) => {
+          const col = db.collection('animes')
 
-      const [animes, total] = await Promise.all([
-        col.find(filter, {
-          projection: { title: 1, thumbnail: 1, likes: 1, dislikes: 1, monthlyLikes: 1, weeklyLikes: 1, contentType: 1, slug: 1, rating: 1 }
-        })
-          .sort({ [sortField]: -1, title: 1 })
-          .skip(skip)
-          .limit(limit)
-          .toArray(),
-        col.countDocuments(filter)
-      ])
+          const [animes, total] = await Promise.all([
+            col.find(filter, {
+              projection: { title: 1, thumbnail: 1, likes: 1, dislikes: 1, monthlyLikes: 1, weeklyLikes: 1, contentType: 1, slug: 1, rating: 1 }
+            })
+              .sort({ [sortField]: -1, title: 1 })
+              .skip(skip)
+              .limit(limit)
+              .toArray(),
+            col.countDocuments(filter)
+          ])
+
+          return { animes, total }
+        }
+      )
 
       return {
         success: true,
@@ -175,22 +180,19 @@ animeRoutes.get('/slug/:slug', async (c) => {
     // View-increment ab throttled — 60s mein sirf ek increment
     await throttledViewIncrement(c, `slug-${slug}`, { slug })
 
-    const response = await withEdgeCache(c, 300, async () => {
-      const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-      const anime = await db.collection('animes').findOne({ slug }) as unknown as IAnime | null
+    const response = await withEdgeCache(c, 300, () =>
+      withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'animeSlug', async (db) => {
+        const anime = await db.collection('animes').findOne({ slug }) as unknown as IAnime | null
+        if (!anime || anime.isBlocked) throw { __notFound: true }
 
-      if (!anime || anime.isBlocked) {
-        // 404 ko cache nahi karna — throw karke handler ke bahar nikal jao
-        throw { __notFound: true }
-      }
+        const episodes = await db.collection('episodes')
+          .find({ animeId: anime._id })
+          .sort({ session: 1, episodeNumber: 1 })
+          .toArray()
 
-      const episodes = await db.collection('episodes')
-        .find({ animeId: anime._id })
-        .sort({ session: 1, episodeNumber: 1 })
-        .toArray()
-
-      return { success: true, data: { ...anime, episodes } }
-    })
+        return { success: true, data: { ...anime, episodes } }
+      })
+    )
 
     return response
   } catch (err: any) {
@@ -344,15 +346,17 @@ animeRoutes.post('/:id/vote', async (c) => {
   }
 })
 
-// ============ VOTE STATUS — 1 connection ============
+// ============ VOTE STATUS — withDb (no getDb) ============
 animeRoutes.get('/:id/vote-status', async (c) => {
   try {
     const id = c.req.param('id')
     const ip = c.req.header('x-forwarded-for') || c.req.header('cf-connecting-ip') || 'unknown'
     if (!isValidObjectId(id)) return c.json({ success: false, error: 'Invalid ID' }, 400)
 
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const anime = await db.collection('animes').findOne({ _id: toObjectId(id) }) as IAnime | null
+    const anime = await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'voteStatus', (db) =>
+      db.collection('animes').findOne({ _id: toObjectId(id) })
+    ) as IAnime | null
+
     if (!anime || anime.isBlocked) return c.json({ success: false, error: 'Anime not found' }, 404)
 
     const vote = anime.votes?.find((v: any) => v.ipAddress === ip)
@@ -375,40 +379,39 @@ animeRoutes.get('/', async (c) => {
     const page = parseInt(c.req.query('page') || '1')
     const limit = parseInt(c.req.query('limit') || '24')
 
-    const response = await withEdgeCache(c, 180, async () => {
-      const skip = (page - 1) * limit
-      const baseFilter = { isHidden: { $ne: true }, isBlocked: { $ne: true } }
+    const response = await withEdgeCache(c, 180, () =>
+      withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'homepage', async (db) => {
+        const skip = (page - 1) * limit
+        const baseFilter = { isHidden: { $ne: true }, isBlocked: { $ne: true } }
+        const col = db.collection('animes')
 
-      const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-      const col = db.collection('animes')
+        // ✅ FIX: total count alag se, 10-minute cache ke saath — total document
+        // count second-to-second change nahi hota, isliye ise har homepage request
+        // pe recompute karne ki zarurat nahi. Isse miss-window chhota hota hai
+        // (sirf 1 query reh jaati hai), jo stampede risk kam karta hai.
+        const total = await getCachedJSON(c, 600, 'homepage-total-count', async () => {
+          return col.countDocuments(baseFilter)
+        })
 
-      // ✅ FIX: total count alag se, 10-minute cache ke saath — total document
-      // count second-to-second change nahi hota, isliye ise har homepage request
-      // pe recompute karne ki zarurat nahi. Isse miss-window chhota hota hai
-      // (sirf 1 query reh jaati hai), jo stampede risk kam karta hai.
-      const totalCacheKey = `homepage-total-count`
-      const total = await getCachedJSON(c, 600, totalCacheKey, async () => {
-        return col.countDocuments(baseFilter)
-      })
+        const animes = await col.find(baseFilter, {
+          projection: { title: 1, thumbnail: 1, releaseYear: 1, subDubStatus: 1, contentType: 1, updatedAt: 1, createdAt: 1, slug: 1, likes: 1, dislikes: 1, rating: 1, monthlyLikes: 1, weeklyLikes: 1, totalVotes: 1, currentEpisode: 1, lastContentAdded: 1 }
+        })
+          .sort({ lastContentAdded: -1 })
+          .skip(skip)
+          .limit(limit)
+          .toArray()
 
-      const animes = await col.find(baseFilter, {
-        projection: { title: 1, thumbnail: 1, releaseYear: 1, subDubStatus: 1, contentType: 1, updatedAt: 1, createdAt: 1, slug: 1, likes: 1, dislikes: 1, rating: 1, monthlyLikes: 1, weeklyLikes: 1, totalVotes: 1, currentEpisode: 1, lastContentAdded: 1 }
-      })
-        .sort({ lastContentAdded: -1 })
-        .skip(skip)
-        .limit(limit)
-        .toArray()
-
-      return {
-        success: true, data: animes,
-        pagination: {
-          current: page,
-          totalPages: Math.ceil(total / limit),
-          hasMore: page < Math.ceil(total / limit),
-          totalItems: total
+        return {
+          success: true, data: animes,
+          pagination: {
+            current: page,
+            totalPages: Math.ceil(total / limit),
+            hasMore: page < Math.ceil(total / limit),
+            totalItems: total
+          }
         }
-      }
-    })
+      })
+    )
 
     return response
   } catch (err: any) {
@@ -596,23 +599,24 @@ animeRoutes.get('/:id', async (c) => {
       isObjectId ? { _id: toObjectId(id) } : { slug: id }
     )
 
-    const response = await withEdgeCache(c, 300, async () => {
-      const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-      const anime = await db.collection('animes').findOne(
-        isObjectId ? { _id: toObjectId(id) } : { slug: id }
-      ) as unknown as IAnime | null
+    const response = await withEdgeCache(c, 300, () =>
+      withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'animeSlug', async (db) => {
+        const anime = await db.collection('animes').findOne(
+          isObjectId ? { _id: toObjectId(id) } : { slug: id }
+        ) as unknown as IAnime | null
 
-      if (!anime || anime.isBlocked) {
-        throw { __notFound: true }
-      }
+        if (!anime || anime.isBlocked) {
+          throw { __notFound: true }
+        }
 
-      const episodes = await db.collection('episodes')
-        .find({ animeId: anime._id })
-        .sort({ session: 1, episodeNumber: 1 })
-        .toArray()
+        const episodes = await db.collection('episodes')
+          .find({ animeId: anime._id })
+          .sort({ session: 1, episodeNumber: 1 })
+          .toArray()
 
-      return { success: true, data: { ...anime, episodes } }
-    })
+        return { success: true, data: { ...anime, episodes } }
+      })
+    )
 
     return response
   } catch (err: any) {
@@ -621,21 +625,44 @@ animeRoutes.get('/:id', async (c) => {
   }
 })
 
-// ============ DELETE ANIME (admin) — 3 calls combined into 1 connection ============
+// ============ DELETE ANIME (admin) — cascade: download pages + episodes + cache ============
 animeRoutes.delete('/:id', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ success: false, error: 'Invalid ID' }, 400)
 
     const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const anime = await db.collection('animes').findOne({ _id: toObjectId(id) })
+    const animeOid = toObjectId(id)
+
+    const anime = await db.collection('animes').findOne({ _id: animeOid })
     if (!anime) return c.json({ success: false, error: 'Anime not found' }, 404)
 
-    await db.collection('animes').deleteOne({ _id: toObjectId(id) })
-    await db.collection('downloadpages').deleteMany({ animeId: toObjectId(id) })
-    await invalidateAnimeCache(c, id, (anime as any).slug) // ✅ NEW
+    // Delete se PEHLE download pages ke slugs lo (cache clear karne ke liye)
+    const pages = await db.collection('downloadpages')
+      .find({ animeId: animeOid }, { projection: { slug: 1 } })
+      .toArray()
 
-    return c.json({ success: true, message: 'Anime deleted successfully' })
+    // Cascade delete: anime + download pages + episodes
+    await db.collection('animes').deleteOne({ _id: animeOid })
+    await db.collection('downloadpages').deleteMany({ animeId: animeOid })
+    await db.collection('episodes').deleteMany({ animeId: animeOid })
+
+    // Anime ka apna cache
+    await invalidateAnimeCache(c, id, (anime as any).slug)
+
+    // Download pages ka cache (list + har slug)
+    try {
+      await invalidateEdgeCache(c, `/api/download-pages/anime/${id}`)
+      await Promise.all(
+        pages
+          .filter((p: any) => p.slug)
+          .map((p: any) => invalidateEdgeCache(c, `/api/download-pages/${p.slug}`))
+      )
+    } catch (err) {
+      console.error('[delete anime] download-page cache invalidate failed:', err)
+    }
+
+    return c.json({ success: true, message: 'Anime and its download pages deleted successfully' })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
   }
