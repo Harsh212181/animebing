@@ -21,6 +21,7 @@ interface AnimeContextType {
   loadInitialAnime: (isSearch?: boolean) => void;
   loadMoreAnime: () => void;
   fetchFeatured: () => void;
+  refreshLatest: () => void;
   setFilter: (f: FilterType) => void;
   setContentType: (ct: ContentTypeFilter) => void;
   setSearchQuery: (q: string) => void;
@@ -89,6 +90,9 @@ export const AnimeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // 🆕 Auto-rotate silent refresh ke liye — last successful fetch time
   const lastSectionsFetchRef = useRef(0);
+
+  // 🆕 Silent refresh (list) throttle ke liye — last refresh time
+  const lastListFetchRef = useRef(Date.now());
 
   // ✅ Cache sync wrappers — state aur module cache dono ek saath update hote hain
   const setAnimeList = useCallback((list: Anime[]) => {
@@ -167,6 +171,7 @@ export const AnimeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const currentSearch = searchQuery;
 
     try {
+      lastListFetchRef.current = Date.now();
       if (isSearch && currentSearch.trim()) {
         const data = await searchAnime(currentSearch, ANIME_FIELDS);
         const uniqueData = Array.from(
@@ -194,6 +199,21 @@ export const AnimeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setIsLoading(false);
     }
   }, [searchQuery, setAnimeList, setHasMoreCached, setCurrentPageCached, setIsSearchingCached]);
+
+  // 🆕 Page 1 fresh laao, upar rakho, purani loaded items niche rehne do.
+  // Ye "silent refresh" hai — loading spinner nahi dikhega, purani list
+  // screen se gayab nahi hogi.
+  const refreshLatest = useCallback(async () => {
+    if (_isSearchingCache || lastSearchQuery.current) return;
+    if (Date.now() - lastListFetchRef.current < 60_000) return; // 60s throttle
+    lastListFetchRef.current = Date.now();
+    try {
+      const fresh = await getAnimePaginated(1, 36, ANIME_FIELDS);
+      const freshIds = new Set(fresh.map((a: Anime) => a.id || a._id));
+      const rest = _animeListCache.filter(a => !freshIds.has(a.id || a._id));
+      setAnimeList([...fresh, ...rest]);
+    } catch { /* purani list rehne do */ }
+  }, [setAnimeList]);
 
   // Load more
   const loadMoreAnime = useCallback(async () => {
@@ -241,12 +261,15 @@ export const AnimeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // ✅ Auto-rotate ke liye: tab dobara visible ho ya page khula rahe to
   // featured sections silently refresh ho (max 5 min me ek baar)
+  // 🆕 Saath hi anime list bhi silently refresh hoti hai — naya content
+  // upar aa jaata hai, purani scroll position aur cards gayab nahi hote.
   useEffect(() => {
     const REFRESH_MS = 5 * 60 * 1000;
     const maybeRefresh = () => {
       if (document.visibilityState !== 'visible') return;
       if (Date.now() - lastSectionsFetchRef.current < REFRESH_MS) return;
       fetchFeaturedSections(true);
+      refreshLatest();
     };
     document.addEventListener('visibilitychange', maybeRefresh);
     const interval = setInterval(maybeRefresh, REFRESH_MS);
@@ -254,7 +277,7 @@ export const AnimeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       document.removeEventListener('visibilitychange', maybeRefresh);
       clearInterval(interval);
     };
-  }, [fetchFeaturedSections]);
+  }, [fetchFeaturedSections, refreshLatest]);
 
   // Search debounce
   useEffect(() => {
@@ -279,7 +302,7 @@ export const AnimeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         animeList, featuredAnimes, featuredSections, sectionVisibility, featuredSectionsLoading,
         isLoading, error, currentPage, hasMore,
         isLoadingMore, isSearching, filter, contentType, searchQuery,
-        loadInitialAnime, loadMoreAnime, fetchFeatured,
+        loadInitialAnime, loadMoreAnime, fetchFeatured, refreshLatest,
         setFilter, setContentType, setSearchQuery,
       }}
     >

@@ -156,7 +156,7 @@ const HomePage: React.FC<Props> = ({
   const {
     animeList, featuredAnimes, featuredSections, sectionVisibility, featuredSectionsLoading,
     isLoading, error, isLoadingMore, isSearching, hasMore,
-    loadInitialAnime, loadMoreAnime, fetchFeatured,
+    loadInitialAnime, loadMoreAnime, fetchFeatured, refreshLatest,
     filter, setFilter, contentType, setContentType, setSearchQuery
   } = useAnimeContext();
 
@@ -183,6 +183,13 @@ const HomePage: React.FC<Props> = ({
     if (contentType !== newContentType) setContentType(newContentType);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
+
+  // 🆕 Silent refresh — home khulte hi / back aane par naya content
+  // upar aa jaata hai, purani list gayab nahi hoti (60s throttle context me hai)
+  useEffect(() => {
+    refreshLatest();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // SCROLL RESTORATION
   useEffect(() => {
@@ -251,14 +258,15 @@ const HomePage: React.FC<Props> = ({
     return () => clearTimeout(timer);
   }, [searchQuery, isSearching, checkPollStatus]);
 
-  // Focus handler
+  // Focus handler — 🆕 refreshLatest() bhi call karo taaki naya content
+  // upar aa jaaye jab user tab dobara focus kare
   useEffect(() => {
     const handleFocus = () => {
-      if (!searchQuery) fetchFeatured();
+      if (!searchQuery) { fetchFeatured(); refreshLatest(); }
     };
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
-  }, [searchQuery, fetchFeatured]);
+  }, [searchQuery, fetchFeatured, refreshLatest]);
 
   // SEO
   const getSEOData = () => {

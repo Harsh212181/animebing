@@ -1,4 +1,4 @@
- import React from 'react';
+import React from 'react';
 import type { Anime } from '../src/types';
 import { PlayIcon } from './icons/PlayIcon';
 import { getContentGroup } from '../src/utils/contentGroup'; // ✅ new import
@@ -156,12 +156,12 @@ const AnimeCard: React.FC<AnimeCardProps> = ({
 
             {/* ✅ NEW — badge shown directly above the anime title */}
             {showNewBadge && (
-              <span className="inline-block bg-gradient-to-r from-rose-500 to-pink-500 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-md shadow-md mb- tracking-wider">
+              <span className="inline-block bg-gradient-to-r from-rose-500 to-pink-500 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-md shadow-md mb-1 tracking-wider">
                 NEW
               </span>
             )}
 
-            <h3 className={`text-white font-bold line-clamp-2 mb-1 ${
+            <h3 className={`text-white font-bold break-words mb-1 ${
               compact
                 ? 'text-xs sm:text-xs md:text-sm leading-tight'
                 : 'text-xs sm:text-sm md:text-base leading-tight'

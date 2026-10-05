@@ -102,7 +102,7 @@ const FeaturedAnimeCarousel: React.FC<Props> = ({ sectionData, visibility, onAni
                     )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent transition-colors duration-300 group-hover:from-black/97 flex flex-col justify-end p-2 sm:p-3 md:p-4">
                       <div className="transform transition-transform duration-300 group-hover:-translate-y-1">
-                        <h3 className="text-white font-bold line-clamp-2 mb-1.5 text-xs sm:text-sm md:text-base leading-tight drop-shadow-lg">{anime.title}</h3>
+                        <h3 className="text-white font-bold break-words mb-1.5 text-xs sm:text-sm md:text-base leading-tight drop-shadow-lg">{anime.title}</h3>
                         <div className="flex justify-between items-center">
                           <p className="text-slate-300 text-xs sm:text-sm">{anime.releaseYear || 'N/A'}</p>
                           <span className="bg-gradient-to-r from-purple-600/90 to-purple-700/90 text-white text-[10px] font-medium px-1.5 py-0.5 rounded-md shadow-md whitespace-nowrap">{anime.subDubStatus || 'Unknown'}</span>
@@ -172,7 +172,7 @@ const FeaturedAnimeCarousel: React.FC<Props> = ({ sectionData, visibility, onAni
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="space-y-2">
-                              <h2 className="text-base font-bold text-white line-clamp-2 leading-tight drop-shadow-lg">{anime.title}</h2>
+                              <h2 className="text-base font-bold text-white break-words leading-tight drop-shadow-lg">{anime.title}</h2>
                               <div className="flex flex-wrap gap-1.5">
                                 {anime.subDubStatus && <span className="px-2 py-0.5 rounded text-xs font-semibold bg-purple-600/80 text-white border border-purple-500">{anime.subDubStatus}</span>}
                                 {anime.releaseYear && <span className="px-2 py-0.5 rounded text-xs font-semibold bg-slate-800/60 text-slate-300 border border-slate-700">{anime.releaseYear}</span>}

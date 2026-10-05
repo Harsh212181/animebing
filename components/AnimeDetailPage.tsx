@@ -1,4 +1,4 @@
- // components/AnimeDetailPage.tsx - BANNER HERO + LIKE COUNT FORMATTING + DESCRIPTION SHOW MORE
+// components/AnimeDetailPage.tsx - BANNER HERO + LIKE COUNT FORMATTING + DESCRIPTION SHOW MORE
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import type { Anime, Episode, Chapter, DownloadPage } from '../src/types';
@@ -612,7 +612,7 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
 
                   <div className="flex-1 min-w-0">
                     <div className="space-y-2">
-                      <h1 className="text-base font-bold text-white line-clamp-2 leading-tight drop-shadow-lg">
+                      <h1 className="text-base font-bold text-white leading-tight drop-shadow-lg break-words">
                         {displayAnime?.title}
                       </h1>
                       <div className="flex flex-wrap gap-1.5">

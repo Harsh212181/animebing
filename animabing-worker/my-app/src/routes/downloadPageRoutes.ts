@@ -180,12 +180,31 @@ downloadPageRoutes.post('/', adminAuth, async (c) => {
       if (!link.type) link.type = 'download'
     }
 
+    // 🔒 Page number server decide karega, client ka value ignore
+    const existingPages = await db.collection('downloadpages')
+      .find({ animeId: toObjectId(animeId) }, { projection: { episodeNumber: 1 } })
+      .toArray()
+    const maxPageNo = existingPages.reduce(
+      (m: number, p: any) => Math.max(m, Number(p.episodeNumber) || 0), 0
+    )
+    const nextPageNo = Math.max(existingPages.length, maxPageNo) + 1
+
+    const admin = c.get('admin')
+    const isMainAdmin = admin.role !== 'subadmin'
+
+    // Main admin custom number de sakta hai, warna auto
+    const requestedNo = Number(episodeNumber)
+    const finalPageNo =
+      isMainAdmin && Number.isInteger(requestedNo) && requestedNo >= 1
+        ? requestedNo
+        : nextPageNo
+
     const now = new Date()
     const page = {
       animeId: toObjectId(animeId),
       slug: cleanSlug,
       title: title || 'Download',
-      episodeNumber: episodeNumber || 1,
+      episodeNumber: finalPageNo,
       links: sanitizedLinks,
       isHidden: false,
       defaultPlayerMode: defaultPlayerMode === 'custom' ? 'custom' : 'default',
@@ -228,10 +247,17 @@ downloadPageRoutes.put('/:id', adminAuth, async (c) => {
       updateData.slug = cleanSlug
     }
     if (title !== undefined) updateData.title = title
-    if (episodeNumber !== undefined) {
-      if (episodeNumber < 1) return c.json({ error: 'episodeNumber must be at least 1' }, 400)
-      updateData.episodeNumber = episodeNumber
+
+    // 🔒 episodeNumber sirf MAIN ADMIN change kar sakta hai; sub-admin ka value ignore
+    const admin = c.get('admin')
+    if (episodeNumber !== undefined && admin.role !== 'subadmin') {
+      const n = Number(episodeNumber)
+      if (!Number.isInteger(n) || n < 1) {
+        return c.json({ error: 'episodeNumber must be at least 1' }, 400)
+      }
+      updateData.episodeNumber = n
     }
+
     if (links) {
       for (const link of links) {
         if (!link.episode || !link.url) return c.json({ error: 'Each link needs episode and url' }, 400)

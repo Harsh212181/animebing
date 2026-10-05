@@ -144,6 +144,28 @@ interface FormPage {
   defaultPlayerMode?: 'custom' | 'default';
 }
 
+// 🆕 Random suffix (unpredictable) — crypto-secure
+const generateRandomSuffix = (length = 8): string => {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => chars[b % chars.length]).join('');
+};
+
+// 🆕 "Black Clover" -> "black-clover-x7k2m9ab"
+const generateSlugFromTitle = (title: string): string => {
+  const base = title
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/['"]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 50)
+    .replace(/-+$/g, '');
+  return `${base || 'page'}-${generateRandomSuffix(8)}`;
+};
+
 const getAnimeTitle = (page: DownloadPage): string => {
   if (page.animeId && typeof page.animeId === 'object' && 'title' in page.animeId) {
     return page.animeId.title;
@@ -429,6 +451,30 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
     }
   };
 
+  // 🆕 Is anime ka agla PAGE number (1, 2, 3...) nikalta hai
+  const getNextPageNumber = async (animeId: string): Promise<number> => {
+    if (!animeId) return 1;
+    try {
+      const token = resolveToken();
+      const res = await fetch(`${API_BASE}/download-pages/anime/${animeId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (!res.ok) return 1;
+      const animePages = await res.json();
+      if (!Array.isArray(animePages)) return 1;
+
+      // Safe logic: agar beech ka koi page delete hua ho (1,3 bacha),
+      // to count (2) se duplicate "3" ban sakta tha. Isliye max bhi dekhte hain.
+      const maxPageNo = animePages.reduce(
+        (m: number, p: any) => Math.max(m, Number(p.episodeNumber) || 0),
+        0
+      );
+      return Math.max(animePages.length, maxPageNo) + 1;
+    } catch {
+      return 1;
+    }
+  };
+
   useEffect(() => {
     fetchPages();
     fetchAnime();
@@ -486,15 +532,20 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
   const handleNewAnimeChange = async (option: AnimeOption | null) => {
     const animeId = option?._id || '';
     if (!animeId) {
-      setEditingPage(prev => prev ? { ...prev, animeId: '' } : null);
+      setEditingPage(prev => prev ? { ...prev, animeId: '', slug: '', episodeNumber: 1 } : null);
       return;
     }
     await guarded(`new-anime-${animeId}`, async () => {
       setCalculatingNext(true);
-      const next = await getNextStartingEpisode(animeId);
+      const nextPageNo = await getNextPageNumber(animeId); // 🆕 page number
       setEditingPage(prev => {
         if (!prev) return null;
-        return { ...prev, animeId, episodeNumber: next };
+        return {
+          ...prev,
+          animeId,
+          episodeNumber: nextPageNo,                       // 🆕
+          slug: generateSlugFromTitle(option!.title),
+        };
       });
       setCalculatingNext(false);
     });
@@ -1429,16 +1480,30 @@ const PageForm: React.FC<{
       </div>
 
       <div>
-        <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">
-          <span className="w-1 h-3.5 bg-indigo-400 rounded-full" />
-          Slug (unique) *
-        </label>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-gray-400">
+            <span className="w-1 h-3.5 bg-indigo-400 rounded-full" />
+            Slug (auto-generated) *
+          </label>
+          {!editingPage._id && editingPage.animeId && (
+            <button
+              type="button"
+              onClick={() => {
+                const a = animeOptions.find(x => x._id === editingPage.animeId);
+                if (a) setEditingPage(prev => prev ? { ...prev, slug: generateSlugFromTitle(a.title) } : null);
+              }}
+              className="text-[10px] font-semibold text-purple-300 hover:text-purple-200"
+            >
+              ↻ Regenerate
+            </button>
+          )}
+        </div>
         <input
           type="text"
           value={editingPage.slug || ''}
           onChange={e => setEditingPage(prev => prev ? { ...prev, slug: e.target.value } : null)}
           className={`${inputCls} font-mono`}
-          placeholder="e.g., naruto-eps-1-10"
+          placeholder="Select anime to auto-generate"
           disabled={saving}
         />
       </div>
@@ -1454,12 +1519,15 @@ const PageForm: React.FC<{
           step="1"
           value={editingPage.episodeNumber || ''}
           onChange={e => setEditingPage(prev => prev ? { ...prev, episodeNumber: parseInt(e.target.value) || 1 } : null)}
-          className={inputCls}
+          className={`${inputCls} ${!editingPage._id ? 'cursor-not-allowed' : ''}`}
           placeholder="e.g., 1"
+          readOnly={!editingPage._id}
           disabled={saving}
         />
         <p className="text-[10px] text-gray-500 mt-1">
-          This is just a reference. It does NOT affect link numbering.
+          {!editingPage._id
+            ? 'Auto-set: ye is anime ka page number hai.'
+            : 'This is just a reference. It does NOT affect link numbering.'}
         </p>
       </div>
 
