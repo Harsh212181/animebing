@@ -1,4 +1,4 @@
- import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Play,
   Pause,
@@ -23,12 +23,18 @@ interface YouTubeEmbedProps {
   onPreviousEpisode?: () => void;
   hasNextEpisode?: boolean;
   hasPreviousEpisode?: boolean;
+  onPlayingChange?: (playing: boolean) => void; // ✅ NEW
 }
 
 const PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 const SKIP_SECONDS = 10;
 const DOUBLE_TAP_MS = 300;
 const SKIP_INDICATOR_MS = 800; // isi window ke andar dobara double-tap karne par amount jud jayega (10+ -> 20+ -> 30+)
+
+// ✅ NEW
+const AUTO_NEXT_SECONDS = 5;
+const RESUME_SAVE_INTERVAL_MS = 5000;
+const RESUME_KEY_PREFIX = 'yt-resume:';
 
 type SkipSide = 'left' | 'right';
 
@@ -40,6 +46,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
   onPreviousEpisode,
   hasNextEpisode = false,
   hasPreviousEpisode = false,
+  onPlayingChange, // ✅ NEW
 }) => {
   const isCustom = playerMode === 'custom';
 
@@ -61,6 +68,14 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [showVolumeSlider, setShowVolumeSlider] = useState(false);
   const [seeking, setSeeking] = useState(false); // drag ke dauran infoDelivery se overwrite mat karo
+
+  // ✅ NEW — Auto next episode
+  const [ended, setEnded] = useState(false);
+  const [endedCountdown, setEndedCountdown] = useState<number | null>(null);
+
+  // ✅ NEW — Resume playback
+  const currentTimeRef = useRef(0);
+  const resumeAppliedRef = useRef(false);
 
   // ✅ NEW — left/right double-tap skip indicator (cumulative: 10+ -> 20+ -> 30+ ...)
   const [skipIndicator, setSkipIndicator] = useState<{ side: SkipSide; amount: number; key: number } | null>(null);
@@ -111,6 +126,9 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
       setReady(false);
       setCurrentTime(0);
       setDuration(0);
+      setEnded(false);                 // ✅ NEW
+      currentTimeRef.current = 0;      // ✅ NEW
+      resumeAppliedRef.current = false; // ✅ NEW
       startListening();
     }
   }, [youTubeId]);
@@ -125,14 +143,35 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
           const info = data.info;
           if (!ready) setReady(true); // ✅ NEW — pehla real signal milte hi ready
           if (typeof info.playerState === 'number') {
-            if (info.playerState === 1) setPlaying(true);
-            else if (info.playerState === 2) setPlaying(false);
+            if (info.playerState === 1) {
+              setPlaying(true);
+              setEnded(false); // ✅ NEW — replay hua to countdown band
+            } else if (info.playerState === 2) {
+              setPlaying(false);
+            } else if (info.playerState === 0) {
+              // ✅ NEW — video khatam
+              setPlaying(false);
+              setEnded(true);
+              try { localStorage.removeItem(RESUME_KEY_PREFIX + youTubeId); } catch {}
+            }
           }
-          if (!seeking && typeof info.currentTime === 'number') {
-            setCurrentTime(info.currentTime);
+          if (typeof info.currentTime === 'number') {
+            currentTimeRef.current = info.currentTime; // ✅ NEW
+            if (!seeking) setCurrentTime(info.currentTime);
           }
           if (typeof info.duration === 'number' && info.duration > 0) {
             setDuration(info.duration);
+
+            // ✅ NEW — resume: duration pata chalte hi ek baar saved time par seek
+            if (!resumeAppliedRef.current) {
+              resumeAppliedRef.current = true;
+              try {
+                const saved = Number(localStorage.getItem(RESUME_KEY_PREFIX + youTubeId));
+                if (saved > 5 && saved < info.duration - 10) {
+                  postCommand('seekTo', [saved, true]);
+                }
+              } catch {}
+            }
           }
           if (typeof info.volume === 'number') setVolume(info.volume);
           if (typeof info.muted === 'boolean') setMuted(info.muted);
@@ -152,6 +191,46 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     const fallback = setTimeout(() => setReady(true), 4000);
     return () => clearTimeout(fallback);
   }, [youTubeId]);
+
+  // ✅ NEW: parent ko batao ki video sach me chal raha hai ya nahi
+  useEffect(() => {
+    onPlayingChange?.(playing && ready);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing, ready]);
+
+  // ✅ NEW — har 5s me current time save karo
+  useEffect(() => {
+    if (!youTubeId) return;
+    const id = setInterval(() => {
+      const t = currentTimeRef.current;
+      if (t > 5) {
+        try { localStorage.setItem(RESUME_KEY_PREFIX + youTubeId, String(Math.floor(t))); } catch {}
+      }
+    }, RESUME_SAVE_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [youTubeId]);
+
+  // ✅ NEW — video khatam hone par countdown
+  useEffect(() => {
+    if (!ended || !hasNextEpisode) {
+      setEndedCountdown(null);
+      return;
+    }
+    setEndedCountdown(AUTO_NEXT_SECONDS);
+    const id = setInterval(() => {
+      setEndedCountdown((prev) => (prev === null ? null : prev - 1));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [ended, hasNextEpisode]);
+
+  // ✅ NEW — countdown 0 par next episode
+  useEffect(() => {
+    if (endedCountdown === 0) {
+      setEnded(false);
+      onNextEpisode?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endedCountdown]);
 
   useEffect(() => {
     const handleFullscreenChange = async () => {
@@ -505,6 +584,29 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
                 <span className="text-white text-xs font-medium whitespace-nowrap">
                   {skipIndicator.amount}+ seconds
                 </span>
+              </div>
+            </div>
+          )}
+
+          {/* ✅ NEW — auto next episode countdown overlay */}
+          {endedCountdown !== null && endedCountdown > 0 && (
+            <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-black/75">
+              <p className="text-white text-sm sm:text-base font-medium">
+                Next episode in {endedCountdown}s
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => { setEnded(false); onNextEpisode?.(); }}
+                  className="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-medium"
+                >
+                  Play now
+                </button>
+                <button
+                  onClick={() => setEnded(false)}
+                  className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-sm font-medium"
+                >
+                  Cancel
+                </button>
               </div>
             </div>
           )}

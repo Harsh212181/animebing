@@ -1,4 +1,4 @@
- import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   Play,
   Pause,
@@ -15,6 +15,9 @@ import {
   SkipForward,
 } from 'lucide-react';
 
+// ✅ NEW
+const AUTO_NEXT_SECONDS = 5;
+
 interface VideoPlayerProps {
   src: string;
   qualities?: { label: string; src: string }[];
@@ -25,6 +28,7 @@ interface VideoPlayerProps {
   onPreviousEpisode?: () => void;
   hasNextEpisode?: boolean;
   hasPreviousEpisode?: boolean;
+  onPlayingChange?: (playing: boolean) => void; // ✅ NEW
 }
 
 const VideoPlayer: React.FC<VideoPlayerProps> = ({
@@ -37,6 +41,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   onPreviousEpisode,
   hasNextEpisode = false,
   hasPreviousEpisode = false,
+  onPlayingChange, // ✅ NEW
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -88,6 +93,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const dragStart = useRef({ x: 0, y: 0 });
   const lastPinchDistance = useRef<number | null>(null);
   const [isBuffering, setIsBuffering] = useState(false);
+
+  // ✅ NEW: auto next episode countdown
+  const [ended, setEnded] = useState(false);
+  const [endedCountdown, setEndedCountdown] = useState<number | null>(null);
+
   const [ripple, setRipple] = useState<{ x: number; y: number } | null>(null);
   const brightnessTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const volumeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -100,6 +110,12 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   useEffect(() => {
     isFullscreenRef.current = isFullscreen;
   }, [isFullscreen]);
+
+  // ✅ NEW: parent ko batao ki video sach me chal raha hai ya nahi
+  useEffect(() => {
+    onPlayingChange?.(playing && !isBuffering);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing, isBuffering]);
 
   const isOurFullscreenActive = () => {
     const fsElement = document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement;
@@ -214,13 +230,39 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     if (videoRef.current) setDuration(videoRef.current.duration);
   };
 
-  // ✅ Video khatam hone par agla episode apne aap chalao (agar available hai)
+  // ✅ UPDATED: video khatam hone par countdown shuru (seedha next nahi)
   const handleEnded = () => {
     setPlaying(false);
-    if (hasNextEpisode && onNextEpisode) {
-      onNextEpisode();
-    }
+    setEnded(true); // ✅ NEW: countdown shuru
+    try { localStorage.removeItem(`video-progress-${currentSrc}`); } catch {} // ✅ NEW: resume saaf
   };
+
+  // ✅ NEW: episode/quality badle to countdown band
+  useEffect(() => {
+    setEnded(false);
+  }, [currentSrc]);
+
+  // ✅ NEW: countdown chalao
+  useEffect(() => {
+    if (!ended || !hasNextEpisode) {
+      setEndedCountdown(null);
+      return;
+    }
+    setEndedCountdown(AUTO_NEXT_SECONDS);
+    const id = setInterval(() => {
+      setEndedCountdown((prev) => (prev === null ? null : prev - 1));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [ended, hasNextEpisode]);
+
+  // ✅ NEW: 0 par next episode
+  useEffect(() => {
+    if (endedCountdown === 0) {
+      setEnded(false);
+      onNextEpisode?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endedCountdown]);
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const time = Number(e.target.value);
@@ -769,7 +811,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
           poster={poster}
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}
-          onPlay={() => setPlaying(true)}
+          onPlay={() => { setPlaying(true); setEnded(false); }}
           onPause={() => {
             setPlaying(false);
             setIsBuffering(false);
@@ -851,6 +893,31 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         <div className="w-1/3 h-full" onClick={togglePlay} onDoubleClick={handleDoubleTap} />
         <div className="w-1/3 h-full" />
       </div>
+
+      {/* ✅ NEW: auto next episode countdown overlay */}
+      {endedCountdown !== null && endedCountdown > 0 && (
+        <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-black/75">
+          <p className="text-white text-sm sm:text-base font-medium">
+            Next episode in {endedCountdown}s
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { setEnded(false); onNextEpisode?.(); }}
+              onTouchStart={(e) => e.stopPropagation()}
+              className="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-medium"
+            >
+              Play now
+            </button>
+            <button
+              onClick={() => setEnded(false)}
+              onTouchStart={(e) => e.stopPropagation()}
+              className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white text-sm font-medium"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Controls */}
       <div

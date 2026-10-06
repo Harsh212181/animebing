@@ -1,4 +1,4 @@
- import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { FaDownload, FaPlay, FaFilm, FaTv, FaChrome, FaInfoCircle } from 'react-icons/fa';
 import Spinner from './Spinner';
@@ -119,6 +119,7 @@ const DownloadLinkPage: React.FC = () => {
   // ✅ NEW: Watch activity tracking states/refs
   const [activityId, setActivityId] = useState<string | null>(null);
   const watchSecondsRef = useRef(0);
+  const isPlayingRef = useRef(false); // ✅ NEW: player ka play/pause status
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -146,6 +147,7 @@ const DownloadLinkPage: React.FC = () => {
       }
       setActivityId(null);
       watchSecondsRef.current = 0;
+      isPlayingRef.current = false; // ✅ NEW
     };
 
     if (selectedIndex === null || !sortedWatchLinks[selectedIndex] || !animeDetails?._id) {
@@ -155,6 +157,9 @@ const DownloadLinkPage: React.FC = () => {
 
     const link = sortedWatchLinks[selectedIndex];
     let cancelled = false;
+
+    // ✅ NEW: player khud batayega play/pause status
+    isPlayingRef.current = false;
 
     startActivity({
       animeId: animeDetails._id,
@@ -171,6 +176,7 @@ const DownloadLinkPage: React.FC = () => {
       setActivityId(id);
       watchSecondsRef.current = 0;
       heartbeatIntervalRef.current = setInterval(() => {
+        if (!isPlayingRef.current) return; // ✅ NEW: pause me count nahi
         watchSecondsRef.current += 15;
         sendHeartbeat(id, watchSecondsRef.current);
       }, 15000);
@@ -683,7 +689,8 @@ const DownloadLinkPage: React.FC = () => {
                         key="active-youtube-player"
                         videoUrl={sortedWatchLinks[selectedIndex].url}
                         title={title}
-                        playerMode={page.defaultPlayerMode || 'default'}
+                        playerMode="custom"
+                        onPlayingChange={(p) => { isPlayingRef.current = p; }} // ✅ NEW
                         onNextEpisode={() => setSelectedIndex(selectedIndex + 1)}
                         onPreviousEpisode={() => setSelectedIndex(selectedIndex - 1)}
                         hasNextEpisode={!isMovie && selectedIndex < sortedWatchLinks.length - 1}
@@ -696,6 +703,7 @@ const DownloadLinkPage: React.FC = () => {
                           src={sortedWatchLinks[selectedIndex].url}
                           title={title}
                           episode={!isMovie ? sortedWatchLinks[selectedIndex].episode : undefined}
+                          onPlayingChange={(p) => { isPlayingRef.current = p; }} // ✅ NEW
                           onNextEpisode={() => setSelectedIndex(selectedIndex + 1)}
                           onPreviousEpisode={() => setSelectedIndex(selectedIndex - 1)}
                           hasNextEpisode={!isMovie && selectedIndex < sortedWatchLinks.length - 1}
