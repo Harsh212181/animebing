@@ -1,4 +1,5 @@
- import React, { useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
+import { getAdminToken } from '../../../utils/authToken'; // ✅ NEW (path check kar lena)
 
 const API_BASE = import.meta.env.VITE_API_BASE ||
   'https://animabing-backend.animabingwatch.workers.dev/api';
@@ -10,8 +11,8 @@ interface Props {
 }
 
 const ImageUploadField: React.FC<Props> = ({ value, onChange, token: tokenProp }) => {
-  const resolveToken = () =>
-    tokenProp || localStorage.getItem('adminToken') || sessionStorage.getItem('subAdminToken') || '';
+  // ✅ CHANGED: ab wahi util use hoga jo form submit mein use hota hai
+  const resolveToken = () => tokenProp || getAdminToken() || '';
 
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);

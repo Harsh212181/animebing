@@ -762,6 +762,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                   </label>
                   <ImageUploadField
                     value={form.thumbnail}
+                    token={tokenProp}    
                     onChange={(url) => setForm({ ...form, thumbnail: url })}
                   />
                 </div>
