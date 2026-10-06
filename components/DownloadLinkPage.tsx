@@ -417,7 +417,8 @@ const DownloadLinkPage: React.FC = () => {
 
                 <div className="flex-1 min-w-0">
                   <div className="space-y-2">
-                    <h1 className="text-base font-bold text-white line-clamp-2 leading-tight drop-shadow-lg">
+                    {/* ✅ FIX: line-clamp-2 hata diya, break-words add kiya — full title ab wrap hoga */}
+                    <h1 className="text-base font-bold text-white leading-tight drop-shadow-lg break-words">
                       {title}
                     </h1>
                     <div className="flex flex-wrap gap-1.5">
@@ -485,7 +486,8 @@ const DownloadLinkPage: React.FC = () => {
 
                 <div className="flex-1 min-w-0 py-4 h-full flex flex-col justify-center">
                   <div className="space-y-3">
-                    <h1 className="text-3xl font-bold text-white leading-tight drop-shadow-lg">
+                    {/* ✅ FIX: break-words add kiya — long titles bhi wrap honge */}
+                    <h1 className="text-3xl font-bold text-white leading-tight drop-shadow-lg break-words">
                       {title}
                     </h1>
                     <div className="flex flex-wrap gap-1.5">

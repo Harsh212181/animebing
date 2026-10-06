@@ -762,7 +762,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                   </label>
                   <ImageUploadField
                     value={form.thumbnail}
-                    token={tokenProp}    
+                    token={tokenProp}
                     onChange={(url) => setForm({ ...form, thumbnail: url })}
                   />
                 </div>
@@ -1156,64 +1156,78 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
           </div>
         </form>
 
-        {/* ===== TOASTS ===== */}
+        {/* ===== TOASTS (COMPACT) ===== */}
         {success && (
-          <div className="fixed bottom-6 right-6 max-w-md animate-slide-up z-50">
-            <div className="bg-gradient-to-br from-emerald-900/95 to-green-900/95 backdrop-blur-md border border-emerald-700/60 rounded-2xl p-6 shadow-2xl shadow-emerald-500/20">
-              <div className="flex items-start gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
-                  <Icons.CheckCircle className="w-6 h-6 text-emerald-400" />
+          <div className="fixed z-[100] bottom-3 right-3 left-3 sm:left-auto sm:bottom-6 sm:right-6 sm:max-w-sm animate-toast-in">
+            <div className="relative overflow-hidden rounded-2xl bg-slate-900/95 backdrop-blur-xl border border-emerald-500/30 shadow-2xl shadow-emerald-500/10">
+              {/* top accent glow */}
+              <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-400/70 to-transparent" />
+
+              <div className="flex items-start gap-3 p-3.5 pr-10">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-emerald-500/30">
+                  <Icons.CheckCircle className="w-5 h-5 text-white" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-emerald-300 text-lg font-bold mb-1">Successfully Added!</p>
-                  <p className="text-emerald-200/80 text-sm mb-3">{success}</p>
-                  <div className="p-3 bg-emerald-900/40 rounded-xl border border-emerald-800/40">
-                    <p className="text-emerald-300/70 text-xs font-medium flex items-center gap-1">
-                      <Icons.Slug className="w-3 h-3" />
-                      SEO URL Created:
+                <div className="min-w-0 flex-1">
+                  <p className="text-white text-sm font-semibold leading-tight">
+                    Anime Added!
+                  </p>
+                  <p className="text-slate-400 text-xs mt-0.5 leading-snug">
+                    Google indexing within 24–48h
+                  </p>
+                  {form.slug && (
+                    <p className="text-emerald-400/90 text-[11px] font-mono mt-1.5 truncate">
+                      /detail/{form.slug}
                     </p>
-                    <p className="text-emerald-200 text-sm font-mono break-all">
-                      https://animebing.in/detail/{form.slug || '...'}
-                    </p>
-                  </div>
+                  )}
                 </div>
-                <button
-                  onClick={() => setSuccess('')}
-                  className="text-emerald-400/60 hover:text-emerald-300 transition-colors flex-shrink-0"
-                >
-                  <Icons.X className="w-5 h-5" />
-                </button>
+              </div>
+
+              <button
+                onClick={() => setSuccess('')}
+                aria-label="Close"
+                className="absolute top-2.5 right-2.5 w-6 h-6 rounded-lg flex items-center justify-center text-slate-500 hover:text-white hover:bg-white/5 transition-colors"
+              >
+                <Icons.X className="w-3.5 h-3.5" />
+              </button>
+
+              {/* auto-dismiss progress bar (4s) */}
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-slate-800">
+                <div className="h-full bg-gradient-to-r from-emerald-400 to-green-500 animate-toast-progress" />
               </div>
             </div>
           </div>
         )}
 
         {error && (
-          <div className="fixed bottom-6 right-6 max-w-md animate-slide-up z-50">
-            <div className="bg-gradient-to-br from-red-900/95 to-orange-900/95 backdrop-blur-md border border-red-700/60 rounded-2xl p-6 shadow-2xl shadow-red-500/20">
-              <div className="flex items-start gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-red-500/20 flex items-center justify-center flex-shrink-0">
-                  <Icons.AlertCircle className="w-6 h-6 text-red-400" />
+          <div className="fixed z-[100] bottom-3 right-3 left-3 sm:left-auto sm:bottom-6 sm:right-6 sm:max-w-sm animate-toast-in">
+            <div className="relative overflow-hidden rounded-2xl bg-slate-900/95 backdrop-blur-xl border border-rose-500/30 shadow-2xl shadow-rose-500/10">
+              {/* top accent glow */}
+              <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-rose-400/70 to-transparent" />
+
+              <div className="flex items-start gap-3 p-3.5 pr-10">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-rose-500 to-red-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-rose-500/30">
+                  <Icons.AlertCircle className="w-5 h-5 text-white" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-red-300 text-lg font-bold mb-1">Error Adding Anime</p>
-                  <p className="text-red-200/80 text-sm">{error}</p>
-                  <div className="mt-3 p-3 bg-red-900/40 rounded-xl border border-red-800/40">
-                    <p className="text-red-300/70 text-xs font-medium">Troubleshooting:</p>
-                    <ul className="text-red-200/70 text-xs list-disc list-inside mt-1 space-y-0.5">
-                      <li>Check if anime title already exists</li>
-                      <li>Verify thumbnail URL is valid</li>
-                      <li>Ensure you're logged in as admin</li>
-                      <li>Check network connection</li>
-                    </ul>
-                  </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-white text-sm font-semibold leading-tight">
+                    Failed to add
+                  </p>
+                  <p className="text-slate-400 text-xs mt-0.5 leading-snug break-words">
+                    {error}
+                  </p>
                 </div>
-                <button
-                  onClick={() => setError('')}
-                  className="text-red-400/60 hover:text-red-300 transition-colors flex-shrink-0"
-                >
-                  <Icons.X className="w-5 h-5" />
-                </button>
+              </div>
+
+              <button
+                onClick={() => setError('')}
+                aria-label="Close"
+                className="absolute top-2.5 right-2.5 w-6 h-6 rounded-lg flex items-center justify-center text-slate-500 hover:text-white hover:bg-white/5 transition-colors"
+              >
+                <Icons.X className="w-3.5 h-3.5" />
+              </button>
+
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-slate-800">
+                <div className="h-full bg-gradient-to-r from-rose-400 to-red-500 animate-toast-progress" />
               </div>
             </div>
           </div>
@@ -1226,11 +1240,19 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
           to { opacity: 1; transform: translateY(0); }
         }
         .animate-fadeIn { animation: fadeIn 0.15s ease-out; }
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(20px) scale(0.96); }
-          to { opacity: 1; transform: translateY(0) scale(1); }
+
+        @keyframes toastIn {
+          from { opacity: 0; transform: translateY(16px) scale(0.96); }
+          to   { opacity: 1; transform: translateY(0)    scale(1); }
         }
-        .animate-slide-up { animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        .animate-toast-in { animation: toastIn 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
+
+        @keyframes toastProgress {
+          from { width: 100%; }
+          to   { width: 0%; }
+        }
+        .animate-toast-progress { animation: toastProgress 4s linear forwards; }
+
         .line-clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
         .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 

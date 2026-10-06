@@ -723,7 +723,15 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
                     <Settings size={ICON_SIZE} />
                   </button>
                   {showSpeedMenu && (
-                    <div className="absolute bottom-full right-0 mb-2 bg-neutral-900/95 border border-white/10 rounded-lg shadow-xl z-50 overflow-hidden min-w-[100px]">
+                    <div
+                      className="absolute bottom-full right-0 mb-2 bg-neutral-900/95 border border-white/10 rounded-lg shadow-xl z-50 overflow-y-auto overflow-x-hidden
+                                 grid grid-cols-2 sm:grid-cols-1 gap-px p-1 sm:p-0
+                                 w-[150px] sm:w-auto sm:min-w-[100px]
+                                 max-h-[130px] sm:max-h-none"
+                      onClick={(e) => e.stopPropagation()}
+                      onTouchStart={showControlsTemporarily}
+                      onScroll={showControlsTemporarily}
+                    >
                       {PLAYBACK_RATES.map((rate) => (
                         <button
                           key={rate}
@@ -731,7 +739,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
                             e.stopPropagation();
                             changeSpeed(rate);
                           }}
-                          className="w-full flex items-center justify-between gap-2 text-left px-3 py-2 hover:bg-white/10 text-sm text-white/85"
+                          className="flex items-center justify-between gap-2 text-left px-2.5 py-1.5 sm:px-3 sm:py-2 rounded hover:bg-white/10 active:bg-white/20 text-xs sm:text-sm text-white/85"
                         >
                           {rate}x
                           {rate === playbackRate && <Check size={14} className="text-purple-400" />}
