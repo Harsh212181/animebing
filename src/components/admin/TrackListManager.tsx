@@ -14,7 +14,7 @@ import {
   PreviewVideo,
 } from '../../types/trackTypes';
 import { Icon, formatIST, HighResThumb } from '../../utils/trackUtils';
-import { getAdminToken, isSuperAdminSession } from '../../../utils/authToken';
+import { getContextToken, isSubAdminPage } from '../../../utils/authToken';
 import TrackChannelsPanel from './TrackChannelsPanel';
 import TrackListLogs from './TrackListLogs';
 import TrackNotificationsPanel from './TrackNotificationsPanel';
@@ -149,8 +149,8 @@ const TrackListManager: React.FC = () => {
     }
   };
 
-  const isSubAdminContext = !isSuperAdminSession();
-  const authHeaders = () => ({ headers: { Authorization: `Bearer ${getAdminToken()}` } });
+  const isSubAdminContext = isSubAdminPage();
+  const authHeaders = () => ({ headers: { Authorization: `Bearer ${getContextToken()}` } });
 
   // ============ DATA LOADING ============
   const loadData = async () => {

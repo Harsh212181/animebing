@@ -101,3 +101,26 @@ export function clearAllAuthTokens() {
   clearAdminSession();
   clearSubAdminSession();
 }
+
+// ───────── 🆕 Page-context helpers ─────────
+
+/**
+ * Returns true if the current page is a sub-admin dashboard.
+ * Sub-admin dashboard par hamesha sub-admin token use hona chahiye,
+ * chahe super-admin bhi logged in ho.
+ */
+export function isSubAdminPage(): boolean {
+  return window.location.pathname.startsWith('/sub-admin-dashboard');
+}
+
+/**
+ * Route ke hisaab se sahi token deta hai:
+ *  - Sub-admin dashboard par → sub-admin token (hamesha)
+ *  - Baaki sab jagah → admin token (fallback ke saath sub-admin)
+ *
+ * Isse ye fix hota hai: super-admin apne dashboard se sub-admin
+ * dashboard bhi khol sakta hai, aur wahan sub-admin ka token hi lagega.
+ */
+export function getContextToken(): string {
+  return isSubAdminPage() ? getSubAdminToken() : getAdminToken();
+}
