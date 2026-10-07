@@ -8,7 +8,7 @@ const AuthCallback: React.FC = () => {
   const navigate = useNavigate()
   const [status, setStatus] = useState<'loading' | 'error'>('loading')
 
-  // ✅ FIX: intent ko turant decide karo — URL state ya saved sessionStorage se
+  // ✅ FIX: decide intent immediately — from URL state or saved sessionStorage
   const params = new URLSearchParams(window.location.search)
   const urlState = params.get('state')
   const savedIntent = sessionStorage.getItem('oauthIntent')
@@ -24,7 +24,7 @@ const AuthCallback: React.FC = () => {
       return
     }
 
-    // Purane opposite-panel session ko turant clear karo
+    // Immediately clear the old opposite-panel session
     if (isSubAdmin) {
       localStorage.removeItem('shortUserToken')
       localStorage.removeItem('shortUserName')
@@ -71,7 +71,7 @@ const AuthCallback: React.FC = () => {
       })
   }, [])
 
-  // ✅ FIX: theme intent ke hisaab se turant decide, fetch ka wait nahi
+  // ✅ FIX: decide theme immediately based on intent, no waiting for fetch
   const bg = isSubAdmin
     ? 'radial-gradient(ellipse at 50% 40%, #4c1d95 0%, #3b0764 40%, #1e0533 100%)'
     : 'linear-gradient(135deg,#f0efff,#f8f4ff,#eff5ff)'
@@ -99,7 +99,7 @@ const AuthCallback: React.FC = () => {
             }} />
             <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
             <p style={{ color: textColor, fontWeight: 600, fontSize: 15 }}>
-              {isSubAdmin ? 'Sub-Admin login ho raha hai...' : 'Google se login ho raha hai...'}
+              {isSubAdmin ? 'Logging in as Sub-Admin...' : 'Logging in with Google...'}
             </p>
             <p style={{ color: subTextColor, fontSize: 13, marginTop: 6 }}>
             </p>
@@ -107,9 +107,9 @@ const AuthCallback: React.FC = () => {
         ) : (
           <>
             <div style={{ fontSize: 44, marginBottom: 12 }}>❌</div>
-            <p style={{ color: '#d85a30', fontWeight: 600 }}>Login fail</p>
+            <p style={{ color: '#d85a30', fontWeight: 600 }}>Login failed</p>
             <p style={{ color: subTextColor, fontSize: 13 }}>
-              We re going back…
+              We're going back…
             </p>
           </>
         )}

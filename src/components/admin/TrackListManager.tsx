@@ -14,6 +14,7 @@ import {
   PreviewVideo,
 } from '../../types/trackTypes';
 import { Icon, formatIST, HighResThumb } from '../../utils/trackUtils';
+import { getAdminToken, isSuperAdminSession } from '../../../utils/authToken';
 import TrackChannelsPanel from './TrackChannelsPanel';
 import TrackListLogs from './TrackListLogs';
 import TrackNotificationsPanel from './TrackNotificationsPanel';
@@ -107,7 +108,6 @@ const TrackListManager: React.FC = () => {
   const [browseScanDepth, setBrowseScanDepth] = useState(150);
   const [expandedInfoId, setExpandedInfoId] = useState<string | null>(null);
 
-  // 🆕 Chunked preview scan state
   const [lastPreviewDepth, setLastPreviewDepth] = useState<Record<string, number>>({});
   const [previewProgress, setPreviewProgress] = useState<{ scanned: number; target: number } | null>(null);
   const previewCursorRef = useRef<Record<string, string | null>>({});
@@ -135,7 +135,6 @@ const TrackListManager: React.FC = () => {
 
   const [showChannelFeed, setShowChannelFeed] = useState<Record<string, boolean>>({});
 
-  // 🆕 Global network guard — prevents double-firing async actions on slow networks
   const pendingRef = useRef<Set<string>>(new Set());
 
   const guarded = async (key: string, fn: () => Promise<void>) => {
@@ -150,11 +149,8 @@ const TrackListManager: React.FC = () => {
     }
   };
 
-  const isSubAdminContext = !!sessionStorage.getItem('subAdminToken');
-  const token = isSubAdminContext
-    ? sessionStorage.getItem('subAdminToken')
-    : localStorage.getItem('adminToken');
-  const authHeaders = () => ({ headers: { Authorization: `Bearer ${token}` } });
+  const isSubAdminContext = !isSuperAdminSession();
+  const authHeaders = () => ({ headers: { Authorization: `Bearer ${getAdminToken()}` } });
 
   // ============ DATA LOADING ============
   const loadData = async () => {
@@ -450,11 +446,11 @@ const TrackListManager: React.FC = () => {
           try {
             ({ data } = await axios.post(url, body, authHeaders()));
           } catch {
-            ({ data } = await axios.post(url, body, authHeaders())); // 1 auto-retry
+            ({ data } = await axios.post(url, body, authHeaders()));
           }
 
           scanned += data.scannedCount;
-          for (const v of data.videos) map.set(v.videoId, v); // dedupe
+          for (const v of data.videos) map.set(v.videoId, v);
           token = data.nextPageToken || undefined;
 
           const videos = Array.from(map.values()).sort(byPart);
@@ -463,7 +459,7 @@ const TrackListManager: React.FC = () => {
           previewCursorRef.current[channelId] = token ?? null;
           setLastPreviewDepth((prev) => ({ ...prev, [channelId]: scanned }));
 
-          if (!token) break; // channel ke purane video khatam
+          if (!token) break;
         }
         if (map.size === 0) toast('No video matched this keyword — try changing the keyword');
       } catch (err: any) {
@@ -1167,7 +1163,7 @@ const TrackListManager: React.FC = () => {
     });
   };
 
-  /* ---------- ✅ Inline expand/collapse + sync helpers for All Titles panel ---------- */
+  /* ---------- Inline expand/collapse + sync helpers for All Titles panel ---------- */
   const toggleTitleInline = (t: any) => {
     const isOpen = browsingTitle?.channelId === t.channelId && browsingTitle?.titleId === t.id;
     if (isOpen) closeBrowseTitle();
@@ -1221,10 +1217,16 @@ const TrackListManager: React.FC = () => {
     }, 100);
   };
 
+  const needsAttentionTotal = approvalPendingCount + manualReviewCount + pausedOrErrorCount;
+
   if (loading)
     return (
-      <div className="flex items-center justify-center py-20">
-        {Icon.spinner('w-8 h-8 text-slate-400')}
+      <div className="flex flex-col items-center justify-center py-24 gap-4">
+        <div className="relative">
+          <div className="absolute inset-0 rounded-full bg-sky-500/20 blur-xl" />
+          <div className="relative">{Icon.spinner('w-10 h-10 text-sky-400')}</div>
+        </div>
+        <p className="text-xs text-slate-500 font-medium tracking-wide">Loading track manager…</p>
       </div>
     );
 
@@ -1233,49 +1235,59 @@ const TrackListManager: React.FC = () => {
       {/* Enlarged Thumbnail Viewer */}
       {enlargedVideoId && (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-in fade-in duration-200"
           onClick={() => setEnlargedVideoId(null)}
         >
           <button
             onClick={() => setEnlargedVideoId(null)}
-            className="absolute top-4 right-4 text-white/70 hover:text-white p-2 bg-white/10 hover:bg-white/20 rounded-full transition"
+            className="absolute top-5 right-5 text-white/70 hover:text-white p-2.5 bg-white/10 hover:bg-white/20 rounded-full transition backdrop-blur"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
-          <HighResThumb videoId={enlargedVideoId} />
+          <div className="max-w-5xl w-full" onClick={(e) => e.stopPropagation()}>
+            <HighResThumb videoId={enlargedVideoId} />
+          </div>
         </div>
       )}
 
       {/* Channel delete confirmation modal */}
       {channelDeleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-red-500/30 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="p-2.5 bg-red-500/20 rounded-xl">{Icon.trash('w-5 h-5 text-red-300')}</div>
-              <h3 className="text-lg font-bold text-white">Remove Channel</h3>
-            </div>
-            <p className="text-sm text-slate-400 mb-6">
-              <span className="text-white font-semibold">"{channelDeleteConfirm.channelName}"</span> and all its tracked titles will be
-              permanently removed. This action cannot be undone.
-            </p>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setChannelDeleteConfirm(null)}
-                disabled={deletingChannel}
-                className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white/80 font-medium transition disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmDeleteChannel}
-                disabled={deletingChannel}
-                className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 rounded-lg text-white font-medium transition shadow-lg shadow-red-600/20 flex items-center gap-2"
-              >
-                {deletingChannel && Icon.spinner('w-3.5 h-3.5')}
-                Remove
-              </button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
+          <div className="relative bg-gradient-to-br from-slate-900 to-slate-950 border border-red-500/30 rounded-3xl p-6 max-w-md w-full shadow-2xl shadow-red-950/40 overflow-hidden">
+            <div className="absolute -top-16 -right-16 w-44 h-44 rounded-full bg-red-500/10 blur-3xl pointer-events-none" />
+            <div className="relative">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-3 bg-gradient-to-br from-red-500/25 to-red-600/10 rounded-2xl border border-red-500/30">
+                  {Icon.trash('w-5 h-5 text-red-300')}
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Remove Channel</h3>
+                  <p className="text-[11px] text-slate-500 font-medium">This action is permanent</p>
+                </div>
+              </div>
+              <p className="text-sm text-slate-400 mb-6 leading-relaxed">
+                <span className="text-white font-semibold">"{channelDeleteConfirm.channelName}"</span> and all its tracked titles will be
+                permanently removed. This action cannot be undone.
+              </p>
+              <div className="flex justify-end gap-2.5">
+                <button
+                  onClick={() => setChannelDeleteConfirm(null)}
+                  disabled={deletingChannel}
+                  className="px-4 py-2.5 bg-white/5 hover:bg-white/10 rounded-xl text-slate-300 font-semibold transition disabled:opacity-50 text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDeleteChannel}
+                  disabled={deletingChannel}
+                  className="px-4 py-2.5 bg-gradient-to-br from-red-500 to-red-600 hover:from-red-400 hover:to-red-500 disabled:opacity-50 rounded-xl text-white font-bold transition shadow-lg shadow-red-600/30 flex items-center gap-2 text-sm"
+                >
+                  {deletingChannel && Icon.spinner('w-3.5 h-3.5')}
+                  Remove
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1283,180 +1295,222 @@ const TrackListManager: React.FC = () => {
 
       {/* Notification delete/undo/clear confirmation modal */}
       {notificationDeleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-red-500/30 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="p-2.5 bg-red-500/20 rounded-xl">{Icon.trash('w-5 h-5 text-red-300')}</div>
-              <h3 className="text-lg font-bold text-white">
-                {notificationDeleteConfirm.isBulk ? 'Remove All' : 'Remove Update'}
-              </h3>
-            </div>
-            <p className="text-sm text-slate-400 mb-6">
-              {notificationDeleteConfirm.isBulk ? (
-                <>
-                  <span className="text-white font-semibold">{notificationDeleteConfirm.count}</span> updates will be permanently removed. This
-                  action cannot be undone.
-                </>
-              ) : (
-                <>
-                  <span className="text-white font-semibold">"{notificationDeleteConfirm.title}"</span> this update will be permanently removed.
-                  This action cannot be undone.
-                </>
-              )}
-            </p>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setNotificationDeleteConfirm(null)}
-                disabled={deletingNotification}
-                className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white/80 font-medium transition disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  if (notificationDeleteConfirm.notificationId === 'all-logs') {
-                    confirmClearLogs();
-                  } else if (notificationDeleteConfirm.notificationId === 'all-runs') {
-                    confirmClearRuns();
-                  } else if (notificationDeleteConfirm.notificationId === 'bulk-notifications') {
-                    confirmBulkDeleteNotifications();
-                  } else if (notificationDeleteConfirm.notificationId.startsWith('undo-')) {
-                    confirmUndoNotification();
-                  } else {
-                    confirmDeleteNotification();
-                  }
-                }}
-                disabled={deletingNotification}
-                className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 rounded-lg text-white font-medium transition shadow-lg shadow-red-600/20 flex items-center gap-2"
-              >
-                {deletingNotification && Icon.spinner('w-3.5 h-3.5')}
-                {notificationDeleteConfirm.notificationId.startsWith('undo-') ? 'Undo' : 'Remove'}
-              </button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
+          <div className="relative bg-gradient-to-br from-slate-900 to-slate-950 border border-red-500/30 rounded-3xl p-6 max-w-md w-full shadow-2xl shadow-red-950/40 overflow-hidden">
+            <div className="absolute -top-16 -right-16 w-44 h-44 rounded-full bg-red-500/10 blur-3xl pointer-events-none" />
+            <div className="relative">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-3 bg-gradient-to-br from-red-500/25 to-red-600/10 rounded-2xl border border-red-500/30">
+                  {Icon.trash('w-5 h-5 text-red-300')}
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">
+                    {notificationDeleteConfirm.isBulk ? 'Remove All' : 'Remove Update'}
+                  </h3>
+                  <p className="text-[11px] text-slate-500 font-medium">This action is permanent</p>
+                </div>
+              </div>
+              <p className="text-sm text-slate-400 mb-6 leading-relaxed">
+                {notificationDeleteConfirm.isBulk ? (
+                  <>
+                    <span className="text-white font-semibold">{notificationDeleteConfirm.count}</span> updates will be permanently removed. This
+                    action cannot be undone.
+                  </>
+                ) : (
+                  <>
+                    <span className="text-white font-semibold">"{notificationDeleteConfirm.title}"</span> this update will be permanently removed.
+                    This action cannot be undone.
+                  </>
+                )}
+              </p>
+              <div className="flex justify-end gap-2.5">
+                <button
+                  onClick={() => setNotificationDeleteConfirm(null)}
+                  disabled={deletingNotification}
+                  className="px-4 py-2.5 bg-white/5 hover:bg-white/10 rounded-xl text-slate-300 font-semibold transition disabled:opacity-50 text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (notificationDeleteConfirm.notificationId === 'all-logs') {
+                      confirmClearLogs();
+                    } else if (notificationDeleteConfirm.notificationId === 'all-runs') {
+                      confirmClearRuns();
+                    } else if (notificationDeleteConfirm.notificationId === 'bulk-notifications') {
+                      confirmBulkDeleteNotifications();
+                    } else if (notificationDeleteConfirm.notificationId.startsWith('undo-')) {
+                      confirmUndoNotification();
+                    } else {
+                      confirmDeleteNotification();
+                    }
+                  }}
+                  disabled={deletingNotification}
+                  className="px-4 py-2.5 bg-gradient-to-br from-red-500 to-red-600 hover:from-red-400 hover:to-red-500 disabled:opacity-50 rounded-xl text-white font-bold transition shadow-lg shadow-red-600/30 flex items-center gap-2 text-sm"
+                >
+                  {deletingNotification && Icon.spinner('w-3.5 h-3.5')}
+                  {notificationDeleteConfirm.notificationId.startsWith('undo-') ? 'Undo' : 'Remove'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
 
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <span className="text-red-500">{Icon.youtube('w-8 h-8')}</span>
-        <div>
-          <h3 className="text-xl font-bold text-white">YouTube Track Manager</h3>
-          <p className="text-sm text-slate-400 mt-0.5">Select channels and series — get notified as soon as a new episode is uploaded.</p>
+      <div className="relative overflow-hidden bg-gradient-to-br from-red-500/[0.07] via-transparent to-sky-500/[0.05] border border-white/10 rounded-3xl p-5 sm:p-6">
+        <div className="absolute -top-24 -left-16 w-64 h-64 rounded-full bg-red-500/10 blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-24 -right-16 w-64 h-64 rounded-full bg-sky-500/10 blur-3xl pointer-events-none" />
+        <div className="relative flex items-center gap-4">
+          <div className="p-3.5 rounded-2xl bg-gradient-to-br from-red-500/25 to-red-600/10 border border-red-500/30 shadow-lg shadow-red-500/10 flex-shrink-0">
+            {Icon.youtube('w-7 h-7 text-red-400')}
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">YouTube Track Manager</h3>
+            <p className="text-xs sm:text-sm text-slate-400 mt-1 leading-relaxed">
+              Select channels and series — get notified as soon as a new episode is uploaded.
+            </p>
+          </div>
         </div>
       </div>
 
       {/* Overview Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-slate-800/40 backdrop-blur-xl border border-white/10 rounded-2xl p-4 flex items-center gap-3">
-          <div className="p-2.5 bg-white/10 rounded-xl">{Icon.youtube('w-5 h-5 text-slate-300')}</div>
-          <div>
-            <p className="text-2xl font-bold text-white">{channels.length}</p>
-            <p className="text-xs text-slate-400">Total Channels</p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+        <div className="group relative overflow-hidden bg-gradient-to-br from-white/[0.04] to-transparent backdrop-blur-xl border border-white/10 hover:border-white/20 rounded-2xl p-4 flex items-center gap-3.5 transition-all duration-200 hover:shadow-xl hover:shadow-black/20">
+          <div className="absolute -top-10 -right-10 w-24 h-24 rounded-full bg-red-500/5 blur-2xl group-hover:bg-red-500/10 transition" />
+          <div className="relative p-3 bg-gradient-to-br from-red-500/20 to-red-600/5 rounded-xl border border-red-500/25 flex-shrink-0">
+            {Icon.youtube('w-5 h-5 text-red-300')}
+          </div>
+          <div className="relative">
+            <p className="text-2xl font-extrabold text-white tabular-nums leading-none">{channels.length}</p>
+            <p className="text-[11px] text-slate-400 font-medium mt-1.5">Total Channels</p>
           </div>
         </div>
-        <div className="bg-slate-800/40 backdrop-blur-xl border border-white/10 rounded-2xl p-4 flex items-center gap-3">
-          <div className="p-2.5 bg-sky-500/20 rounded-xl">{Icon.eye('w-5 h-5 text-sky-300')}</div>
-          <div>
-            <p className="text-2xl font-bold text-white">{allTitlesFlat.length}</p>
-            <p className="text-xs text-slate-400">Total Tracked Titles</p>
+
+        <div className="group relative overflow-hidden bg-gradient-to-br from-white/[0.04] to-transparent backdrop-blur-xl border border-white/10 hover:border-white/20 rounded-2xl p-4 flex items-center gap-3.5 transition-all duration-200 hover:shadow-xl hover:shadow-black/20">
+          <div className="absolute -top-10 -right-10 w-24 h-24 rounded-full bg-sky-500/5 blur-2xl group-hover:bg-sky-500/10 transition" />
+          <div className="relative p-3 bg-gradient-to-br from-sky-500/20 to-sky-600/5 rounded-xl border border-sky-500/25 flex-shrink-0">
+            {Icon.eye('w-5 h-5 text-sky-300')}
+          </div>
+          <div className="relative">
+            <p className="text-2xl font-extrabold text-white tabular-nums leading-none">{allTitlesFlat.length}</p>
+            <p className="text-[11px] text-slate-400 font-medium mt-1.5">Total Tracked Titles</p>
           </div>
         </div>
-        <div className="bg-slate-800/40 backdrop-blur-xl border border-white/10 rounded-2xl p-4 flex items-center gap-3">
-          <div className="p-2.5 bg-emerald-500/20 rounded-xl">{Icon.bell('w-5 h-5 text-emerald-300')}</div>
-          <div>
-            <p className="text-2xl font-bold text-white">{todayUpdatesCount}</p>
-            <p className="text-xs text-slate-400">Today's Updates</p>
+
+        <div className="group relative overflow-hidden bg-gradient-to-br from-white/[0.04] to-transparent backdrop-blur-xl border border-white/10 hover:border-white/20 rounded-2xl p-4 flex items-center gap-3.5 transition-all duration-200 hover:shadow-xl hover:shadow-black/20">
+          <div className="absolute -top-10 -right-10 w-24 h-24 rounded-full bg-emerald-500/5 blur-2xl group-hover:bg-emerald-500/10 transition" />
+          <div className="relative p-3 bg-gradient-to-br from-emerald-500/20 to-emerald-600/5 rounded-xl border border-emerald-500/25 flex-shrink-0">
+            {Icon.bell('w-5 h-5 text-emerald-300')}
+          </div>
+          <div className="relative">
+            <p className="text-2xl font-extrabold text-white tabular-nums leading-none">{todayUpdatesCount}</p>
+            <p className="text-[11px] text-slate-400 font-medium mt-1.5">Today's Updates</p>
           </div>
         </div>
       </div>
 
       {/* Capacity Meters — only for super‑admin */}
       {!isSubAdminContext && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="bg-slate-800/40 backdrop-blur-xl border border-white/10 rounded-2xl p-4">
-            <div className="flex justify-between text-xs mb-1.5">
-              <span className="text-slate-400 font-medium">Channels Tracked</span>
-              <span className="text-slate-200 font-semibold">
-                {capacity.channelsUsed} / {capacity.channelsLimit}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+          <div className="bg-gradient-to-br from-white/[0.04] to-transparent backdrop-blur-xl border border-white/10 rounded-2xl p-4">
+            <div className="flex justify-between items-baseline text-xs mb-2.5">
+              <span className="text-slate-400 font-semibold uppercase tracking-wide text-[10px]">Channels Tracked</span>
+              <span className="text-slate-100 font-bold tabular-nums">
+                {capacity.channelsUsed}
+                <span className="text-slate-500 font-medium"> / {capacity.channelsLimit}</span>
               </span>
             </div>
-            <div className="w-full h-2 bg-black/30 rounded-full overflow-hidden">
-              <div className="h-full bg-white/40 rounded-full transition-all duration-500" style={{ width: `${channelPercent}%` }} />
-            </div>
-          </div>
-          <div className="bg-slate-800/40 backdrop-blur-xl border border-white/10 rounded-2xl p-4">
-            <div className="flex justify-between text-xs mb-1.5">
-              <span className="text-slate-400 font-medium">YouTube API Units (per cycle)</span>
-              <span className="text-sky-300 font-semibold">
-                {capacity.unitsUsedPerCheck} / {capacity.unitsLimit}
-              </span>
-            </div>
-            <div className="w-full h-2 bg-black/30 rounded-full overflow-hidden">
+            <div className="w-full h-2.5 bg-black/40 rounded-full overflow-hidden ring-1 ring-white/5">
               <div
-                className="h-full bg-gradient-to-r from-sky-500 to-cyan-500 rounded-full transition-all duration-500"
+                className="h-full bg-gradient-to-r from-slate-300 to-white/80 rounded-full transition-all duration-700 shadow-[0_0_8px_rgba(255,255,255,0.3)]"
+                style={{ width: `${channelPercent}%` }}
+              />
+            </div>
+            <p className="text-[10px] text-slate-500 mt-2 font-medium tabular-nums">
+              {channelPercent.toFixed(1)}% used
+            </p>
+          </div>
+          <div className="bg-gradient-to-br from-white/[0.04] to-transparent backdrop-blur-xl border border-white/10 rounded-2xl p-4">
+            <div className="flex justify-between items-baseline text-xs mb-2.5">
+              <span className="text-slate-400 font-semibold uppercase tracking-wide text-[10px]">YouTube API Units (per cycle)</span>
+              <span className="text-sky-300 font-bold tabular-nums">
+                {capacity.unitsUsedPerCheck}
+                <span className="text-slate-500 font-medium"> / {capacity.unitsLimit}</span>
+              </span>
+            </div>
+            <div className="w-full h-2.5 bg-black/40 rounded-full overflow-hidden ring-1 ring-white/5">
+              <div
+                className="h-full bg-gradient-to-r from-sky-500 to-cyan-400 rounded-full transition-all duration-700 shadow-[0_0_8px_rgba(56,189,248,0.5)]"
                 style={{ width: `${unitsPercent}%` }}
               />
             </div>
+            <p className="text-[10px] text-slate-500 mt-2 font-medium tabular-nums">
+              {unitsPercent.toFixed(1)}% used
+            </p>
           </div>
         </div>
       )}
 
-      {/* ✅ Clean, subtle Needs Attention widget */}
-      {(approvalPendingCount > 0 || manualReviewCount > 0 || pausedOrErrorCount > 0) && (
-        <div className="bg-slate-800/40 backdrop-blur-xl border border-white/10 rounded-2xl p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-amber-400/80">{Icon.warn('w-4 h-4')}</span>
-            <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wide">
-              Needs Attention
-            </h4>
-            <span className="text-[10px] text-slate-500 font-medium ml-1">
-              {approvalPendingCount + manualReviewCount + pausedOrErrorCount} item
-              {approvalPendingCount + manualReviewCount + pausedOrErrorCount !== 1 ? 's' : ''}
-            </span>
-          </div>
+      {/* Needs Attention widget */}
+      {needsAttentionTotal > 0 && (
+        <div className="relative overflow-hidden bg-gradient-to-br from-amber-500/[0.06] to-transparent backdrop-blur-xl border border-amber-500/20 rounded-2xl p-4">
+          <div className="absolute -top-16 -right-16 w-40 h-40 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
+          <div className="relative">
+            <div className="flex items-center gap-2.5 mb-3.5">
+              <span className="p-1.5 rounded-lg bg-amber-500/15 border border-amber-500/25">
+                {Icon.warn('w-4 h-4 text-amber-400')}
+              </span>
+              <h4 className="text-xs font-bold text-amber-100 uppercase tracking-wider">
+                Needs Attention
+              </h4>
+              <span className="text-[10px] text-slate-500 font-bold ml-auto tabular-nums">
+                {needsAttentionTotal} item{needsAttentionTotal !== 1 ? 's' : ''}
+              </span>
+            </div>
 
-          <div className="grid grid-cols-3 gap-2 sm:gap-3">
-            <button
-              onClick={() => setShowAllTitles(true)}
-              className="text-left rounded-xl p-3 bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 hover:border-white/15 transition-colors"
-            >
-              <div className="flex items-center gap-1.5 mb-1.5">
-                <span className="text-amber-400/80">{Icon.clock('w-3.5 h-3.5')}</span>
-                <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wide">
-                  Approval
-                </span>
-              </div>
-              <p className="text-lg font-bold text-slate-200 leading-none tabular-nums">
-                {approvalPendingCount}
-              </p>
-            </button>
+            <div className="grid grid-cols-3 gap-2 sm:gap-3">
+              <button
+                onClick={() => setShowAllTitles(true)}
+                className="group text-left rounded-xl p-3 bg-white/[0.03] hover:bg-amber-500/[0.08] border border-white/5 hover:border-amber-500/30 transition-all duration-150"
+              >
+                <div className="flex items-center gap-1.5 mb-2">
+                  <span className="text-amber-400">{Icon.clock('w-3.5 h-3.5')}</span>
+                  <span className="text-[10px] text-slate-500 group-hover:text-amber-300 font-bold uppercase tracking-wider">
+                    Approval
+                  </span>
+                </div>
+                <p className="text-xl font-extrabold text-slate-100 group-hover:text-amber-200 leading-none tabular-nums transition">
+                  {approvalPendingCount}
+                </p>
+              </button>
 
-            <button
-              onClick={() => setShowGlobalFeed(true)}
-              className="text-left rounded-xl p-3 bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 hover:border-white/15 transition-colors"
-            >
-              <div className="flex items-center gap-1.5 mb-1.5">
-                <span className="text-orange-400/70">{Icon.bell('w-3.5 h-3.5')}</span>
-                <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wide">
-                  Review
-                </span>
-              </div>
-              <p className="text-lg font-bold text-slate-200 leading-none tabular-nums">
-                {manualReviewCount}
-              </p>
-            </button>
+              <button
+                onClick={() => setShowGlobalFeed(true)}
+                className="group text-left rounded-xl p-3 bg-white/[0.03] hover:bg-orange-500/[0.08] border border-white/5 hover:border-orange-500/30 transition-all duration-150"
+              >
+                <div className="flex items-center gap-1.5 mb-2">
+                  <span className="text-orange-400/80">{Icon.bell('w-3.5 h-3.5')}</span>
+                  <span className="text-[10px] text-slate-500 group-hover:text-orange-300 font-bold uppercase tracking-wider">
+                    Review
+                  </span>
+                </div>
+                <p className="text-xl font-extrabold text-slate-100 group-hover:text-orange-200 leading-none tabular-nums transition">
+                  {manualReviewCount}
+                </p>
+              </button>
 
-            <div className="text-left rounded-xl p-3 bg-white/[0.03] border border-white/5">
-              <div className="flex items-center gap-1.5 mb-1.5">
-                <span className="text-red-400/70">{Icon.ban('w-3.5 h-3.5')}</span>
-                <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wide">
-                  Paused
-                </span>
+              <div className="text-left rounded-xl p-3 bg-white/[0.03] border border-white/5">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <span className="text-red-400/80">{Icon.ban('w-3.5 h-3.5')}</span>
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                    Paused
+                  </span>
+                </div>
+                <p className="text-xl font-extrabold text-slate-100 leading-none tabular-nums">
+                  {pausedOrErrorCount}
+                </p>
               </div>
-              <p className="text-lg font-bold text-slate-200 leading-none tabular-nums">
-                {pausedOrErrorCount}
-              </p>
             </div>
           </div>
         </div>
@@ -1473,25 +1527,40 @@ const TrackListManager: React.FC = () => {
                 setShowAllTitles(false);
               }
             }}
-            className={`cursor-pointer bg-slate-800/30 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden ${
-              showConflicts ? 'ring-2 ring-amber-500/50' : ''
+            className={`group cursor-pointer relative overflow-hidden bg-gradient-to-br from-white/[0.03] to-transparent backdrop-blur-xl border rounded-2xl transition-all duration-200 ${
+              showConflicts
+                ? 'border-amber-500/40 shadow-xl shadow-amber-500/5'
+                : 'border-white/10 hover:border-amber-500/25'
             }`}
           >
-            <div
-              className={`w-full flex items-center justify-between p-3 hover:bg-white/[0.03] transition ${
-                showConflicts ? 'bg-amber-500/10 border-b border-amber-500/20' : ''
-              }`}
-            >
-              <div className="flex items-center gap-2 text-sm font-semibold text-white">
-                {Icon.conflict('w-4 h-4 text-amber-300')}
+            {showConflicts && (
+              <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-400/60 to-transparent" />
+            )}
+            <div className="relative w-full flex items-center justify-between p-3.5">
+              <div className="flex items-center gap-2.5 text-sm font-bold text-white">
+                <span
+                  className={`p-1.5 rounded-lg border transition ${
+                    showConflicts
+                      ? 'bg-amber-500/20 border-amber-500/30'
+                      : 'bg-white/5 border-white/10 group-hover:bg-amber-500/10 group-hover:border-amber-500/20'
+                  }`}
+                >
+                  {Icon.conflict('w-4 h-4 text-amber-300')}
+                </span>
                 <span>Conflicts</span>
                 {conflicts.length > 0 && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-200 border border-amber-500/30 font-bold tabular-nums">
                     {conflicts.length}
                   </span>
                 )}
               </div>
-              <span className={`text-slate-400 transition-transform ${showConflicts ? 'rotate-180' : ''}`}>{Icon.chevron('w-4 h-4')}</span>
+              <span
+                className={`text-slate-500 group-hover:text-amber-300 transition-all duration-200 ${
+                  showConflicts ? 'rotate-180 text-amber-300' : ''
+                }`}
+              >
+                {Icon.chevron('w-4 h-4')}
+              </span>
             </div>
           </div>
 
@@ -1503,25 +1572,40 @@ const TrackListManager: React.FC = () => {
                 setShowAllTitles(false);
               }
             }}
-            className={`cursor-pointer bg-slate-800/30 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden ${
-              showGlobalFeed ? 'ring-2 ring-rose-500/50' : ''
+            className={`group cursor-pointer relative overflow-hidden bg-gradient-to-br from-white/[0.03] to-transparent backdrop-blur-xl border rounded-2xl transition-all duration-200 ${
+              showGlobalFeed
+                ? 'border-rose-500/40 shadow-xl shadow-rose-500/5'
+                : 'border-white/10 hover:border-rose-500/25'
             }`}
           >
-            <div
-              className={`w-full flex items-center justify-between p-3 hover:bg-white/[0.03] transition ${
-                showGlobalFeed ? 'bg-rose-500/10 border-b border-rose-500/20' : ''
-              }`}
-            >
-              <div className="flex items-center gap-2 text-sm font-semibold text-white">
-                {Icon.bell('w-4 h-4 text-rose-300')}
+            {showGlobalFeed && (
+              <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-rose-400/60 to-transparent" />
+            )}
+            <div className="relative w-full flex items-center justify-between p-3.5">
+              <div className="flex items-center gap-2.5 text-sm font-bold text-white">
+                <span
+                  className={`p-1.5 rounded-lg border transition ${
+                    showGlobalFeed
+                      ? 'bg-rose-500/20 border-rose-500/30'
+                      : 'bg-white/5 border-white/10 group-hover:bg-rose-500/10 group-hover:border-rose-500/20'
+                  }`}
+                >
+                  {Icon.bell('w-4 h-4 text-rose-300')}
+                </span>
                 <span>All Updates</span>
                 {globalUnreadCount > 0 && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 font-semibold">
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-200 border border-rose-500/30 font-bold tabular-nums">
                     {globalUnreadCount}
                   </span>
                 )}
               </div>
-              <span className={`text-slate-400 transition-transform ${showGlobalFeed ? 'rotate-180' : ''}`}>{Icon.chevron('w-4 h-4')}</span>
+              <span
+                className={`text-slate-500 group-hover:text-rose-300 transition-all duration-200 ${
+                  showGlobalFeed ? 'rotate-180 text-rose-300' : ''
+                }`}
+              >
+                {Icon.chevron('w-4 h-4')}
+              </span>
             </div>
           </div>
 
@@ -1534,54 +1618,83 @@ const TrackListManager: React.FC = () => {
                 setShowGlobalFeed(false);
               }
             }}
-            className={`cursor-pointer bg-slate-800/30 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden ${
-              showAllTitles ? 'ring-2 ring-sky-500/50' : ''
+            className={`group cursor-pointer relative overflow-hidden bg-gradient-to-br from-white/[0.03] to-transparent backdrop-blur-xl border rounded-2xl transition-all duration-200 ${
+              showAllTitles
+                ? 'border-sky-500/40 shadow-xl shadow-sky-500/5'
+                : 'border-white/10 hover:border-sky-500/25'
             }`}
           >
-            <div
-              className={`w-full flex items-center justify-between p-3 hover:bg-white/[0.03] transition ${
-                showAllTitles ? 'bg-sky-500/10 border-b border-sky-500/20' : ''
-              }`}
-            >
-              <div className="flex items-center gap-2 text-sm font-semibold text-white">
-                {Icon.eye('w-4 h-4 text-sky-300')}
+            {showAllTitles && (
+              <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sky-400/60 to-transparent" />
+            )}
+            <div className="relative w-full flex items-center justify-between p-3.5">
+              <div className="flex items-center gap-2.5 text-sm font-bold text-white">
+                <span
+                  className={`p-1.5 rounded-lg border transition ${
+                    showAllTitles
+                      ? 'bg-sky-500/20 border-sky-500/30'
+                      : 'bg-white/5 border-white/10 group-hover:bg-sky-500/10 group-hover:border-sky-500/20'
+                  }`}
+                >
+                  {Icon.eye('w-4 h-4 text-sky-300')}
+                </span>
                 <span>All Titles</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-slate-300 border border-white/10 font-semibold">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-slate-300 border border-white/10 font-bold tabular-nums">
                   {allTitlesFlat.length}
                 </span>
               </div>
-              <span className={`text-slate-400 transition-transform ${showAllTitles ? 'rotate-180' : ''}`}>{Icon.chevron('w-4 h-4')}</span>
+              <span
+                className={`text-slate-500 group-hover:text-sky-300 transition-all duration-200 ${
+                  showAllTitles ? 'rotate-180 text-sky-300' : ''
+                }`}
+              >
+                {Icon.chevron('w-4 h-4')}
+              </span>
             </div>
           </div>
         </div>
 
         {showConflicts && (
-          <div className="mt-3 bg-slate-800/30 backdrop-blur-xl border border-white/10 rounded-2xl p-4 max-h-[400px] overflow-y-auto">
+          <div className="mt-3 bg-gradient-to-br from-white/[0.03] to-transparent backdrop-blur-xl border border-white/10 rounded-2xl p-4 max-h-[400px] overflow-y-auto">
             {conflicts.length === 0 ? (
-              <p className="text-sm text-slate-500 text-center py-4 flex items-center justify-center gap-1.5">
-                {Icon.checkAll('w-4 h-4 text-emerald-400')} No conflicts
-              </p>
+              <div className="text-center py-8">
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 mb-3">
+                  {Icon.checkAll('w-5 h-5 text-emerald-400')}
+                </div>
+                <p className="text-sm text-slate-400 font-medium">No conflicts detected</p>
+                <p className="text-[11px] text-slate-600 mt-1">Everything is running smoothly</p>
+              </div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 {conflicts.map((cf) => (
-                  <div key={cf.pageId} className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-3">
-                    <p className="text-xs font-semibold text-amber-300 mb-2 flex items-center gap-1.5">
-                      {Icon.file('w-3.5 h-3.5')} {cf.slug} — {cf.titles.length} titles
+                  <div
+                    key={cf.pageId}
+                    className="bg-gradient-to-br from-amber-500/[0.06] to-transparent border border-amber-500/25 rounded-xl p-3.5"
+                  >
+                    <p className="text-xs font-bold text-amber-200 mb-2.5 flex items-center gap-2">
+                      <span className="p-1 rounded bg-amber-500/20 border border-amber-500/30">
+                        {Icon.file('w-3 h-3 text-amber-300')}
+                      </span>
+                      <span className="truncate">{cf.slug}</span>
+                      <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/30 tabular-nums">
+                        {cf.titles.length}
+                      </span>
                     </p>
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       {cf.titles.map((t) => (
                         <div
                           key={`${t.channelId}-${t.titleId}`}
-                          className="flex items-center justify-between text-[11px] bg-black/20 rounded-lg px-2 py-1.5"
+                          className="flex items-center justify-between text-[11px] bg-black/30 rounded-lg px-2.5 py-2 border border-white/5"
                         >
                           <span className="text-slate-300 truncate">
-                            "{t.keyword}" <span className="text-slate-500">· {t.channelName}</span>
+                            <span className="text-white font-semibold">"{t.keyword}"</span>{' '}
+                            <span className="text-slate-500">· {t.channelName}</span>
                           </span>
                           <button
                             onClick={() => setSelectedChannelId(t.channelId)}
-                            className="text-slate-300 hover:text-white underline text-[10px] flex-shrink-0 ml-2"
+                            className="text-sky-300 hover:text-sky-200 text-[10px] flex-shrink-0 ml-2 px-2 py-0.5 rounded-md bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/20 transition font-semibold"
                           >
-                            Channel
+                            Open
                           </button>
                         </div>
                       ))}
@@ -1642,25 +1755,27 @@ const TrackListManager: React.FC = () => {
 
         {showAllTitles && (
           <div
-            className={`mt-3 bg-slate-800/30 backdrop-blur-xl border border-white/10 rounded-2xl p-4 overflow-y-auto ${
+            className={`mt-3 bg-gradient-to-br from-white/[0.03] to-transparent backdrop-blur-xl border border-white/10 rounded-2xl p-4 overflow-y-auto ${
               browsingTitle ? 'max-h-[85vh]' : 'max-h-[500px]'
             }`}
           >
-            <div className="relative mb-3">
-              {Icon.search('w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2')}
+            <div className="relative mb-3.5">
+              {Icon.search('w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2')}
               <input
                 value={allTitlesSearch}
                 onChange={(e) => setAllTitlesSearch(e.target.value)}
                 placeholder="Search title, anime or channel..."
-                className="w-full bg-gray-800/60 border border-gray-700 rounded-lg pl-8 pr-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-white/20"
+                className="w-full bg-black/40 border border-white/10 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500/40 focus:border-sky-500/40 transition"
               />
             </div>
 
             <div className="space-y-2">
               {filteredAllTitles.length === 0 ? (
-                <p className="text-sm text-slate-500 text-center py-4">
-                  {allTitlesSearch ? 'No title found' : 'No titles tracked yet'}
-                </p>
+                <div className="text-center py-10 bg-black/20 rounded-xl border border-dashed border-white/10">
+                  <p className="text-sm text-slate-500">
+                    {allTitlesSearch ? 'No title found' : 'No titles tracked yet'}
+                  </p>
+                </div>
               ) : (
                 filteredAllTitles.map((t: any) => {
                   const linkedAnime = t.linkedAnimeId ? animeOptions.find((a) => a._id === t.linkedAnimeId) : null;
@@ -1670,33 +1785,35 @@ const TrackListManager: React.FC = () => {
                   return (
                     <div
                       key={`${t.channelId}-${t.id}`}
-                      className={`rounded-lg border transition ${
-                        isOpen ? 'border-sky-500/30 bg-sky-500/[0.04]' : 'border-transparent'
+                      className={`rounded-xl border transition-all duration-150 ${
+                        isOpen
+                          ? 'border-sky-500/30 bg-gradient-to-br from-sky-500/[0.06] to-transparent shadow-lg shadow-sky-500/5'
+                          : 'border-white/5 hover:border-white/15'
                       }`}
                     >
                       <button
                         onClick={() => toggleTitleInline(t)}
-                        className="w-full flex items-center justify-between bg-black/20 hover:bg-black/40 rounded-lg px-3 py-2 text-left transition"
+                        className="w-full flex items-center justify-between bg-black/20 hover:bg-black/30 rounded-xl px-3 py-2.5 text-left transition"
                       >
-                        <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="flex items-center gap-3 min-w-0">
                           {isLinked ? (
                             linkedAnime?.thumbnail ? (
                               <img
                                 src={linkedAnime.thumbnail}
                                 alt=""
-                                className="w-9 h-12 object-cover rounded-md flex-shrink-0 ring-1 ring-white/10"
+                                className="w-10 h-14 object-cover rounded-lg flex-shrink-0 ring-1 ring-white/10 shadow-md"
                               />
                             ) : (
-                              <div className="w-9 h-12 rounded-md bg-slate-800 flex items-center justify-center flex-shrink-0 ring-1 ring-white/10 text-slate-600">
+                              <div className="w-10 h-14 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0 ring-1 ring-white/10 text-slate-600">
                                 {Icon.file('w-4 h-4')}
                               </div>
                             )
                           ) : (
-                            <div className="w-9 h-9 rounded-full bg-slate-700 border border-white/10 flex items-center justify-center overflow-hidden flex-shrink-0">
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-700 to-slate-800 border-2 border-white/10 flex items-center justify-center overflow-hidden flex-shrink-0 shadow-md">
                               {t.channelThumbnail ? (
                                 <img src={t.channelThumbnail} alt="" className="w-full h-full object-cover" />
                               ) : (
-                                <span className="text-[10px] font-bold text-slate-400">
+                                <span className="text-[11px] font-bold text-slate-300">
                                   {t.channelName?.charAt(0).toUpperCase() || '?'}
                                 </span>
                               )}
@@ -1704,21 +1821,25 @@ const TrackListManager: React.FC = () => {
                           )}
 
                           <div className="min-w-0">
-                            <p className="text-xs text-white font-medium truncate">{t.keyword}</p>
+                            <p className="text-xs text-white font-bold truncate">{t.keyword}</p>
                             {isLinked ? (
-                              <p className="text-[10px] text-sky-300 truncate flex items-center gap-1 mt-0.5">
+                              <p className="text-[10px] text-sky-300 truncate flex items-center gap-1 mt-1">
                                 {Icon.file('w-2.5 h-2.5 flex-shrink-0')}
-                                <span className="truncate">{linkedAnime?.title || 'Linked Anime'}</span>
+                                <span className="truncate font-medium">{linkedAnime?.title || 'Linked Anime'}</span>
                               </p>
                             ) : (
-                              <p className="text-[10px] text-slate-600 mt-0.5">Not linked</p>
+                              <p className="text-[10px] text-slate-600 mt-1 font-medium">Not linked</p>
                             )}
                             <p className="text-[9px] text-slate-500 truncate flex items-center gap-1 mt-0.5">
                               {isLinked && t.channelThumbnail && (
-                                <img src={t.channelThumbnail} alt="" className="w-3 h-3 rounded-full object-cover flex-shrink-0" />
+                                <img
+                                  src={t.channelThumbnail}
+                                  alt=""
+                                  className="w-3 h-3 rounded-full object-cover flex-shrink-0 ring-1 ring-white/10"
+                                />
                               )}
                               <span className="truncate">
-                                {t.channelName} · part {t.lastKnownPart}
+                                {t.channelName} · part <span className="tabular-nums">{t.lastKnownPart}</span>
                               </span>
                               {t.initialized === false && (
                                 <span className="text-amber-400 flex-shrink-0">{Icon.clock('w-2.5 h-2.5')}</span>
@@ -1726,34 +1847,39 @@ const TrackListManager: React.FC = () => {
                             </p>
                           </div>
                         </div>
-                        <span className={`text-slate-500 flex-shrink-0 ml-2 transition-transform ${isOpen ? 'rotate-90' : ''}`}>
+                        <span
+                          className={`text-slate-500 flex-shrink-0 ml-2 p-1.5 rounded-lg transition-all duration-200 ${
+                            isOpen ? 'rotate-90 text-sky-400 bg-sky-500/10' : 'hover:bg-white/5'
+                          }`}
+                        >
                           {Icon.chevronRight('w-3.5 h-3.5')}
                         </span>
                       </button>
 
                       {isOpen && (
-                        <div className="px-2 pb-2 pt-2 space-y-2">
-                          {/* Quick actions */}
+                        <div className="px-2.5 pb-2.5 pt-2.5 space-y-2">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             {isLinked && t.linkedDownloadPageId && (
                               <>
                                 <button
                                   onClick={() => syncTitleWithPage(t.channelId, t.id)}
                                   disabled={!!syncingPage[t.id]}
-                                  className="text-[10px] px-2.5 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 transition disabled:opacity-50 flex items-center gap-1"
+                                  className="text-[10px] px-2.5 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 transition disabled:opacity-50 flex items-center gap-1 font-semibold"
                                 >
-                                  {syncingPage[t.id] && Icon.spinner('w-3 h-3')} {syncingPage[t.id] ? 'Syncing...' : 'Sync'}
+                                  {syncingPage[t.id] && Icon.spinner('w-3 h-3')}{' '}
+                                  {syncingPage[t.id] ? 'Syncing...' : 'Sync'}
                                 </button>
                                 <button
                                   onClick={() => syncTitleEpisode(t.channelId, t.id)}
                                   disabled={!!syncingEpStatus[t.id]}
-                                  className="text-[10px] px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition disabled:opacity-50 flex items-center gap-1"
+                                  className="text-[10px] px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition disabled:opacity-50 flex items-center gap-1 font-semibold"
                                 >
-                                  {syncingEpStatus[t.id] && Icon.spinner('w-3 h-3')} {syncingEpStatus[t.id] ? 'Updating...' : 'Update Ep'}
+                                  {syncingEpStatus[t.id] && Icon.spinner('w-3 h-3')}{' '}
+                                  {syncingEpStatus[t.id] ? 'Updating...' : 'Update Ep'}
                                 </button>
                                 <button
                                   onClick={() => unlinkTitle(t.channelId, t.id)}
-                                  className="text-[10px] px-2.5 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 transition"
+                                  className="text-[10px] px-2.5 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 transition font-semibold"
                                 >
                                   Unlink
                                 </button>
@@ -1761,7 +1887,7 @@ const TrackListManager: React.FC = () => {
                             )}
                             <button
                               onClick={() => jumpToTitleInChannel(t.channelId, t.id, t.keyword)}
-                              className="text-[10px] px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 transition sm:ml-auto"
+                              className="text-[10px] px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 transition sm:ml-auto font-semibold"
                               title="Edit link / edit title / more options"
                             >
                               More options (channel)

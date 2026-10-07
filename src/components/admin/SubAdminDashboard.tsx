@@ -163,14 +163,14 @@ const SIDEBAR_SECTIONS = [
   { id: 'analytics',   label: 'Insights',        tabs: ['pageviews', 'useractivity', 'myEarnings'] },
 ];
 
-// 🆕 Tab persistence via URL hash — page reload / back-forward ke baad bhi
-// wahi tab khula rehta hai.
+// 🆕 Tab persistence via URL hash — even after page reload / back-forward,
+// the same tab stays open.
 const readTabFromHash = (isAllowed: (id: string) => boolean): string | null => {
   const h = decodeURIComponent(window.location.hash.replace('#', ''));
   return h && TAB_LABELS[h] && isAllowed(h) ? h : null;
 };
 
-// ─── 🆕 Helper: element ko container ke andar smooth-scroll karke bring into view ──
+// ─── 🆕 Helper: smooth-scroll an element into view inside its container ──
 function scrollChildIntoContainer(
   container: HTMLElement | null,
   child: HTMLElement | null,
@@ -181,13 +181,13 @@ function scrollChildIntoContainer(
   const bRect = child.getBoundingClientRect();
 
   if (bRect.top < cRect.top + padding) {
-    // upar cut gaya — upar scroll
+    // cut off at the top — scroll up
     container.scrollTo({
       top: container.scrollTop - (cRect.top + padding - bRect.top),
       behavior: 'smooth',
     });
   } else if (bRect.bottom > cRect.bottom - padding) {
-    // neeche cut gaya — neeche scroll
+    // cut off at the bottom — scroll down
     container.scrollTo({
       top: container.scrollTop + (bRect.bottom - (cRect.bottom - padding)),
       behavior: 'smooth',
@@ -478,18 +478,18 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
     .map(section => ({ ...section, tabs: section.tabs.filter(canAccessTab) }))
     .filter(section => section.tabs.length > 0);
 
-  // 🆕 Initial tab — URL hash se padho, fallback first visible tab
+  // 🆕 Initial tab — read from URL hash, fallback to first visible tab
   const initialTab = readTabFromHash(canAccessTab) || visibleTabs[0] || 'list';
   const [activeTab, setActiveTab] = useState(initialTab);
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set([initialTab]));
 
-  // 🆕 Tab change => URL hash change => browser history entry (Back button kaam karega)
+  // 🆕 Tab change => URL hash change => browser history entry (Back button works)
   const changeTab = (tabId: string) => {
     if (tabId === activeTab) return;
     window.location.hash = tabId;
   };
 
-  // 🆕 Back/Forward ya hash change hone par tab sync karo
+  // 🆕 Sync tab on Back/Forward or hash change
   useEffect(() => {
     const onHashChange = () => {
       const t = readTabFromHash(canAccessTab) || visibleTabs[0] || 'list';
@@ -533,7 +533,7 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
-  // 3 sec tak header pe click na ho to auto hide
+  // Auto-hide header if not clicked within 3 seconds
   const scheduleHeaderAutoHide = () => {
     clearHeaderHideTimer();
     headerHideTimer.current = setTimeout(() => {
@@ -541,7 +541,7 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
     }, 3000);
   };
 
-  // Jab user header pe click kare to timer cancel + header visible rakho
+  // When user clicks on header, cancel timer and keep header visible
   const handleHeaderInteraction = () => {
     clearHeaderHideTimer();
   };
@@ -558,7 +558,7 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
 
   // 🆕 Auto-scroll active tab into view — when tab changes, sidebar opens, mobile menu opens, or pin state changes
   useEffect(() => {
-    // thoda delay, taaki transition/open animation ho jaaye
+    // small delay so transition/open animation can finish
     const id = window.setTimeout(() => {
       scrollChildIntoContainer(iconRailRef.current, iconRailBtnRefs.current[activeTab], 10);
       scrollChildIntoContainer(expandedNavRef.current, expandedNavBtnRefs.current[activeTab], 14);
@@ -662,7 +662,7 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
     else window.location.href = '/sub-admin-login';
   };
 
-  // 🆕 Scroll down => header hide, thoda sa scroll up => header show (3 sec tak click na ho to auto hide)
+  // 🆕 Scroll down => header hide, small scroll up => header show (auto-hide after 3 sec if not clicked)
   useEffect(() => {
     const el = document.getElementById('main-scroll');
     if (!el) return;
@@ -674,14 +674,14 @@ const SubAdminDashboard: React.FC<SubAdminDashboardProps> = ({ onLogout }) => {
       const delta = currentY - lastScrollY.current;
 
       if (currentY <= 20) {
-        setIsHeaderVisible(true);              // top par hamesha show
-        clearHeaderHideTimer();                 // top par timer clear
+        setIsHeaderVisible(true);              // always visible at the top
+        clearHeaderHideTimer();                 // clear timer at the top
       } else if (delta > 5) {
-        setIsHeaderVisible(false);             // neeche scroll => hide
+        setIsHeaderVisible(false);             // scrolling down => hide
         clearHeaderHideTimer();
       } else if (delta < -5) {
-        setIsHeaderVisible(true);              // thoda sa upar scroll => show
-        scheduleHeaderAutoHide();              // 3 sec tak click na ho to hide
+        setIsHeaderVisible(true);              // scrolling up a little => show
+        scheduleHeaderAutoHide();              // hide if not clicked within 3 sec
       }
 
       lastScrollY.current = currentY;
