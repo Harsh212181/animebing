@@ -8,6 +8,22 @@ const instagramAutomationRoutes = new Hono<{ Bindings: Env, Variables: Variables
 // Only logged-in admin/sub-admin can access these routes
 instagramAutomationRoutes.use('*', adminAuth)
 
+// ============ PROFILE PICTURE HELPERS ============
+const PIC_REFRESH_MS = 6 * 60 * 60 * 1000 // 6 hours
+
+async function fetchIgProfilePicture(accessToken: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://graph.instagram.com/v23.0/me?fields=profile_picture_url&access_token=${accessToken}`
+    )
+    if (!res.ok) return null
+    const data: any = await res.json()
+    return data.profile_picture_url || null
+  } catch {
+    return null
+  }
+}
+
 // 👇 Helper: To get the igUserId of instagram accounts owned by a sub-admin
 async function getOwnedIgUserIds(admin: any, mongoUri: string, dbName: string): Promise<string[] | null> {
   if (!admin || admin.role !== 'subadmin') return null // null = no restriction (main admin)
@@ -26,6 +42,31 @@ instagramAutomationRoutes.get('/accounts', async (c) => {
   const accounts = await findMany<any>(
     'instagramAccounts', filter, {}, c.env.MONGODB_URI, c.env.MONGODB_DB
   )
+
+  // 👇 Refresh stale profile picture URLs (Instagram CDN URLs expire ~24h).
+  // Runs in parallel; failures are silent so the list still loads.
+  const now = Date.now()
+  await Promise.all(accounts.map(async (a: any) => {
+    if (!a.accessToken) return
+    const last = a.profilePictureRefreshedAt ? new Date(a.profilePictureRefreshedAt).getTime() : 0
+    if (a.profilePictureUrl && now - last < PIC_REFRESH_MS) return
+
+    const fresh = await fetchIgProfilePicture(a.accessToken)
+    if (!fresh) return // token expired → keep old URL so UI at least shows something (or falls back)
+
+    a.profilePictureUrl = fresh
+    try {
+      await updateOne(
+        'instagramAccounts',
+        { _id: toObjectId(String(a._id)) },
+        { profilePictureUrl: fresh, profilePictureRefreshedAt: new Date() },
+        c.env.MONGODB_URI, c.env.MONGODB_DB
+      )
+    } catch {
+      /* non-fatal */
+    }
+  }))
+
   const safeAccounts = accounts.map((a: any) => ({
     _id: a._id,
     igUsername: a.igUsername,
@@ -48,12 +89,17 @@ instagramAutomationRoutes.post('/accounts', async (c) => {
     return c.json({ success: false, error: 'igUsername, igUserId and accessToken are required' }, 400)
   }
 
+  // 👇 Fetch profile picture right away so the UI has an avatar from the start.
+  const profilePictureUrl = await fetchIgProfilePicture(accessToken)
+
   const result = await insertOne('instagramAccounts', {
     igUsername,
     igUserId,
     accessToken,
     isActive: true,
     connectedAt: new Date(),
+    profilePictureUrl: profilePictureUrl || null,
+    profilePictureRefreshedAt: new Date(),
     createdBy: admin?.role === 'subadmin' ? admin.id : null,
     createdByUsername: admin?.role === 'subadmin' ? admin.username : 'Admin',
   }, c.env.MONGODB_URI, c.env.MONGODB_DB)

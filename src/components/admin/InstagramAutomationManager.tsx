@@ -81,6 +81,56 @@ const formatRelativeTime = (iso: string): string => {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 };
 
+// ============ SAFE IMAGE ============
+/** Generic image with referrerPolicy + onError fallback. */
+const SafeImage: React.FC<{
+  src?: string | null;
+  alt: string;
+  className?: string;
+  fallback?: React.ReactNode;
+}> = ({ src, alt, className, fallback = null }) => {
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+
+  if (!src || failed) return <>{fallback}</>;
+
+  return (
+    <img
+      src={src}
+      alt={alt}
+      referrerPolicy="no-referrer"
+      loading="lazy"
+      onError={() => setFailed(true)}
+      className={className}
+    />
+  );
+};
+
+// ============ ACCOUNT AVATAR ============
+const AccountAvatar: React.FC<{ url?: string | null; name: string }> = ({ url, name }) => {
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [url]);
+
+  if (!url || failed) return <>{Icons.instagram('h-5 w-5')}</>;
+
+  return (
+    <img
+      src={url}
+      alt={name}
+      referrerPolicy="no-referrer"
+      loading="lazy"
+      onError={() => setFailed(true)}
+      className="h-full w-full object-cover"
+    />
+  );
+};
+
 // ============ UI COMPONENTS ============
 const GradientButton: React.FC<{
   children: React.ReactNode;
@@ -95,8 +145,7 @@ const GradientButton: React.FC<{
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className={`relative inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 font-semibold text-white shadow-lg shadow-purple-500/25 transition-all hover:shadow-purple-500/40 hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100`}
-      // fix: keep size classes in className too
+      className={`relative inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 font-semibold text-white shadow-lg shadow-purple-500/25 transition-all hover:shadow-purple-500/40 hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 ${sizeClasses[size]}`}
       data-size={size}
       style={undefined}
     >
@@ -203,11 +252,16 @@ const PostPickerGrid: React.FC<{
               }`}
               title={post.caption || 'No caption'}
             >
-              {thumb ? (
-                <img src={thumb} alt={post.caption || 'post'} className="h-full w-full object-cover" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center bg-white/5 text-white/20 text-xs">No preview</div>
-              )}
+              <SafeImage
+                src={thumb}
+                alt={post.caption || 'post'}
+                className="h-full w-full object-cover"
+                fallback={
+                  <div className="flex h-full w-full items-center justify-center bg-white/5 text-xs text-white/20">
+                    No preview
+                  </div>
+                }
+              />
               <div className={`absolute inset-0 transition-opacity ${isSelected ? 'bg-purple-600/30' : 'bg-black/0 group-hover:bg-black/20'}`} />
               {isSelected && (
                 <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-purple-500 text-white">
@@ -257,11 +311,14 @@ const RuleCard: React.FC<{
       <div className="flex flex-wrap items-start gap-3">
         {/* Post thumbnail */}
         <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/5">
-          {rule.postThumbnail ? (
-            <img src={rule.postThumbnail} alt="post" className="h-full w-full object-cover" />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-2xl">🌐</div>
-          )}
+          <SafeImage
+            src={rule.postThumbnail}
+            alt="post"
+            className="h-full w-full object-cover"
+            fallback={
+              <div className="flex h-full w-full items-center justify-center text-2xl">🌐</div>
+            }
+          />
         </div>
 
         <div className="min-w-0 flex-1">
@@ -504,15 +561,9 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
   const tickInterval = useRef<NodeJS.Timeout | null>(null);
 
   // 🆕 Double-click / slow-network guard — synchronous Set of in-flight keys.
-  // Prevents duplicate API calls even if user clicks again before React re-renders.
   const pendingRef = useRef<Set<string>>(new Set());
   const [pendingAction, setPendingAction] = useState<string | null>(null);
 
-  /**
-   * Wrap any async action with this helper. If the same key is already in-flight,
-   * the second call becomes a silent no-op. Errors are swallowed here because
-   * every action already shows its own toast.
-   */
   const guarded = async (key: string, fn: () => Promise<void>) => {
     if (pendingRef.current.has(key)) return;
     pendingRef.current.add(key);
@@ -772,374 +823,378 @@ const InstagramAutomationManager: React.FC<InstagramAutomationManagerProps> = ({
   const isAddingRule = isPending('add-rule') || addingRule;
 
   return (
-    <div className="space-y-8 px-1 py-4">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-            Instagram Automation
-          </h2>
-          <p className="mt-1 text-xs text-white/40">
-            {accounts.length} account{accounts.length !== 1 ? 's' : ''} · {rules.length} rule{rules.length !== 1 ? 's' : ''} · {logs.length} total logs
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <GradientButton
-            onClick={() => {
-              window.open(
-                `${API.replace('/api', '')}/api/auth/instagram/connect?token=${encodeURIComponent(token)}`,
-                '_blank'
-              );
-            }}
-          >
-            {Icons.instagram('h-4 w-4')}
-            Connect Instagram
-          </GradientButton>
-          {!subAdminMode && (
-            <OutlineButton onClick={() => setShowAddAccount(!showAddAccount)}>
-              {showAddAccount ? 'Cancel' : 'Add Manually'}
-            </OutlineButton>
-          )}
-        </div>
-      </div>
+    <>
+      {/* Hide scrollbars globally within this component tree */}
+      <style>{`
+        .ig-auto-scroll::-webkit-scrollbar { display: none; }
+        .ig-auto-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+      `}</style>
 
-      {/* Add account form */}
-      {!subAdminMode && showAddAccount && (
-        <form onSubmit={handleAddAccount} className="rounded-3xl border border-white/10 bg-white/[0.02] p-6 backdrop-blur-md space-y-4">
-          <p className="text-xs text-white/40">Get User ID & Access Token from Meta Developer Dashboard.</p>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-white/60">Username</label>
-              <input
-                type="text"
-                value={newAccount.igUsername}
-                onChange={(e) => setNewAccount({ ...newAccount, igUsername: e.target.value })}
-                placeholder="animebingofficial"
-                disabled={isAddingAccount}
-                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none transition-all focus:border-purple-500/50 focus:bg-white/10 disabled:opacity-60"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-white/60">User ID</label>
-              <input
-                type="text"
-                value={newAccount.igUserId}
-                onChange={(e) => setNewAccount({ ...newAccount, igUserId: e.target.value })}
-                placeholder="17841479995368916"
-                disabled={isAddingAccount}
-                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none transition-all focus:border-purple-500/50 focus:bg-white/10 disabled:opacity-60"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-white/60">Access Token</label>
-              <input
-                type="text"
-                value={newAccount.accessToken}
-                onChange={(e) => setNewAccount({ ...newAccount, accessToken: e.target.value })}
-                placeholder="IGQVJ..."
-                disabled={isAddingAccount}
-                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none transition-all focus:border-purple-500/50 focus:bg-white/10 disabled:opacity-60"
-              />
-            </div>
-          </div>
-          <div className="flex gap-3">
-            <button
-              type="submit"
-              disabled={isAddingAccount}
-              className="relative inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-500/25 transition-all hover:shadow-purple-500/40 hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-            >
-              {isAddingAccount && <span className="w-3.5 h-3.5 border-2 border-white/80 border-t-transparent rounded-full animate-spin" />}
-              {isAddingAccount ? 'Saving...' : 'Save Account'}
-            </button>
-            <OutlineButton onClick={() => setShowAddAccount(false)} disabled={isAddingAccount}>Cancel</OutlineButton>
-          </div>
-        </form>
-      )}
-
-      {/* Accounts list */}
-      <div className="space-y-3">
-        {accounts.length === 0 ? (
-          <div className="rounded-3xl border border-dashed border-white/10 py-16 text-center text-white/30">
-            No Instagram accounts connected yet.
-          </div>
-        ) : (
-          accounts.map((acc) => {
-            const isToggling = isPending(`toggle-account-${acc._id}`);
-            const isDeleting = isPending(`delete-account-${acc._id}`);
-            return (
-              <div
-                key={acc._id}
-                onClick={() => {
-                  setSelectedAccountId(acc.igUserId);
-                  fetchPosts(acc._id);
-                  setSelectedPostId('');
-                }}
-                className={`group flex cursor-pointer flex-wrap items-center justify-between gap-3 rounded-3xl border p-4 backdrop-blur-sm transition-all ${
-                  selectedAccountId === acc.igUserId
-                    ? 'border-purple-500/40 bg-purple-500/10'
-                    : 'border-white/10 bg-white/[0.02] hover:border-white/20'
-                } ${isDeleting ? 'opacity-50 pointer-events-none' : ''}`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-500/20">
-                    {acc.profilePictureUrl ? (
-                      <img src={acc.profilePictureUrl} alt={acc.igUsername} className="h-full w-full object-cover" />
-                    ) : (
-                      Icons.instagram('h-5 w-5')
-                    )}
-                  </div>
-                  <div>
-                    <p className="font-semibold text-white">@{acc.igUsername}</p>
-                    <p className="text-xs text-white/40">ID: {acc.igUserId}</p>
-                    {!subAdminMode && (
-                      <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] text-indigo-300">
-                        👤 Added by {acc.createdByUsername || 'Admin'}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-medium border ${
-                    acc.isActive ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-white/10 bg-white/5 text-white/40'
-                  }`}>
-                    {acc.isActive ? Icons.check('h-3 w-3') : Icons.block('h-3 w-3')}
-                    {acc.isActive ? 'Active' : 'Paused'}
-                  </span>
-                  <OutlineButton
-                    onClick={(e) => { e?.stopPropagation(); handleToggleAccount(acc._id, acc.isActive); }}
-                    color={acc.isActive ? 'yellow' : 'green'}
-                    size="sm"
-                    disabled={isToggling || isDeleting}
-                  >
-                    {isToggling && <span className="w-2.5 h-2.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
-                    {isToggling ? '...' : (acc.isActive ? 'Pause' : 'Resume')}
-                  </OutlineButton>
-                  <OutlineButton
-                    onClick={(e) => { e?.stopPropagation(); handleDeleteAccount(acc._id); }}
-                    color="red"
-                    size="sm"
-                    disabled={isToggling || isDeleting}
-                  >
-                    {isDeleting ? (
-                      <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                      Icons.trash('h-3.5 w-3.5')
-                    )}
-                  </OutlineButton>
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
-
-      {/* Selected account details */}
-      {selectedAccountId && (
-        <div className="rounded-3xl border border-white/10 bg-white/[0.02] p-5 space-y-6">
-          {/* Rules section */}
+      <div className="space-y-8 px-1 py-4">
+        {/* Header */}
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-              <h3 className="font-semibold text-white">
-                Rules — <span className="text-purple-300">@{selectedAccount?.igUsername}</span>
-                <span className="ml-2 text-xs font-normal text-white/40">({rulesForSelected.length})</span>
-              </h3>
-              <OutlineButton
-                onClick={() => setShowAddRule(!showAddRule)}
-                color="indigo"
-                disabled={isAddingRule}
-              >
-                {Icons.plus('h-3.5 w-3.5')} Add Rule
-              </OutlineButton>
-            </div>
-
-            {showAddRule && (
-              <form onSubmit={handleAddRule} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-4 mb-4">
-                <PostPickerGrid
-                  posts={posts}
-                  loading={postsLoading}
-                  selectedPostId={selectedPostId}
-                  onSelect={setSelectedPostId}
-                  excludePostIds={rulesForSelected.filter(r => r.postId).map(r => r.postId as string)}
-                  disabled={isAddingRule}
-                />
-
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <input
-                    type="text"
-                    placeholder="Keyword (e.g., ANIME)"
-                    value={newRule.keyword}
-                    onChange={(e) => setNewRule({ ...newRule, keyword: e.target.value })}
-                    disabled={isAddingRule}
-                    className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-purple-500/50 disabled:opacity-60"
-                  />
-                  <StyledSelect
-                    value={newRule.matchType}
-                    onChange={(v) => setNewRule({ ...newRule, matchType: v as 'exact' | 'contains' })}
-                    disabled={isAddingRule}
-                    options={[
-                      { value: 'contains', label: 'Contains (anywhere)' },
-                      { value: 'exact', label: 'Exact match' },
-                    ]}
-                  />
-                </div>
-                <textarea
-                  placeholder="DM message to send (include link)"
-                  value={newRule.dmMessage}
-                  onChange={(e) => setNewRule({ ...newRule, dmMessage: e.target.value })}
-                  rows={3}
-                  disabled={isAddingRule}
-                  className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-purple-500/50 disabled:opacity-60"
-                />
-                <div className="flex gap-3">
-                  <button
-                    type="submit"
-                    disabled={isAddingRule}
-                    className="relative inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-500/25 transition-all hover:shadow-purple-500/40 hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-                  >
-                    {isAddingRule && <span className="w-3.5 h-3.5 border-2 border-white/80 border-t-transparent rounded-full animate-spin" />}
-                    {isAddingRule ? 'Saving...' : 'Save Rule'}
-                  </button>
-                  <OutlineButton onClick={() => setShowAddRule(false)} disabled={isAddingRule}>Cancel</OutlineButton>
-                </div>
-              </form>
-            )}
-
-            <div className="space-y-2">
-              {rulesForSelected.length === 0 ? (
-                <p className="py-6 text-center text-xs text-white/30">No rules for this account yet.</p>
-              ) : (
-                rulesForSelected.map((rule) => (
-                  <RuleCard
-                    key={rule._id}
-                    rule={rule}
-                    onToggle={handleToggleRule}
-                    onDelete={handleDeleteRule}
-                    onSave={handleUpdateRule}
-                    pendingAction={pendingAction}
-                  />
-                ))
-              )}
-            </div>
+            <h2 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+              Instagram Automation
+            </h2>
+            <p className="mt-1 text-xs text-white/40">
+              {accounts.length} account{accounts.length !== 1 ? 's' : ''} · {rules.length} rule{rules.length !== 1 ? 's' : ''} · {logs.length} total logs
+            </p>
           </div>
-
-          {/* Logs section */}
-          <div className="border-t border-white/5 pt-6">
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-              <div className="flex items-center gap-2.5">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white/5 text-white/50">
-                  {Icons.clock('h-4 w-4')}
-                </span>
-                <div>
-                  <h3 className="font-semibold text-white leading-tight">Activity Logs</h3>
-                  <p className="text-[11px] text-white/40 leading-tight">
-                    {shownCount === totalLogs ? `${totalLogs} entries` : `${shownCount} of ${totalLogs} entries`}
-                  </p>
-                </div>
-              </div>
-              <OutlineButton
-                onClick={() => setAutoRefresh(!autoRefresh)}
-                color={autoRefresh ? 'green' : 'gray'}
-                size="sm"
-              >
-                <span className={`h-1.5 w-1.5 rounded-full ${autoRefresh ? 'bg-emerald-400 animate-pulse' : 'bg-white/30'}`} />
-                {Icons.refresh('h-3.5 w-3.5')}
-                {autoRefresh ? 'Live' : 'Auto-refresh'}
+          <div className="flex flex-wrap gap-2">
+            <GradientButton
+              onClick={() => {
+                window.open(
+                  `${API.replace('/api', '')}/api/auth/instagram/connect?token=${encodeURIComponent(token)}`,
+                  '_blank'
+                );
+              }}
+            >
+              {Icons.instagram('h-4 w-4')}
+              Connect Instagram
+            </GradientButton>
+            {!subAdminMode && (
+              <OutlineButton onClick={() => setShowAddAccount(!showAddAccount)}>
+                {showAddAccount ? 'Cancel' : 'Add Manually'}
               </OutlineButton>
-            </div>
+            )}
+          </div>
+        </div>
 
-            {/* Stat pills */}
-            <div className="grid grid-cols-3 gap-2 mb-4">
-              <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-3 py-2.5 text-center">
-                <p className="text-lg font-bold text-white">{totalLogs}</p>
-                <p className="text-[10px] uppercase tracking-wide text-white/40">Total</p>
-              </div>
-              <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5 text-center">
-                <p className="text-lg font-bold text-emerald-300">{sentCount}</p>
-                <p className="text-[10px] uppercase tracking-wide text-emerald-300/50">Sent</p>
-              </div>
-              <div className="rounded-2xl border border-red-500/20 bg-red-500/5 px-3 py-2.5 text-center">
-                <p className="text-lg font-bold text-red-300">{failedCount}</p>
-                <p className="text-[10px] uppercase tracking-wide text-red-300/50">Failed</p>
-              </div>
-            </div>
-
-            {/* Filters row */}
-            <div className="flex flex-wrap items-center gap-2 mb-3">
-              <div className="flex gap-1 rounded-full border border-white/10 bg-white/[0.02] p-1">
-                {(['all', 'sent', 'failed'] as const).map((status) => (
-                  <button
-                    key={status}
-                    onClick={() => setLogFilter(status)}
-                    className={`rounded-full px-3 py-1 text-xs font-medium transition-all ${
-                      logFilter === status
-                        ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md shadow-purple-500/20'
-                        : 'text-white/50 hover:bg-white/10 hover:text-white/80'
-                    }`}
-                  >
-                    {status === 'all' ? 'All' : status === 'sent' ? 'Sent' : 'Failed'}
-                  </button>
-                ))}
-              </div>
-              <div className="relative flex-1 min-w-[160px]">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30">
-                  {Icons.search('h-3.5 w-3.5')}
-                </span>
+        {/* Add account form */}
+        {!subAdminMode && showAddAccount && (
+          <form onSubmit={handleAddAccount} className="rounded-3xl border border-white/10 bg-white/[0.02] p-6 backdrop-blur-md space-y-4">
+            <p className="text-xs text-white/40">Get User ID & Access Token from Meta Developer Dashboard.</p>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-white/60">Username</label>
                 <input
                   type="text"
-                  placeholder="Search keyword or message..."
-                  value={logSearch}
-                  onChange={(e) => setLogSearch(e.target.value)}
-                  className="w-full rounded-full border border-white/10 bg-white/5 py-1.5 pl-9 pr-8 text-xs text-white placeholder-white/20 outline-none transition-all focus:border-purple-500/50 focus:bg-white/10"
+                  value={newAccount.igUsername}
+                  onChange={(e) => setNewAccount({ ...newAccount, igUsername: e.target.value })}
+                  placeholder="animebingofficial"
+                  disabled={isAddingAccount}
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none transition-all focus:border-purple-500/50 focus:bg-white/10 disabled:opacity-60"
                 />
-                {logSearch && (
-                  <button
-                    onClick={() => setLogSearch('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/70"
-                    aria-label="Clear search"
-                  >
-                    {Icons.close('h-3.5 w-3.5')}
-                  </button>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-white/60">User ID</label>
+                <input
+                  type="text"
+                  value={newAccount.igUserId}
+                  onChange={(e) => setNewAccount({ ...newAccount, igUserId: e.target.value })}
+                  placeholder="17841479995368916"
+                  disabled={isAddingAccount}
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none transition-all focus:border-purple-500/50 focus:bg-white/10 disabled:opacity-60"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-white/60">Access Token</label>
+                <input
+                  type="text"
+                  value={newAccount.accessToken}
+                  onChange={(e) => setNewAccount({ ...newAccount, accessToken: e.target.value })}
+                  placeholder="IGQVJ..."
+                  disabled={isAddingAccount}
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none transition-all focus:border-purple-500/50 focus:bg-white/10 disabled:opacity-60"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="submit"
+                disabled={isAddingAccount}
+                className="relative inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-500/25 transition-all hover:shadow-purple-500/40 hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+              >
+                {isAddingAccount && <span className="w-3.5 h-3.5 border-2 border-white/80 border-t-transparent rounded-full animate-spin" />}
+                {isAddingAccount ? 'Saving...' : 'Save Account'}
+              </button>
+              <OutlineButton onClick={() => setShowAddAccount(false)} disabled={isAddingAccount}>Cancel</OutlineButton>
+            </div>
+          </form>
+        )}
+
+        {/* Accounts list */}
+        <div className="space-y-3">
+          {accounts.length === 0 ? (
+            <div className="rounded-3xl border border-dashed border-white/10 py-16 text-center text-white/30">
+              No Instagram accounts connected yet.
+            </div>
+          ) : (
+            accounts.map((acc) => {
+              const isToggling = isPending(`toggle-account-${acc._id}`);
+              const isDeleting = isPending(`delete-account-${acc._id}`);
+              return (
+                <div
+                  key={acc._id}
+                  onClick={() => {
+                    setSelectedAccountId(acc.igUserId);
+                    fetchPosts(acc._id);
+                    setSelectedPostId('');
+                  }}
+                  className={`group flex cursor-pointer flex-wrap items-center justify-between gap-3 rounded-3xl border p-4 backdrop-blur-sm transition-all ${
+                    selectedAccountId === acc.igUserId
+                      ? 'border-purple-500/40 bg-purple-500/10'
+                      : 'border-white/10 bg-white/[0.02] hover:border-white/20'
+                  } ${isDeleting ? 'opacity-50 pointer-events-none' : ''}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-500/20">
+                      <AccountAvatar url={acc.profilePictureUrl} name={acc.igUsername} />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-white">@{acc.igUsername}</p>
+                      <p className="text-xs text-white/40">ID: {acc.igUserId}</p>
+                      {!subAdminMode && (
+                        <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] text-indigo-300">
+                          👤 Added by {acc.createdByUsername || 'Admin'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-medium border ${
+                      acc.isActive ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-white/10 bg-white/5 text-white/40'
+                    }`}>
+                      {acc.isActive ? Icons.check('h-3 w-3') : Icons.block('h-3 w-3')}
+                      {acc.isActive ? 'Active' : 'Paused'}
+                    </span>
+                    <OutlineButton
+                      onClick={(e) => { e?.stopPropagation(); handleToggleAccount(acc._id, acc.isActive); }}
+                      color={acc.isActive ? 'yellow' : 'green'}
+                      size="sm"
+                      disabled={isToggling || isDeleting}
+                    >
+                      {isToggling && <span className="w-2.5 h-2.5 border-2 border-current border-t-transparent rounded-full animate-spin" />}
+                      {isToggling ? '...' : (acc.isActive ? 'Pause' : 'Resume')}
+                    </OutlineButton>
+                    <OutlineButton
+                      onClick={(e) => { e?.stopPropagation(); handleDeleteAccount(acc._id); }}
+                      color="red"
+                      size="sm"
+                      disabled={isToggling || isDeleting}
+                    >
+                      {isDeleting ? (
+                        <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        Icons.trash('h-3.5 w-3.5')
+                      )}
+                    </OutlineButton>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Selected account details */}
+        {selectedAccountId && (
+          <div className="rounded-3xl border border-white/10 bg-white/[0.02] p-5 space-y-6">
+            {/* Rules section */}
+            <div>
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <h3 className="font-semibold text-white">
+                  Rules — <span className="text-purple-300">@{selectedAccount?.igUsername}</span>
+                  <span className="ml-2 text-xs font-normal text-white/40">({rulesForSelected.length})</span>
+                </h3>
+                <OutlineButton
+                  onClick={() => setShowAddRule(!showAddRule)}
+                  color="indigo"
+                  disabled={isAddingRule}
+                >
+                  {Icons.plus('h-3.5 w-3.5')} Add Rule
+                </OutlineButton>
+              </div>
+
+              {showAddRule && (
+                <form onSubmit={handleAddRule} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-4 mb-4">
+                  <PostPickerGrid
+                    posts={posts}
+                    loading={postsLoading}
+                    selectedPostId={selectedPostId}
+                    onSelect={setSelectedPostId}
+                    excludePostIds={rulesForSelected.filter(r => r.postId).map(r => r.postId as string)}
+                    disabled={isAddingRule}
+                  />
+
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <input
+                      type="text"
+                      placeholder="Keyword (e.g., ANIME)"
+                      value={newRule.keyword}
+                      onChange={(e) => setNewRule({ ...newRule, keyword: e.target.value })}
+                      disabled={isAddingRule}
+                      className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-purple-500/50 disabled:opacity-60"
+                    />
+                    <StyledSelect
+                      value={newRule.matchType}
+                      onChange={(v) => setNewRule({ ...newRule, matchType: v as 'exact' | 'contains' })}
+                      disabled={isAddingRule}
+                      options={[
+                        { value: 'contains', label: 'Contains (anywhere)' },
+                        { value: 'exact', label: 'Exact match' },
+                      ]}
+                    />
+                  </div>
+                  <textarea
+                    placeholder="DM message to send (include link)"
+                    value={newRule.dmMessage}
+                    onChange={(e) => setNewRule({ ...newRule, dmMessage: e.target.value })}
+                    rows={3}
+                    disabled={isAddingRule}
+                    className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-purple-500/50 disabled:opacity-60"
+                  />
+                  <div className="flex gap-3">
+                    <button
+                      type="submit"
+                      disabled={isAddingRule}
+                      className="relative inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-500/25 transition-all hover:shadow-purple-500/40 hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                    >
+                      {isAddingRule && <span className="w-3.5 h-3.5 border-2 border-white/80 border-t-transparent rounded-full animate-spin" />}
+                      {isAddingRule ? 'Saving...' : 'Save Rule'}
+                    </button>
+                    <OutlineButton onClick={() => setShowAddRule(false)} disabled={isAddingRule}>Cancel</OutlineButton>
+                  </div>
+                </form>
+              )}
+
+              <div className="space-y-2">
+                {rulesForSelected.length === 0 ? (
+                  <p className="py-6 text-center text-xs text-white/30">No rules for this account yet.</p>
+                ) : (
+                  rulesForSelected.map((rule) => (
+                    <RuleCard
+                      key={rule._id}
+                      rule={rule}
+                      onToggle={handleToggleRule}
+                      onDelete={handleDeleteRule}
+                      onSave={handleUpdateRule}
+                      pendingAction={pendingAction}
+                    />
+                  ))
                 )}
               </div>
             </div>
 
-            {/* Logs list */}
-            <div className="max-h-72 overflow-y-auto rounded-2xl border border-white/5 bg-white/[0.02] divide-y divide-white/5">
-              {logsForSelected.length === 0 ? (
-                <div className="flex flex-col items-center gap-2 py-10 text-center">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/5 text-white/20">
-                    {Icons.inbox('h-5 w-5')}
+            {/* Logs section */}
+            <div className="border-t border-white/5 pt-6">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white/5 text-white/50">
+                    {Icons.clock('h-4 w-4')}
                   </span>
-                  <p className="text-xs text-white/30">
-                    {totalLogs === 0 ? 'No activity yet for this account.' : 'No logs match the current filter.'}
-                  </p>
-                  {(logFilter !== 'all' || logSearch) && totalLogs > 0 && (
+                  <div>
+                    <h3 className="font-semibold text-white leading-tight">Activity Logs</h3>
+                    <p className="text-[11px] text-white/40 leading-tight">
+                      {shownCount === totalLogs ? `${totalLogs} entries` : `${shownCount} of ${totalLogs} entries`}
+                    </p>
+                  </div>
+                </div>
+                <OutlineButton
+                  onClick={() => setAutoRefresh(!autoRefresh)}
+                  color={autoRefresh ? 'green' : 'gray'}
+                  size="sm"
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full ${autoRefresh ? 'bg-emerald-400 animate-pulse' : 'bg-white/30'}`} />
+                  {Icons.refresh('h-3.5 w-3.5')}
+                  {autoRefresh ? 'Live' : 'Auto-refresh'}
+                </OutlineButton>
+              </div>
+
+              {/* Stat pills */}
+              <div className="grid grid-cols-3 gap-2 mb-4">
+                <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-3 py-2.5 text-center">
+                  <p className="text-lg font-bold text-white">{totalLogs}</p>
+                  <p className="text-[10px] uppercase tracking-wide text-white/40">Total</p>
+                </div>
+                <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5 text-center">
+                  <p className="text-lg font-bold text-emerald-300">{sentCount}</p>
+                  <p className="text-[10px] uppercase tracking-wide text-emerald-300/50">Sent</p>
+                </div>
+                <div className="rounded-2xl border border-red-500/20 bg-red-500/5 px-3 py-2.5 text-center">
+                  <p className="text-lg font-bold text-red-300">{failedCount}</p>
+                  <p className="text-[10px] uppercase tracking-wide text-red-300/50">Failed</p>
+                </div>
+              </div>
+
+              {/* Filters row */}
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                <div className="flex gap-1 rounded-full border border-white/10 bg-white/[0.02] p-1">
+                  {(['all', 'sent', 'failed'] as const).map((status) => (
                     <button
-                      onClick={() => { setLogFilter('all'); setLogSearch(''); }}
-                      className="text-[11px] font-medium text-purple-300 hover:text-purple-200"
+                      key={status}
+                      onClick={() => setLogFilter(status)}
+                      className={`rounded-full px-3 py-1 text-xs font-medium transition-all ${
+                        logFilter === status
+                          ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md shadow-purple-500/20'
+                          : 'text-white/50 hover:bg-white/10 hover:text-white/80'
+                      }`}
                     >
-                      Clear filters
+                      {status === 'all' ? 'All' : status === 'sent' ? 'Sent' : 'Failed'}
+                    </button>
+                  ))}
+                </div>
+                <div className="relative flex-1 min-w-[160px]">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30">
+                    {Icons.search('h-3.5 w-3.5')}
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Search keyword or message..."
+                    value={logSearch}
+                    onChange={(e) => setLogSearch(e.target.value)}
+                    className="w-full rounded-full border border-white/10 bg-white/5 py-1.5 pl-9 pr-8 text-xs text-white placeholder-white/20 outline-none transition-all focus:border-purple-500/50 focus:bg-white/10"
+                  />
+                  {logSearch && (
+                    <button
+                      onClick={() => setLogSearch('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/70"
+                      aria-label="Clear search"
+                    >
+                      {Icons.close('h-3.5 w-3.5')}
                     </button>
                   )}
                 </div>
-              ) : (
-                logsForSelected.map((log) => <LogRow key={log._id} log={log} />)
-              )}
+              </div>
+
+              {/* Logs list — scrollbar hidden */}
+              <div className="ig-auto-scroll max-h-72 overflow-y-auto rounded-2xl border border-white/5 bg-white/[0.02] divide-y divide-white/5">
+                {logsForSelected.length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 py-10 text-center">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/5 text-white/20">
+                      {Icons.inbox('h-5 w-5')}
+                    </span>
+                    <p className="text-xs text-white/30">
+                      {totalLogs === 0 ? 'No activity yet for this account.' : 'No logs match the current filter.'}
+                    </p>
+                    {(logFilter !== 'all' || logSearch) && totalLogs > 0 && (
+                      <button
+                        onClick={() => { setLogFilter('all'); setLogSearch(''); }}
+                        className="text-[11px] font-medium text-purple-300 hover:text-purple-200"
+                      >
+                        Clear filters
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  logsForSelected.map((log) => <LogRow key={log._id} log={log} />)
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Confirm Modal */}
-      <ConfirmModal
-        open={confirmModal.open}
-        title={confirmModal.title}
-        message={confirmModal.message}
-        loading={confirmModal.loading}
-        onConfirm={confirmModal.onConfirm}
-        onCancel={closeConfirmModal}
-      />
-    </div>
+        {/* Confirm Modal */}
+        <ConfirmModal
+          open={confirmModal.open}
+          title={confirmModal.title}
+          message={confirmModal.message}
+          loading={confirmModal.loading}
+          onConfirm={confirmModal.onConfirm}
+          onCancel={closeConfirmModal}
+        />
+      </div>
+    </>
   );
 };
 
