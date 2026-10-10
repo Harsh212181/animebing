@@ -1,5 +1,6 @@
+// src/services/signedUrlService.ts
 import { AwsClient } from 'aws4fetch'
-import { getDb, withDb } from './mongoService'
+import { Db } from 'mongodb'
 import { decryptSecret } from './encryptionService'
 import { IR2Provider } from '../models/types'
 
@@ -27,29 +28,9 @@ interface MainEnv {
   ENCRYPTION_KEY: string
 }
 
-interface ResolvedCreds {
-  accountId: string
-  accessKeyId: string
-  secretAccessKey: string
-  bucketName: string
-}
-
 // ============================================================================
-// ✅ FIX #1 (bug, connections se independent): pehle `isProtectedDomain()` aur
-// `resolveCredentials()` DONO `r2providers` collection me EXACT SAME
-// `{ hostname, isActive: { $ne: false } }` query chalate the — matlab har
-// protected link ke liye same data 2 baar DB se fetch ho raha tha.
-//
-// ✅ FIX #2 (connections): downloadPageRoutes.ts ke `/:slug` route me
-// `links.map(async link => { isProtectedDomain(...); signDownloadUrl(...) })`
-// chalta hai — matlab N links = kam se kam 2N DB round-trips (findOne ka
-// har helper call apna alag connection kholta hai).
-//
-// Fix: neeche `prefetchR2Providers()` naya function hai jo EK BAAR me saare
-// distinct non-static hostnames ke providers fetch kar leta hai (1 hi query,
-// $in filter se). Result ek Map hai jo baaki sab sync functions ko pass hota
-// hai — ab per-link koi DB call hi nahi lagti (sirf decryption, jo DB-free
-// crypto operation hai).
+// ✅ MIGRATED: Saare exported functions ab `db: Db` accept karte hain (pehla arg).
+// Har caller `withDb` ke andar wrap karega — connection pooling via mongoService.
 // ============================================================================
 
 // Static bucket hai to turant bata do (DB call ki zarurat nahi)
@@ -57,11 +38,10 @@ export function isStaticBucketHost(hostname: string): boolean {
   return hostname in staticBucketHostMap
 }
 
-// ✅ NEW — ek hi query me saare non-static hostnames ke providers fetch karo
+// ✅ ek hi query me saare non-static hostnames ke providers fetch karo
 export async function prefetchR2Providers(
-  urls: string[],
-  mongoUri: string,
-  dbName: string
+  db: Db,
+  urls: string[]
 ): Promise<Map<string, IR2Provider>> {
   const hostnames = Array.from(new Set(
     urls
@@ -72,11 +52,9 @@ export async function prefetchR2Providers(
   const map = new Map<string, IR2Provider>()
   if (hostnames.length === 0) return map
 
-  const providers = await withDb(mongoUri, dbName, 'r2providers', (db) =>
-    db.collection('r2providers')
-      .find({ hostname: { $in: hostnames }, isActive: { $ne: false } })
-      .toArray()
-  )
+  const providers = await db.collection('r2providers')
+    .find({ hostname: { $in: hostnames }, isActive: { $ne: false } })
+    .toArray()
 
   for (const p of providers) {
     map.set((p as any).hostname, p as any as IR2Provider)
@@ -107,7 +85,7 @@ function resolveCredentialsSync(
   return { provider }
 }
 
-// ✅ NEW — batch-safe signing: providerMap ek baar prefetch karke pass karo,
+// ✅ batch-safe signing: providerMap ek baar prefetch karke pass karo,
 // koi per-link DB call nahi lagti
 export async function signDownloadUrlBatch(
   fullUrl: string,
@@ -154,17 +132,16 @@ export async function signDownloadUrlBatch(
 }
 
 // ============================================================================
-// ⚠️ BACKWARD-COMPAT — purane function names abhi bhi kaam karte hain (kisi
-// aur jagah bhi import ho sakte hain), lekin ye still per-call DB query karte
-// hain. NAYE CODE ME `prefetchR2Providers` + `isProtectedDomainSync` +
-// `signDownloadUrlBatch` use karo (downloadPageRoutes.ts ke `/:slug` route
-// ko is naye pattern se update karna hai — neeche snippet dekho).
+// ⚠️ PER-CALL functions — ab `db` accept karte hain.
+// NAYE CODE ME `prefetchR2Providers` + `isProtectedDomainSync` +
+// `signDownloadUrlBatch` use karo (batch-safe hai, per-link DB call nahi).
+// Ye do functions tab use karo jab bhi ek-do URL ke liye single signing chahiye.
 // ============================================================================
-export async function isProtectedDomain(fullUrl: string, mongoUri: string, mongoDb: string): Promise<boolean> {
+
+export async function isProtectedDomain(db: Db, fullUrl: string): Promise<boolean> {
   try {
     const hostname = new URL(fullUrl).hostname
     if (isStaticBucketHost(hostname)) return true
-    const db = await getDb(mongoUri, mongoDb)
     const provider = await db.collection('r2providers').findOne({ hostname, isActive: { $ne: false } })
     return !!provider
   } catch {
@@ -173,15 +150,13 @@ export async function isProtectedDomain(fullUrl: string, mongoUri: string, mongo
 }
 
 export async function signDownloadUrl(
+  db: Db,
   fullUrl: string,
   mainEnv: MainEnv,
   mode: 'watch' | 'download' = 'download',
-  mongoUri: string,
-  mongoDb: string,
   expiresInSec = 5400
 ): Promise<string> {
   const url = new URL(fullUrl)
-  const db = await getDb(mongoUri, mongoDb)
 
   let accountId: string, accessKeyId: string, secretAccessKey: string, bucketName: string
 

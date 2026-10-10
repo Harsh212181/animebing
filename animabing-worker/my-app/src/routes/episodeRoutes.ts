@@ -1,16 +1,12 @@
 import { Hono } from 'hono'
 import { Env, Variables } from '../index'
-import { findMany, toObjectId, isValidObjectId, getDb } from '../services/mongoService'
+import { findMany, toObjectId, isValidObjectId, withDb } from '../services/mongoService'
 import { IEpisode } from '../models/types'
 import { adminAuth, superAdminOnly } from '../middleware/auth'
 import { withEdgeCache, invalidateEdgeCache } from '../utils/cache'
 
 const episodeRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
-// ✅ NEW — episode add/edit/delete hone par related cache turant clear karo,
-// TTL (300s) khatam hone ka wait nahi karna padega. animeId ke episodes-list
-// AUR us anime ke detail-page (id + slug dono) ka cache clear hota hai,
-// kyunki anime-detail response ke andar bhi episodes embed hote hain.
 async function invalidateEpisodeRelatedCache(c: any, animeId: string, slug?: string | null) {
   try {
     await invalidateEdgeCache(c, `/api/episodes/${animeId}`)
@@ -22,17 +18,19 @@ async function invalidateEpisodeRelatedCache(c: any, animeId: string, slug?: str
 }
 
 // DELETE ALL — sirf main admin
+// ✅ FIX: getDb → withDb
 episodeRoutes.delete('/all', adminAuth, superAdminOnly, async (c) => {
   try {
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const result = await db.collection('episodes').deleteMany({})
-    return c.json({ message: `All episodes deleted (${result.deletedCount})`, deletedCount: result.deletedCount })
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'episodes/delete-all', async (db) => {
+      const result = await db.collection('episodes').deleteMany({})
+      return c.json({ message: `All episodes deleted (${result.deletedCount})`, deletedCount: result.deletedCount })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// GET ALL — public
+// GET ALL — public (uses findMany helper → already withDb internally)
 episodeRoutes.get('/', async (c) => {
   try {
     const episodes = await findMany<IEpisode>('episodes', {}, { sort: { session: 1, episodeNumber: 1 } }, c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -42,8 +40,8 @@ episodeRoutes.get('/', async (c) => {
   }
 })
 
-// ADD EPISODE — auth required. ✅ FIX: pehle anime-findOne + existing-findOne
-// + insertOne + anime-updateOne = 4 alag connections. Ab sab 1 `db` se.
+// ADD EPISODE — auth required
+// ✅ FIX: getDb → withDb
 episodeRoutes.post('/', adminAuth, async (c) => {
   try {
     const { animeId, title, episodeNumber, secureFileReference, mainLink, downloadLinks, session } = await c.req.json()
@@ -64,50 +62,50 @@ episodeRoutes.post('/', adminAuth, async (c) => {
     }
     if (!isValidObjectId(animeId)) return c.json({ error: 'Invalid animeId' }, 400)
 
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'episodes/add', async (db) => {
+      const [anime, existing] = await Promise.all([
+        db.collection('animes').findOne({ _id: toObjectId(animeId) }),
+        db.collection('episodes').findOne({
+          animeId: toObjectId(animeId),
+          episodeNumber: Number(episodeNumber),
+          session: session || 1
+        }),
+      ])
+      if (!anime) return c.json({ error: 'Anime not found' }, 404)
+      if (existing) return c.json({ error: `Episode ${episodeNumber} already exists in Session ${session || 1}` }, 409)
 
-    const [anime, existing] = await Promise.all([
-      db.collection('animes').findOne({ _id: toObjectId(animeId) }),
-      db.collection('episodes').findOne({
+      const now = new Date()
+      const newEpisode = {
         animeId: toObjectId(animeId),
+        title: title || `Episode ${episodeNumber}`,
         episodeNumber: Number(episodeNumber),
-        session: session || 1
-      }),
-    ])
-    if (!anime) return c.json({ error: 'Anime not found' }, 404)
-    if (existing) return c.json({ error: `Episode ${episodeNumber} already exists in Session ${session || 1}` }, 409)
+        secureFileReference: secureFileReference || null,
+        mainLink: mainLink || '',
+        downloadLinks: downloadLinks.map((link: any, index: number) => ({
+          name: link.name || `Download Link ${index + 1}`,
+          url: link.url,
+          quality: link.quality || '',
+          type: link.type || 'direct'
+        })),
+        session: session || 1,
+        createdAt: now,
+        updatedAt: now,
+      }
 
-    const now = new Date()
-    const newEpisode = {
-      animeId: toObjectId(animeId),
-      title: title || `Episode ${episodeNumber}`,
-      episodeNumber: Number(episodeNumber),
-      secureFileReference: secureFileReference || null,
-      mainLink: mainLink || '',
-      downloadLinks: downloadLinks.map((link: any, index: number) => ({
-        name: link.name || `Download Link ${index + 1}`,
-        url: link.url,
-        quality: link.quality || '',
-        type: link.type || 'direct'
-      })),
-      session: session || 1,
-      createdAt: now,
-      updatedAt: now,
-    }
+      await db.collection('episodes').insertOne(newEpisode)
+      await db.collection('animes').updateOne({ _id: toObjectId(animeId) }, { $set: { lastContentAdded: new Date() } })
 
-    await db.collection('episodes').insertOne(newEpisode)
-    await db.collection('animes').updateOne({ _id: toObjectId(animeId) }, { $set: { lastContentAdded: new Date() } })
+      await invalidateEpisodeRelatedCache(c, animeId, (anime as any).slug)
 
-    // ✅ NEW — turant cache clear karo
-    await invalidateEpisodeRelatedCache(c, animeId, (anime as any).slug)
-
-    return c.json({ message: 'Episode added successfully! This anime will now appear first on homepage.', episode: newEpisode })
+      return c.json({ message: 'Episode added successfully! This anime will now appear first on homepage.', episode: newEpisode })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
 // GET EPISODES BY ANIME ID (download) — public
+// ✅ FIX: getDb → withDb
 episodeRoutes.get('/download/:animeId/:episodeNumber', async (c) => {
   try {
     const animeId = c.req.param('animeId')
@@ -116,28 +114,29 @@ episodeRoutes.get('/download/:animeId/:episodeNumber', async (c) => {
 
     if (!isValidObjectId(animeId)) return c.json({ error: 'Invalid animeId' }, 400)
 
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const episode = await db.collection('episodes').findOne({
-      animeId: toObjectId(animeId),
-      episodeNumber: Number(episodeNumber),
-      session
-    }) as IEpisode | null
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'episodes/download', async (db) => {
+      const episode = await db.collection('episodes').findOne({
+        animeId: toObjectId(animeId),
+        episodeNumber: Number(episodeNumber),
+        session
+      }) as IEpisode | null
 
-    if (!episode) return c.json({ error: 'Episode not found' }, 404)
+      if (!episode) return c.json({ error: 'Episode not found' }, 404)
 
-    return c.json({
-      animeId: episode.animeId,
-      title: episode.title,
-      episodeNumber: episode.episodeNumber,
-      session: episode.session,
-      downloadLinks: episode.downloadLinks
+      return c.json({
+        animeId: episode.animeId,
+        title: episode.title,
+        episodeNumber: episode.episodeNumber,
+        session: episode.session,
+        downloadLinks: episode.downloadLinks
+      })
     })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// GET BY ANIME ID — public — 🆕 300s edge-cached
+// GET BY ANIME ID — public — 300s edge-cached (uses findMany helper → safe)
 episodeRoutes.get('/:animeId', async (c) => {
   try {
     const animeId = c.req.param('animeId')
@@ -157,7 +156,8 @@ episodeRoutes.get('/:animeId', async (c) => {
   }
 })
 
-// UPDATE EPISODE — auth required. ✅ FIX: 3 connections combined into 1.
+// UPDATE EPISODE — auth required
+// ✅ FIX: getDb → withDb
 episodeRoutes.patch('/', adminAuth, async (c) => {
   try {
     const { animeId, episodeNumber, title, secureFileReference, mainLink, downloadLinks, session } = await c.req.json()
@@ -167,52 +167,53 @@ episodeRoutes.patch('/', adminAuth, async (c) => {
     }
     if (!isValidObjectId(animeId)) return c.json({ error: 'Invalid animeId' }, 400)
 
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const anime = await db.collection('animes').findOne({ _id: toObjectId(animeId) })
-    if (!anime) return c.json({ error: 'Anime not found' }, 404)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'episodes/update', async (db) => {
+      const anime = await db.collection('animes').findOne({ _id: toObjectId(animeId) })
+      if (!anime) return c.json({ error: 'Anime not found' }, 404)
 
-    const update: any = { mainLink: mainLink || '', updatedAt: new Date() }
-    if (typeof title !== 'undefined') update.title = title
-    if (typeof secureFileReference !== 'undefined') update.secureFileReference = secureFileReference
-    if (typeof session !== 'undefined') update.session = session
+      const update: any = { mainLink: mainLink || '', updatedAt: new Date() }
+      if (typeof title !== 'undefined') update.title = title
+      if (typeof secureFileReference !== 'undefined') update.secureFileReference = secureFileReference
+      if (typeof session !== 'undefined') update.session = session
 
-    if (downloadLinks) {
-      if (!Array.isArray(downloadLinks) || downloadLinks.length === 0) {
-        return c.json({ error: 'At least one download link is required' }, 400)
-      }
-      if (downloadLinks.length > 5) return c.json({ error: 'Maximum 5 download links allowed' }, 400)
-      for (let i = 0; i < downloadLinks.length; i++) {
-        if (!downloadLinks[i].name || !downloadLinks[i].url) {
-          return c.json({ error: `Download link ${i + 1} must have both name and url` }, 400)
+      if (downloadLinks) {
+        if (!Array.isArray(downloadLinks) || downloadLinks.length === 0) {
+          return c.json({ error: 'At least one download link is required' }, 400)
         }
+        if (downloadLinks.length > 5) return c.json({ error: 'Maximum 5 download links allowed' }, 400)
+        for (let i = 0; i < downloadLinks.length; i++) {
+          if (!downloadLinks[i].name || !downloadLinks[i].url) {
+            return c.json({ error: `Download link ${i + 1} must have both name and url` }, 400)
+          }
+        }
+        update.downloadLinks = downloadLinks.map((link: any, index: number) => ({
+          name: link.name || `Download Link ${index + 1}`,
+          url: link.url,
+          quality: link.quality || '',
+          type: link.type || 'direct'
+        }))
       }
-      update.downloadLinks = downloadLinks.map((link: any, index: number) => ({
-        name: link.name || `Download Link ${index + 1}`,
-        url: link.url,
-        quality: link.quality || '',
-        type: link.type || 'direct'
-      }))
-    }
 
-    const updated = await db.collection('episodes').findOneAndUpdate(
-      { animeId: toObjectId(animeId), episodeNumber: Number(episodeNumber), session: session || 1 },
-      { $set: update },
-      { returnDocument: 'after' }
-    )
-    if (!updated) return c.json({ error: 'Episode not found' }, 404)
+      const updated = await db.collection('episodes').findOneAndUpdate(
+        { animeId: toObjectId(animeId), episodeNumber: Number(episodeNumber), session: session || 1 },
+        { $set: update },
+        { returnDocument: 'after' }
+      )
+      if (!updated) return c.json({ error: 'Episode not found' }, 404)
 
-    await db.collection('animes').updateOne({ _id: toObjectId(animeId) }, { $set: { lastContentAdded: new Date() } })
+      await db.collection('animes').updateOne({ _id: toObjectId(animeId) }, { $set: { lastContentAdded: new Date() } })
 
-    // ✅ NEW — turant cache clear karo
-    await invalidateEpisodeRelatedCache(c, animeId, (anime as any).slug)
+      await invalidateEpisodeRelatedCache(c, animeId, (anime as any).slug)
 
-    return c.json({ message: '✅ Episode updated successfully!', episode: updated })
+      return c.json({ message: '✅ Episode updated successfully!', episode: updated })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// DELETE EPISODE — auth required. ✅ FIX: 2 connections combined into 1.
+// DELETE EPISODE — auth required
+// ✅ FIX: getDb → withDb
 episodeRoutes.delete('/', adminAuth, async (c) => {
   try {
     const { animeId, episodeNumber, session } = await c.req.json()
@@ -222,25 +223,25 @@ episodeRoutes.delete('/', adminAuth, async (c) => {
     }
     if (!isValidObjectId(animeId)) return c.json({ error: 'Invalid animeId' }, 400)
 
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const removed = await db.collection('episodes').findOneAndDelete({
-      animeId: toObjectId(animeId),
-      episodeNumber: Number(episodeNumber),
-      session: Number(session)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'episodes/delete', async (db) => {
+      const removed = await db.collection('episodes').findOneAndDelete({
+        animeId: toObjectId(animeId),
+        episodeNumber: Number(episodeNumber),
+        session: Number(session)
+      })
+
+      if (!removed) return c.json({ error: 'Episode not found' }, 404)
+
+      const anime = await db.collection('animes').findOneAndUpdate(
+        { _id: toObjectId(animeId) },
+        { $set: { lastContentAdded: new Date() } },
+        { returnDocument: 'after' }
+      )
+
+      await invalidateEpisodeRelatedCache(c, animeId, (anime as any)?.slug)
+
+      return c.json({ message: 'Episode deleted' })
     })
-
-    if (!removed) return c.json({ error: 'Episode not found' }, 404)
-
-    const anime = await db.collection('animes').findOneAndUpdate(
-      { _id: toObjectId(animeId) },
-      { $set: { lastContentAdded: new Date() } },
-      { returnDocument: 'after' }
-    )
-
-    // ✅ NEW — turant cache clear karo
-    await invalidateEpisodeRelatedCache(c, animeId, (anime as any)?.slug)
-
-    return c.json({ message: 'Episode deleted' })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }

@@ -1,11 +1,10 @@
 import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
-import { toObjectId, isValidObjectId, getDb, withDb } from '../services/mongoService'
+import { toObjectId, isValidObjectId, withDb } from '../services/mongoService'
 import { IDownloadPage } from '../models/types'
 import { syncPageDerivedData, syncAnimeEpisodeCountFromAnime } from '../services/episodeSyncService'
 import { prefetchR2Providers, isProtectedDomainSync, signDownloadUrlBatch } from '../services/signedUrlService'
-// 🆕 CACHED VERSION — edge cache helpers
 import { withEdgeCache, invalidateEdgeCache } from '../utils/cache'
 
 const downloadPageRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
@@ -27,8 +26,7 @@ function slugify(input: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
-// ============ HELPER: sub-admin (animeAccess:'own') ke owned anime IDs laao ============
-// ✅ FIX: ab `db` accept karta hai, apna alag connection nahi kholta
+// ============ HELPER: sub-admin owned anime IDs ============
 async function getOwnedAnimeIds(admin: any, db: any): Promise<string[] | null> {
   if (admin.role !== 'subadmin' || admin.animeAccess !== 'own') return null
   const animes = await db.collection('animes')
@@ -37,10 +35,7 @@ async function getOwnedAnimeIds(admin: any, db: any): Promise<string[] | null> {
   return animes.map((a: any) => a._id.toString())
 }
 
-// ============================================================================
-// ✅ NEW — download-page create/update/delete/toggle hone par uska cache
-// turant clear karo (warna admin ko TTL khatam hone tak purana data dikhta rahega)
-// ============================================================================
+// ============ HELPER: cache invalidation ============
 async function invalidateDownloadPageCache(c: any, animeId?: string | null, slug?: string | null) {
   try {
     if (animeId) await invalidateEdgeCache(c, `/api/download-pages/anime/${animeId}`)
@@ -53,15 +48,16 @@ async function invalidateDownloadPageCache(c: any, animeId?: string | null, slug
 // STATS
 downloadPageRoutes.get('/stats', adminAuth, async (c) => {
   try {
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const totalPages = await db.collection('downloadpages').countDocuments()
-    return c.json({ totalPages, totalDownloadEpisodes: 0 })
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'dlPages/stats', async (db) => {
+      const totalPages = await db.collection('downloadpages').countDocuments()
+      return c.json({ totalPages, totalDownloadEpisodes: 0 })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// GET BY ANIME ID — 🆕 300s edge-cached (anime detail page load pe hit hoti hai)
+// GET BY ANIME ID
 downloadPageRoutes.get('/anime/:animeId', async (c) => {
   try {
     const animeId = c.req.param('animeId')
@@ -81,78 +77,78 @@ downloadPageRoutes.get('/anime/:animeId', async (c) => {
   }
 })
 
-// GET ALL (admin) — anime details ke saath populate. 4 alag connections
-// (getOwnedAnimeIds + pages + animes + subadmins) ab 1 me combine.
+// GET ALL (admin)
 downloadPageRoutes.get('/', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    const ownedAnimeIds = await getOwnedAnimeIds(admin, db)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'dlPages/list', async (db) => {
+      const ownedAnimeIds = await getOwnedAnimeIds(admin, db)
 
-    if (ownedAnimeIds !== null && ownedAnimeIds.length === 0) {
-      return c.json([])
-    }
-
-    const filter: any = {}
-    if (ownedAnimeIds !== null) {
-      filter.animeId = { $in: ownedAnimeIds.map((id: string) => toObjectId(id)) }
-    }
-
-    const pages = await db.collection('downloadpages')
-      .find(filter)
-      .sort({ createdAt: -1 })
-      .toArray()
-
-    if (!pages || pages.length === 0) return c.json([])
-
-    const animeIds = [...new Set(
-      pages.map((p: any) => p.animeId?.toString()).filter(Boolean)
-    )]
-
-    const animes = await db.collection('animes')
-      .find(
-        { _id: { $in: animeIds.map((id: string) => toObjectId(id)) } },
-        { projection: { title: 1, contentType: 1, subDubStatus: 1, status: 1, thumbnail: 1, isHidden: 1, createdByUsername: 1, createdBy: 1 } }
-      )
-      .toArray()
-
-    const creatorIds = [...new Set(
-      animes.map((a: any) => a.createdBy?.toString()).filter(Boolean)
-    )]
-    let subAdminIdSet = new Set<string>()
-    if (creatorIds.length > 0) {
-      const validCreatorIds = creatorIds.filter((id: string) => isValidObjectId(id))
-      if (validCreatorIds.length > 0) {
-        const subAdmins = await db.collection('subadmins')
-          .find(
-            { _id: { $in: validCreatorIds.map((id: string) => toObjectId(id)) } },
-            { projection: { _id: 1 } }
-          )
-          .toArray()
-        subAdminIdSet = new Set(subAdmins.map((s: any) => s._id.toString()))
+      if (ownedAnimeIds !== null && ownedAnimeIds.length === 0) {
+        return c.json([])
       }
-    }
 
-    const animeMap = new Map(
-      animes.map((a: any) => [
-        a._id.toString(),
-        { ...a, isSubAdminCreated: subAdminIdSet.has(a.createdBy?.toString()) }
-      ])
-    )
+      const filter: any = {}
+      if (ownedAnimeIds !== null) {
+        filter.animeId = { $in: ownedAnimeIds.map((id: string) => toObjectId(id)) }
+      }
 
-    const populatedPages = pages.map((page: any) => ({
-      ...page,
-      animeId: animeMap.get(page.animeId?.toString()) || page.animeId
-    }))
+      const pages = await db.collection('downloadpages')
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .toArray()
 
-    return c.json(populatedPages)
+      if (!pages || pages.length === 0) return c.json([])
+
+      const animeIds = [...new Set(
+        pages.map((p: any) => p.animeId?.toString()).filter(Boolean)
+      )]
+
+      const animes = await db.collection('animes')
+        .find(
+          { _id: { $in: animeIds.map((id: string) => toObjectId(id)) } },
+          { projection: { title: 1, contentType: 1, subDubStatus: 1, status: 1, thumbnail: 1, isHidden: 1, createdByUsername: 1, createdBy: 1 } }
+        )
+        .toArray()
+
+      const creatorIds = [...new Set(
+        animes.map((a: any) => a.createdBy?.toString()).filter(Boolean)
+      )]
+      let subAdminIdSet = new Set<string>()
+      if (creatorIds.length > 0) {
+        const validCreatorIds = creatorIds.filter((id: string) => isValidObjectId(id))
+        if (validCreatorIds.length > 0) {
+          const subAdmins = await db.collection('subadmins')
+            .find(
+              { _id: { $in: validCreatorIds.map((id: string) => toObjectId(id)) } },
+              { projection: { _id: 1 } }
+            )
+            .toArray()
+          subAdminIdSet = new Set(subAdmins.map((s: any) => s._id.toString()))
+        }
+      }
+
+      const animeMap = new Map(
+        animes.map((a: any) => [
+          a._id.toString(),
+          { ...a, isSubAdminCreated: subAdminIdSet.has(a.createdBy?.toString()) }
+        ])
+      )
+
+      const populatedPages = pages.map((page: any) => ({
+        ...page,
+        animeId: animeMap.get(page.animeId?.toString()) || page.animeId
+      }))
+
+      return c.json(populatedPages)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// CREATE — 2 findOne calls (slug + anime exists) combined into 1 connection
+// CREATE
 downloadPageRoutes.post('/', adminAuth, async (c) => {
   try {
     const { animeId, slug, title, episodeNumber, links, defaultPlayerMode } = await c.req.json()
@@ -165,152 +161,150 @@ downloadPageRoutes.post('/', adminAuth, async (c) => {
     const cleanSlug = slugify(slug)
     if (!cleanSlug) return c.json({ error: 'Invalid slug' }, 400)
 
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'dlPages/create', async (db) => {
+      const [existing, anime] = await Promise.all([
+        db.collection('downloadpages').findOne({ slug: cleanSlug }),
+        db.collection('animes').findOne({ _id: toObjectId(animeId) }),
+      ])
+      if (existing) return c.json({ error: 'Slug already exists' }, 400)
+      if (!anime) return c.json({ error: 'Anime not found' }, 400)
 
-    const [existing, anime] = await Promise.all([
-      db.collection('downloadpages').findOne({ slug: cleanSlug }),
-      db.collection('animes').findOne({ _id: toObjectId(animeId) }),
-    ])
-    if (existing) return c.json({ error: 'Slug already exists' }, 400)
-    if (!anime) return c.json({ error: 'Anime not found' }, 400)
+      const sanitizedLinks = Array.isArray(links) ? links : []
+      for (const link of sanitizedLinks) {
+        if (!link.episode || !link.url) return c.json({ error: 'Each link needs episode and url' }, 400)
+        if (!link.type) link.type = 'download'
+      }
 
-    const sanitizedLinks = Array.isArray(links) ? links : []
-    for (const link of sanitizedLinks) {
-      if (!link.episode || !link.url) return c.json({ error: 'Each link needs episode and url' }, 400)
-      if (!link.type) link.type = 'download'
-    }
+      // 🔒 Page number server decide karega, client ka value ignore
+      const existingPages = await db.collection('downloadpages')
+        .find({ animeId: toObjectId(animeId) }, { projection: { episodeNumber: 1 } })
+        .toArray()
+      const maxPageNo = existingPages.reduce(
+        (m: number, p: any) => Math.max(m, Number(p.episodeNumber) || 0), 0
+      )
+      const nextPageNo = Math.max(existingPages.length, maxPageNo) + 1
 
-    // 🔒 Page number server decide karega, client ka value ignore
-    const existingPages = await db.collection('downloadpages')
-      .find({ animeId: toObjectId(animeId) }, { projection: { episodeNumber: 1 } })
-      .toArray()
-    const maxPageNo = existingPages.reduce(
-      (m: number, p: any) => Math.max(m, Number(p.episodeNumber) || 0), 0
-    )
-    const nextPageNo = Math.max(existingPages.length, maxPageNo) + 1
+      const admin = c.get('admin')
+      const isMainAdmin = admin.role !== 'subadmin'
 
-    const admin = c.get('admin')
-    const isMainAdmin = admin.role !== 'subadmin'
+      const requestedNo = Number(episodeNumber)
+      const finalPageNo =
+        isMainAdmin && Number.isInteger(requestedNo) && requestedNo >= 1
+          ? requestedNo
+          : nextPageNo
 
-    // Main admin custom number de sakta hai, warna auto
-    const requestedNo = Number(episodeNumber)
-    const finalPageNo =
-      isMainAdmin && Number.isInteger(requestedNo) && requestedNo >= 1
-        ? requestedNo
-        : nextPageNo
+      const now = new Date()
+      const page = {
+        animeId: toObjectId(animeId),
+        slug: cleanSlug,
+        title: title || 'Download',
+        episodeNumber: finalPageNo,
+        links: sanitizedLinks,
+        isHidden: false,
+        defaultPlayerMode: defaultPlayerMode === 'custom' ? 'custom' : 'default',
+        createdAt: now,
+        updatedAt: now,
+      }
+      const result = await db.collection('downloadpages').insertOne(page)
 
-    const now = new Date()
-    const page = {
-      animeId: toObjectId(animeId),
-      slug: cleanSlug,
-      title: title || 'Download',
-      episodeNumber: finalPageNo,
-      links: sanitizedLinks,
-      isHidden: false,
-      defaultPlayerMode: defaultPlayerMode === 'custom' ? 'custom' : 'default',
-      createdAt: now,
-      updatedAt: now,
-    }
-    const result = await db.collection('downloadpages').insertOne(page)
+      if (sanitizedLinks.length > 0) {
+        await syncPageDerivedData(db, result.insertedId.toString())
+      }
 
-    if (sanitizedLinks.length > 0) {
-      // ⚠️ episodeSyncService.ts abhi bhi apna alag connection kholta hai —
-      // isko fix karna agla step ho sakta hai
-      await syncPageDerivedData(result.insertedId.toString(), c.env.MONGODB_URI, c.env.MONGODB_DB)
-    }
+      await invalidateDownloadPageCache(c, animeId, cleanSlug)
 
-    await invalidateDownloadPageCache(c, animeId, cleanSlug) // ✅ NEW
-
-    return c.json(page, 201)
+      return c.json(page, 201)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// UPDATE — page findOne + slug-exists check + update combined into 1 connection
+// UPDATE
 downloadPageRoutes.put('/:id', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
     const { slug, title, episodeNumber, links, defaultPlayerMode } = await c.req.json()
 
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const page = await db.collection('downloadpages').findOne({ _id: toObjectId(id) }) as IDownloadPage | null
-    if (!page) return c.json({ error: 'Page not found' }, 404)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'dlPages/update', async (db) => {
+      const page = await db.collection('downloadpages').findOne({ _id: toObjectId(id) }) as IDownloadPage | null
+      if (!page) return c.json({ error: 'Page not found' }, 404)
 
-    const updateData: any = { updatedAt: new Date() }
-    if (slug && slug !== page.slug) {
-      const cleanSlug = slugify(slug)
-      if (!cleanSlug) return c.json({ error: 'Invalid slug' }, 400)
-      const existing = await db.collection('downloadpages').findOne({ slug: cleanSlug })
-      if (existing) return c.json({ error: 'Slug already exists' }, 400)
-      updateData.slug = cleanSlug
-    }
-    if (title !== undefined) updateData.title = title
-
-    // 🔒 episodeNumber sirf MAIN ADMIN change kar sakta hai; sub-admin ka value ignore
-    const admin = c.get('admin')
-    if (episodeNumber !== undefined && admin.role !== 'subadmin') {
-      const n = Number(episodeNumber)
-      if (!Number.isInteger(n) || n < 1) {
-        return c.json({ error: 'episodeNumber must be at least 1' }, 400)
+      const updateData: any = { updatedAt: new Date() }
+      if (slug && slug !== page.slug) {
+        const cleanSlug = slugify(slug)
+        if (!cleanSlug) return c.json({ error: 'Invalid slug' }, 400)
+        const existing = await db.collection('downloadpages').findOne({ slug: cleanSlug })
+        if (existing) return c.json({ error: 'Slug already exists' }, 400)
+        updateData.slug = cleanSlug
       }
-      updateData.episodeNumber = n
-    }
+      if (title !== undefined) updateData.title = title
 
-    if (links) {
-      for (const link of links) {
-        if (!link.episode || !link.url) return c.json({ error: 'Each link needs episode and url' }, 400)
-        if (!link.type) link.type = 'download'
+      const admin = c.get('admin')
+      if (episodeNumber !== undefined && admin.role !== 'subadmin') {
+        const n = Number(episodeNumber)
+        if (!Number.isInteger(n) || n < 1) {
+          return c.json({ error: 'episodeNumber must be at least 1' }, 400)
+        }
+        updateData.episodeNumber = n
       }
-      updateData.links = links
-    }
-    if (defaultPlayerMode !== undefined) {
-      updateData.defaultPlayerMode = defaultPlayerMode === 'custom' ? 'custom' : 'default'
-    }
 
-    const updated = await db.collection('downloadpages').findOneAndUpdate(
-      { _id: toObjectId(id) }, { $set: updateData }, { returnDocument: 'after' }
-    )
+      if (links) {
+        for (const link of links) {
+          if (!link.episode || !link.url) return c.json({ error: 'Each link needs episode and url' }, 400)
+          if (!link.type) link.type = 'download'
+        }
+        updateData.links = links
+      }
+      if (defaultPlayerMode !== undefined) {
+        updateData.defaultPlayerMode = defaultPlayerMode === 'custom' ? 'custom' : 'default'
+      }
 
-    if (links) {
-      await syncPageDerivedData(id!, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    }
+      const updated = await db.collection('downloadpages').findOneAndUpdate(
+        { _id: toObjectId(id) }, { $set: updateData }, { returnDocument: 'after' }
+      )
 
-    await invalidateDownloadPageCache(c, (page as any).animeId?.toString(), updateData.slug || page.slug) // ✅ NEW
+      if (links) {
+        await syncPageDerivedData(db, id!)
+      }
 
-    return c.json(updated)
+      await invalidateDownloadPageCache(c, (page as any).animeId?.toString(), updateData.slug || page.slug)
+
+      return c.json(updated)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// ✅ TOGGLE HIDE / UNHIDE — 2 calls combined into 1 connection
+// TOGGLE HIDE / UNHIDE
 downloadPageRoutes.patch('/:id/toggle-hide', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
 
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const page = await db.collection('downloadpages').findOne({ _id: toObjectId(id) }) as IDownloadPage | null
-    if (!page) return c.json({ error: 'Page not found' }, 404)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'dlPages/toggle-hide', async (db) => {
+      const page = await db.collection('downloadpages').findOne({ _id: toObjectId(id) }) as IDownloadPage | null
+      if (!page) return c.json({ error: 'Page not found' }, 404)
 
-    const newHiddenState = !(page as any).isHidden
-    const updated = await db.collection('downloadpages').findOneAndUpdate(
-      { _id: toObjectId(id) },
-      { $set: { isHidden: newHiddenState, updatedAt: new Date() } },
-      { returnDocument: 'after' }
-    )
+      const newHiddenState = !(page as any).isHidden
+      const updated = await db.collection('downloadpages').findOneAndUpdate(
+        { _id: toObjectId(id) },
+        { $set: { isHidden: newHiddenState, updatedAt: new Date() } },
+        { returnDocument: 'after' }
+      )
 
-    await invalidateDownloadPageCache(c, (page as any).animeId?.toString(), (page as any).slug) // ✅ NEW
+      await invalidateDownloadPageCache(c, (page as any).animeId?.toString(), (page as any).slug)
 
-    return c.json(updated)
+      return c.json(updated)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// ✅ Page-level YouTube player mode toggle — 2 calls combined into 1 connection
+// PLAYER MODE TOGGLE
 downloadPageRoutes.patch('/:id/player-mode', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
@@ -321,123 +315,110 @@ downloadPageRoutes.patch('/:id/player-mode', adminAuth, async (c) => {
       return c.json({ error: 'defaultPlayerMode must be "custom" or "default"' }, 400)
     }
 
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const page = await db.collection('downloadpages').findOne({ _id: toObjectId(id) })
-    if (!page) return c.json({ error: 'Page not found' }, 404)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'dlPages/player-mode', async (db) => {
+      const page = await db.collection('downloadpages').findOne({ _id: toObjectId(id) })
+      if (!page) return c.json({ error: 'Page not found' }, 404)
 
-    const updated = await db.collection('downloadpages').findOneAndUpdate(
-      { _id: toObjectId(id) },
-      { $set: { defaultPlayerMode, updatedAt: new Date() } },
-      { returnDocument: 'after' }
-    )
-    return c.json(updated)
+      const updated = await db.collection('downloadpages').findOneAndUpdate(
+        { _id: toObjectId(id) },
+        { $set: { defaultPlayerMode, updatedAt: new Date() } },
+        { returnDocument: 'after' }
+      )
+      return c.json(updated)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// DELETE — 2 calls combined into 1 connection (sync service still separate)
+// DELETE
 downloadPageRoutes.delete('/:id', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
 
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const page = await db.collection('downloadpages').findOne({ _id: toObjectId(id) })
-    if (!page) return c.json({ error: 'Page not found' }, 404)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'dlPages/delete', async (db) => {
+      const page = await db.collection('downloadpages').findOne({ _id: toObjectId(id) })
+      if (!page) return c.json({ error: 'Page not found' }, 404)
 
-    const animeId = (page as any).animeId
-    await db.collection('downloadpages').deleteOne({ _id: toObjectId(id) })
+      const animeId = (page as any).animeId
+      await db.collection('downloadpages').deleteOne({ _id: toObjectId(id) })
 
-    if (animeId) {
-      await syncAnimeEpisodeCountFromAnime(animeId, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    }
+      if (animeId) {
+        await syncAnimeEpisodeCountFromAnime(db, animeId)
+      }
 
-    await invalidateDownloadPageCache(c, animeId?.toString(), (page as any).slug) // ✅ NEW
+      await invalidateDownloadPageCache(c, animeId?.toString(), (page as any).slug)
 
-    return c.json({ success: true })
+      return c.json({ success: true })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// ✅ Multi-session "primary" mark — 3 calls combined into 1 connection
+// SET PRIMARY EPISODE COUNT
 downloadPageRoutes.post('/:id/set-primary-episode-count', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
 
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const page = await db.collection('downloadpages').findOne({ _id: toObjectId(id) })
-    if (!page) return c.json({ error: 'Page not found' }, 404)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'dlPages/set-primary', async (db) => {
+      const page = await db.collection('downloadpages').findOne({ _id: toObjectId(id) })
+      if (!page) return c.json({ error: 'Page not found' }, 404)
 
-    await db.collection('downloadpages').updateMany(
-      { animeId: (page as any).animeId },
-      { $set: { isPrimaryForEpisodeCount: false } }
-    )
-    await db.collection('downloadpages').updateOne(
-      { _id: toObjectId(id) },
-      { $set: { isPrimaryForEpisodeCount: true } }
-    )
+      await db.collection('downloadpages').updateMany(
+        { animeId: (page as any).animeId },
+        { $set: { isPrimaryForEpisodeCount: false } }
+      )
+      await db.collection('downloadpages').updateOne(
+        { _id: toObjectId(id) },
+        { $set: { isPrimaryForEpisodeCount: true } }
+      )
 
-    const newCount = await syncAnimeEpisodeCountFromAnime((page as any).animeId, c.env.MONGODB_URI, c.env.MONGODB_DB)
+      const newCount = await syncAnimeEpisodeCountFromAnime(db, (page as any).animeId)
 
-    return c.json({ success: true, currentEpisode: newCount })
+      return c.json({ success: true, currentEpisode: newCount })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// ✅ primary status hataao — 2 calls combined into 1 connection
+// UNSET PRIMARY EPISODE COUNT
 downloadPageRoutes.post('/:id/unset-primary-episode-count', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
 
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const page = await db.collection('downloadpages').findOne({ _id: toObjectId(id) })
-    if (!page) return c.json({ error: 'Page not found' }, 404)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'dlPages/unset-primary', async (db) => {
+      const page = await db.collection('downloadpages').findOne({ _id: toObjectId(id) })
+      if (!page) return c.json({ error: 'Page not found' }, 404)
 
-    await db.collection('downloadpages').updateOne(
-      { _id: toObjectId(id) },
-      { $set: { isPrimaryForEpisodeCount: false, updatedAt: new Date() } }
-    )
+      await db.collection('downloadpages').updateOne(
+        { _id: toObjectId(id) },
+        { $set: { isPrimaryForEpisodeCount: false, updatedAt: new Date() } }
+      )
 
-    const newCount = await syncAnimeEpisodeCountFromAnime((page as any).animeId, c.env.MONGODB_URI, c.env.MONGODB_DB)
+      const newCount = await syncAnimeEpisodeCountFromAnime(db, (page as any).animeId)
 
-    return c.json({ success: true, currentEpisode: newCount })
+      return c.json({ success: true, currentEpisode: newCount })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
 // ============================================================================
-// 🆕 CACHED VERSION — SABSE HIGH-TRAFFIC ROUTE (har visitor jo download page
-// kholta hai isko hit karta hai).
-//
-// Pehle: page findOne + anime findOne + HAR LINK ke liye 2 alag DB calls
-// (isProtectedDomain + signDownloadUrl) — matlab 5 links wale page ke liye
-// ~12 MongoDB connections EK REQUEST me, AUR har visitor ke liye ALAG.
-//
-// Ab (2 changes):
-//   1. page + anime = 1 connection (parallel). Links ke liye saare providers
-//      EK BAAR me prefetch (`prefetchR2Providers`) — chahe kitne bhi links
-//      hon, sirf 1 extra query. Baaki sab (isProtectedDomainSync,
-//      signDownloadUrlBatch) DB-free hain (sirf crypto/decryption).
-//   2. `withEdgeCache(c, 300, ...)` — 300s edge cache. Isse same slug pe
-//      aane wale hazaaron concurrent visitors ke liye sirf EK DB hit hoti
-//      hai per 300 seconds, baaki sab Cloudflare edge se serve hote hain.
-//
-// NOTE: Signed URLs (R2 links) ek TTL ke saath bante hain. 300s cache TTL
-// itna chhota hai ki koi bhi normal signature-validity window (typically
-// minutes+) ke andar hi rahega — safe hai.
+// CACHED VERSION — SABSE HIGH-TRAFFIC ROUTE
+// prefetchR2Providers ab withDb ke andar hai (db pehla arg leta hai)
 // ============================================================================
 downloadPageRoutes.get('/:slug', async (c) => {
   try {
     const slug = c.req.param('slug')
 
     const response = await withEdgeCache(c, 300, async () => {
-      const { page, animeData } = await withDb(
+      const { page, animeData, providerMap } = await withDb(
         c.env.MONGODB_URI, c.env.MONGODB_DB, 'downloadPage', async (db) => {
           const page = await db.collection('downloadpages').findOne({ slug }) as IDownloadPage | null
           if (!page || (page as any).isHidden) throw { __notFound: true }
@@ -449,15 +430,17 @@ downloadPageRoutes.get('/:slug', async (c) => {
                 { projection: { title: 1, thumbnail: 1, description: 1, seoDescription: 1, contentType: 1 } }
               )
             : null
-          return { page, animeData }
+
+          const providerMap = await prefetchR2Providers(
+            db,
+            ((page as any).links || []).map((l: any) => l.url)
+          )
+
+          return { page, animeData, providerMap }
         }
       )
 
       const allLinks = (page as any).links || []
-      const providerMap = await prefetchR2Providers(
-        allLinks.map((l: any) => l.url),
-        c.env.MONGODB_URI, c.env.MONGODB_DB
-      )
 
       const signedLinks = await Promise.all(
         allLinks.map(async (link: any) => {

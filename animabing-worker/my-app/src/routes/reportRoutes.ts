@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
 import {
-  findMany, updateOne, deleteMany, toObjectId, isValidObjectId, getDb
+  findMany, updateOne, deleteMany, toObjectId, isValidObjectId, withDb
 } from '../services/mongoService'
 import { IReport } from '../models/types'
 import { ObjectId } from 'mongodb'
@@ -10,6 +10,7 @@ import { ObjectId } from 'mongodb'
 const reportRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
 // ============ CREATE REPORT (public) ============
+// ✅ FIX: getDb → withDb
 reportRoutes.post('/', async (c) => {
   try {
     const { animeId, episodeId, episodeNumber, issueType, description, email, username } = await c.req.json()
@@ -39,125 +40,128 @@ reportRoutes.post('/', async (c) => {
       updatedAt: now,
     }
 
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    await db.collection('reports').insertOne(report)
-
-    return c.json({ success: true, message: 'Report submitted! We will fix the issue soon.' })
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'reports/create', async (db) => {
+      await db.collection('reports').insertOne(report)
+      return c.json({ success: true, message: 'Report submitted! We will fix the issue soon.' })
+    })
   } catch (err: any) {
     return c.json({ success: false, error: 'Server error: ' + err.message }, 500)
   }
 })
 
-// ============ PENDING REPORTS COUNT (red dot ke liye) - MUST be before /:id routes (admin) ============
+// ============ PENDING REPORTS COUNT (red dot ke liye) ============
+// ✅ FIX: getDb → withDb
 reportRoutes.get('/pending-count', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    if (admin.role !== 'admin') {
-      const ownAnimes = await db.collection('animes')
-        .find({ createdBy: admin.id }, { projection: { _id: 1 } })
-        .toArray()
-      const ownAnimeIds = ownAnimes.map((a: any) => a._id)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'reports/pending-count', async (db) => {
+      if (admin.role !== 'admin') {
+        const ownAnimes = await db.collection('animes')
+          .find({ createdBy: admin.id }, { projection: { _id: 1 } })
+          .toArray()
+        const ownAnimeIds = ownAnimes.map((a: any) => a._id)
 
-      if (ownAnimeIds.length === 0) {
-        return c.json({ success: true, count: 0 })
+        if (ownAnimeIds.length === 0) {
+          return c.json({ success: true, count: 0 })
+        }
+
+        const count = await db.collection('reports').countDocuments({
+          type: 'episode',
+          status: 'Pending',
+          animeId: { $in: ownAnimeIds }
+        })
+        return c.json({ success: true, count })
       }
 
-      const count = await db.collection('reports').countDocuments({
-        type: 'episode',
-        status: 'Pending',
-        animeId: { $in: ownAnimeIds }
-      })
+      const count = await db.collection('reports').countDocuments({ status: 'Pending' })
       return c.json({ success: true, count })
-    }
-
-    const count = await db.collection('reports').countDocuments({ status: 'Pending' })
-    return c.json({ success: true, count })
+    })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
   }
 })
 
-// ============ GET ALL REPORTS - anime thumbnail + role-based filter (admin) ============
-// ✅ Ye route already sirf 1 connection use karti thi (db upar khula, sab
-// operations wahi se) — koi change nahi chahiye tha.
+// ============ GET ALL REPORTS (admin) ============
+// ✅ FIX: getDb → withDb
 reportRoutes.get('/', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    const reports = await db.collection('reports')
-      .find({})
-      .sort({ createdAt: -1 })
-      .toArray()
-
-    const animeIds = reports
-      .filter((r: any) => r.type === 'episode' && r.animeId)
-      .map((r: any) => {
-        try {
-          return new ObjectId(r.animeId.toString())
-        } catch {
-          return null
-        }
-      })
-      .filter(Boolean)
-
-    const animeMap: Record<string, { _id: any; title: string; thumbnail: string; createdBy?: string; createdByUsername?: string }> = {}
-
-    if (animeIds.length > 0) {
-      const animes = await db.collection('animes')
-        .find(
-          { _id: { $in: animeIds as any } },
-          { projection: { title: 1, thumbnail: 1, createdBy: 1, createdByUsername: 1 } }
-        )
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'reports/list', async (db) => {
+      const reports = await db.collection('reports')
+        .find({})
+        .sort({ createdAt: -1 })
         .toArray()
 
-      animes.forEach((anime: any) => {
-        animeMap[anime._id.toString()] = {
-          _id: anime._id,
-          title: anime.title,
-          thumbnail: anime.thumbnail || null,
-          createdBy: anime.createdBy || null,
-          createdByUsername: anime.createdByUsername || null
-        }
-      })
-    }
+      const animeIds = reports
+        .filter((r: any) => r.type === 'episode' && r.animeId)
+        .map((r: any) => {
+          try {
+            return new ObjectId(r.animeId.toString())
+          } catch {
+            return null
+          }
+        })
+        .filter(Boolean)
 
-    let enrichedReports = reports.map((report: any) => {
-      if (report.type === 'episode' && report.animeId) {
-        const animeIdStr = report.animeId.toString()
-        const anime = animeMap[animeIdStr]
-        return {
-          ...report,
-          animeId: anime
-            ? { _id: anime._id, title: anime.title, thumbnail: anime.thumbnail }
-            : { _id: report.animeId, title: 'Unknown Anime', thumbnail: null },
-          subAdminUsername: anime?.createdByUsername || null,
-          _createdBy: anime?.createdBy || null
-        }
+      const animeMap: Record<string, { _id: any; title: string; thumbnail: string; createdBy?: string; createdByUsername?: string }> = {}
+
+      if (animeIds.length > 0) {
+        const animes = await db.collection('animes')
+          .find(
+            { _id: { $in: animeIds as any } },
+            { projection: { title: 1, thumbnail: 1, createdBy: 1, createdByUsername: 1 } }
+          )
+          .toArray()
+
+        animes.forEach((anime: any) => {
+          animeMap[anime._id.toString()] = {
+            _id: anime._id,
+            title: anime.title,
+            thumbnail: anime.thumbnail || null,
+            createdBy: anime.createdBy || null,
+            createdByUsername: anime.createdByUsername || null
+          }
+        })
       }
-      return { ...report, _createdBy: null }
+
+      let enrichedReports = reports.map((report: any) => {
+        if (report.type === 'episode' && report.animeId) {
+          const animeIdStr = report.animeId.toString()
+          const anime = animeMap[animeIdStr]
+          return {
+            ...report,
+            animeId: anime
+              ? { _id: anime._id, title: anime.title, thumbnail: anime.thumbnail }
+              : { _id: report.animeId, title: 'Unknown Anime', thumbnail: null },
+            subAdminUsername: anime?.createdByUsername || null,
+            _createdBy: anime?.createdBy || null
+          }
+        }
+        return { ...report, _createdBy: null }
+      })
+
+      if (admin.role !== 'admin') {
+        enrichedReports = enrichedReports.filter(
+          (r: any) => r.type === 'episode' && r._createdBy === admin.id
+        )
+      }
+
+      enrichedReports = enrichedReports.map((r: any) => {
+        const { _createdBy, ...rest } = r
+        return rest
+      })
+
+      return c.json(enrichedReports)
     })
-
-    if (admin.role !== 'admin') {
-      enrichedReports = enrichedReports.filter(
-        (r: any) => r.type === 'episode' && r._createdBy === admin.id
-      )
-    }
-
-    enrichedReports = enrichedReports.map((r: any) => {
-      const { _createdBy, ...rest } = r
-      return rest
-    })
-
-    return c.json(enrichedReports)
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
 // ============ GET BY USER EMAIL (public) ============
+// already uses findMany helper → single withDb internally — no change
 reportRoutes.get('/user/:email', async (c) => {
   try {
     const email = c.req.param('email')
@@ -174,6 +178,7 @@ reportRoutes.get('/user/:email', async (c) => {
 })
 
 // ============ UPDATE REPORT STATUS (admin) ============
+// already uses updateOne helper → single withDb internally — no change
 reportRoutes.put('/:id', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
@@ -201,7 +206,8 @@ reportRoutes.put('/:id', adminAuth, async (c) => {
   }
 })
 
-// ============ BULK DELETE - /:id se PEHLE hona chahiye (admin) ============
+// ============ BULK DELETE ============
+// already uses deleteMany helper → single withDb internally — no change
 reportRoutes.post('/bulk-delete', adminAuth, async (c) => {
   try {
     const { reportIds } = await c.req.json()
@@ -230,19 +236,21 @@ reportRoutes.post('/bulk-delete', adminAuth, async (c) => {
   }
 })
 
-// ============ DELETE SINGLE REPORT (admin) — 2 connections combined into 1 ============
+// ============ DELETE SINGLE REPORT (admin) ============
+// ✅ FIX: getDb → withDb
 reportRoutes.delete('/:id', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
 
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const report = await db.collection('reports').findOne({ _id: toObjectId(id) })
-    if (!report) return c.json({ error: 'Report not found' }, 404)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'reports/delete', async (db) => {
+      const report = await db.collection('reports').findOne({ _id: toObjectId(id) })
+      if (!report) return c.json({ error: 'Report not found' }, 404)
 
-    await db.collection('reports').deleteOne({ _id: toObjectId(id) })
+      await db.collection('reports').deleteOne({ _id: toObjectId(id) })
 
-    return c.json({ success: true, message: 'Report deleted successfully' })
+      return c.json({ success: true, message: 'Report deleted successfully' })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }

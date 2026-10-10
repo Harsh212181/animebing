@@ -1,7 +1,7 @@
 // src/routes/shortenerRoutes.ts - UPDATED VERSION
 import { Hono } from 'hono'
 import { Env, Variables } from '../index'
-import { getDb } from '../services/mongoService'
+import { withDb } from '../services/mongoService'
 import { adminAuth, requirePermission } from '../middleware/auth'
 import { ObjectId, Db } from 'mongodb'
 import { checkAndUnlockReferral, creditCommissionToReferrer } from './referralRoutes'
@@ -33,7 +33,7 @@ function isBot(userAgent: string | null | undefined): boolean {
   return BOT_PATTERNS.some((p) => ua.includes(p))
 }
 
-// ============ ORIGIN CHECK — funnel endpoints ko external abuse se bachane ke liye ============
+// ============ ORIGIN CHECK ============
 function isValidFunnelOrigin(c: any): boolean {
   const origin = c.req.header('Origin') || c.req.header('Referer') || ''
   return origin.includes('animebing.in')
@@ -74,7 +74,6 @@ function buildMetaHTML(opts: {
   <meta name="description" content="${d}" />
   <link rel="canonical" href="${esc(opts.canonicalUrl)}" />
 
-  <!-- Open Graph -->
   <meta property="og:title" content="${t}" />
   <meta property="og:description" content="${d}" />
   <meta property="og:url" content="${esc(opts.shortUrl)}" />
@@ -85,7 +84,6 @@ function buildMetaHTML(opts: {
   <meta property="og:type" content="video.tv_show" />
   <meta property="og:site_name" content="AnimeBing" />
 
-  <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="${t}" />
   <meta name="twitter:description" content="${d}" />
@@ -106,21 +104,17 @@ function buildMetaHTML(opts: {
 }
 
 // ============ ANIME META FETCHER — DIRECT DB ============
-// ✅ FIX: ab optional `existingDb` leta hai, taaki `/:code` route apna
-// pehle se khula connection reuse kare (bot-traffic path pe 2 connections
-// se 1 ho gaya).
+// ✅ FIX: `db` REQUIRED hai (no getDb fallback). Caller withDb ke andar se pass karta hai.
 async function fetchAnimeMeta(
   targetUrl: string,
   env: Env,
-  existingDb?: Db
+  db: Db
 ): Promise<{ title: string; description: string; image: string; slug: string } | null> {
   try {
     const match = targetUrl.match(/animebing\.in\/detail\/([^/?#]+)/)
     if (!match) return null
 
     const slug = match[1]
-
-    const db = existingDb || await getDb(env.MONGODB_URI, env.MONGODB_DB)
     const anime = await db.collection('animes').findOne({ slug })
 
     if (!anime) return null
@@ -167,7 +161,21 @@ async function canManageShortLink(link: any, admin: any, db: any): Promise<boole
 }
 
 // ============ SHARED: ACTUAL CLICK COUNT + EARNINGS CREDIT ============
-async function creditClickForLink(link: any, c: any, db: any, opts: { skipDedup?: boolean } = {}) {
+// ✅ FIX: `creditClickForLink` ab `db` (sync kaam ke liye) + `mongoUri`/`dbName`
+// (background earnings ke liye alag withDb) accept karta hai.
+//
+// ⚠️ IMPORTANT: `c.executionCtx.waitUntil(...)` wala earnings kaam route ke
+// response ke baad chalta hai. Agar usse outer withDb wala db pass karein to
+// outer withDb client close kar dega aur background me error aayega. Isliye
+// background part apni alag withDb use karta hai.
+async function creditClickForLink(
+  link: any,
+  c: any,
+  db: any,
+  mongoUri: string,
+  dbName: string,
+  opts: { skipDedup?: boolean } = {}
+) {
   const code = link.code
   const userAgent = c.req.header('User-Agent') || ''
   const ip = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || 'unknown'
@@ -196,28 +204,30 @@ async function creditClickForLink(link: any, c: any, db: any, opts: { skipDedup?
   ])
 
   if (link.userId) {
-    const earningsPromise = (async () => {
+    const uid = link.userId
+    c.executionCtx.waitUntil((async () => {
       try {
-        const user = await db.collection('shortusers').findOne({ _id: link.userId })
-        if (!user) return
-        const earn = (user.ratePerThousand || 10) / 1000
-        await db.collection('shortusers').updateOne(
-          { _id: link.userId },
-          { $inc: { totalClicks: 1, totalEarnings: earn, unpaidEarnings: earn } }
-        )
-        await checkAndUnlockReferral(link.userId, db)
-        if (earn > 0) await creditCommissionToReferrer(link.userId, earn, db)
+        await withDb(mongoUri, dbName, 'shortener/earnings', async (db2) => {
+          const user = await db2.collection('shortusers').findOne({ _id: uid })
+          if (!user) return
+          const earn = (user.ratePerThousand || 10) / 1000
+          await db2.collection('shortusers').updateOne(
+            { _id: uid },
+            { $inc: { totalClicks: 1, totalEarnings: earn, unpaidEarnings: earn } }
+          )
+          await checkAndUnlockReferral(uid, db2)
+          if (earn > 0) await creditCommissionToReferrer(uid, earn, db2)
 
-        const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
-        const todayCount = await db.collection('shortclicks').countDocuments({ userId: link.userId, clickedAt: { $gte: todayStart } })
-        if (todayCount > 500) {
-          await db.collection('shortusers').updateOne({ _id: link.userId }, { $set: { flaggedForReview: true } })
-        }
+          const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
+          const todayCount = await db2.collection('shortclicks').countDocuments({ userId: uid, clickedAt: { $gte: todayStart } })
+          if (todayCount > 500) {
+            await db2.collection('shortusers').updateOne({ _id: uid }, { $set: { flaggedForReview: true } })
+          }
+        })
       } catch (e) {
         console.error('earnings update error:', e)
       }
-    })()
-    c.executionCtx.waitUntil(earningsPromise)
+    })())
   }
 
   return { credited: true }
@@ -227,30 +237,31 @@ async function creditClickForLink(link: any, c: any, db: any, opts: { skipDedup?
 shortenerRoutes.get('/admin/links', adminAuth, requirePermission('shortener'), async (c) => {
   try {
     const admin = c.get('admin')
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    let filter: any = {}
-    if (admin.role === 'subadmin') {
-      const ownUsers = await db
-        .collection('shortusers')
-        .find({ createdByAdminId: admin.id }, { projection: { _id: 1 } })
-        .toArray()
-      const ownUserIds = ownUsers.map((u: any) => u._id)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'shortener/admin/links-list', async (db) => {
+      let filter: any = {}
+      if (admin.role === 'subadmin') {
+        const ownUsers = await db
+          .collection('shortusers')
+          .find({ createdByAdminId: admin.id }, { projection: { _id: 1 } })
+          .toArray()
+        const ownUserIds = ownUsers.map((u: any) => u._id)
 
-      filter = {
-        $or: [
-          { createdByAdminId: admin.id },
-          { userId: { $in: ownUserIds } },
-        ],
+        filter = {
+          $or: [
+            { createdByAdminId: admin.id },
+            { userId: { $in: ownUserIds } },
+          ],
+        }
       }
-    }
 
-    const links = await db
-      .collection('shortlinks')
-      .find(filter)
-      .sort({ createdAt: -1 })
-      .toArray()
-    return c.json(links)
+      const links = await db
+        .collection('shortlinks')
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .toArray()
+      return c.json(links)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
@@ -266,27 +277,29 @@ shortenerRoutes.post('/admin/links', adminAuth, requirePermission('shortener'), 
     if (!/^[a-zA-Z0-9-_]+$/.test(code)) {
       return c.json({ error: 'Code can only contain letters, numbers, - and _' }, 400)
     }
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const existing = await db.collection('shortlinks').findOne({ code })
-    if (existing) {
-      return c.json({ error: `"${code}" already exists` }, 400)
-    }
 
     const admin = c.get('admin')
 
-    const newLink = {
-      code,
-      url,
-      label: label || code,
-      userId: userId ? new ObjectId(userId) : null,
-      clicks: 0,
-      createdByAdminId: admin.role === 'subadmin' ? admin.id : 'admin',
-      createdByAdminUsername: admin.username,
-      createdAt: new Date(),
-      lastClicked: null,
-    }
-    await db.collection('shortlinks').insertOne(newLink)
-    return c.json({ success: true, message: 'Link created!', link: newLink })
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'shortener/admin/links-create', async (db) => {
+      const existing = await db.collection('shortlinks').findOne({ code })
+      if (existing) {
+        return c.json({ error: `"${code}" already exists` }, 400)
+      }
+
+      const newLink = {
+        code,
+        url,
+        label: label || code,
+        userId: userId ? new ObjectId(userId) : null,
+        clicks: 0,
+        createdByAdminId: admin.role === 'subadmin' ? admin.id : 'admin',
+        createdByAdminUsername: admin.username,
+        createdAt: new Date(),
+        lastClicked: null,
+      }
+      await db.collection('shortlinks').insertOne(newLink)
+      return c.json({ success: true, message: 'Link created!', link: newLink })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
@@ -297,19 +310,20 @@ shortenerRoutes.put('/admin/links/:code', adminAuth, requirePermission('shortene
   try {
     const code = c.req.param('code')
     const { url, label, userId } = await c.req.json()
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-
     const admin = c.get('admin')
-    const existingLink = await db.collection('shortlinks').findOne({ code })
-    if (!existingLink) return c.json({ error: 'Link not found' }, 404)
-    if (!(await canManageShortLink(existingLink, admin, db))) {
-      return c.json({ error: 'You can only manage links you created.' }, 403)
-    }
 
-    const updateData: any = { url, label, updatedAt: new Date() }
-    if (userId) updateData.userId = new ObjectId(userId)
-    await db.collection('shortlinks').updateOne({ code }, { $set: updateData })
-    return c.json({ success: true, message: 'Link updated!' })
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'shortener/admin/links-update', async (db) => {
+      const existingLink = await db.collection('shortlinks').findOne({ code })
+      if (!existingLink) return c.json({ error: 'Link not found' }, 404)
+      if (!(await canManageShortLink(existingLink, admin, db))) {
+        return c.json({ error: 'You can only manage links you created.' }, 403)
+      }
+
+      const updateData: any = { url, label, updatedAt: new Date() }
+      if (userId) updateData.userId = new ObjectId(userId)
+      await db.collection('shortlinks').updateOne({ code }, { $set: updateData })
+      return c.json({ success: true, message: 'Link updated!' })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
@@ -319,17 +333,18 @@ shortenerRoutes.put('/admin/links/:code', adminAuth, requirePermission('shortene
 shortenerRoutes.delete('/admin/links/:code', adminAuth, requirePermission('shortener'), async (c) => {
   try {
     const code = c.req.param('code')
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-
     const admin = c.get('admin')
-    const link = await db.collection('shortlinks').findOne({ code })
-    if (!link) return c.json({ error: 'Link not found' }, 404)
-    if (!(await canManageShortLink(link, admin, db))) {
-      return c.json({ error: 'You can only manage links you created.' }, 403)
-    }
 
-    await db.collection('shortlinks').deleteOne({ code })
-    return c.json({ success: true, message: 'Link deleted!' })
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'shortener/admin/links-delete', async (db) => {
+      const link = await db.collection('shortlinks').findOne({ code })
+      if (!link) return c.json({ error: 'Link not found' }, 404)
+      if (!(await canManageShortLink(link, admin, db))) {
+        return c.json({ error: 'You can only manage links you created.' }, 403)
+      }
+
+      await db.collection('shortlinks').deleteOne({ code })
+      return c.json({ success: true, message: 'Link deleted!' })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
@@ -339,10 +354,12 @@ shortenerRoutes.delete('/admin/links/:code', adminAuth, requirePermission('short
 shortenerRoutes.get('/admin/links/:code/stats', adminAuth, async (c) => {
   try {
     const code = c.req.param('code')
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const link = await db.collection('shortlinks').findOne({ code })
-    if (!link) return c.json({ error: 'Link not found' }, 404)
-    return c.json(link)
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'shortener/admin/links-stats', async (db) => {
+      const link = await db.collection('shortlinks').findOne({ code })
+      if (!link) return c.json({ error: 'Link not found' }, 404)
+      return c.json(link)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
@@ -352,35 +369,36 @@ shortenerRoutes.get('/admin/links/:code/stats', adminAuth, async (c) => {
 shortenerRoutes.get('/debug-meta/:code', async (c) => {
   try {
     const code = c.req.param('code')
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const link = await db.collection('shortlinks').findOne({ code })
 
-    if (!link) return c.json({ error: 'Link not found' })
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'shortener/debug-meta', async (db) => {
+      const link = await db.collection('shortlinks').findOne({ code })
+      if (!link) return c.json({ error: 'Link not found' })
 
-    const apiBase = c.env.API_URL || 'https://animabing-backend.animabingwatch.workers.dev'
+      const apiBase = c.env.API_URL || 'https://animabing-backend.animabingwatch.workers.dev'
 
-    const match = link.url.match(/animebing\.in\/detail\/([^/?#]+)/)
-    const slug = match ? match[1] : null
+      const match = link.url.match(/animebing\.in\/detail\/([^/?#]+)/)
+      const slug = match ? match[1] : null
 
-    let apiResult = null
-    let apiError = null
-    try {
-      const res = await fetch(`${apiBase}/api/anime/${slug}`, {
-        headers: { Accept: 'application/json' },
+      let apiResult = null
+      let apiError = null
+      try {
+        const res = await fetch(`${apiBase}/api/anime/${slug}`, {
+          headers: { Accept: 'application/json' },
+        })
+        apiResult = await res.json()
+      } catch (e: any) {
+        apiError = e.message
+      }
+
+      return c.json({
+        link_url: link.url,
+        api_base: apiBase,
+        slug_extracted: slug,
+        api_url_called: `${apiBase}/api/anime/${slug}`,
+        api_result: apiResult,
+        api_error: apiError,
+        env_API_URL: c.env.API_URL,
       })
-      apiResult = await res.json()
-    } catch (e: any) {
-      apiError = e.message
-    }
-
-    return c.json({
-      link_url: link.url,
-      api_base: apiBase,
-      slug_extracted: slug,
-      api_url_called: `${apiBase}/api/anime/${slug}`,
-      api_result: apiResult,
-      api_error: apiError,
-      env_API_URL: c.env.API_URL,
     })
   } catch (err: any) {
     return c.json({ error: err.message })
@@ -392,7 +410,7 @@ shortenerRoutes.get('/dashboard', (c) => {
   return c.redirect('https://animebing.in/dashboard', 302)
 })
 
-// ============ MONTHLY CLICKS PER LINK (for month-wise view) ============
+// ============ MONTHLY CLICKS PER LINK ============
 shortenerRoutes.get('/admin/links/monthly-clicks', adminAuth, requirePermission('shortener'), async (c) => {
   try {
     const month = parseInt(c.req.query('month') || '')
@@ -403,114 +421,102 @@ shortenerRoutes.get('/admin/links/monthly-clicks', adminAuth, requirePermission(
 
     const start = new Date(year, month - 1, 1)
     const end = new Date(year, month, 1)
-
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
     const admin = c.get('admin')
 
-    const linkFilter: any = {}
-    if (admin.role === 'subadmin') linkFilter.createdByAdminId = admin.id
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'shortener/admin/monthly-clicks', async (db) => {
+      const linkFilter: any = {}
+      if (admin.role === 'subadmin') linkFilter.createdByAdminId = admin.id
 
-    const allowedLinks = await db.collection('shortlinks')
-      .find(linkFilter, { projection: { code: 1 } })
-      .toArray()
-    const allowedCodes = allowedLinks.map((l: any) => l.code).filter(Boolean)
+      const allowedLinks = await db.collection('shortlinks')
+        .find(linkFilter, { projection: { code: 1 } })
+        .toArray()
+      const allowedCodes = allowedLinks.map((l: any) => l.code).filter(Boolean)
 
-    const results = await db.collection('shortclicks').aggregate([
-      { $match: { code: { $in: allowedCodes }, clickedAt: { $gte: start, $lt: end } } },
-      { $group: { _id: '$code', clicks: { $sum: 1 } } }
-    ]).toArray()
+      const results = await db.collection('shortclicks').aggregate([
+        { $match: { code: { $in: allowedCodes }, clickedAt: { $gte: start, $lt: end } } },
+        { $group: { _id: '$code', clicks: { $sum: 1 } } }
+      ]).toArray()
 
-    const data: Record<string, number> = {}
-    results.forEach((r: any) => { data[r._id] = r.clicks })
+      const data: Record<string, number> = {}
+      results.forEach((r: any) => { data[r._id] = r.clicks })
 
-    return c.json({ success: true, month, year, data })
+      return c.json({ success: true, month, year, data })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
 // ============================================================================
-// ✅ REDIRECT — LAST — highest-traffic route in this file (every shortlink
-// click). Pehle isme requireFullCycle path pe: apna db(1) + fetchAnimeMeta
-// (bot path, +1) + getEffectiveClickSettings (+1, apna alag connection) +
-// createClickSession (+1, apna alag connection) = kul 4 connections per click.
-// Ab fetchAnimeMeta, getEffectiveClickSettings sab ek hi `db` reuse karte
-// hain. createClickSession abhi bhi apna khud ka connection kholta hai
-// (uska internal fix pehle hi ho chuka hai — ab wo khud sirf 1 connection
-// use karta hai), isliye total worst-case ab 2 connections hai (route ka
-// apna + createClickSession ka apna), jo pehle ke 4 se bahut behtar hai.
-// isForceLink5ModeActive (specialModeRoutes.ts) abhi bhi apna alag connection
-// khol sakta hai — us file ke bina wo fix nahi ho sakta.
+// ✅ REDIRECT — highest-traffic route
+// Ab sab kuch ek hi withDb ke andar (db pass hota hai services ko).
+// Sirf creditClickForLink ka background earnings part apni alag withDb use karta hai.
 // ============================================================================
 shortenerRoutes.get('/:code', async (c) => {
   try {
     const code = c.req.param('code')
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const link = await db.collection('shortlinks').findOne({ code })
 
-    if (!link) {
-      return c.html(
-        `<!DOCTYPE html><html><head><title>404</title>
-        <style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#0f172a;color:white;}
-        .box{text-align:center;padding:2rem;}h2{color:#f87171;}a{color:#818cf8;}</style></head>
-        <body><div class="box"><h2>404 — Link not found</h2><p>This short link does not exist.</p>
-        <a href="https://animebing.in">← Go to Animebing.in</a></div></body></html>`,
-        404
-      )
-    }
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'shortener/redirect', async (db) => {
+      const link = await db.collection('shortlinks').findOne({ code })
 
-    const userAgent = c.req.header('User-Agent') || ''
+      if (!link) {
+        return c.html(
+          `<!DOCTYPE html><html><head><title>404</title>
+          <style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#0f172a;color:white;}
+          .box{text-align:center;padding:2rem;}h2{color:#f87171;}a{color:#818cf8;}</style></head>
+          <body><div class="box"><h2>404 — Link not found</h2><p>This short link does not exist.</p>
+          <a href="https://animebing.in">← Go to Animebing.in</a></div></body></html>`,
+          404
+        )
+      }
 
-    // ============ BOT: Meta HTML serve karo ============
-    if (isBot(userAgent)) {
-      const meta = await fetchAnimeMeta(link.url, c.env, db) // ✅ db pass kiya
+      const userAgent = c.req.header('User-Agent') || ''
 
-      const canonicalUrl = meta ? `https://animebing.in/detail/${meta.slug}` : link.url
+      // BOT
+      if (isBot(userAgent)) {
+        const meta = await fetchAnimeMeta(link.url, c.env, db)
+        const canonicalUrl = meta ? `https://animebing.in/detail/${meta.slug}` : link.url
+        const title = meta?.title || link.label || code
+        const description = meta?.description || `Visit ${link.url}`
+        const image = meta?.image || 'https://animebing.in/AnimeBinglogo.jpg'
 
-      const title = meta?.title || link.label || code
-      const description = meta?.description || `Visit ${link.url}`
-      const image = meta?.image || 'https://animebing.in/AnimeBinglogo.jpg'
+        return c.html(
+          buildMetaHTML({
+            title, description, image, canonicalUrl,
+            shortUrl: `https://go.animebing.in/${code}`,
+            redirectUrl: link.url,
+            code,
+          }),
+          200
+        )
+      }
 
-      return c.html(
-        buildMetaHTML({
-          title,
-          description,
-          image,
-          canonicalUrl,
-          shortUrl: `https://go.animebing.in/${code}`,
-          redirectUrl: link.url,
-          code,
-        }),
-        200
-      )
-    }
-
-    // ============ REAL USER ============
-    const specialModeActive = await isForceLink5ModeActive(c.env.MONGODB_URI, c.env.MONGODB_DB, db) // ✅ db pass kiya
-    if (specialModeActive) {
-      return c.redirect(link.url, 302)
-    }
-
-    const settings = await getEffectiveClickSettings(link.userId || null, c.env.MONGODB_URI, c.env.MONGODB_DB, db) // ✅ db pass kiya
-
-    if (settings.requireFullCycle) {
-      const ip = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || 'unknown'
-      const token = await createClickSession(
-        code, link._id, link.userId || null, ip, userAgent,
-        c.env.JWT_SECRET, c.env.MONGODB_URI, c.env.MONGODB_DB
-      )
-
-      if (!token) {
+      // REAL USER
+      const specialModeActive = await isForceLink5ModeActive(c.env.MONGODB_URI, c.env.MONGODB_DB, db)
+      if (specialModeActive) {
         return c.redirect(link.url, 302)
       }
 
-      const redirectUrl = new URL(link.url)
-      redirectUrl.searchParams.set('cs', token)
-      return c.redirect(redirectUrl.toString(), 302)
-    }
+      const settings = await getEffectiveClickSettings(db, link.userId || null)
 
-    await creditClickForLink(link, c, db)
-    return c.redirect(link.url, 302)
+      if (settings.requireFullCycle) {
+        const ip = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || 'unknown'
+        const token = await createClickSession(
+          db, code, link._id, link.userId || null, ip, userAgent, c.env.JWT_SECRET
+        )
+
+        if (!token) {
+          return c.redirect(link.url, 302)
+        }
+
+        const redirectUrl = new URL(link.url)
+        redirectUrl.searchParams.set('cs', token)
+        return c.redirect(redirectUrl.toString(), 302)
+      }
+
+      await creditClickForLink(link, c, db, c.env.MONGODB_URI, c.env.MONGODB_DB)
+      return c.redirect(link.url, 302)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
@@ -527,7 +533,10 @@ shortenerRoutes.post('/click/advance', async (c) => {
     const { token, animeId } = await c.req.json()
     if (!token) return c.json({ error: 'token required' }, 400)
     const ip = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || 'unknown'
-    const ok = await advanceClickSession(token, animeId, ip, c.env.JWT_SECRET, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const ok = await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'shortener/click-advance', (db) =>
+      advanceClickSession(db, token, animeId, ip, c.env.JWT_SECRET)
+    )
     return c.json({ success: ok })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -545,15 +554,18 @@ shortenerRoutes.post('/click/complete', async (c) => {
     const { token, animeId } = await c.req.json()
     if (!token) return c.json({ error: 'token required' }, 400)
 
-    const result = await completeClickSession(token, animeId, c.env.JWT_SECRET, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    if (!result.success) return c.json({ success: false, error: result.error }, 400)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'shortener/click-complete', async (db) => {
+      const result = await completeClickSession(db, token, animeId, c.env.JWT_SECRET)
+      if (!result.success) return c.json({ success: false, error: result.error }, 400)
 
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    if (result.linkId) {
-      const link = await db.collection('shortlinks').findOne({ _id: result.linkId })
-      if (link) await creditClickForLink(link, c, db, { skipDedup: true })
-    }
-    return c.json({ success: true })
+      if (result.linkId) {
+        const link = await db.collection('shortlinks').findOne({ _id: result.linkId })
+        if (link) {
+          await creditClickForLink(link, c, db, c.env.MONGODB_URI, c.env.MONGODB_DB, { skipDedup: true })
+        }
+      }
+      return c.json({ success: true })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
@@ -562,7 +574,9 @@ shortenerRoutes.post('/click/complete', async (c) => {
 // ============ ADMIN — TOGGLE SETTINGS ============
 shortenerRoutes.get('/admin/click-settings', adminAuth, requirePermission('shortener'), async (c) => {
   try {
-    const settings = await getClickSettings(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const settings = await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'shortener/admin/click-settings-get', (db) =>
+      getClickSettings(db)
+    )
     return c.json({ success: true, data: settings })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -576,14 +590,16 @@ shortenerRoutes.put('/admin/click-settings', adminAuth, requirePermission('short
     if (requireFullCycle !== undefined) updateData.requireFullCycle = !!requireFullCycle
     if (sessionExpiryMinutes !== undefined) updateData.sessionExpiryMinutes = Math.max(5, parseInt(sessionExpiryMinutes) || 45)
     if (minDwellSeconds !== undefined) updateData.minDwellSeconds = Math.max(1, parseInt(minDwellSeconds) || 3)
-    const settings = await updateClickSettings(updateData, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const settings = await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'shortener/admin/click-settings-put', (db) =>
+      updateClickSettings(db, updateData)
+    )
     return c.json({ success: true, data: settings })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// ============ ADMIN — PER-USER FULL-CYCLE OVERRIDE (single ya multiple) ============
 shortenerRoutes.put('/admin/users/click-verification', adminAuth, requirePermission('shortener'), async (c) => {
   try {
     const { userIds, value } = await c.req.json()
@@ -593,38 +609,44 @@ shortenerRoutes.put('/admin/users/click-verification', adminAuth, requirePermiss
     if (value !== true && value !== false && value !== null) {
       return c.json({ error: 'value must be true, false, or null' }, 400)
     }
-    const result = await updateUsersFullCycleOverride(userIds, value, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    const result = await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'shortener/admin/users-click-verification', (db) =>
+      updateUsersFullCycleOverride(db, userIds, value)
+    )
     return c.json({ success: true, modifiedCount: result.modifiedCount })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// ============ GET EFFECTIVE SETTING FOR A SINGLE USER (UI ke liye) ============
 shortenerRoutes.get('/admin/users/:userId/click-verification', adminAuth, requirePermission('shortener'), async (c) => {
   try {
     const userId = c.req.param('userId')
     if (!userId || !ObjectId.isValid(userId)) return c.json({ error: 'Invalid userId' }, 400)
 
-    const effective = await getEffectiveClickSettings(new ObjectId(userId), c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const effective = await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'shortener/admin/users-click-verification-get', (db) =>
+      getEffectiveClickSettings(db, new ObjectId(userId))
+    )
     return c.json({ success: true, data: effective })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// ============ ADMIN — FUNNEL ANALYTICS (7-day conversion) ============
+// ============ ADMIN — FUNNEL ANALYTICS ============
 shortenerRoutes.get('/admin/click-funnel-stats', adminAuth, requirePermission('shortener'), async (c) => {
   try {
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-    const stats = await db.collection('clicksessions').aggregate([
-      { $match: { createdAt: { $gte: since } } },
-      { $group: { _id: '$stage', count: { $sum: 1 } } }
-    ]).toArray()
-    const ipMismatchCount = await db.collection('clicksessions').countDocuments({ ipMismatch: true, createdAt: { $gte: since } })
-    const flaggedUsers = await db.collection('shortusers').countDocuments({ flaggedForReview: true })
-    return c.json({ success: true, stats, ipMismatchCount, flaggedUsers })
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'shortener/admin/funnel-stats', async (db) => {
+      const stats = await db.collection('clicksessions').aggregate([
+        { $match: { createdAt: { $gte: since } } },
+        { $group: { _id: '$stage', count: { $sum: 1 } } }
+      ]).toArray()
+      const ipMismatchCount = await db.collection('clicksessions').countDocuments({ ipMismatch: true, createdAt: { $gte: since } })
+      const flaggedUsers = await db.collection('shortusers').countDocuments({ flaggedForReview: true })
+      return c.json({ success: true, stats, ipMismatchCount, flaggedUsers })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }

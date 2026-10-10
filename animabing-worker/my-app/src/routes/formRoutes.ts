@@ -1,13 +1,11 @@
- // src/routes/formRoutes.ts
-// Google-Forms-jaisa custom form builder: create form → public link se fill → admin responses dekhe
+// src/routes/formRoutes.ts
+// Google-Forms-jaisa custom form builder
 
 import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
 import {
-  findMany, findOne, insertOne, updateOne,
-  deleteOne, deleteMany, countDocuments,
-  toObjectId, isValidObjectId, getDb
+  toObjectId, isValidObjectId, withDb
 } from '../services/mongoService'
 import { IForm, IFormField, IFormSubmission, IFormAnswer } from '../models/types'
 
@@ -48,29 +46,40 @@ function sanitizeFields(rawFields: any[]): IFormField[] {
 // ============================================================
 
 // list all forms
+// ✅ FIX: findMany helper → single withDb
 formRoutes.get('/admin/list', adminAuth, async (c) => {
   try {
-    const forms = await findMany<IForm>('forms', {}, { sort: { createdAt: -1 } }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    return c.json({ success: true, forms })
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'forms/admin/list', async (db) => {
+      const forms = await db.collection('forms')
+        .find({})
+        .sort({ createdAt: -1 })
+        .toArray()
+      return c.json({ success: true, forms })
+    })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
   }
 })
 
-// get one form (with fields) for editing
+// get one form
+// ✅ FIX: findOne helper → single withDb
 formRoutes.get('/admin/:id', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
-    const form = await findOne<IForm>('forms', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    if (!form) return c.json({ error: 'Form not found' }, 404)
-    return c.json({ success: true, form })
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'forms/admin/get', async (db) => {
+      const form = await db.collection('forms').findOne({ _id: toObjectId(id) })
+      if (!form) return c.json({ error: 'Form not found' }, 404)
+      return c.json({ success: true, form })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
 // create form
+// ✅ FIX: findOne + insertOne helpers (2 connections) → 1 withDb
 formRoutes.post('/admin/create', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
@@ -80,30 +89,39 @@ formRoutes.post('/admin/create', adminAuth, async (c) => {
 
     let slug = (providedSlug && providedSlug.trim()) ? slugify(providedSlug) : slugify(title)
     if (!slug) slug = `form-${Date.now()}`
-    const slugExists = await findOne<IForm>('forms', { slug }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    if (slugExists) slug = `${slug}-${Date.now()}`
 
-    const form: IForm = {
-      title: title.trim(),
-      description: description ? String(description).trim() : '',
-      slug,
-      fields: sanitizeFields(fields),
-      isActive: isActive !== false,
-      submissionCount: 0,
-      createdBy: admin.role === 'subadmin' ? admin.id : 'admin',
-      createdByUsername: admin.username,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    }
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'forms/admin/create', async (db) => {
+      const slugExists = await db.collection('forms').findOne({ slug })
+      if (slugExists) slug = `${slug}-${Date.now()}`
 
-    const inserted = await insertOne('forms', form, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    return c.json({ success: true, message: 'Form created!', form: inserted })
+      const form: IForm = {
+        title: title.trim(),
+        description: description ? String(description).trim() : '',
+        slug,
+        fields: sanitizeFields(fields),
+        isActive: isActive !== false,
+        submissionCount: 0,
+        createdBy: admin.role === 'subadmin' ? admin.id : 'admin',
+        createdByUsername: admin.username,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+
+      // Match `insertOne` helper behavior: spread + force createdAt/updatedAt
+      const result = await db.collection('forms').insertOne({
+        ...form,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      })
+      return c.json({ success: true, message: 'Form created!', form: result })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
 // update form (title/description/fields/isActive/slug)
+// ✅ FIX: findOne + updateOne helpers → 1 withDb
 formRoutes.put('/admin/:id', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
@@ -116,102 +134,142 @@ formRoutes.put('/admin/:id', adminAuth, async (c) => {
     if (Array.isArray(body.fields)) updateData.fields = sanitizeFields(body.fields)
     if (typeof body.isActive === 'boolean') updateData.isActive = body.isActive
 
-    if (typeof body.slug === 'string' && body.slug.trim()) {
-      const newSlug = slugify(body.slug)
-      const existing = await findOne<IForm>('forms', { slug: newSlug }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-      if (existing && existing._id?.toString() !== id) {
-        return c.json({ error: 'Slug already in use by another form' }, 400)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'forms/admin/update', async (db) => {
+      if (typeof body.slug === 'string' && body.slug.trim()) {
+        const newSlug = slugify(body.slug)
+        const existing = await db.collection('forms').findOne({ slug: newSlug })
+        if (existing && existing._id?.toString() !== id) {
+          return c.json({ error: 'Slug already in use by another form' }, 400)
+        }
+        updateData.slug = newSlug
       }
-      updateData.slug = newSlug
-    }
 
-    const form = await updateOne('forms', { _id: toObjectId(id) }, updateData, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    if (!form) return c.json({ error: 'Form not found' }, 404)
-    return c.json({ success: true, message: 'Form updated!', form })
+      // Match `updateOne` helper behavior: $set + force updatedAt
+      const form = await db.collection('forms').findOneAndUpdate(
+        { _id: toObjectId(id) },
+        { $set: { ...updateData, updatedAt: new Date() } },
+        { returnDocument: 'after' }
+      )
+      if (!form) return c.json({ error: 'Form not found' }, 404)
+      return c.json({ success: true, message: 'Form updated!', form })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
 // toggle active
+// ✅ FIX: findOne + updateOne helpers → 1 withDb
 formRoutes.patch('/admin/:id/toggle-active', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
-    const form = await findOne<IForm>('forms', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    if (!form) return c.json({ error: 'Form not found' }, 404)
-    const newActive = !form.isActive
-    await updateOne('forms', { _id: toObjectId(id) }, { isActive: newActive, updatedAt: new Date() }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    return c.json({ success: true, isActive: newActive })
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'forms/admin/toggle-active', async (db) => {
+      const form = await db.collection('forms').findOne({ _id: toObjectId(id) })
+      if (!form) return c.json({ error: 'Form not found' }, 404)
+
+      const newActive = !form.isActive
+      await db.collection('forms').findOneAndUpdate(
+        { _id: toObjectId(id) },
+        { $set: { isActive: newActive, updatedAt: new Date() } },
+        { returnDocument: 'after' }
+      )
+      return c.json({ success: true, isActive: newActive })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
 // delete form + its submissions
+// ✅ FIX: deleteOne + deleteMany helpers → 1 withDb
 formRoutes.delete('/admin/:id', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
-    await deleteOne('forms', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    await deleteMany('formsubmissions', { formId: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    return c.json({ success: true, message: 'Form and its responses deleted!' })
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'forms/admin/delete', async (db) => {
+      await db.collection('forms').deleteOne({ _id: toObjectId(id) })
+      await db.collection('formsubmissions').deleteMany({ formId: toObjectId(id) })
+      return c.json({ success: true, message: 'Form and its responses deleted!' })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// list submissions for a form (Google Forms "Responses" tab jaisa)
+// list submissions for a form
+// ✅ FIX: getDb + countDocuments helper (2 connections) → 1 withDb
 formRoutes.get('/admin/:id/submissions', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const submissions = await db.collection('formsubmissions')
-      .find({ formId: toObjectId(id) })
-      .sort({ submittedAt: -1 })
-      .toArray()
-    const total = await countDocuments('formsubmissions', { formId: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    return c.json({ success: true, submissions, total })
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'forms/admin/submissions', async (db) => {
+      const submissions = await db.collection('formsubmissions')
+        .find({ formId: toObjectId(id) })
+        .sort({ submittedAt: -1 })
+        .toArray()
+      const total = await db.collection('formsubmissions')
+        .countDocuments({ formId: toObjectId(id) })
+      return c.json({ success: true, submissions, total })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
 // delete a single submission
+// ✅ FIX: deleteOne + countDocuments + updateOne helpers → 1 withDb
 formRoutes.delete('/admin/:id/submissions/:subId', adminAuth, async (c) => {
   try {
     const { id, subId } = c.req.param()
     if (!isValidObjectId(id) || !isValidObjectId(subId)) return c.json({ error: 'Invalid ID' }, 400)
-    await deleteOne('formsubmissions', { _id: toObjectId(subId), formId: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const currentCount = await countDocuments('formsubmissions', { formId: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    await updateOne('forms', { _id: toObjectId(id) }, { submissionCount: currentCount }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    return c.json({ success: true, message: 'Response deleted' })
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'forms/admin/submission-delete', async (db) => {
+      await db.collection('formsubmissions').deleteOne({
+        _id: toObjectId(subId),
+        formId: toObjectId(id)
+      })
+      const currentCount = await db.collection('formsubmissions')
+        .countDocuments({ formId: toObjectId(id) })
+      await db.collection('forms').findOneAndUpdate(
+        { _id: toObjectId(id) },
+        { $set: { submissionCount: currentCount, updatedAt: new Date() } },
+        { returnDocument: 'after' }
+      )
+      return c.json({ success: true, message: 'Response deleted' })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
 // ============================================================
-// ============ PUBLIC ROUTES (no auth — form fill karne ke liye) ============
+// ============ PUBLIC ROUTES (no auth) ============
 // ============================================================
 
-// get form structure by slug (to render the fill-form page)
+// get form structure by slug
+// ✅ FIX: findOne helper → single withDb
 formRoutes.get('/public/:slug', async (c) => {
   try {
     const slug = c.req.param('slug')
-    const form = await findOne<IForm>('forms', { slug }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    if (!form) return c.json({ error: 'Form not found' }, 404)
-    if (form.isActive === false) return c.json({ error: 'This form is currently closed' }, 403)
-    // password/internal fields expose mat karo, sirf jo public ko chahiye
-    return c.json({
-      success: true,
-      form: {
-        _id: form._id,
-        title: form.title,
-        description: form.description,
-        fields: form.fields
-      }
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'forms/public/get', async (db) => {
+      const form = await db.collection('forms').findOne({ slug }) as IForm | null
+      if (!form) return c.json({ error: 'Form not found' }, 404)
+      if (form.isActive === false) return c.json({ error: 'This form is currently closed' }, 403)
+
+      return c.json({
+        success: true,
+        form: {
+          _id: form._id,
+          title: form.title,
+          description: form.description,
+          fields: form.fields
+        }
+      })
     })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -219,43 +277,56 @@ formRoutes.get('/public/:slug', async (c) => {
 })
 
 // submit a response
+// ✅ FIX: findOne + insertOne + updateOne helpers (3 connections) → 1 withDb
 formRoutes.post('/public/:slug/submit', async (c) => {
   try {
     const slug = c.req.param('slug')
-    const form = await findOne<IForm>('forms', { slug }, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    if (!form) return c.json({ error: 'Form not found' }, 404)
-    if (form.isActive === false) return c.json({ error: 'This form is currently closed' }, 403)
-
     const body = await c.req.json()
-    const rawAnswers = body.answers || {}   // { [fieldId]: value }
+    const rawAnswers = body.answers || {}
 
-    // required-field validation + label snapshot
-    const answers: IFormAnswer[] = []
-    for (const field of form.fields) {
-      const val = rawAnswers[field.id]
-      const isEmpty = val === undefined || val === null || val === '' ||
-        (Array.isArray(val) && val.length === 0)
-      if (field.required && isEmpty) {
-        return c.json({ error: `"${field.label}" is required` }, 400)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'forms/public/submit', async (db) => {
+      const form = await db.collection('forms').findOne({ slug }) as IForm | null
+      if (!form) return c.json({ error: 'Form not found' }, 404)
+      if (form.isActive === false) return c.json({ error: 'This form is currently closed' }, 403)
+
+      // required-field validation + label snapshot
+      const answers: IFormAnswer[] = []
+      for (const field of form.fields) {
+        const val = rawAnswers[field.id]
+        const isEmpty = val === undefined || val === null || val === '' ||
+          (Array.isArray(val) && val.length === 0)
+        if (field.required && isEmpty) {
+          return c.json({ error: `"${field.label}" is required` }, 400)
+        }
+        if (!isEmpty) {
+          answers.push({ fieldId: field.id, label: field.label, value: val })
+        }
       }
-      if (!isEmpty) {
-        answers.push({ fieldId: field.id, label: field.label, value: val })
+
+      const submission: IFormSubmission = {
+        formId: form._id!,
+        answers,
+        ip: c.req.header('CF-Connecting-IP') || c.req.header('x-forwarded-for') || 'unknown',
+        userAgent: c.req.header('User-Agent') || '',
+        submittedAt: new Date()
       }
-    }
 
-    const submission: IFormSubmission = {
-      formId: form._id!,
-      answers,
-      ip: c.req.header('CF-Connecting-IP') || c.req.header('x-forwarded-for') || 'unknown',
-      userAgent: c.req.header('User-Agent') || '',
-      submittedAt: new Date()
-    }
+      // Match `insertOne` helper behavior
+      await db.collection('formsubmissions').insertOne({
+        ...submission,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      })
 
-    await insertOne('formsubmissions', submission, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const newCount = (form.submissionCount || 0) + 1
-    await updateOne('forms', { _id: form._id }, { submissionCount: newCount }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+      const newCount = (form.submissionCount || 0) + 1
+      await db.collection('forms').findOneAndUpdate(
+        { _id: form._id },
+        { $set: { submissionCount: newCount, updatedAt: new Date() } },
+        { returnDocument: 'after' }
+      )
 
-    return c.json({ success: true, message: 'Response submitted!' })
+      return c.json({ success: true, message: 'Response submitted!' })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }

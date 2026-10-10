@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { Env, Variables } from '../index'
-import { getDb } from '../services/mongoService'
+import { withDb } from '../services/mongoService'
 import { ObjectId } from 'mongodb'
 
 const referralRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
@@ -54,9 +54,9 @@ const adminAuth = async (c: any, next: any) => {
 }
 
 // ============ REWARD CONSTANTS ============
-const REFERRER_REWARD = 40   // ₹40 to referrer
-const REFERRED_REWARD = 25   // ₹25 to new user
-const COMMISSION_PERCENT = 5 // 5% lifetime commission on referred user's earnings
+const REFERRER_REWARD = 40
+const REFERRED_REWARD = 25
+const COMMISSION_PERCENT = 5
 const UNLOCK_CLICK_THRESHOLD = 1000
 
 // ============ GENERATE UNIQUE REFERRAL CODE ============
@@ -67,27 +67,23 @@ function generateCode(username: string): string {
 }
 
 // ============ UNLOCK HELPER FUNCTION ============
-// Yeh function shortenerRoutes.ts se bhi call hoga
 export async function checkAndUnlockReferral(
   referredUserId: ObjectId,
   db: any
 ): Promise<void> {
   try {
-    // Check karo koi pending referral hai is user ke liye
     const referral = await db.collection('shortreferrals').findOne({
       referredId: referredUserId,
       status: 'pending'
     })
     if (!referral) return
 
-    // Referred user ke current clicks fetch karo
     const referredUser = await db.collection('shortusers').findOne({ _id: referredUserId })
     if (!referredUser) return
 
     const currentClicks = referredUser.totalClicks || 0
     if (currentClicks < UNLOCK_CLICK_THRESHOLD) return
 
-    // ✅ 1000 clicks ho gaye — UNLOCK karo
     await db.collection('shortreferrals').updateOne(
       { _id: referral._id },
       {
@@ -100,7 +96,6 @@ export async function checkAndUnlockReferral(
       }
     )
 
-    // ✅ Referrer ko ₹40 do
     await db.collection('shortusers').updateOne(
       { _id: referral.referrerId },
       {
@@ -111,7 +106,6 @@ export async function checkAndUnlockReferral(
       }
     )
 
-    // ✅ Referred user ko ₹25 do
     await db.collection('shortusers').updateOne(
       { _id: referredUserId },
       {
@@ -122,7 +116,6 @@ export async function checkAndUnlockReferral(
       }
     )
 
-    // ✅ Referrer ko notification message
     await db.collection('shortmessages').insertOne({
       userId: referral.referrerId,
       username: referral.referrerUsername,
@@ -134,7 +127,6 @@ export async function checkAndUnlockReferral(
       createdAt: new Date()
     })
 
-    // ✅ Referred user ko notification message
     await db.collection('shortmessages').insertOne({
       userId: referredUserId,
       username: referredUser.username,
@@ -152,14 +144,12 @@ export async function checkAndUnlockReferral(
 }
 
 // ============ COMMISSION CREDIT HELPER ============
-// Jab bhi referred user earnings kare, referrer ka 5% commission update karo
 export async function creditCommissionToReferrer(
   referredUserId: ObjectId,
   newEarnings: number,
   db: any
 ): Promise<void> {
   try {
-    // Check karo koi unlocked referral hai is user ke liye
     const referral = await db.collection('shortreferrals').findOne({
       referredId: referredUserId,
       status: 'unlocked'
@@ -169,7 +159,6 @@ export async function creditCommissionToReferrer(
     const commission = (newEarnings * COMMISSION_PERCENT) / 100
     if (commission <= 0) return
 
-    // Commission referrer ke earnings mein add karo
     await db.collection('shortusers').updateOne(
       { _id: referral.referrerId },
       {
@@ -181,7 +170,6 @@ export async function creditCommissionToReferrer(
       }
     )
 
-    // Commission record track karo
     await db.collection('shortcommissions').insertOne({
       referralId: referral._id,
       referrerId: referral.referrerId,
@@ -200,62 +188,66 @@ export async function creditCommissionToReferrer(
 }
 
 // ============ GET MY REFERRAL INFO ============
+// ✅ FIX: getDb → withDb
 referralRoutes.get('/my-code', userAuth, async (c) => {
   try {
     const { id } = c.get('shortUser')
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    const user = await db.collection('shortusers').findOne({ _id: new ObjectId(id) })
-    if (!user) return c.json({ error: 'User not found' }, 404)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'referral/my-code', async (db) => {
+      const user = await db.collection('shortusers').findOne({ _id: new ObjectId(id) })
+      if (!user) return c.json({ error: 'User not found' }, 404)
 
-    let referralCode = (user as any).referralCode
+      let referralCode = (user as any).referralCode
 
-    if (!referralCode) {
-      let attempts = 0
-      while (attempts < 5) {
-        const candidate = generateCode(user.username)
-        const exists = await db.collection('shortusers').findOne({ referralCode: candidate })
-        if (!exists) {
-          referralCode = candidate
-          await db.collection('shortusers').updateOne(
-            { _id: new ObjectId(id) },
-            { $set: { referralCode: candidate } }
-          )
-          break
+      if (!referralCode) {
+        let attempts = 0
+        while (attempts < 5) {
+          const candidate = generateCode(user.username)
+          const exists = await db.collection('shortusers').findOne({ referralCode: candidate })
+          if (!exists) {
+            referralCode = candidate
+            await db.collection('shortusers').updateOne(
+              { _id: new ObjectId(id) },
+              { $set: { referralCode: candidate } }
+            )
+            break
+          }
+          attempts++
         }
-        attempts++
       }
-    }
 
-    return c.json({
-      referralCode,
-      referralLink: `https://animebing.in/dashboard?ref=${referralCode}`,
-      rewards: {
-        referrerReward: REFERRER_REWARD,
-        referredReward: REFERRED_REWARD,
-        commissionPercent: COMMISSION_PERCENT,
-        unlockThreshold: UNLOCK_CLICK_THRESHOLD
-      }
+      return c.json({
+        referralCode,
+        referralLink: `https://animebing.in/dashboard?ref=${referralCode}`,
+        rewards: {
+          referrerReward: REFERRER_REWARD,
+          referredReward: REFERRED_REWARD,
+          commissionPercent: COMMISSION_PERCENT,
+          unlockThreshold: UNLOCK_CLICK_THRESHOLD
+        }
+      })
     })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// ============ VALIDATE REFERRAL CODE (used at registration) ============
+// ============ VALIDATE REFERRAL CODE ============
+// ✅ FIX: getDb → withDb
 referralRoutes.get('/validate/:code', async (c) => {
   try {
     const code = c.req.param('code').toUpperCase().trim()
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    const referrer = await db.collection('shortusers').findOne({ referralCode: code })
-    if (!referrer || !referrer.isActive) {
-      return c.json({ valid: false, error: 'Invalid or inactive referral code' })
-    }
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'referral/validate', async (db) => {
+      const referrer = await db.collection('shortusers').findOne({ referralCode: code })
+      if (!referrer || !referrer.isActive) {
+        return c.json({ valid: false, error: 'Invalid or inactive referral code' })
+      }
 
-    return c.json({
-      valid: true,
-      referrerName: referrer.realName
+      return c.json({
+        valid: true,
+        referrerName: referrer.realName
+      })
     })
   } catch (err: any) {
     return c.json({ valid: false, error: err.message })
@@ -263,78 +255,78 @@ referralRoutes.get('/validate/:code', async (c) => {
 })
 
 // ============ MY REFERRAL STATS & LIST ============
+// ✅ FIX: getDb → withDb
 referralRoutes.get('/my-referrals', userAuth, async (c) => {
   try {
     const { id } = c.get('shortUser')
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    const referrals = await db.collection('shortreferrals')
-      .find({ referrerId: new ObjectId(id) })
-      .sort({ createdAt: -1 })
-      .toArray()
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'referral/my-referrals', async (db) => {
+      const referrals = await db.collection('shortreferrals')
+        .find({ referrerId: new ObjectId(id) })
+        .sort({ createdAt: -1 })
+        .toArray()
 
-    const referredIds = referrals.map((r: any) => r.referredId)
-    const referredUsers = await db.collection('shortusers')
-      .find({ _id: { $in: referredIds } })
-      .project({ _id: 1, totalClicks: 1, realName: 1, username: 1, createdAt: 1, isActive: 1, totalEarnings: 1 })
-      .toArray()
+      const referredIds = referrals.map((r: any) => r.referredId)
+      const referredUsers = await db.collection('shortusers')
+        .find({ _id: { $in: referredIds } })
+        .project({ _id: 1, totalClicks: 1, realName: 1, username: 1, createdAt: 1, isActive: 1, totalEarnings: 1 })
+        .toArray()
 
-    const userMap: Record<string, any> = {}
-    referredUsers.forEach((u: any) => { userMap[u._id.toString()] = u })
+      const userMap: Record<string, any> = {}
+      referredUsers.forEach((u: any) => { userMap[u._id.toString()] = u })
 
-    const list = referrals.map((r: any) => {
-      const u = userMap[r.referredId.toString()]
-      const currentClicks = u?.totalClicks || 0
-      const remaining = Math.max(0, UNLOCK_CLICK_THRESHOLD - currentClicks)
-      return {
-        _id: r._id,
-        referredUsername: r.referredUsername,
-        referredRealName: u?.realName || r.referredUsername,
-        status: r.status,
-        referrerReward: r.referrerReward,
-        currentClicks,
-        unlockThreshold: UNLOCK_CLICK_THRESHOLD,
-        clicksRemaining: remaining,
-        progressPercent: Math.min(100, Math.round((currentClicks / UNLOCK_CLICK_THRESHOLD) * 100)),
-        joinedAt: r.createdAt,
-        unlockedAt: r.unlockedAt || null,
-        isActive: u?.isActive ?? true
+      const list = referrals.map((r: any) => {
+        const u = userMap[r.referredId.toString()]
+        const currentClicks = u?.totalClicks || 0
+        const remaining = Math.max(0, UNLOCK_CLICK_THRESHOLD - currentClicks)
+        return {
+          _id: r._id,
+          referredUsername: r.referredUsername,
+          referredRealName: u?.realName || r.referredUsername,
+          status: r.status,
+          referrerReward: r.referrerReward,
+          currentClicks,
+          unlockThreshold: UNLOCK_CLICK_THRESHOLD,
+          clicksRemaining: remaining,
+          progressPercent: Math.min(100, Math.round((currentClicks / UNLOCK_CLICK_THRESHOLD) * 100)),
+          joinedAt: r.createdAt,
+          unlockedAt: r.unlockedAt || null,
+          isActive: u?.isActive ?? true
+        }
+      })
+
+      const totalReferred = referrals.length
+      const unlockedCount = referrals.filter((r: any) => r.status === 'unlocked').length
+      const pendingCount = referrals.filter((r: any) => r.status === 'pending').length
+      const flaggedCount = referrals.filter((r: any) => r.status === 'flagged').length
+      const totalEarnedFromReferrals = referrals
+        .filter((r: any) => r.referrerRewardCredited)
+        .reduce((sum: number, r: any) => sum + r.referrerReward, 0)
+
+      let totalCommission = 0
+      for (const u of referredUsers) {
+        totalCommission += ((u.totalEarnings || 0) * COMMISSION_PERCENT) / 100
       }
-    })
 
-    const totalReferred = referrals.length
-    const unlockedCount = referrals.filter((r: any) => r.status === 'unlocked').length
-    const pendingCount = referrals.filter((r: any) => r.status === 'pending').length
-    const flaggedCount = referrals.filter((r: any) => r.status === 'flagged').length
-    const totalEarnedFromReferrals = referrals
-      .filter((r: any) => r.referrerRewardCredited)
-      .reduce((sum: number, r: any) => sum + r.referrerReward, 0)
+      const commissionResult = await db.collection('shortcommissions').aggregate([
+        { $match: { referrerId: new ObjectId(id) } },
+        { $group: { _id: null, total: { $sum: '$commissionAmount' } } }
+      ]).toArray()
+      const actualCommissionCredited = commissionResult[0]?.total || 0
 
-    // Commission earnings — referred users ki totalEarnings ka 5%
-    let totalCommission = 0
-    for (const u of referredUsers) {
-      totalCommission += ((u.totalEarnings || 0) * COMMISSION_PERCENT) / 100
-    }
-
-    // Actual credited commission from shortcommissions collection
-    const commissionResult = await db.collection('shortcommissions').aggregate([
-      { $match: { referrerId: new ObjectId(id) } },
-      { $group: { _id: null, total: { $sum: '$commissionAmount' } } }
-    ]).toArray()
-    const actualCommissionCredited = commissionResult[0]?.total || 0
-
-    return c.json({
-      summary: {
-        totalReferred,
-        unlockedCount,
-        pendingCount,
-        flaggedCount,
-        totalEarnedFromReferrals,
-        estimatedCommissionEarnings: Math.round(totalCommission * 100) / 100,
-        actualCommissionCredited: Math.round(actualCommissionCredited * 100) / 100,
-        commissionPercent: COMMISSION_PERCENT
-      },
-      referrals: list
+      return c.json({
+        summary: {
+          totalReferred,
+          unlockedCount,
+          pendingCount,
+          flaggedCount,
+          totalEarnedFromReferrals,
+          estimatedCommissionEarnings: Math.round(totalCommission * 100) / 100,
+          actualCommissionCredited: Math.round(actualCommissionCredited * 100) / 100,
+          commissionPercent: COMMISSION_PERCENT
+        },
+        referrals: list
+      })
     })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -342,50 +334,71 @@ referralRoutes.get('/my-referrals', userAuth, async (c) => {
 })
 
 // ============ ADMIN — FLAGGED REFERRALS LIST ============
+// ✅ FIX: getDb → withDb + N+1 problem solved
+// Pehle: har flagged referral ke liye 2 findOne = 2N connections
+// Ab: 1 withDb + 2 aggregation-style batched queries
 referralRoutes.get('/admin/flagged', adminAuth, async (c) => {
   try {
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'referral/admin/flagged', async (db) => {
+      const flagged = await db.collection('shortreferrals')
+        .find({ status: 'flagged' })
+        .sort({ createdAt: -1 })
+        .toArray()
 
-    const flagged = await db.collection('shortreferrals')
-      .find({ status: 'flagged' })
-      .sort({ createdAt: -1 })
-      .toArray()
-
-    // Har flagged referral ke liye referrer aur referred user ki info fetch karo
-    const enriched = await Promise.all(flagged.map(async (r: any) => {
-      const referrer = await db.collection('shortusers').findOne(
-        { _id: r.referrerId },
-        { projection: { username: 1, realName: 1, registrationIp: 1, totalClicks: 1 } }
-      )
-      const referred = await db.collection('shortusers').findOne(
-        { _id: r.referredId },
-        { projection: { username: 1, realName: 1, registrationIp: 1, totalClicks: 1, isActive: 1 } }
-      )
-      return {
-        _id: r._id,
-        status: r.status,
-        ip: r.ip,
-        createdAt: r.createdAt,
-        referrer: {
-          username: referrer?.username || r.referrerUsername,
-          realName: referrer?.realName || '',
-          ip: referrer?.registrationIp || 'unknown',
-          totalClicks: referrer?.totalClicks || 0
-        },
-        referred: {
-          username: referred?.username || r.referredUsername,
-          realName: referred?.realName || '',
-          ip: referred?.registrationIp || 'unknown',
-          totalClicks: referred?.totalClicks || 0,
-          isActive: referred?.isActive ?? true
-        },
-        sameIp: r.ip === referrer?.registrationIp || r.ip === referred?.registrationIp
+      if (flagged.length === 0) {
+        return c.json({ total: 0, flagged: [] })
       }
-    }))
 
-    return c.json({
-      total: flagged.length,
-      flagged: enriched
+      const referrerIds = flagged.map((r: any) => r.referrerId).filter(Boolean)
+      const referredIds = flagged.map((r: any) => r.referredId).filter(Boolean)
+
+      const [referrers, referred] = await Promise.all([
+        db.collection('shortusers')
+          .find(
+            { _id: { $in: referrerIds } },
+            { projection: { username: 1, realName: 1, registrationIp: 1, totalClicks: 1 } }
+          )
+          .toArray(),
+        db.collection('shortusers')
+          .find(
+            { _id: { $in: referredIds } },
+            { projection: { username: 1, realName: 1, registrationIp: 1, totalClicks: 1, isActive: 1 } }
+          )
+          .toArray()
+      ])
+
+      const referrerMap = new Map(referrers.map((u: any) => [u._id.toString(), u]))
+      const referredMap = new Map(referred.map((u: any) => [u._id.toString(), u]))
+
+      const enriched = flagged.map((r: any) => {
+        const referrer = referrerMap.get(r.referrerId?.toString())
+        const referredUser = referredMap.get(r.referredId?.toString())
+        return {
+          _id: r._id,
+          status: r.status,
+          ip: r.ip,
+          createdAt: r.createdAt,
+          referrer: {
+            username: referrer?.username || r.referrerUsername,
+            realName: referrer?.realName || '',
+            ip: referrer?.registrationIp || 'unknown',
+            totalClicks: referrer?.totalClicks || 0
+          },
+          referred: {
+            username: referredUser?.username || r.referredUsername,
+            realName: referredUser?.realName || '',
+            ip: referredUser?.registrationIp || 'unknown',
+            totalClicks: referredUser?.totalClicks || 0,
+            isActive: referredUser?.isActive ?? true
+          },
+          sameIp: r.ip === referrer?.registrationIp || r.ip === referredUser?.registrationIp
+        }
+      })
+
+      return c.json({
+        total: flagged.length,
+        flagged: enriched
+      })
     })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
@@ -393,74 +406,76 @@ referralRoutes.get('/admin/flagged', adminAuth, async (c) => {
 })
 
 // ============ ADMIN — UPDATE FLAGGED REFERRAL STATUS ============
+// ✅ FIX: getDb → withDb
 referralRoutes.put('/admin/flagged/:id', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
-    const { action } = await c.req.json() // 'approve' ya 'reject'
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    const { action } = await c.req.json()
 
-    const referral = await db.collection('shortreferrals').findOne({ _id: new ObjectId(id) })
-    if (!referral) return c.json({ error: 'Referral not found' }, 404)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'referral/admin/flagged-update', async (db) => {
+      const referral = await db.collection('shortreferrals').findOne({ _id: new ObjectId(id) })
+      if (!referral) return c.json({ error: 'Referral not found' }, 404)
 
-    if (action === 'approve') {
-      // Pending mein wapas lao taaki unlock trigger kaam kare
-      await db.collection('shortreferrals').updateOne(
-        { _id: new ObjectId(id) },
-        { $set: { status: 'pending', reviewedAt: new Date(), reviewAction: 'approved' } }
-      )
+      if (action === 'approve') {
+        await db.collection('shortreferrals').updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { status: 'pending', reviewedAt: new Date(), reviewAction: 'approved' } }
+        )
 
-      // Turant check karo unlock hona chahiye ya nahi
-      await checkAndUnlockReferral(referral.referredId, db)
+        await checkAndUnlockReferral(referral.referredId, db)
 
-      return c.json({ success: true, message: 'Referral approved and unlock check done.' })
+        return c.json({ success: true, message: 'Referral approved and unlock check done.' })
 
-    } else if (action === 'reject') {
-      await db.collection('shortreferrals').updateOne(
-        { _id: new ObjectId(id) },
-        { $set: { status: 'rejected', reviewedAt: new Date(), reviewAction: 'rejected' } }
-      )
-      return c.json({ success: true, message: 'Referral rejected.' })
+      } else if (action === 'reject') {
+        await db.collection('shortreferrals').updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { status: 'rejected', reviewedAt: new Date(), reviewAction: 'rejected' } }
+        )
+        return c.json({ success: true, message: 'Referral rejected.' })
 
-    } else {
-      return c.json({ error: 'Invalid action. Use approve or reject.' }, 400)
-    }
+      } else {
+        return c.json({ error: 'Invalid action. Use approve or reject.' }, 400)
+      }
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
 // ============ ADMIN — MANUAL UNLOCK TRIGGER ============
+// ✅ FIX: getDb → withDb
 referralRoutes.post('/admin/unlock/:referredUserId', adminAuth, async (c) => {
   try {
     const referredUserId = c.req.param('referredUserId')
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
 
-    await checkAndUnlockReferral(new ObjectId(referredUserId), db)
-
-    return c.json({ success: true, message: 'Unlock check completed.' })
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'referral/admin/unlock', async (db) => {
+      await checkAndUnlockReferral(new ObjectId(referredUserId), db)
+      return c.json({ success: true, message: 'Unlock check completed.' })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
 // ============ ADMIN — COMMISSION HISTORY ============
+// ✅ FIX: getDb → withDb
 referralRoutes.get('/admin/commissions', adminAuth, async (c) => {
   try {
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'referral/admin/commissions', async (db) => {
+      const commissions = await db.collection('shortcommissions')
+        .find({})
+        .sort({ creditedAt: -1 })
+        .limit(100)
+        .toArray()
 
-    const commissions = await db.collection('shortcommissions')
-      .find({})
-      .sort({ creditedAt: -1 })
-      .limit(100)
-      .toArray()
+      const totalResult = await db.collection('shortcommissions').aggregate([
+        { $group: { _id: null, total: { $sum: '$commissionAmount' } } }
+      ]).toArray()
 
-    const totalResult = await db.collection('shortcommissions').aggregate([
-      { $group: { _id: null, total: { $sum: '$commissionAmount' } } }
-    ]).toArray()
-
-    return c.json({
-      total: totalResult[0]?.total || 0,
-      commissions
+      return c.json({
+        total: totalResult[0]?.total || 0,
+        commissions
+      })
     })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)

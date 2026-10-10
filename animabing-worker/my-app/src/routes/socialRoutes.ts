@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
-import { findMany, updateOne, deleteMany, insertOne, getDb } from '../services/mongoService'
+import { findMany, updateOne, withDb } from '../services/mongoService'
 import { ISocialMedia } from '../models/types'
 
 const socialRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
@@ -12,7 +12,7 @@ const defaultLinks = [
   { platform: 'telegram', url: 'https://t.me/animebing', isActive: true, icon: 'telegram', displayName: 'Telegram' }
 ]
 
-// GET ACTIVE LINKS (public)
+// GET ACTIVE LINKS (public) — uses findMany helper → already safe
 socialRoutes.get('/', async (c) => {
   try {
     const links = await findMany<ISocialMedia>('socialmedia', { isActive: true }, {}, c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -22,7 +22,7 @@ socialRoutes.get('/', async (c) => {
   }
 })
 
-// GET ALL (admin)
+// GET ALL (admin) — uses findMany helper → already safe
 socialRoutes.get('/admin/all', adminAuth, async (c) => {
   try {
     const links = await findMany<ISocialMedia>('socialmedia', {}, { sort: { platform: 1 } }, c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -32,7 +32,7 @@ socialRoutes.get('/admin/all', adminAuth, async (c) => {
   }
 })
 
-// UPDATE BY PLATFORM (admin)
+// UPDATE BY PLATFORM (admin) — uses updateOne helper → already safe
 socialRoutes.put('/admin/:platform', adminAuth, async (c) => {
   try {
     const platform = c.req.param('platform') as string
@@ -61,17 +61,28 @@ socialRoutes.put('/admin/:platform', adminAuth, async (c) => {
 })
 
 // RESET DEFAULTS (admin)
+// ✅ FIX: pehle getDb(1) + deleteMany helper(1) + 3× insertOne helper(3) +
+// findMany helper(1) = 6 connections. Ab sab 1 withDb me.
 socialRoutes.post('/admin/reset-defaults', adminAuth, async (c) => {
   try {
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    await db.collection('socialmedia').deleteMany({})
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'social/reset-defaults', async (db) => {
+      await db.collection('socialmedia').deleteMany({})
 
-    for (const link of defaultLinks) {
-      await insertOne('socialmedia', link, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    }
+      const now = new Date()
+      // Match insertOne helper behavior — spread + force createdAt/updatedAt
+      await db.collection('socialmedia').insertMany(
+        defaultLinks.map(link => ({
+          ...link,
+          createdAt: now,
+          updatedAt: now
+        }))
+      )
 
-    const links = await findMany<ISocialMedia>('socialmedia', {}, {}, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    return c.json({ success: true, message: 'Reset to default social links', data: links })
+      const links = await db.collection('socialmedia')
+        .find({})
+        .toArray()
+      return c.json({ success: true, message: 'Reset to default social links', data: links })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }

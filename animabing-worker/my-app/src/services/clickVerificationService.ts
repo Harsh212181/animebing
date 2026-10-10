@@ -1,5 +1,4 @@
 import { ObjectId, Db } from 'mongodb'
-import { getDb } from './mongoService'
 import { IClickSession, IShortenerClickSettings } from '../models/types'
 
 const DEFAULT_SETTINGS: IShortenerClickSettings = {
@@ -10,16 +9,12 @@ const DEFAULT_SETTINGS: IShortenerClickSettings = {
 }
 
 // ============================================================================
-// ✅ FIX: har function ab EK OPTIONAL trailing `existingDb` param leta hai
-// (episodeSyncService.ts wala backward-compatible pattern). Isse
-// `createClickSession` — jo HAR SHORTLINK CLICK pe chalta hai jab
-// requireFullCycle ON ho — pehle 3 alag connections khol raha tha
-// (isRateLimited + getClickSettings + apna insert), ab sirf 1.
+// ✅ MIGRATED: Saare exported functions ab `db: Db` accept karte hain (pehla arg).
+// Har caller `withDb` ke andar wrap karega — connection pooling via mongoService.
 // ============================================================================
 
 // ============ SETTINGS ============
-export async function getClickSettings(mongoUri: string, dbName: string, existingDb?: Db): Promise<IShortenerClickSettings> {
-  const db = existingDb || await getDb(mongoUri, dbName)
+export async function getClickSettings(db: Db): Promise<IShortenerClickSettings> {
   const doc = await db.collection('shortenerclicksettings').findOne({})
   if (!doc) return DEFAULT_SETTINGS
   return {
@@ -31,19 +26,18 @@ export async function getClickSettings(mongoUri: string, dbName: string, existin
 }
 
 // ============ USER-AWARE SETTINGS RESOLVER ============
-// ✅ FIX: pehle getClickSettings() + apna alag getDb() = 2 connections.
-// Ab ek `db` khul ke dono ko diya jaata hai.
 export async function getEffectiveClickSettings(
-  userId: ObjectId | null,
-  mongoUri: string, dbName: string,
-  existingDb?: Db
+  db: Db,
+  userId: ObjectId | null
 ): Promise<IShortenerClickSettings & { source: 'user' | 'global' }> {
-  const db = existingDb || await getDb(mongoUri, dbName)
-  const globalSettings = await getClickSettings(mongoUri, dbName, db)
+  const globalSettings = await getClickSettings(db)
 
   if (!userId) return { ...globalSettings, source: 'global' }
 
-  const user = await db.collection('shortusers').findOne({ _id: userId }, { projection: { requireFullCycle: 1 } })
+  const user = await db.collection('shortusers').findOne(
+    { _id: userId },
+    { projection: { requireFullCycle: 1 } }
+  )
 
   if (user && (user.requireFullCycle === true || user.requireFullCycle === false)) {
     return { ...globalSettings, requireFullCycle: user.requireFullCycle, source: 'user' }
@@ -54,11 +48,10 @@ export async function getEffectiveClickSettings(
 
 // ============ BULK UPDATE — single ya multiple users ============
 export async function updateUsersFullCycleOverride(
+  db: Db,
   userIds: string[],
-  value: boolean | null,
-  mongoUri: string, dbName: string
+  value: boolean | null
 ): Promise<{ modifiedCount: number }> {
-  const db = await getDb(mongoUri, dbName)
   const objectIds = userIds.filter(id => ObjectId.isValid(id)).map(id => new ObjectId(id))
   if (objectIds.length === 0) return { modifiedCount: 0 }
 
@@ -70,14 +63,13 @@ export async function updateUsersFullCycleOverride(
 }
 
 export async function updateClickSettings(
-  data: Partial<IShortenerClickSettings>,
-  mongoUri: string, dbName: string
+  db: Db,
+  data: Partial<IShortenerClickSettings>
 ): Promise<IShortenerClickSettings> {
-  const db = await getDb(mongoUri, dbName)
   await db.collection('shortenerclicksettings').updateOne(
     {}, { $set: { ...data, updatedAt: new Date() } }, { upsert: true }
   )
-  return getClickSettings(mongoUri, dbName, db)
+  return getClickSettings(db)
 }
 
 // ============ HMAC SIGN/VERIFY ============
@@ -101,10 +93,8 @@ export function isFunnelBot(userAgent: string | null | undefined): boolean {
 }
 
 // ============ RATE LIMIT: same IP se bahut zyada sessions ============
-// ✅ FIX: ab `existingDb` optional param leta hai
-async function isRateLimited(ip: string, mongoUri: string, dbName: string, existingDb?: Db): Promise<boolean> {
+async function isRateLimited(db: Db, ip: string): Promise<boolean> {
   if (ip === 'unknown') return false
-  const db = existingDb || await getDb(mongoUri, dbName)
   const oneMinAgo = new Date(Date.now() - 60 * 1000)
   const recentCount = await db.collection('clicksessions').countDocuments({
     ip,
@@ -114,23 +104,19 @@ async function isRateLimited(ip: string, mongoUri: string, dbName: string, exist
 }
 
 // ============ STEP 1: shortlink hit hote hi session start ============
-// ✅ FIX: pehle isRateLimited() + getClickSettings() + apna getDb() = 3
-// alag connections. Ab ek hi `db` khul ke sabko pass hota hai — 1 connection.
 export async function createClickSession(
+  db: Db,
   code: string,
   linkId: ObjectId,
   userId: ObjectId | null,
   ip: string,
   userAgent: string,
-  secret: string,
-  mongoUri: string, dbName: string
+  secret: string
 ): Promise<string | null> {
-  const db = await getDb(mongoUri, dbName)
-
-  const limited = await isRateLimited(ip, mongoUri, dbName, db)
+  const limited = await isRateLimited(db, ip)
   if (limited) return null
 
-  const settings = await getClickSettings(mongoUri, dbName, db)
+  const settings = await getClickSettings(db)
 
   const now = new Date()
   const expiresAt = new Date(now.getTime() + settings.sessionExpiryMinutes * 60 * 1000)
@@ -147,28 +133,29 @@ export async function createClickSession(
   return `${sessionId}.${sig}`
 }
 
-async function resolveSession(token: string, secret: string, mongoUri: string, dbName: string) {
+// ✅ FIX: `db` caller se aata hai — apna connection nahi kholta
+async function resolveSession(db: Db, token: string, secret: string) {
   if (!token || !token.includes('.')) return null
   const [sessionId, sig] = token.split('.')
   if (!sessionId || !sig || !ObjectId.isValid(sessionId)) return null
   if (!(await hmacVerify(sessionId, sig, secret))) return null
 
-  const db = await getDb(mongoUri, dbName)
   const session = await db.collection('clicksessions').findOne({ _id: new ObjectId(sessionId) })
   if (!session) return null
   if (session.expiresAt && new Date(session.expiresAt) < new Date()) return null
-  return { db, session }
+  return session
 }
 
 // ============ STEP 2: anime detail page pe pahuncha ============
-// (Ye pehle se hi resolveSession ka db reuse kar raha tha — sahi tha, koi change nahi)
 export async function advanceClickSession(
-  token: string, animeId: string | undefined, currentIp: string,
-  secret: string, mongoUri: string, dbName: string
+  db: Db,
+  token: string,
+  animeId: string | undefined,
+  currentIp: string,
+  secret: string
 ): Promise<boolean> {
-  const resolved = await resolveSession(token, secret, mongoUri, dbName)
-  if (!resolved) return false
-  const { db, session } = resolved
+  const session = await resolveSession(db, token, secret)
+  if (!session) return false
   if (session.stage === 'completed') return false
   if (session.stage === 'anime_viewed') return false
 
@@ -186,15 +173,14 @@ export async function advanceClickSession(
 }
 
 // ============ STEP 3: final watch/download click = funnel complete ============
-// ✅ FIX: pehle `getClickSettings()` apna alag connection kholta tha (resolveSession
-// ke db se alag). Ab resolved.db pass karte hain — total 1 connection is poore
-// funnel-completion call ke liye.
 export async function completeClickSession(
-  token: string, animeId: string | undefined, secret: string, mongoUri: string, dbName: string
+  db: Db,
+  token: string,
+  animeId: string | undefined,
+  secret: string
 ): Promise<{ success: boolean; error?: string; linkId?: ObjectId }> {
-  const resolved = await resolveSession(token, secret, mongoUri, dbName)
-  if (!resolved) return { success: false, error: 'Invalid or expired session' }
-  const { db, session } = resolved
+  const session = await resolveSession(db, token, secret)
+  if (!session) return { success: false, error: 'Invalid or expired session' }
 
   if (session.stage === 'completed') return { success: false, error: 'Session already used' }
   if (session.stage !== 'anime_viewed') return { success: false, error: 'Invalid funnel order' }
@@ -203,7 +189,7 @@ export async function completeClickSession(
     return { success: false, error: 'Anime mismatch — not the shortlink-linked anime' }
   }
 
-  const settings = await getClickSettings(mongoUri, dbName, db) // ✅ db pass kiya
+  const settings = await getClickSettings(db)
   if (session.animeViewedAt) {
     const dwellMs = Date.now() - new Date(session.animeViewedAt).getTime()
     if (dwellMs < settings.minDwellSeconds * 1000) {

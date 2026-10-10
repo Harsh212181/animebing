@@ -1,10 +1,9 @@
 import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
-import { findMany, insertOne, updateOne, deleteOne, toObjectId, isValidObjectId, getDb, withDb } from '../services/mongoService'
+import { findMany, toObjectId, isValidObjectId, withDb } from '../services/mongoService'
 import { ISpecialMode } from '../models/types'
 import { Db } from 'mongodb'
-// ⚠️ Path check kar lena — agar tumhare project me edgeCache service kisi aur path pe hai to adjust karo
 import { withEdgeCache, invalidateEdgeCache } from '../utils/cache'
 
 const specialModeRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
@@ -14,9 +13,16 @@ const ALL_LOCATIONS: Array<'home' | 'detail' | 'downloadLink'> = ['home', 'detai
 const getModeLocations = (m: any): Array<'home' | 'detail' | 'downloadLink'> =>
   Array.isArray(m.displayLocations) && m.displayLocations.length > 0 ? m.displayLocations : ALL_LOCATIONS
 
-export async function getTodaysActiveModes(mongoUri: string, dbName: string, existingDb?: Db): Promise<ISpecialMode[]> {
-  const db = existingDb || await getDb(mongoUri, dbName)
+// ============================================================================
+// ✅ EXPORTED HELPERS — ab `db` REQUIRED hai (no getDb fallback).
+// Ye helpers in files se call hote hain:
+//   • linkSettingsRoutes.ts → syncSpecialModeLinks(uri, dbName, db) ✓
+//   • shortenerRoutes.ts    → isForceLink5ModeActive(uri, dbName, db) ✓
+//   • linkSettingsRoutes.ts → getTodaysActiveMode (imported)
+// Sab callers already db pass karte hain, isliye safe hai.
+// ============================================================================
 
+export async function getTodaysActiveModes(_mongoUri: string, _dbName: string, db: Db): Promise<ISpecialMode[]> {
   const now = new Date()
   const indiaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
   const todayWeekday = indiaTime.getDay()
@@ -49,29 +55,28 @@ export async function getTodaysActiveModes(mongoUri: string, dbName: string, exi
   return active
 }
 
-export async function getTodaysActiveMode(mongoUri: string, dbName: string): Promise<ISpecialMode | null> {
-  const modes = await getTodaysActiveModes(mongoUri, dbName)
+// ✅ FIX: pehle ye getTodaysActiveModes(mongoUri, dbName) call karta tha bina
+// db pass kiye — matlab ye apna connection kholta aur andar wala helper
+// ek AUR connection kholta (2 connections). Ab db pass hota hai.
+export async function getTodaysActiveMode(_mongoUri: string, _dbName: string, db: Db): Promise<ISpecialMode | null> {
+  const modes = await getTodaysActiveModes(_mongoUri, _dbName, db)
   return modes[0] || null
 }
 
-// ✅ FIX: 2 connections (apna + getTodaysActiveModes ka) → 1
-export async function isForceLink5ModeActive(mongoUri: string, dbName: string, existingDb?: Db): Promise<boolean> {
-  const db = existingDb || await getDb(mongoUri, dbName)
+export async function isForceLink5ModeActive(_mongoUri: string, _dbName: string, db: Db): Promise<boolean> {
   const settings: any = (await db.collection('linksettings').findOne({})) || {}
   const masterEnabled = settings.autoModeEnabled !== false
   if (!masterEnabled) return false
 
-  const active = await getTodaysActiveModes(mongoUri, dbName, db) // ✅ db pass kiya
+  const active = await getTodaysActiveModes(_mongoUri, _dbName, db)
   return active.some(m => !!(m as any).forceLink5Only)
 }
 
-// ✅ FIX: 2 connections (apna + getTodaysActiveModes ka) → 1
-export async function syncSpecialModeLinks(mongoUri: string, dbName: string, existingDb?: Db) {
-  const db = existingDb || await getDb(mongoUri, dbName)
+export async function syncSpecialModeLinks(_mongoUri: string, _dbName: string, db: Db) {
   const settings: any = (await db.collection('linksettings').findOne({})) || {}
   const masterEnabled = settings.autoModeEnabled !== false
 
-  const active = masterEnabled ? await getTodaysActiveModes(mongoUri, dbName, db) : [] // ✅ db pass kiya
+  const active = masterEnabled ? await getTodaysActiveModes(_mongoUri, _dbName, db) : []
   const forcingModes = active.filter(m => !!(m as any).forceLink5Only)
   const shouldForce = forcingModes.length > 0
 
@@ -112,10 +117,8 @@ export async function syncSpecialModeLinks(mongoUri: string, dbName: string, exi
   }
 }
 
-// ============ PUBLIC: kya abhi koi mode(s) active hai(n)? ============
-// ✅ FIX: pehle getDb() manual tha (leak). Ab withDb (pooled connection) +
-// withEdgeCache (30s) — taaki frontend har page load pe hit kare to bhi
-// DB pe load na pade.
+// ============ PUBLIC: active modes ============
+// already uses withDb — no change
 specialModeRoutes.get('/active', async (c) => {
   try {
     const result = await withEdgeCache(c, 30, () =>
@@ -143,7 +146,7 @@ specialModeRoutes.get('/active', async (c) => {
   }
 })
 
-// ============ ADMIN: list all modes ============
+// ============ ADMIN: list all modes — uses findMany helper → already safe ============
 specialModeRoutes.get('/', adminAuth, async (c) => {
   try {
     const modes = await findMany<ISpecialMode>('specialmodes', {}, { sort: { createdAt: -1 } }, c.env.MONGODB_URI, c.env.MONGODB_DB)
@@ -160,7 +163,8 @@ function normalizeLocations(input: any): Array<'home' | 'detail' | 'downloadLink
   return valid.length > 0 ? valid : ALL_LOCATIONS
 }
 
-// ============ ADMIN: create mode — 2 connections combined into 1 ============
+// ============ ADMIN: create mode ============
+// ✅ FIX: getDb → withDb
 specialModeRoutes.post('/', adminAuth, async (c) => {
   try {
     const { name, type, weekday, weekdays, startDate, endDate, bannerText, isEnabled, forceLink5Only, displayLocations } = await c.req.json()
@@ -198,20 +202,21 @@ specialModeRoutes.post('/', adminAuth, async (c) => {
       mode.endDate = new Date(endDate)
     }
 
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const result = await db.collection('specialmodes').insertOne(mode)
-    await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB, db) // ✅ db pass kiya
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'specialMode/create', async (db) => {
+      const result = await db.collection('specialmodes').insertOne(mode)
+      await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB, db)
 
-    // 🆕 FIX: cache invalidate karo taaki naya mode turant public /active pe dikhe
-    c.executionCtx.waitUntil(invalidateEdgeCache(c, '/api/special-modes/active'))
+      c.executionCtx.waitUntil(invalidateEdgeCache(c, '/api/special-modes/active'))
 
-    return c.json({ success: true, message: 'Mode created!', data: result })
+      return c.json({ success: true, message: 'Mode created!', data: result })
+    })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
   }
 })
 
-// ============ ADMIN: update mode — 2 connections combined into 1 ============
+// ============ ADMIN: update mode ============
+// ✅ FIX: getDb → withDb
 specialModeRoutes.put('/:id', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
@@ -240,54 +245,57 @@ specialModeRoutes.put('/:id', adminAuth, async (c) => {
     if (body.forceLink5Only !== undefined) updateData.forceLink5Only = Boolean(body.forceLink5Only)
     if (body.displayLocations !== undefined) updateData.displayLocations = normalizeLocations(body.displayLocations)
 
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const updated = await db.collection('specialmodes').findOneAndUpdate(
-      { _id: toObjectId(id) }, { $set: updateData }, { returnDocument: 'after' }
-    )
-    if (!updated) return c.json({ success: false, error: 'Mode not found' }, 404)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'specialMode/update', async (db) => {
+      const updated = await db.collection('specialmodes').findOneAndUpdate(
+        { _id: toObjectId(id) }, { $set: updateData }, { returnDocument: 'after' }
+      )
+      if (!updated) return c.json({ success: false, error: 'Mode not found' }, 404)
 
-    await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB, db) // ✅ db pass kiya
+      await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB, db)
 
-    // 🆕 FIX: cache invalidate
-    c.executionCtx.waitUntil(invalidateEdgeCache(c, '/api/special-modes/active'))
+      c.executionCtx.waitUntil(invalidateEdgeCache(c, '/api/special-modes/active'))
 
-    return c.json({ success: true, message: 'Updated!', data: updated })
+      return c.json({ success: true, message: 'Updated!', data: updated })
+    })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
   }
 })
 
-// ============ ADMIN: delete mode — 2 connections combined into 1 ============
+// ============ ADMIN: delete mode ============
+// ✅ FIX: getDb → withDb
 specialModeRoutes.delete('/:id', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ success: false, error: 'Invalid ID' }, 400)
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    await db.collection('specialmodes').deleteOne({ _id: toObjectId(id) })
-    await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB, db) // ✅ db pass kiya
 
-    // 🆕 FIX: cache invalidate
-    c.executionCtx.waitUntil(invalidateEdgeCache(c, '/api/special-modes/active'))
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'specialMode/delete', async (db) => {
+      await db.collection('specialmodes').deleteOne({ _id: toObjectId(id) })
+      await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB, db)
 
-    return c.json({ success: true, message: 'Mode deleted!' })
+      c.executionCtx.waitUntil(invalidateEdgeCache(c, '/api/special-modes/active'))
+
+      return c.json({ success: true, message: 'Mode deleted!' })
+    })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
   }
 })
 
-// ============ ADMIN: master switch toggle — 2 connections combined into 1 ============
+// ============ ADMIN: master switch toggle ============
+// ✅ FIX: getDb → withDb
 specialModeRoutes.put('/master-toggle', adminAuth, async (c) => {
   try {
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const settings = await db.collection('linksettings').findOne({})
-    const newValue = !(settings?.autoModeEnabled !== false)
-    await db.collection('linksettings').updateOne({}, { $set: { autoModeEnabled: newValue } }, { upsert: true })
-    await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB, db) // ✅ db pass kiya
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'specialMode/master-toggle', async (db) => {
+      const settings = await db.collection('linksettings').findOne({})
+      const newValue = !(settings?.autoModeEnabled !== false)
+      await db.collection('linksettings').updateOne({}, { $set: { autoModeEnabled: newValue } }, { upsert: true })
+      await syncSpecialModeLinks(c.env.MONGODB_URI, c.env.MONGODB_DB, db)
 
-    // 🆕 FIX: cache invalidate
-    c.executionCtx.waitUntil(invalidateEdgeCache(c, '/api/special-modes/active'))
+      c.executionCtx.waitUntil(invalidateEdgeCache(c, '/api/special-modes/active'))
 
-    return c.json({ success: true, autoModeEnabled: newValue })
+      return c.json({ success: true, autoModeEnabled: newValue })
+    })
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
   }

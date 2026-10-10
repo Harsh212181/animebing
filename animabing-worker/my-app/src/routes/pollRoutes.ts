@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { Env, Variables } from '../index'
-import { getDb, withDb, toObjectId, isValidObjectId } from '../services/mongoService'
+import { withDb, toObjectId, isValidObjectId } from '../services/mongoService'
 import { ObjectId, Db } from 'mongodb'
 import { IPoll } from '../models/types'
 import { getCachedJSON } from '../utils/cache'
@@ -18,8 +18,6 @@ function normalizeLocations(input: any): Array<'home' | 'detail' | 'downloadLink
   return valid.length > 0 ? valid : ALL_LOCATIONS
 }
 
-// ✅ FIX: ab `db` accept karta hai — caller apna already khula connection
-// pass karta hai, ye khud alag connection nahi kholta.
 async function autoDeactivateExpired(db: Db) {
   try {
     await db.collection('polls').updateMany(
@@ -29,8 +27,6 @@ async function autoDeactivateExpired(db: Db) {
   } catch (err) { }
 }
 
-// ✅ Vote lagne ke baad polls-active cache ko manually clear karo (same key
-// pattern jo getCachedJSON internally banata hai — /__cache_data__ prefix + _key=polls-active)
 async function invalidatePollsActiveCache(c: any) {
   try {
     // @ts-ignore
@@ -47,16 +43,12 @@ async function invalidatePollsActiveCache(c: any) {
 
 // ============ USER ROUTES ============
 
-// GET ACTIVE POLL(S) — ✅ CACHED. Shared poll data cache hota hai (30s),
-// per-user (deviceId-based) hasVoted/userVoteOption cache ke BAHAR compute
-// hota hai — isliye deviceId cache-key ko contaminate nahi karta.
+// GET ACTIVE POLL(S) — already uses withDb (inside getCachedJSON)
 pollRoutes.get('/active', async (c) => {
   try {
     const deviceId = c.req.query('deviceId')
     const location = c.req.query('location') as 'home' | 'detail' | 'downloadLink' | undefined
 
-    // ✅ Shared data — cached (30s), sabke liye same
-    // ✅ FIX: withDb se pooled connection reuse hota hai
     const pollsRaw = await getCachedJSON(c, 30, 'polls-active', () =>
       withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'pollsActive', async (db) => {
         await autoDeactivateExpired(db)
@@ -71,7 +63,6 @@ pollRoutes.get('/active', async (c) => {
       ? pollsRaw.filter((p: any) => getPollLocations(p).includes(location))
       : pollsRaw
 
-    // ✅ Per-user overlay — DB call NAHI lagti, deviceId sirf cached data pe match hota hai
     const polls = filtered.map((poll: any) => {
       let hasVoted = false
       let userVoteOption = null
@@ -108,13 +99,7 @@ pollRoutes.get('/active', async (c) => {
   }
 })
 
-// VOTE
-// ✅ FIX: pehle "findOne(check hasVoted) → updateOne" me race window tha —
-// 2 requests same deviceId se ek saath aayein to dono findOne pass kar sakte
-// the isse pehle ki koi updateOne commit ho, matlab double vote ban sakta
-// tha. Ab ek hi atomic `findOneAndUpdate` hai jiska FILTER khud check karta
-// hai ki `voters.deviceId` abhi tak nahi hai — MongoDB is check-and-set ko
-// ek hi operation me atomically karta hai, koi race window nahi bachta.
+// VOTE — already uses withDb
 pollRoutes.post('/vote', async (c) => {
   try {
     const { pollId, optionId, deviceId, deviceType } = await c.req.json()
@@ -126,14 +111,13 @@ pollRoutes.post('/vote', async (c) => {
       return c.json({ success: false, message: 'Invalid pollId or optionId' }, 400)
     }
 
-    // ✅ FIX: poora DB kaam ek withDb ke andar — pooled connection reuse
     const result = await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'pollVote', async (db) => {
       const updated = await db.collection('polls').findOneAndUpdate(
         {
           _id: toObjectId(pollId),
           isActive: true,
           expiresAt: { $gt: new Date() },
-          'voters.deviceId': { $ne: deviceId }, // ✅ atomic guard — already voted to match hi nahi hoga
+          'voters.deviceId': { $ne: deviceId },
         },
         {
           $inc: { 'options.$[opt].votes': 1, totalVotes: 1 },
@@ -156,7 +140,6 @@ pollRoutes.post('/vote', async (c) => {
         return { ok: true as const, totalVotes: updated.totalVotes }
       }
 
-      // Update match nahi hua — pata karo kyun (poll missing/expired ya already voted)
       const poll = await db.collection('polls').findOne({ _id: toObjectId(pollId) }) as IPoll | null
       if (!poll || !poll.isActive || new Date(poll.expiresAt) <= new Date()) {
         return { ok: false as const, msg: 'Poll not found or expired' }
@@ -169,8 +152,6 @@ pollRoutes.post('/vote', async (c) => {
     })
 
     if (result.ok) {
-      // ✅ Vote hone ke turant baad cache invalidate karo — taaki naya vote
-      // count agli hi request pe dikhe, 30s TTL khatam hone ka wait na ho
       c.executionCtx.waitUntil(invalidatePollsActiveCache(c))
 
       return c.json({
@@ -190,7 +171,7 @@ pollRoutes.post('/vote', async (c) => {
   }
 })
 
-// CHECK VOTE
+// CHECK VOTE — already uses withDb
 pollRoutes.get('/check-vote/:pollId', async (c) => {
   try {
     const pollId = c.req.param('pollId')
@@ -199,7 +180,6 @@ pollRoutes.get('/check-vote/:pollId', async (c) => {
     if (!deviceId) return c.json({ success: true, hasVoted: false, voteOption: null })
     if (!isValidObjectId(pollId)) return c.json({ success: true, hasVoted: false, voteOption: null })
 
-    // ✅ FIX: withDb wrapper — pooled connection reuse
     const poll = await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'pollCheck', (db) =>
       db.collection('polls').findOne({ _id: toObjectId(pollId) })
     ) as IPoll | null
@@ -214,33 +194,35 @@ pollRoutes.get('/check-vote/:pollId', async (c) => {
 })
 
 // GET RESULTS
+// ✅ FIX: getDb → withDb
 pollRoutes.get('/:id/results', async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ success: false, message: 'Invalid ID' }, 400)
 
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const poll = await db.collection('polls').findOne({ _id: toObjectId(id) }) as IPoll | null
-    if (!poll) return c.json({ success: false, message: 'Poll not found' }, 404)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'pollResults', async (db) => {
+      const poll = await db.collection('polls').findOne({ _id: toObjectId(id) }) as IPoll | null
+      if (!poll) return c.json({ success: false, message: 'Poll not found' }, 404)
 
-    const options = poll.options?.map((opt: any) => ({
-      ...opt,
-      _id: opt._id?.toString(),
-      percentage: poll.totalVotes! > 0 ? Math.round((opt.votes / poll.totalVotes!) * 100) : 0
-    }))
+      const options = poll.options?.map((opt: any) => ({
+        ...opt,
+        _id: opt._id?.toString(),
+        percentage: poll.totalVotes! > 0 ? Math.round((opt.votes / poll.totalVotes!) * 100) : 0
+      }))
 
-    return c.json({
-      success: true,
-      poll: {
-        _id: poll._id?.toString(),
-        question: poll.question,
-        totalVotes: poll.totalVotes || 0,
-        options,
-        isActive: poll.isActive,
-        expiresAt: poll.expiresAt,
-        isExpired: new Date(poll.expiresAt) < new Date(),
-        votersCount: poll.voters?.length || 0
-      }
+      return c.json({
+        success: true,
+        poll: {
+          _id: poll._id?.toString(),
+          question: poll.question,
+          totalVotes: poll.totalVotes || 0,
+          options,
+          isActive: poll.isActive,
+          expiresAt: poll.expiresAt,
+          isExpired: new Date(poll.expiresAt) < new Date(),
+          votersCount: poll.voters?.length || 0
+        }
+      })
     })
   } catch (err: any) {
     return c.json({ success: false, message: 'Server error' }, 500)
@@ -255,6 +237,7 @@ pollRoutes.get('/test', (c) => {
 // ============ ADMIN ROUTES ============
 
 // CREATE POLL
+// ✅ FIX: getDb → withDb
 pollRoutes.post('/admin/create', async (c) => {
   try {
     const { question, options, expiresAt, displayLocations, hideVoteCounts } = await c.req.json()
@@ -280,68 +263,38 @@ pollRoutes.post('/admin/create', async (c) => {
       }
     })
 
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const now = new Date()
-    await db.collection('polls').insertOne({
-      question: question.trim(),
-      options: validatedOptions,
-      expiresAt: expiryDate,
-      isActive: true,
-      totalVotes: 0,
-      voters: [],
-      displayLocations: normalizeLocations(displayLocations),
-      hideVoteCounts: Boolean(hideVoteCounts),
-      createdAt: now,
-      updatedAt: now,
-    })
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'pollCreate', async (db) => {
+      const now = new Date()
+      await db.collection('polls').insertOne({
+        question: question.trim(),
+        options: validatedOptions,
+        expiresAt: expiryDate,
+        isActive: true,
+        totalVotes: 0,
+        voters: [],
+        displayLocations: normalizeLocations(displayLocations),
+        hideVoteCounts: Boolean(hideVoteCounts),
+        createdAt: now,
+        updatedAt: now,
+      })
 
-    return c.json({ success: true, message: 'Poll created successfully' })
+      return c.json({ success: true, message: 'Poll created successfully' })
+    })
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500)
   }
 })
 
-// GET ALL POLLS — pehle autoDeactivateExpired + apna getDb = 2 connections. Ab 1.
+// GET ALL POLLS
+// ✅ FIX: getDb → withDb
 pollRoutes.get('/admin/all', async (c) => {
   try {
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    await autoDeactivateExpired(db)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'pollAdminAll', async (db) => {
+      await autoDeactivateExpired(db)
 
-    const polls = await db.collection('polls').find({}).sort({ createdAt: -1 }).toArray()
+      const polls = await db.collection('polls').find({}).sort({ createdAt: -1 }).toArray()
 
-    const processed = polls.map((poll: any) => ({
-      ...poll,
-      _id: poll._id.toString(),
-      isExpired: new Date(poll.expiresAt) < new Date(),
-      votersCount: poll.voters?.length || 0,
-      displayLocations: getPollLocations(poll),
-      hideVoteCounts: !!poll.hideVoteCounts,
-      options: poll.options?.map((opt: any) => ({
-        ...opt,
-        _id: opt._id?.toString(),
-        percentage: poll.totalVotes > 0 ? Math.round((opt.votes / poll.totalVotes) * 100) : 0
-      }))
-    }))
-
-    return c.json(processed)
-  } catch (err: any) {
-    return c.json([])
-  }
-})
-
-// GET SINGLE POLL
-pollRoutes.get('/admin/:id', async (c) => {
-  try {
-    const id = c.req.param('id')
-    if (!isValidObjectId(id)) return c.json({ success: false, message: 'Invalid ID' }, 400)
-
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const poll = await db.collection('polls').findOne({ _id: toObjectId(id) }) as any
-    if (!poll) return c.json({ success: false, message: 'Poll not found' }, 404)
-
-    return c.json({
-      success: true,
-      poll: {
+      const processed = polls.map((poll: any) => ({
         ...poll,
         _id: poll._id.toString(),
         isExpired: new Date(poll.expiresAt) < new Date(),
@@ -353,91 +306,135 @@ pollRoutes.get('/admin/:id', async (c) => {
           _id: opt._id?.toString(),
           percentage: poll.totalVotes > 0 ? Math.round((opt.votes / poll.totalVotes) * 100) : 0
         }))
-      }
+      }))
+
+      return c.json(processed)
+    })
+  } catch (err: any) {
+    return c.json([])
+  }
+})
+
+// GET SINGLE POLL
+// ✅ FIX: getDb → withDb
+pollRoutes.get('/admin/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    if (!isValidObjectId(id)) return c.json({ success: false, message: 'Invalid ID' }, 400)
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'pollAdminGet', async (db) => {
+      const poll = await db.collection('polls').findOne({ _id: toObjectId(id) }) as any
+      if (!poll) return c.json({ success: false, message: 'Poll not found' }, 404)
+
+      return c.json({
+        success: true,
+        poll: {
+          ...poll,
+          _id: poll._id.toString(),
+          isExpired: new Date(poll.expiresAt) < new Date(),
+          votersCount: poll.voters?.length || 0,
+          displayLocations: getPollLocations(poll),
+          hideVoteCounts: !!poll.hideVoteCounts,
+          options: poll.options?.map((opt: any) => ({
+            ...opt,
+            _id: opt._id?.toString(),
+            percentage: poll.totalVotes > 0 ? Math.round((opt.votes / poll.totalVotes) * 100) : 0
+          }))
+        }
+      })
     })
   } catch (err: any) {
     return c.json({ success: false, message: 'Server error' }, 500)
   }
 })
 
-// UPDATE POLL — findOne + updateOne combined into 1 connection
+// UPDATE POLL
+// ✅ FIX: getDb → withDb
 pollRoutes.put('/admin/:id', async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ success: false, message: 'Invalid ID' }, 400)
     const { question, options, expiresAt, isActive, displayLocations, hideVoteCounts } = await c.req.json()
 
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const poll = await db.collection('polls').findOne({ _id: toObjectId(id) }) as any
-    if (!poll) return c.json({ success: false, message: 'Poll not found' }, 404)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'pollAdminUpdate', async (db) => {
+      const poll = await db.collection('polls').findOne({ _id: toObjectId(id) }) as any
+      if (!poll) return c.json({ success: false, message: 'Poll not found' }, 404)
 
-    const updateData: any = { updatedAt: new Date() }
-    if (question !== undefined) updateData.question = question.trim()
-    if (expiresAt !== undefined) {
-      const expiryDate = new Date(expiresAt)
-      if (expiryDate <= new Date()) return c.json({ success: false, message: 'Expiration must be in future' }, 400)
-      updateData.expiresAt = expiryDate
-    }
-    if (options !== undefined) {
-      if (options.length < 4 || options.length > 10) return c.json({ success: false, message: '4-10 options required' }, 400)
-      updateData.options = options.map((opt: any, i: number) => ({
-        _id: opt._id ? toObjectId(opt._id) : new ObjectId(),
-        animeId: opt.animeId, title: opt.title.trim(),
-        image: opt.image || '', votes: opt.votes || 0,
-        order: i, isCustom: opt.animeId.startsWith('custom_')
-      }))
-    }
-    if (isActive !== undefined) updateData.isActive = isActive
-    if (displayLocations !== undefined) updateData.displayLocations = normalizeLocations(displayLocations)
-    if (hideVoteCounts !== undefined) updateData.hideVoteCounts = Boolean(hideVoteCounts)
+      const updateData: any = { updatedAt: new Date() }
+      if (question !== undefined) updateData.question = question.trim()
+      if (expiresAt !== undefined) {
+        const expiryDate = new Date(expiresAt)
+        if (expiryDate <= new Date()) return c.json({ success: false, message: 'Expiration must be in future' }, 400)
+        updateData.expiresAt = expiryDate
+      }
+      if (options !== undefined) {
+        if (options.length < 4 || options.length > 10) return c.json({ success: false, message: '4-10 options required' }, 400)
+        updateData.options = options.map((opt: any, i: number) => ({
+          _id: opt._id ? toObjectId(opt._id) : new ObjectId(),
+          animeId: opt.animeId, title: opt.title.trim(),
+          image: opt.image || '', votes: opt.votes || 0,
+          order: i, isCustom: opt.animeId.startsWith('custom_')
+        }))
+      }
+      if (isActive !== undefined) updateData.isActive = isActive
+      if (displayLocations !== undefined) updateData.displayLocations = normalizeLocations(displayLocations)
+      if (hideVoteCounts !== undefined) updateData.hideVoteCounts = Boolean(hideVoteCounts)
 
-    await db.collection('polls').updateOne({ _id: toObjectId(id) }, { $set: updateData })
-    return c.json({ success: true, message: 'Poll updated successfully' })
+      await db.collection('polls').updateOne({ _id: toObjectId(id) }, { $set: updateData })
+      return c.json({ success: true, message: 'Poll updated successfully' })
+    })
   } catch (err: any) {
     return c.json({ success: false, message: err.message }, 500)
   }
 })
 
-// TOGGLE POLL — findOne + updateOne combined into 1 connection
+// TOGGLE POLL
+// ✅ FIX: getDb → withDb
 pollRoutes.put('/admin/:id/toggle', async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ success: false, message: 'Invalid ID' }, 400)
 
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const poll = await db.collection('polls').findOne({ _id: toObjectId(id) }) as any
-    if (!poll) return c.json({ success: false, message: 'Poll not found' }, 404)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'pollAdminToggle', async (db) => {
+      const poll = await db.collection('polls').findOne({ _id: toObjectId(id) }) as any
+      if (!poll) return c.json({ success: false, message: 'Poll not found' }, 404)
 
-    const isExpired = new Date(poll.expiresAt) < new Date()
-    if (isExpired && !poll.isActive) return c.json({ success: false, message: 'Cannot activate expired poll' }, 400)
+      const isExpired = new Date(poll.expiresAt) < new Date()
+      if (isExpired && !poll.isActive) return c.json({ success: false, message: 'Cannot activate expired poll' }, 400)
 
-    await db.collection('polls').updateOne({ _id: toObjectId(id) }, { $set: { isActive: !poll.isActive, updatedAt: new Date() } })
-    return c.json({ success: true, isActive: !poll.isActive, message: `Poll ${!poll.isActive ? 'activated' : 'deactivated'}` })
+      await db.collection('polls').updateOne({ _id: toObjectId(id) }, { $set: { isActive: !poll.isActive, updatedAt: new Date() } })
+      return c.json({ success: true, isActive: !poll.isActive, message: `Poll ${!poll.isActive ? 'activated' : 'deactivated'}` })
+    })
   } catch (err: any) {
     return c.json({ success: false, message: 'Server error' }, 500)
   }
 })
 
 // DELETE POLL
+// ✅ FIX: getDb → withDb
 pollRoutes.delete('/admin/:id', async (c) => {
   try {
     const id = c.req.param('id')
     if (!isValidObjectId(id)) return c.json({ success: false, message: 'Invalid ID' }, 400)
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const poll = await db.collection('polls').findOneAndDelete({ _id: toObjectId(id) })
-    if (!poll) return c.json({ success: false, message: 'Poll not found' }, 404)
-    return c.json({ success: true, message: 'Poll deleted successfully' })
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'pollAdminDelete', async (db) => {
+      const poll = await db.collection('polls').findOneAndDelete({ _id: toObjectId(id) })
+      if (!poll) return c.json({ success: false, message: 'Poll not found' }, 404)
+      return c.json({ success: true, message: 'Poll deleted successfully' })
+    })
   } catch (err: any) {
     return c.json({ success: false, message: 'Server error' }, 500)
   }
 })
 
 // CLEANUP EXPIRED
+// ✅ FIX: getDb → withDb
 pollRoutes.delete('/admin/cleanup/expired', async (c) => {
   try {
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const result = await db.collection('polls').deleteMany({ expiresAt: { $lt: new Date() }, isActive: false })
-    return c.json({ success: true, message: `Deleted ${result.deletedCount} expired polls`, deletedCount: result.deletedCount })
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'pollAdminCleanup', async (db) => {
+      const result = await db.collection('polls').deleteMany({ expiresAt: { $lt: new Date() }, isActive: false })
+      return c.json({ success: true, message: `Deleted ${result.deletedCount} expired polls`, deletedCount: result.deletedCount })
+    })
   } catch (err: any) {
     return c.json({ success: false, message: 'Server error' }, 500)
   }

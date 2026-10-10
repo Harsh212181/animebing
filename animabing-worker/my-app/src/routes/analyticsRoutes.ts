@@ -1,8 +1,8 @@
 // src/routes/analyticsRoutes.ts
 import { Hono } from 'hono'
 import { Env, Variables } from '../index'
-import { adminAuth, requirePermission } from '../middleware/auth' // ✅ requirePermission add kiya
-import { getDb } from '../services/mongoService'
+import { adminAuth, requirePermission } from '../middleware/auth'
+import { withDb } from '../services/mongoService'
 import {
   getPageViewStats,
   getPageDetail,
@@ -29,35 +29,16 @@ import {
   getMonthlyOverview,
   getMonthlyDetail,
 } from '../services/analyticsService'
-// 🆕 Verify signed ?l= / ?ls= tags so linkUsed can't be spoofed
 import { signTag } from '../services/externalShortenerService'
-// ✅ NEW — pageview daily rollup (backfill route ke liye)
 import { aggregateAndPrunePageviewDay } from '../services/dailyPageStatsService'
 
 const analyticsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>()
 
 // ============================================================================
-// ⚠️ PARTIAL FIX — in this file only the "sub-admin scoping helpers" section
-// has been consolidated (see below). All the other routes
-// (`/stats`, `/funnel`, `/referrers`, etc.) internally call functions from
-// `analyticsService.ts` (getPageViewStats, getFunnelStats, ...), and
-// those functions open their own `getDb()` connection (we don't have their
-// code yet). That means at least 2 connections still open for each such
-// route: one here for scoping, one inside the service function. To fully
-// fix this, send `analyticsService.ts` — we'll make every function there
-// accept a `db: Db` (like we did in subAdminScope.ts), and the routes will
-// pass a single `db` to all of them.
+// ✅ MIGRATED: Saare service functions ab `db: Db` accept karte hain (pehla arg).
 // ============================================================================
 
 // ─── Sub-admin scoping helpers ─────────────────────────────────────────────
-// ✅ FIX: previously getOwnedAnimeSlugs and getAnimeSlugsForAdminId each made
-// their own separate getDb() call. resolveOwnedSlugs wrapped both of them,
-// so sometimes 2 connections were being created in a single request just
-// for scoping. Now all helpers below accept a `db` object that the route
-// handler has already opened.
-
-// Returns the slugs of the anime **and** their download pages that belong
-// to a sub-admin (or a specific admin when using the main admin's filter).
 async function getOwnedAnimeSlugsFromDb(creatorId: string, db: any): Promise<string[]> {
   const animes = await db.collection('animes')
     .find({ createdBy: creatorId }, { projection: { _id: 1, slug: 1 } })
@@ -76,20 +57,14 @@ async function getOwnedAnimeSlugsFromDb(creatorId: string, db: any): Promise<str
   return [...animeSlugs, ...downloadSlugs]
 }
 
-// For main admin: if ?subAdminId=... is given, scope to that sub-admin's
-// anime. Sub-admin always scoped to themselves (query param ignored).
-// Both branches now share ONE db connection instead of two separate ones.
-async function resolveOwnedSlugs(admin: any, c: any, mongoUri: string, dbName: string): Promise<string[] | null> {
+async function resolveOwnedSlugs(admin: any, c: any, db: any): Promise<string[] | null> {
   const subAdminId = admin?.role !== 'subadmin' ? c.req.query('subAdminId') : null
   if (admin?.role !== 'subadmin' && !subAdminId) return null
 
-  const db = await getDb(mongoUri, dbName)
   const creatorId = admin?.role === 'subadmin' ? admin.id : subAdminId
   return getOwnedAnimeSlugsFromDb(creatorId, db)
 }
 
-// Returns null for the main admin (no restriction), or the sub-admin's own
-// admin id — used to scope shortusers/shortlinks-based analytics.
 function resolveCreatorId(admin: any, c: any): string | null {
   if (admin?.role === 'subadmin') return admin.id
   const subAdminId = c.req.query('subAdminId')
@@ -112,7 +87,6 @@ function detectBrowser(ua: string): string {
   return 'Other'
 }
 
-// ─── Detect page type from path ──────────────────────────────────────────
 function detectPageType(path: string): string {
   if (path === '/' || path === '') return 'home'
   if (/^\/detail\/[^/]+\/episode/.test(path)) return 'episode'
@@ -130,21 +104,6 @@ function detectPageType(path: string): string {
 }
 
 // ─── POST /api/analytics/pageview ────────────────────────────────────────
-// 🆕 FIX: /pageview route ab TURANT response deta hai — saara DB kaam
-// (dedupe, earning context, trackPageView ke 8-10 sequential ops) ab
-// PAGEVIEW_QUEUE (Cloudflare Queue) me chala jata hai. Consumer worker
-// usko uthakar process karta hai.
-//
-// Frontend ko pageview ka result kabhi dikhna hi nahi chahiye tha — ye
-// sirf analytics hai. Ab visitor turant response paata hai, backend apna
-// analytics kaam apni speed se karta hai — user experience is se disconnect
-// ho gaya hai.
-//
-// 🆕 TIME-ON-PAGE PING: frontend ab route change / tab close / visibility
-// change par ek "sirf timeOnPage" wala beacon bhejta hai. Us case me hum
-// NAYA pageview insert nahi karte — sirf usi session+path ke sabse recent
-// pageview doc ka `timeOnPage` field update karte hain. Ye bhi ab queue
-// ke through hota hai (kind: 'time').
 analyticsRoutes.post('/pageview', async (c) => {
   try {
     const body = await c.req.json()
@@ -156,36 +115,19 @@ analyticsRoutes.post('/pageview', async (c) => {
       visitorId,
       timeOnPage,
       pageType: overridePageType,
-      isAdminPreview, // 🆕 admin preview flag (frontend se aata hai)
+      isAdminPreview,
     } = body
 
     if (!rawPath) return c.json({ error: 'path required' }, 400)
 
-    // ================================================================
-    // 🆕 TIME-ON-PAGE-ONLY PING
-    // ----------------------------------------------------------------
-    // Frontend ke `sendTimeOnPage()` se aane wala payload:
-    //   { path, pageType, slug, timeOnPage, sessionId, visitorId, isAdminPreview }
-    //
-    // Ye ek full pageview NAHI hai — bas engagement duration ka follow-up
-    // update hai. Isliye:
-    //   • koi naya pageview insert nahi karenge
-    //   • bot check, l/ls parsing, earnings context — kuch nahi chalayenge
-    //   • bas usi (sessionId|visitorId)+path+pageType ke sabse recent
-    //     pageview doc ka `timeOnPage` set kar denge
-    //
-    // ✅ Yahan ab koi DB kaam nahi — sirf queue me message daal kar
-    // turant return. Consumer worker sab sambhal lega.
-    // ================================================================
+    // TIME-ON-PAGE-ONLY PING
     if (typeof timeOnPage === 'number' && timeOnPage > 0) {
       const seconds = Math.max(1, Math.min(3600, Math.round(timeOnPage)))
 
-      // bot traffic beacon bhejta hi nahi, but defense-in-depth
       const ua = c.req.header('user-agent') || ''
       const botPattern = /bot|crawl|spider|slurp|mediapartners|googlebot|bingbot|yandex|baidu/i
       if (botPattern.test(ua)) return c.json({ ok: true, skipped: 'bot' })
 
-      // path se l/ls strip karo (agar beacon me aa gaye ho — normally nahi aate)
       const cleanPathForTime = rawPath.split('?')[0]
 
       c.executionCtx.waitUntil(
@@ -202,9 +144,6 @@ analyticsRoutes.post('/pageview', async (c) => {
 
       return c.json({ ok: true })
     }
-    // ================================================================
-    // (end time-on-page-only ping — neeche normal pageview flow)
-    // ================================================================
 
     const cleanSlug = typeof slug === 'string' ? slug.split('?')[0] : undefined
 
@@ -242,10 +181,6 @@ analyticsRoutes.post('/pageview', async (c) => {
     const referrer = c.req.header('referer') || undefined
     const pageType = overridePageType === 'not-found' ? 'not-found' : detectPageType(path)
 
-    // 🆕 FIX: yahan se neeche — saara DB kaam ab QUEUE me chala jata hai.
-    // Route ab sirf ek message enqueue karta hai aur turant response
-    // de deta hai. Earning context (linksettings, isForceLink5ModeActive)
-    // aur actual trackPageView — sab consumer worker karega.
     c.executionCtx.waitUntil(
       c.env.PAGEVIEW_QUEUE.send({
         kind: 'view',
@@ -272,7 +207,6 @@ analyticsRoutes.post('/pageview', async (c) => {
       })
     )
 
-    // ✅ Response turant — queue send ka wait nahi kiya (waitUntil use hua)
     return c.json({ ok: true })
   } catch (err: any) {
     console.error('Analytics track error:', err.message)
@@ -280,384 +214,464 @@ analyticsRoutes.post('/pageview', async (c) => {
   }
 })
 
-// ─── GET /api/analytics/stats?days=7&device=mobile ───────────────────────
+// ─── GET /api/analytics/stats ────────────────────────────────────────────
 analyticsRoutes.get('/stats', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
     const days = parseInt(c.req.query('days') || '7', 10)
     const device = c.req.query('device') || undefined
-    const ownedSlugs = await resolveOwnedSlugs(admin, c, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const stats = await getPageViewStats(c.env.MONGODB_URI, c.env.MONGODB_DB, days, device, ownedSlugs)
-    return c.json(stats)
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'analytics/stats', async (db) => {
+      const ownedSlugs = await resolveOwnedSlugs(admin, c, db)
+      const stats = await getPageViewStats(db, days, device, ownedSlugs)
+      return c.json(stats)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
+// ─── GET /api/analytics/page-detail ──────────────────────────────────────
 analyticsRoutes.get('/page-detail', adminAuth, async (c) => {
   try {
     const path = c.req.query('path')
     const days = parseInt(c.req.query('days') || '30', 10)
     if (!path) return c.json({ error: 'path required' }, 400)
-    const detail = await getPageDetail(path, c.env.MONGODB_URI, c.env.MONGODB_DB, days)
-    return c.json(detail)
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'analytics/page-detail', async (db) => {
+      const detail = await getPageDetail(db, path, days)
+      return c.json(detail)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
+// ─── GET /api/analytics/geo-detail ───────────────────────────────────────
 analyticsRoutes.get('/geo-detail', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
     const country = c.req.query('country')
     const days = parseInt(c.req.query('days') || '30', 10)
     if (!country) return c.json({ error: 'country required' }, 400)
-    const ownedSlugs = await resolveOwnedSlugs(admin, c, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const detail = await getGeoDetail(country, c.env.MONGODB_URI, c.env.MONGODB_DB, days, ownedSlugs)
-    return c.json(detail)
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'analytics/geo-detail', async (db) => {
+      const ownedSlugs = await resolveOwnedSlugs(admin, c, db)
+      const detail = await getGeoDetail(db, country, days, ownedSlugs)
+      return c.json(detail)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
+// ─── GET /api/analytics/by-country ───────────────────────────────────────
 analyticsRoutes.get('/by-country', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
     const days = parseInt(c.req.query('days') || '1', 10)
-    const ownedSlugs = await resolveOwnedSlugs(admin, c, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const data = await getByCountryStats(c.env.MONGODB_URI, c.env.MONGODB_DB, days, ownedSlugs)
-    return c.json(data)
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'analytics/by-country', async (db) => {
+      const ownedSlugs = await resolveOwnedSlugs(admin, c, db)
+      const data = await getByCountryStats(db, days, ownedSlugs)
+      return c.json(data)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
+// ─── GET /api/analytics/funnel ───────────────────────────────────────────
 analyticsRoutes.get('/funnel', adminAuth, async (c) => {
   try {
     const days = parseInt(c.req.query('days') || '7', 10)
-    const funnel = await getFunnelStats(c.env.MONGODB_URI, c.env.MONGODB_DB, days)
-    return c.json(funnel)
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'analytics/funnel', async (db) => {
+      const funnel = await getFunnelStats(db, days)
+      return c.json(funnel)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
+// ─── GET /api/analytics/monthly-overview ─────────────────────────────────
 analyticsRoutes.get('/monthly-overview', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
-    const ownedSlugs = await resolveOwnedSlugs(admin, c, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const data = await getMonthlyOverview(c.env.MONGODB_URI, c.env.MONGODB_DB, ownedSlugs)
-    return c.json(data)
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'analytics/monthly-overview', async (db) => {
+      const ownedSlugs = await resolveOwnedSlugs(admin, c, db)
+      const data = await getMonthlyOverview(db, ownedSlugs)
+      return c.json(data)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
+// ─── GET /api/analytics/monthly-detail ───────────────────────────────────
 analyticsRoutes.get('/monthly-detail', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
     const month = c.req.query('month')
     if (!month) return c.json({ error: 'month required (YYYY-MM)' }, 400)
-    const ownedSlugs = await resolveOwnedSlugs(admin, c, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const data = await getMonthlyDetail(c.env.MONGODB_URI, c.env.MONGODB_DB, month, ownedSlugs)
-    return c.json(data)
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'analytics/monthly-detail', async (db) => {
+      const ownedSlugs = await resolveOwnedSlugs(admin, c, db)
+      const data = await getMonthlyDetail(db, month, ownedSlugs)
+      return c.json(data)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
+// ─── GET /api/analytics/referrers ────────────────────────────────────────
 analyticsRoutes.get('/referrers', adminAuth, async (c) => {
   try {
     const days = parseInt(c.req.query('days') || '7', 10)
-    const data = await getReferrerStats(c.env.MONGODB_URI, c.env.MONGODB_DB, days)
-    return c.json(data)
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'analytics/referrers', async (db) => {
+      const data = await getReferrerStats(db, days)
+      return c.json(data)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
+// ─── GET /api/analytics/browsers ─────────────────────────────────────────
 analyticsRoutes.get('/browsers', adminAuth, async (c) => {
   try {
     const days = parseInt(c.req.query('days') || '7', 10)
-    const data = await getBrowserStats(c.env.MONGODB_URI, c.env.MONGODB_DB, days)
-    return c.json(data)
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'analytics/browsers', async (db) => {
+      const data = await getBrowserStats(db, days)
+      return c.json(data)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
+// ─── GET /api/analytics/time-on-page ─────────────────────────────────────
 analyticsRoutes.get('/time-on-page', adminAuth, async (c) => {
   try {
     const days = parseInt(c.req.query('days') || '7', 10)
-    const data = await getTimeOnPageStats(c.env.MONGODB_URI, c.env.MONGODB_DB, days)
-    return c.json(data)
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'analytics/time-on-page', async (db) => {
+      const data = await getTimeOnPageStats(db, days)
+      return c.json(data)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
+// ─── GET /api/analytics/live ─────────────────────────────────────────────
 analyticsRoutes.get('/live', adminAuth, async (c) => {
   try {
-    const data = await getLiveVisitors(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    return c.json(data)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'analytics/live', async (db) => {
+      const data = await getLiveVisitors(db)
+      return c.json(data)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
+// ─── GET /api/analytics/top-anime ────────────────────────────────────────
 analyticsRoutes.get('/top-anime', adminAuth, async (c) => {
   try {
     const days = parseInt(c.req.query('days') || '7', 10)
-    const data = await getTopAnimeOverall(c.env.MONGODB_URI, c.env.MONGODB_DB, days)
-    return c.json(data)
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'analytics/top-anime', async (db) => {
+      const data = await getTopAnimeOverall(db, days)
+      return c.json(data)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
+// ─── GET /api/analytics/hourly ───────────────────────────────────────────
 analyticsRoutes.get('/hourly', adminAuth, async (c) => {
   try {
     const days = parseInt(c.req.query('days') || '7', 10)
-    const data = await getHourlyHeatmap(c.env.MONGODB_URI, c.env.MONGODB_DB, days)
-    return c.json(data)
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'analytics/hourly', async (db) => {
+      const data = await getHourlyHeatmap(db, days)
+      return c.json(data)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
+// ─── GET /api/analytics/not-found ────────────────────────────────────────
 analyticsRoutes.get('/not-found', adminAuth, async (c) => {
   try {
     const days = parseInt(c.req.query('days') || '7', 10)
-    const data = await get404Stats(c.env.MONGODB_URI, c.env.MONGODB_DB, days)
-    return c.json(data)
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'analytics/not-found', async (db) => {
+      const data = await get404Stats(db, days)
+      return c.json(data)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
+// ─── GET /api/analytics/visitor-type ─────────────────────────────────────
 analyticsRoutes.get('/visitor-type', adminAuth, async (c) => {
   try {
     const days = parseInt(c.req.query('days') || '7', 10)
-    const data = await getNewVsReturning(c.env.MONGODB_URI, c.env.MONGODB_DB, days)
-    return c.json(data)
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'analytics/visitor-type', async (db) => {
+      const data = await getNewVsReturning(db, days)
+      return c.json(data)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
+// ─── GET /api/analytics/user-links ───────────────────────────────────────
 analyticsRoutes.get('/user-links', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
     const days = parseInt(c.req.query('days') || '7', 10)
     const creatorId = resolveCreatorId(admin, c)
-    const data = await getUserLinkAnalytics(c.env.MONGODB_URI, c.env.MONGODB_DB, days, creatorId)
-    return c.json(data)
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'analytics/user-links', async (db) => {
+      const data = await getUserLinkAnalytics(db, days, creatorId)
+      return c.json(data)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
+// ─── GET /api/analytics/earnings-health ──────────────────────────────────
 analyticsRoutes.get('/earnings-health', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
     const creatorId = resolveCreatorId(admin, c)
-    const data = await getEarningsAndLinkHealth(c.env.MONGODB_URI, c.env.MONGODB_DB, creatorId)
-    return c.json(data)
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'analytics/earnings-health', async (db) => {
+      const data = await getEarningsAndLinkHealth(db, creatorId)
+      return c.json(data)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
+// ─── GET /api/analytics/fraud ────────────────────────────────────────────
 analyticsRoutes.get('/fraud', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
     const days = parseInt(c.req.query('days') || '7', 10)
     const creatorId = resolveCreatorId(admin, c)
-    const data = await getFraudDetection(c.env.MONGODB_URI, c.env.MONGODB_DB, days, creatorId)
-    return c.json(data)
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'analytics/fraud', async (db) => {
+      const data = await getFraudDetection(db, days, creatorId)
+      return c.json(data)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
+// ─── GET /api/analytics/leaderboard ──────────────────────────────────────
 analyticsRoutes.get('/leaderboard', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
     const creatorId = resolveCreatorId(admin, c)
-    const data = await getLeaderboard(c.env.MONGODB_URI, c.env.MONGODB_DB, creatorId)
-    return c.json(data)
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'analytics/leaderboard', async (db) => {
+      const data = await getLeaderboard(db, creatorId)
+      return c.json(data)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
+// ─── GET /api/analytics/payment-analytics ────────────────────────────────
 analyticsRoutes.get('/payment-analytics', adminAuth, async (c) => {
   try {
-    const data = await getPaymentAnalytics(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    return c.json(data)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'analytics/payment-analytics', async (db) => {
+      const data = await getPaymentAnalytics(db)
+      return c.json(data)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
+// ─── GET /api/analytics/cohort ───────────────────────────────────────────
 analyticsRoutes.get('/cohort', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
     const creatorId = resolveCreatorId(admin, c)
-    const data = await getCohortAnalysis(c.env.MONGODB_URI, c.env.MONGODB_DB, creatorId)
-    return c.json(data)
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'analytics/cohort', async (db) => {
+      const data = await getCohortAnalysis(db, creatorId)
+      return c.json(data)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
+// ─── GET /api/analytics/link-journey ─────────────────────────────────────
 analyticsRoutes.get('/link-journey', adminAuth, async (c) => {
   try {
     const days = parseInt(c.req.query('days') || '7', 10)
-    const data = await getLinkJourney(c.env.MONGODB_URI, c.env.MONGODB_DB, days)
-    return c.json(data)
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'analytics/link-journey', async (db) => {
+      const data = await getLinkJourney(db, days)
+      return c.json(data)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
+// ─── GET /api/analytics/link-journey-by-link ─────────────────────────────
 analyticsRoutes.get('/link-journey-by-link', adminAuth, async (c) => {
   try {
     const days = parseInt(c.req.query('days') || '7', 10)
-    const data = await getLinkJourneyByLink(c.env.MONGODB_URI, c.env.MONGODB_DB, days)
-    return c.json(data)
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'analytics/link-journey-by-link', async (db) => {
+      const data = await getLinkJourneyByLink(db, days)
+      return c.json(data)
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
+// ─── GET /api/analytics/sub-admins-list ──────────────────────────────────
 analyticsRoutes.get('/sub-admins-list', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
     if (admin?.role === 'subadmin') return c.json({ subAdmins: [] })
-    const subAdmins = await getSubAdminsList(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    return c.json({ subAdmins })
+
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'analytics/sub-admins-list', async (db) => {
+      const subAdmins = await getSubAdminsList(db)
+      return c.json({ subAdmins })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// ─── GET /api/analytics/sub-admin-stats ───────────────────────────────────
-// ✅ This route was already correct — getDb() is called only ONCE at the
-// top, and the same `db` object is reused everywhere inside `Promise.all`.
-// No connection-count fix was needed here.
+// ─── GET /api/analytics/sub-admin-stats ──────────────────────────────────
 analyticsRoutes.get('/sub-admin-stats', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
     if (admin?.role === 'subadmin') return c.json({ stats: [] })
 
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
-    const subAdmins = await db.collection('subadmins')
-      .find({}, { projection: { username: 1, realName: 1 } })
-      .toArray()
-
-    const stats = await Promise.all(subAdmins.map(async (sa: any) => {
-      const subAdminId = sa._id.toString()
-
-      const animes = await db.collection('animes')
-        .find({ createdBy: subAdminId }, { projection: { _id: 1, slug: 1 } })
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'analytics/sub-admin-stats', async (db) => {
+      const subAdmins = await db.collection('subadmins')
+        .find({}, { projection: { username: 1, realName: 1 } })
         .toArray()
-      const animeIds = animes.map((a: any) => a._id)
-      const animeSlugs = animes.map((a: any) => a.slug).filter(Boolean)
 
-      const downloadPages = animeIds.length
-        ? await db.collection('downloadpages')
-            .find({ animeId: { $in: animeIds } }, { projection: { slug: 1 } })
-            .toArray()
-        : []
-      const downloadSlugs = downloadPages.map((d: any) => d.slug).filter(Boolean)
+      const stats = await Promise.all(subAdmins.map(async (sa: any) => {
+        const subAdminId = sa._id.toString()
 
-      const allSlugs = [...animeSlugs, ...downloadSlugs]
+        const animes = await db.collection('animes')
+          .find({ createdBy: subAdminId }, { projection: { _id: 1, slug: 1 } })
+          .toArray()
+        const animeIds = animes.map((a: any) => a._id)
+        const animeSlugs = animes.map((a: any) => a.slug).filter(Boolean)
 
-      const totalViews = allSlugs.length
-        ? await db.collection('pageviews').countDocuments({ slug: { $in: allSlugs } })
-        : 0
+        const downloadPages = animeIds.length
+          ? await db.collection('downloadpages')
+              .find({ animeId: { $in: animeIds } }, { projection: { slug: 1 } })
+              .toArray()
+          : []
+        const downloadSlugs = downloadPages.map((d: any) => d.slug).filter(Boolean)
 
-      const shortUsers = await db.collection('shortusers')
-        .find({ createdByAdminId: subAdminId }, { projection: { _id: 1, totalClicks: 1 } })
-        .toArray()
-      const shortUserIds = shortUsers.map((u: any) => u._id)
+        const allSlugs = [...animeSlugs, ...downloadSlugs]
 
-      const linksByUser = shortUserIds.length
-        ? await db.collection('shortlinks').countDocuments({ userId: { $in: shortUserIds } })
-        : 0
-      const linksAssignedDirectly = await db.collection('shortlinks')
-        .countDocuments({ createdByAdminId: subAdminId })
+        const totalViews = allSlugs.length
+          ? await db.collection('pageviews').countDocuments({ slug: { $in: allSlugs } })
+          : 0
 
-      const totalClicks = shortUsers.reduce((sum: number, u: any) => sum + (u.totalClicks || 0), 0)
+        const shortUsers = await db.collection('shortusers')
+          .find({ createdByAdminId: subAdminId }, { projection: { _id: 1, totalClicks: 1 } })
+          .toArray()
+        const shortUserIds = shortUsers.map((u: any) => u._id)
 
-      const instagramAccountsCount = await db.collection('instagramAccounts')
-        .countDocuments({ createdBy: subAdminId })
+        const linksByUser = shortUserIds.length
+          ? await db.collection('shortlinks').countDocuments({ userId: { $in: shortUserIds } })
+          : 0
+        const linksAssignedDirectly = await db.collection('shortlinks')
+          .countDocuments({ createdByAdminId: subAdminId })
 
-      return {
-        subAdminId,
-        username: sa.username,
-        realName: sa.realName || sa.username,
-        animeCount: animes.length,
-        downloadPagesCount: downloadPages.length,
-        totalViews,
-        shortUsersCount: shortUsers.length,
-        linksCount: linksByUser + linksAssignedDirectly,
-        totalClicks,
-        instagramAccountsCount,
-      }
-    }))
+        const totalClicks = shortUsers.reduce((sum: number, u: any) => sum + (u.totalClicks || 0), 0)
 
-    return c.json({ stats })
+        const instagramAccountsCount = await db.collection('instagramAccounts')
+          .countDocuments({ createdBy: subAdminId })
+
+        return {
+          subAdminId,
+          username: sa.username,
+          realName: sa.realName || sa.username,
+          animeCount: animes.length,
+          downloadPagesCount: downloadPages.length,
+          totalViews,
+          shortUsersCount: shortUsers.length,
+          linksCount: linksByUser + linksAssignedDirectly,
+          totalClicks,
+          instagramAccountsCount,
+        }
+      }))
+
+      return c.json({ stats })
+    })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
 // ─── POST /api/analytics/backfill-pageviews-rollup ────────────────────────
-// ✅ ONE-TIME BACKFILL — purane pageviews documents ko dailyPageStats mein
-// rollup karta hai, AUR raw docs bhi delete karta hai (jaisi aggregateAndPrunePageviewDay
-// normally cron mein karta hai). Isse purani 59k+ collection turant halki ho jayegi.
-//
-// ⚠️ IMPORTANT: Ye ek heavy route hai — ek baar chalane ke liye. Agar 60 din ka
-// data hai, toh 60 iterations honge, har iteration ka aggregation chalega.
-// Cloudflare Workers ki CPU/subrequest limit hit ho sakti hai agar bahut purana
-// data ho. Agar timeout aaye toh `from`/`to` query params se chunk-wise chalao.
 analyticsRoutes.post('/backfill-pageviews-rollup', adminAuth, requirePermission('useractivity'), async (c) => {
   try {
-    const db = await getDb(c.env.MONGODB_URI, c.env.MONGODB_DB)
+    return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'analytics/backfill-pageviews-rollup', async (db) => {
+      // date field STRING hai ('YYYY-MM-DD', IST)
+      const oldest = await db.collection('pageviews').find({}).sort({ date: 1 }).limit(1).toArray()
+      const newest = await db.collection('pageviews').find({}).sort({ date: -1 }).limit(1).toArray()
 
-    // date field yahan STRING hai ('YYYY-MM-DD', IST) — Date object nahi
-    const oldest = await db.collection('pageviews').find({}).sort({ date: 1 }).limit(1).toArray()
-    const newest = await db.collection('pageviews').find({}).sort({ date: -1 }).limit(1).toArray()
+      if (oldest.length === 0) {
+        return c.json({ success: true, message: 'Koi data nahi mila', daysProcessed: 0 })
+      }
 
-    if (oldest.length === 0) {
-      return c.json({ success: true, message: 'Koi data nahi mila', daysProcessed: 0 })
-    }
+      const firstDateStr: string = oldest[0].date
+      const lastDateStr: string = newest[0].date
 
-    const firstDateStr: string = oldest[0].date
-    const lastDateStr: string = newest[0].date
+      const results: { date: string; aggregated: boolean }[] = []
+      let cursor = new Date(`${firstDateStr}T00:00:00.000Z`)
+      const last = new Date(`${lastDateStr}T00:00:00.000Z`)
 
-    const results: { date: string; aggregated: boolean }[] = []
-    let cursor = new Date(`${firstDateStr}T00:00:00.000Z`)
-    const last = new Date(`${lastDateStr}T00:00:00.000Z`)
+      while (cursor <= last) {
+        const dateStr = cursor.toISOString().slice(0, 10)
+        const result = await aggregateAndPrunePageviewDay(db, dateStr, 7)
+        results.push(result)
+        cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000)
+      }
 
-    while (cursor <= last) {
-      const dateStr = cursor.toISOString().slice(0, 10)
-      // ✅ rawRetentionDays=7 rakha hai (default) — isliye jaise-jaise loop aage
-      // badhega, har din process hone ke turant baad uska raw data (agar 7 din
-      // se purana ho chuka hai) automatically delete bhi ho jayega
-      const result = await aggregateAndPrunePageviewDay(c.env.MONGODB_URI, c.env.MONGODB_DB, dateStr, 7)
-      results.push(result)
-      cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000)
-    }
-
-    return c.json({
-      success: true,
-      daysProcessed: results.length,
-      daysWithData: results.filter(r => r.aggregated).length,
-      range: { from: firstDateStr, to: lastDateStr },
-    })
+      return c.json({
+        success: true,
+        daysProcessed: results.length,
+        daysWithData: results.filter(r => r.aggregated).length,
+        range: { from: firstDateStr, to: lastDateStr },
+      })
+    }, 120000)  // 2 min timeout — backfill heavy hai
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }

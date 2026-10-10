@@ -1,5 +1,5 @@
 // src/services/analyticsService.ts
-import { getDb, withDb } from './mongoService'
+import { withDb } from './mongoService'
 import { ObjectId, Db } from 'mongodb'
 import { EarningType, ISubAdminAnimeEarning, ISubAdminEarningsSummary } from '../models/types'
 import { getPageRollupForRange } from './dailyPageStatsService'
@@ -75,16 +75,6 @@ function creatorFilter(creatorId?: string | null): Record<string, any> {
   return { createdByAdminId: creatorId }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 🆕 ROLLUP HELPERS — dailyPageStats se per-day/per-month aggregated numbers
-// nikalne ke liye. Yahi asli fix hai jo monthly overview/detail me use hoga.
-//
-// dailyPageStats doc schema (see dailyPageStatsService.ts):
-//   { date, totalViews, byType: [{ type, views }], topPaths: [{ path, views, slug, ... }], ... }
-// NOTE: top-level `views` ya `pageType` field NAHI hoti — ye sirf per-day
-//       summary doc hai. Isliye aggregation me $reduce se byType traverse
-//       karna zaroori hai.
-// ─────────────────────────────────────────────────────────────────────────────
 function sumByType(byTypeArr: any[], allowedTypes: string[]): number {
   if (!Array.isArray(byTypeArr)) return 0
   let sum = 0
@@ -106,8 +96,7 @@ function scopedViewsFromTopPaths(topPathsArr: any[], scopedSlugs: Set<string>): 
 // ============================================================================
 // SUB-ADMIN LIST
 // ============================================================================
-export async function getSubAdminsList(mongoUri: string, dbName: string) {
-  const db = await getDb(mongoUri, dbName)
+export async function getSubAdminsList(db: Db) {
   const subs = await db.collection('subadmins')
     .find({}, { projection: { username: 1, realName: 1 } })
     .toArray()
@@ -118,8 +107,7 @@ export async function getSubAdminsList(mongoUri: string, dbName: string) {
   }))
 }
 
-async function getSubAdminNameMap(mongoUri: string, dbName: string, existingDb?: Db): Promise<Map<string, string>> {
-  const db = existingDb || await getDb(mongoUri, dbName)
+async function getSubAdminNameMap(db: Db): Promise<Map<string, string>> {
   const subs = await db.collection('subadmins')
     .find({}, { projection: { username: 1, realName: 1 } })
     .toArray()
@@ -127,13 +115,10 @@ async function getSubAdminNameMap(mongoUri: string, dbName: string, existingDb?:
 }
 
 async function getSlugMetaMap(
-  mongoUri: string,
-  dbName: string,
-  includeCreator: boolean,
-  existingDb?: Db
+  db: Db,
+  includeCreator: boolean
 ): Promise<Map<string, { animeId?: string; animeTitle?: string; creatorUsername?: string | null }>> {
-  const db = existingDb || await getDb(mongoUri, dbName)
-  const nameMap = includeCreator ? await getSubAdminNameMap(mongoUri, dbName, db) : null
+  const nameMap = includeCreator ? await getSubAdminNameMap(db) : null
 
   const animes = await db.collection('animes')
     .find({}, { projection: { slug: 1, title: 1, createdBy: 1 } })
@@ -167,12 +152,9 @@ async function getSlugMetaMap(
 
 async function resolveAnimeOwnerForSlug(
   slug: string | undefined,
-  mongoUri: string,
-  dbName: string,
-  existingDb?: Db
+  db: Db
 ): Promise<{ animeId?: string; subAdminId?: string }> {
   if (!slug) return {}
-  const db = existingDb || await getDb(mongoUri, dbName)
 
   const anime = await db.collection('animes').findOne(
     { slug },
@@ -320,20 +302,12 @@ async function hadDetailVisit(
 
 // ═════════════════════════════════════════════════════════════════════════════
 // TRACK PAGE VIEW
-// ─────────────────────────────────────────────────────────────────────────────
-// ✅ NEW SPLIT:
-//   • trackPageViewDb(db, data, ctx, at, mongoUri, dbName) — pure DB work, caller
-//     already ke paas db handle hai (queue consumer / batch insert ke liye useful)
-//   • trackPageView(data, mongoUri, dbName, ctx) — backward-compatible wrapper jo
-//     withDb() pooled connection reuse karta hai
 // ═════════════════════════════════════════════════════════════════════════════
 export async function trackPageViewDb(
   db: Db,
   data: Omit<PageViewRecord, 'timestamp' | 'date' | 'earningType' | 'animeId' | 'subAdminId' | 'rateSnapshot' | 'activeLinks' | 'fromDetail' | 'testMode'>,
   earningContext: EarningContext | undefined,
-  at: Date,
-  mongoUri: string,
-  dbName: string
+  at: Date
 ): Promise<{ counted: boolean }> {
   const now = at
   const date = getISTDateStr(now)
@@ -373,7 +347,7 @@ export async function trackPageViewDb(
   let fromDetail = false
 
   if (data.pageType === 'download' && !data.isAdminPreview) {
-    const owner = await resolveAnimeOwnerForSlug(data.slug, mongoUri, dbName, db)
+    const owner = await resolveAnimeOwnerForSlug(data.slug, db)
     animeId = owner.animeId
     subAdminId = owner.subAdminId
 
@@ -385,7 +359,6 @@ export async function trackPageViewDb(
       } else if (data.linkUsed) {
         earningType = 'normal'
       }
-      // else: earningType undefined → earnings queries skip
     }
 
     if (earningType === 'normal') {
@@ -421,7 +394,7 @@ export async function trackPageViewDb(
   return { counted: true }
 }
 
-// ✅ Backward-compatible wrapper — pooled connection reuse
+// ✅ Backward-compatible wrapper (withDb use karta hai, getDb nahi)
 export async function trackPageView(
   data: Parameters<typeof trackPageViewDb>[1],
   mongoUri: string,
@@ -429,21 +402,18 @@ export async function trackPageView(
   earningContext?: EarningContext
 ): Promise<{ counted: boolean }> {
   return withDb(mongoUri, dbName, 'trackPageView', (db) =>
-    trackPageViewDb(db, data, earningContext, new Date(), mongoUri, dbName))
+    trackPageViewDb(db, data, earningContext, new Date()))
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
 // SUMMARY STATS
 // ═════════════════════════════════════════════════════════════════════════════
 export async function getPageViewStats(
-  mongoUri: string,
-  dbName: string,
+  db: Db,
   days = 7,
   device?: string,
   ownedSlugs?: string[] | null
 ) {
-  const db = await getDb(mongoUri, dbName)
-
   const since = new Date()
   since.setDate(since.getDate() - (days - 1))
   const sinceStr = getISTDateStr(since)
@@ -554,12 +524,12 @@ export async function getPageViewStats(
 
   let rollupRange: PageRollupRange = EMPTY_ROLLUP
   if (sinceStr < rawSinceStr) {
-    rollupRange = await getPageRollupForRange(mongoUri, dbName, sinceStr, rawSinceStr) as unknown as PageRollupRange
+    rollupRange = await getPageRollupForRange(db, sinceStr, rawSinceStr) as unknown as PageRollupRange
   }
 
   let rollupAllTime: PageRollupRange = EMPTY_ROLLUP
   if (rawSinceStr > '2000-01-01') {
-    rollupAllTime = await getPageRollupForRange(mongoUri, dbName, '2000-01-01', rawSinceStr) as unknown as PageRollupRange
+    rollupAllTime = await getPageRollupForRange(db, '2000-01-01', rawSinceStr) as unknown as PageRollupRange
   }
 
   const ipSet = new Set<string>([...rawUniqueIps, ...rollupRange.uniqueIps])
@@ -633,11 +603,7 @@ export async function getPageViewStats(
     .sort((a, b) => b.views - a.views)
     .slice(0, 100)
 
-  const slugMeta = await getSlugMetaMap(
-    mongoUri, dbName,
-    ownedSlugs === null || ownedSlugs === undefined,
-    db
-  )
+  const slugMeta = await getSlugMetaMap(db, ownedSlugs === null || ownedSlugs === undefined)
 
   const rawTopPagesEnriched = topPages.map((p: any) => {
     const slug = p.slug as string | undefined
@@ -713,14 +679,15 @@ export async function getPageViewStats(
   }
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// GEO DETAIL
+// ═════════════════════════════════════════════════════════════════════════════
 export async function getGeoDetail(
+  db: Db,
   country: string,
-  mongoUri: string,
-  dbName: string,
   days = 30,
   ownedSlugs?: string[] | null
 ) {
-  const db = await getDb(mongoUri, dbName)
   const since = new Date()
   since.setDate(since.getDate() - (days - 1))
   const sinceStr = getISTDateStr(since)
@@ -767,13 +734,14 @@ export async function getGeoDetail(
   }
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// BY COUNTRY STATS
+// ═════════════════════════════════════════════════════════════════════════════
 export async function getByCountryStats(
-  mongoUri: string,
-  dbName: string,
+  db: Db,
   days = 1,
   ownedSlugs?: string[] | null
 ) {
-  const db = await getDb(mongoUri, dbName)
   const since = new Date()
   since.setDate(since.getDate() - (days - 1))
   const sinceStr = getISTDateStr(since)
@@ -792,7 +760,7 @@ export async function getByCountryStats(
 
   let rollup: PageRollupRange = EMPTY_ROLLUP
   if (sinceStr < rawSinceStr) {
-    rollup = await getPageRollupForRange(mongoUri, dbName, sinceStr, rawSinceStr) as unknown as PageRollupRange
+    rollup = await getPageRollupForRange(db, sinceStr, rawSinceStr) as unknown as PageRollupRange
   }
 
   const byCountryMap = new Map<string, number>()
@@ -808,12 +776,10 @@ export async function getByCountryStats(
   return { byCountry }
 }
 
-export async function getFunnelStats(
-  mongoUri: string,
-  dbName: string,
-  days = 7
-) {
-  const db = await getDb(mongoUri, dbName)
+// ═════════════════════════════════════════════════════════════════════════════
+// FUNNEL STATS
+// ═════════════════════════════════════════════════════════════════════════════
+export async function getFunnelStats(db: Db, days = 7) {
   const since = new Date()
   since.setDate(since.getDate() - (days - 1))
   const sinceStr = getISTDateStr(since)
@@ -898,12 +864,10 @@ function classifyReferrer(referrer?: string): string {
   }
 }
 
-export async function getReferrerStats(
-  mongoUri: string,
-  dbName: string,
-  days = 7
-) {
-  const db = await getDb(mongoUri, dbName)
+// ═════════════════════════════════════════════════════════════════════════════
+// REFERRER STATS
+// ═════════════════════════════════════════════════════════════════════════════
+export async function getReferrerStats(db: Db, days = 7) {
   const since = new Date()
   since.setDate(since.getDate() - (days - 1))
   const sinceStr = getISTDateStr(since)
@@ -931,12 +895,10 @@ export async function getReferrerStats(
   return { byReferrer }
 }
 
-export async function getBrowserStats(
-  mongoUri: string,
-  dbName: string,
-  days = 7
-) {
-  const db = await getDb(mongoUri, dbName)
+// ═════════════════════════════════════════════════════════════════════════════
+// BROWSER STATS
+// ═════════════════════════════════════════════════════════════════════════════
+export async function getBrowserStats(db: Db, days = 7) {
   const since = new Date()
   since.setDate(since.getDate() - (days - 1))
   const sinceStr = getISTDateStr(since)
@@ -955,12 +917,10 @@ export async function getBrowserStats(
   }
 }
 
-export async function getTimeOnPageStats(
-  mongoUri: string,
-  dbName: string,
-  days = 7
-) {
-  const db = await getDb(mongoUri, dbName)
+// ═════════════════════════════════════════════════════════════════════════════
+// TIME ON PAGE STATS
+// ═════════════════════════════════════════════════════════════════════════════
+export async function getTimeOnPageStats(db: Db, days = 7) {
   const since = new Date()
   since.setDate(since.getDate() - (days - 1))
   const sinceStr = getISTDateStr(since)
@@ -994,11 +954,10 @@ export async function getTimeOnPageStats(
   }
 }
 
-export async function getLiveVisitors(
-  mongoUri: string,
-  dbName: string
-) {
-  const db = await getDb(mongoUri, dbName)
+// ═════════════════════════════════════════════════════════════════════════════
+// LIVE VISITORS
+// ═════════════════════════════════════════════════════════════════════════════
+export async function getLiveVisitors(db: Db) {
   const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000)
 
   const activeSessions = await db
@@ -1040,12 +999,10 @@ export async function getLiveVisitors(
   }
 }
 
-export async function getTopAnimeOverall(
-  mongoUri: string,
-  dbName: string,
-  days = 7
-) {
-  const db = await getDb(mongoUri, dbName)
+// ═════════════════════════════════════════════════════════════════════════════
+// TOP ANIME OVERALL
+// ═════════════════════════════════════════════════════════════════════════════
+export async function getTopAnimeOverall(db: Db, days = 7) {
   const since = new Date()
   since.setDate(since.getDate() - (days - 1))
   const sinceStr = getISTDateStr(since)
@@ -1087,12 +1044,10 @@ export async function getTopAnimeOverall(
   }
 }
 
-export async function getHourlyHeatmap(
-  mongoUri: string,
-  dbName: string,
-  days = 7
-) {
-  const db = await getDb(mongoUri, dbName)
+// ═════════════════════════════════════════════════════════════════════════════
+// HOURLY HEATMAP
+// ═════════════════════════════════════════════════════════════════════════════
+export async function getHourlyHeatmap(db: Db, days = 7) {
   const since = new Date()
   since.setDate(since.getDate() - (days - 1))
   const sinceStr = getISTDateStr(since)
@@ -1124,12 +1079,10 @@ export async function getHourlyHeatmap(
   return { hourly }
 }
 
-export async function get404Stats(
-  mongoUri: string,
-  dbName: string,
-  days = 7
-) {
-  const db = await getDb(mongoUri, dbName)
+// ═════════════════════════════════════════════════════════════════════════════
+// 404 STATS
+// ═════════════════════════════════════════════════════════════════════════════
+export async function get404Stats(db: Db, days = 7) {
   const since = new Date()
   since.setDate(since.getDate() - (days - 1))
   const sinceStr = getISTDateStr(since)
@@ -1164,12 +1117,10 @@ export async function get404Stats(
   }
 }
 
-export async function getNewVsReturning(
-  mongoUri: string,
-  dbName: string,
-  days = 7
-) {
-  const db = await getDb(mongoUri, dbName)
+// ═════════════════════════════════════════════════════════════════════════════
+// NEW VS RETURNING
+// ═════════════════════════════════════════════════════════════════════════════
+export async function getNewVsReturning(db: Db, days = 7) {
   const since = new Date()
   since.setDate(since.getDate() - (days - 1))
   const sinceStr = getISTDateStr(since)
@@ -1199,13 +1150,10 @@ export async function getNewVsReturning(
   }
 }
 
-export async function getPageDetail(
-  path: string,
-  mongoUri: string,
-  dbName: string,
-  days = 30
-) {
-  const db = await getDb(mongoUri, dbName)
+// ═════════════════════════════════════════════════════════════════════════════
+// PAGE DETAIL
+// ═════════════════════════════════════════════════════════════════════════════
+export async function getPageDetail(db: Db, path: string, days = 30) {
   const since = new Date()
   since.setDate(since.getDate() - days)
   const sinceStr = getISTDateStr(since)
@@ -1233,19 +1181,20 @@ export async function getPageDetail(
   return { path, total, daily }
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// USER LINK ANALYTICS
+// ═════════════════════════════════════════════════════════════════════════════
 export async function getUserLinkAnalytics(
-  mongoUri: string,
-  dbName: string,
+  db: Db,
   days = 7,
   creatorId?: string | null
 ) {
-  const db = await getDb(mongoUri, dbName)
   const since = new Date()
   since.setDate(since.getDate() - (days - 1))
   since.setHours(0, 0, 0, 0)
 
   const users = await db.collection('shortusers').find(creatorFilter(creatorId)).toArray()
-  const nameMap = !creatorId ? await getSubAdminNameMap(mongoUri, dbName, db) : null
+  const nameMap = !creatorId ? await getSubAdminNameMap(db) : null
 
   const result = await Promise.all(users.map(async (user: any) => {
     const userId = user._id
@@ -1345,43 +1294,108 @@ export async function getUserLinkAnalytics(
   }
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// EARNINGS AND LINK HEALTH — ✅ OPTIMIZED
+// Pehle: har user ke liye 30 din x 1 query + har link ke liye 2 queries (~6s)
+// Ab:    total 4 queries, chahe kitne bhi users/links hon.
+// Response ka shape bilkul same hai.
+// ═════════════════════════════════════════════════════════════════════════════
 export async function getEarningsAndLinkHealth(
-  mongoUri: string,
-  dbName: string,
+  db: Db,
   creatorId?: string | null
 ) {
-  const db = await getDb(mongoUri, dbName)
-
   const users = await db.collection('shortusers').find(creatorFilter(creatorId)).toArray()
-  const nameMap = !creatorId ? await getSubAdminNameMap(mongoUri, dbName, db) : null
+  const nameMap = !creatorId ? await getSubAdminNameMap(db) : null
+  if (users.length === 0) return { users: [] }
 
-  const result = await Promise.all(users.map(async (user: any) => {
+  // 1 query: saare users ke saare links
+  const userIds = users.map((u: any) => u._id)
+  const allLinks = await db.collection('shortlinks')
+    .find({ userId: { $in: userIds } })
+    .sort({ clicks: -1 })
+    .toArray()
+
+  const linksByUser = new Map<string, any[]>()
+  const codeToUser = new Map<string, string>()
+  const allCodes: string[] = []
+  for (const l of allLinks) {
+    const uid = l.userId.toString()
+    if (!linksByUser.has(uid)) linksByUser.set(uid, [])
+    linksByUser.get(uid)!.push(l)
+    codeToUser.set(l.code, uid)
+    allCodes.push(l.code)
+  }
+
+  const now = Date.now()
+  const timelineStart = new Date()
+  timelineStart.setDate(timelineStart.getDate() - 29)
+  timelineStart.setHours(0, 0, 0, 0)
+  const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000)
+  const thirtyDaysAgo = new Date(now - 30 * 24 * 60 * 60 * 1000)
+
+  // 2 queries (parallel): daily clicks per code + rolling 7d/30d per code
+  const [dailyAgg, rollingAgg] = allCodes.length
+    ? await Promise.all([
+        db.collection('shortclicks').aggregate([
+          { $match: { code: { $in: allCodes }, clickedAt: { $gte: timelineStart } } },
+          {
+            $group: {
+              _id: {
+                code: '$code',
+                date: { $dateToString: { format: '%Y-%m-%d', date: '$clickedAt', timezone: 'UTC' } },
+              },
+              clicks: { $sum: 1 },
+            },
+          },
+        ]).toArray(),
+        db.collection('shortclicks').aggregate([
+          { $match: { code: { $in: allCodes }, clickedAt: { $gte: thirtyDaysAgo } } },
+          {
+            $group: {
+              _id: '$code',
+              last30: { $sum: 1 },
+              recent: { $sum: { $cond: [{ $gte: ['$clickedAt', sevenDaysAgo] }, 1, 0] } },
+            },
+          },
+        ]).toArray(),
+      ])
+    : [[], []]
+
+  // userId -> (date -> clicks)
+  const dailyByUser = new Map<string, Map<string, number>>()
+  for (const row of dailyAgg as any[]) {
+    const uid = codeToUser.get(row._id.code)
+    if (!uid) continue
+    if (!dailyByUser.has(uid)) dailyByUser.set(uid, new Map())
+    const m = dailyByUser.get(uid)!
+    m.set(row._id.date, (m.get(row._id.date) || 0) + row.clicks)
+  }
+
+  const rollingByCode = new Map<string, { recent: number; last30: number }>()
+  for (const row of rollingAgg as any[]) {
+    rollingByCode.set(row._id, { recent: row.recent, last30: row.last30 })
+  }
+
+  const result = users.map((user: any) => {
     const userId = user._id
-    const links = await db.collection('shortlinks')
-      .find({ userId })
-      .sort({ clicks: -1 })
-      .toArray()
-
+    const uid = userId.toString()
+    const links = linksByUser.get(uid) || []
     if (links.length === 0) return null
 
-    const linkCodes = links.map((l: any) => l.code)
     const rate = user.ratePerThousand || 10
+    const dayMap = dailyByUser.get(uid) || new Map<string, number>()
 
     const earningsTimeline = []
     for (let i = 29; i >= 0; i--) {
       const dayStart = new Date()
       dayStart.setDate(dayStart.getDate() - i)
       dayStart.setHours(0, 0, 0, 0)
-      const dayEnd = new Date(dayStart)
-      dayEnd.setHours(23, 59, 59, 999)
-      const clicks = await db.collection('shortclicks').countDocuments({
-        code: { $in: linkCodes },
-        clickedAt: { $gte: dayStart, $lte: dayEnd }
-      })
+      const dateStr = getISTDateStr(dayStart)
+      const clicks = dayMap.get(dateStr) || 0
       earningsTimeline.push({
-        date: getISTDateStr(dayStart),
+        date: dateStr,
         clicks,
-        earnings: parseFloat(((clicks * rate) / 1000).toFixed(4))
+        earnings: parseFloat(((clicks * rate) / 1000).toFixed(4)),
       })
     }
 
@@ -1389,19 +1403,10 @@ export async function getEarningsAndLinkHealth(
     const avgDailyEarnings = last7.reduce((s, d) => s + d.earnings, 0) / 7
     const projectedMonthly = parseFloat((avgDailyEarnings * 30).toFixed(2))
 
-    const sevenDaysAgo = new Date()
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-
-    const linkHealth = await Promise.all(links.map(async (link: any) => {
-      const recentClicks = await db.collection('shortclicks').countDocuments({
-        code: link.code,
-        clickedAt: { $gte: sevenDaysAgo }
-      })
-      const last30 = await db.collection('shortclicks').countDocuments({
-        code: link.code,
-        clickedAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
-      })
-      const avgPer7Days = last30 / 4.28
+    const linkHealth = links.map((link: any) => {
+      const r = rollingByCode.get(link.code) || { recent: 0, last30: 0 }
+      const recentClicks = r.recent
+      const avgPer7Days = r.last30 / 4.28
       const status: string =
         recentClicks === 0 ? 'dead' :
         recentClicks < avgPer7Days * 0.5 ? 'declining' :
@@ -1417,10 +1422,10 @@ export async function getEarningsAndLinkHealth(
         lastClicked: link.lastClicked,
         createdAt: link.createdAt,
       }
-    }))
+    })
 
     return {
-      userId: userId.toString(),
+      userId: uid,
       username: user.username,
       realName: user.realName,
       creatorUsername: nameMap ? (nameMap.get(user.createdByAdminId) || 'Main Admin') : undefined,
@@ -1434,23 +1439,24 @@ export async function getEarningsAndLinkHealth(
       deadLinks: linkHealth.filter(l => l.status === 'dead').length,
       trendingLinks: linkHealth.filter(l => l.status === 'trending').length,
     }
-  }))
+  })
 
   return { users: result.filter(Boolean) }
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// FRAUD DETECTION
+// ═════════════════════════════════════════════════════════════════════════════
 export async function getFraudDetection(
-  mongoUri: string,
-  dbName: string,
+  db: Db,
   days = 7,
   creatorId?: string | null
 ) {
-  const db = await getDb(mongoUri, dbName)
   const since = new Date()
   since.setDate(since.getDate() - days)
 
   const users = await db.collection('shortusers').find(creatorFilter(creatorId)).toArray()
-  const nameMap = !creatorId ? await getSubAdminNameMap(mongoUri, dbName, db) : null
+  const nameMap = !creatorId ? await getSubAdminNameMap(db) : null
 
   const alerts = await Promise.all(users.map(async (user: any) => {
     const userId = user._id
@@ -1535,12 +1541,13 @@ export async function getFraudDetection(
   }
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// LEADERBOARD
+// ═════════════════════════════════════════════════════════════════════════════
 export async function getLeaderboard(
-  mongoUri: string,
-  dbName: string,
+  db: Db,
   creatorId?: string | null
 ) {
-  const db = await getDb(mongoUri, dbName)
   const todayStart = new Date()
   todayStart.setHours(0, 0, 0, 0)
   const weekStart = new Date()
@@ -1549,7 +1556,7 @@ export async function getLeaderboard(
 
   const userFilter: any = { isActive: true, ...creatorFilter(creatorId) }
   const users = await db.collection('shortusers').find(userFilter).toArray()
-  const nameMap = !creatorId ? await getSubAdminNameMap(mongoUri, dbName, db) : null
+  const nameMap = !creatorId ? await getSubAdminNameMap(db) : null
 
   const board = await Promise.all(users.map(async (user: any) => {
     const userId = user._id
@@ -1616,12 +1623,10 @@ export async function getLeaderboard(
   }
 }
 
-export async function getPaymentAnalytics(
-  mongoUri: string,
-  dbName: string
-) {
-  const db = await getDb(mongoUri, dbName)
-
+// ═════════════════════════════════════════════════════════════════════════════
+// PAYMENT ANALYTICS
+// ═════════════════════════════════════════════════════════════════════════════
+export async function getPaymentAnalytics(db: Db) {
   const totalPaidResult = await db.collection('shortusers').aggregate([
     { $group: { _id: null, totalPaid: { $sum: '$paidEarnings' }, totalUnpaid: { $sum: '$unpaidEarnings' } } }
   ]).toArray()
@@ -1698,13 +1703,13 @@ export async function getPaymentAnalytics(
   }
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// COHORT ANALYSIS
+// ═════════════════════════════════════════════════════════════════════════════
 export async function getCohortAnalysis(
-  mongoUri: string,
-  dbName: string,
+  db: Db,
   creatorId?: string | null
 ) {
-  const db = await getDb(mongoUri, dbName)
-
   const users = await db.collection('shortusers').find(creatorFilter(creatorId)).toArray()
 
   const cohorts: Record<string, any> = {}
@@ -1746,12 +1751,13 @@ export async function getCohortAnalysis(
   return { cohorts: cohortList }
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// LINK JOURNEY
+// ═════════════════════════════════════════════════════════════════════════════
 export async function getLinkJourney(
-  mongoUri: string,
-  dbName: string,
+  db: Db,
   days = 7
 ) {
-  const db = await getDb(mongoUri, dbName)
   const since = new Date()
   since.setDate(since.getDate() - days)
 
@@ -1828,12 +1834,13 @@ export async function getLinkJourney(
   }
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// LINK JOURNEY BY LINK
+// ═════════════════════════════════════════════════════════════════════════════
 export async function getLinkJourneyByLink(
-  mongoUri: string,
-  dbName: string,
+  db: Db,
   days = 7
 ) {
-  const db = await getDb(mongoUri, dbName)
   const since = new Date()
   since.setDate(since.getDate() - days)
 
@@ -1878,12 +1885,13 @@ export async function getLinkJourneyByLink(
   return { links: result.sort((a, b) => b.totalClicks - a.totalClicks) }
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// USER SELF ANALYTICS
+// ═════════════════════════════════════════════════════════════════════════════
 export async function getUserSelfAnalytics(
-  userId: string,
-  mongoUri: string,
-  dbName: string
+  db: Db,
+  userId: string
 ) {
-  const db = await getDb(mongoUri, dbName)
   const uid = new ObjectId(userId)
 
   const links = await db.collection('shortlinks')
@@ -2045,33 +2053,14 @@ export async function getUserSelfAnalytics(
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// MONTHLY OVERVIEW — ✅ FIXED
-// ─────────────────────────────────────────────────────────────────────────────
-// Raw part: last 7 days ka per-pageview data (pageviews collection)
-// Rollup part: usse purane dinon ka per-day aggregate (dailyPageStats collection)
-//
-// ⚠️ IMPORTANT: `dailyPageStats` me top-level `views` / `pageType` field NAHI
-// hoti — usme `totalViews: number` aur `byType: [{type, views}]` hoti hai.
-// Isliye hum `byType` array ko traverse karke animeViews/downloadViews
-// nikalte hain. Agar dailyPageStatsService me schema badle to ye code
-// accordingly update karna hoga.
-//
-// Sub-admin scoping (ownedSlugs filter):
-//   • dailyPageStats me top-level `slug` nahi hota, isliye jab scope lagta hai
-//     to hum sirf `topPaths` me se woh entries sum karte hain jinke slug match
-//     karte hain. Yeh top-100 paths tak limited hai → scoped rollup thoda
-//     under-count kar sakta hai. Main admin (ownedSlugs=null) ke liye full
-//     accuracy hai.
+// MONTHLY OVERVIEW
 // ═════════════════════════════════════════════════════════════════════════════
 export async function getMonthlyOverview(
-  mongoUri: string,
-  dbName: string,
+  db: Db,
   ownedSlugs?: string[] | null
 ) {
-  const db = await getDb(mongoUri, dbName)
   const rawSinceStr = rawBoundaryStr(getISTDateStr())
 
-  // ── RAW (last 7 days) ────────────────────────────────────────────────
   const rawMatch: any = { date: { $gte: rawSinceStr } }
   if (ownedSlugs && ownedSlugs.length > 0) rawMatch.slug = { $in: ownedSlugs }
 
@@ -2087,8 +2076,6 @@ export async function getMonthlyOverview(
     },
   ]).toArray()
 
-  // ── ROLLUP (raw se purana sab) ───────────────────────────────────────
-  // dailyPageStats has ONE doc per day. We fetch all and aggregate in JS.
   const rollupDocs = await db.collection('dailyPageStats')
     .find({ date: { $lt: rawSinceStr } })
     .project({ date: 1, totalViews: 1, byType: 1, topPaths: 1 })
@@ -2102,9 +2089,7 @@ export async function getMonthlyOverview(
     const cur = rollupMonthMap.get(month) || { views: 0, animeViews: 0, downloadViews: 0 }
 
     if (scopedSlugs) {
-      // Best-effort scoped: only count paths in topPaths matching owned slugs.
       cur.views += scopedViewsFromTopPaths(doc.topPaths, scopedSlugs)
-      // By-type split not available for scoped subset — leave as 0.
     } else {
       cur.views += doc.totalViews || 0
       cur.animeViews += sumByType(doc.byType, ['anime-detail', 'episode'])
@@ -2113,7 +2098,6 @@ export async function getMonthlyOverview(
     rollupMonthMap.set(month, cur)
   }
 
-  // ── MERGE ────────────────────────────────────────────────────────────
   const monthMap = new Map<string, { month: string; views: number; animeViews: number; downloadViews: number }>()
   for (const [month, r] of rollupMonthMap) {
     monthMap.set(month, { month, views: r.views, animeViews: r.animeViews, downloadViews: r.downloadViews })
@@ -2134,23 +2118,13 @@ export async function getMonthlyOverview(
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// MONTHLY DETAIL — ✅ FIXED
-// ─────────────────────────────────────────────────────────────────────────────
-// Same split as overview:
-//   • RAW: days in month where date >= rawSinceStr (last 7 days)
-//   • ROLLUP: days in month where date < rawSinceStr
-//
-// Merge day-wise in JS because dailyPageStats docs have different shape
-// from raw pageviews docs (no pageType field, uses byType array).
+// MONTHLY DETAIL
 // ═════════════════════════════════════════════════════════════════════════════
 export async function getMonthlyDetail(
-  mongoUri: string,
-  dbName: string,
+  db: Db,
   month: string,
   ownedSlugs?: string[] | null
 ) {
-  const db = await getDb(mongoUri, dbName)
-
   const [yearStr, monStr] = month.split('-')
   const year = parseInt(yearStr, 10)
   const mon = parseInt(monStr, 10)
@@ -2167,7 +2141,6 @@ export async function getMonthlyDetail(
   const monthEnd = `${month}-${String(lastDay).padStart(2, '0')}`
   const rawSinceStr = rawBoundaryStr(getISTDateStr())
 
-  // ── RAW: only days in this month that fall in last 7 days ────────────
   const rawStart = monthStart > rawSinceStr ? monthStart : rawSinceStr
   const rawMatch: any = { date: { $gte: rawStart, $lte: monthEnd } }
   if (ownedSlugs && ownedSlugs.length > 0) rawMatch.slug = { $in: ownedSlugs }
@@ -2184,7 +2157,6 @@ export async function getMonthlyDetail(
     },
   ]).toArray()
 
-  // ── ROLLUP: days in month that are older than rawSinceStr ────────────
   const rollupDocs = await db.collection('dailyPageStats')
     .find({ date: { $gte: monthStart, $lte: monthEnd, $lt: rawSinceStr } })
     .project({ date: 1, totalViews: 1, byType: 1, topPaths: 1 })
@@ -2205,7 +2177,6 @@ export async function getMonthlyDetail(
     rollupDayMap.set(doc.date, cur)
   }
 
-  // ── MERGE day-wise ───────────────────────────────────────────────────
   const dayMap = new Map<string, { totalViews: number; animeViews: number; downloadViews: number }>()
   for (const [date, r] of rollupDayMap) dayMap.set(date, r)
   for (const d of rawAgg) {
@@ -2218,7 +2189,6 @@ export async function getMonthlyDetail(
     dayMap.set(key, cur)
   }
 
-  // ── Build full month array (missing days = 0) ────────────────────────
   const days: { date: string; totalViews: number; animeViews: number; downloadViews: number; otherViews: number }[] = []
   for (let day = 1; day <= lastDay; day++) {
     const dateStr = `${month}-${String(day).padStart(2, '0')}`
@@ -2271,14 +2241,11 @@ const SNAP_GROUP = {
 }
 
 export async function getSubAdminEarnings(
-  subAdminId: string,
-  mongoUri: string,
-  dbName: string
+  db: Db,
+  subAdminId: string
 ): Promise<ISubAdminEarningsSummary | null> {
-  const db = await getDb(mongoUri, dbName)
-
   const subAdmin = await db.collection('subadmins').findOne(
-    { _id: toObjectIdSafe(subAdminId) }
+    { _id: new ObjectId(subAdminId) }
   ) as SubAdminRateDoc | null
   if (!subAdmin) return null
 
@@ -2302,7 +2269,10 @@ export async function getSubAdminEarnings(
     else if (row._id.earningType === 'special-mode') b.specialMode += row.count
   }
 
-  const animeIds = Array.from(byAnimeMap.keys()).filter(isValidObjectIdSafe).map(toObjectIdSafe)
+  const animeIds = Array.from(byAnimeMap.keys())
+    .filter((id) => ObjectId.isValid(id))
+    .map((id) => new ObjectId(id))
+
   const animeTitles = animeIds.length
     ? await db.collection('animes').find({ _id: { $in: animeIds } }, { projection: { title: 1 } }).toArray()
     : []
@@ -2333,11 +2303,8 @@ export async function getSubAdminEarnings(
 }
 
 export async function getAllSubAdminEarningsSummary(
-  mongoUri: string,
-  dbName: string,
-  existingDb?: Db
+  db: Db
 ): Promise<Omit<ISubAdminEarningsSummary, 'byAnime'>[]> {
-  const db = existingDb || await getDb(mongoUri, dbName)
   const settings: any = await db.collection('linksettings').findOne({})
   const globalRate = typeof settings?.globalRatePerThousandViews === 'number' ? settings.globalRatePerThousandViews : 0
 
@@ -2373,11 +2340,4 @@ export async function getAllSubAdminEarningsSummary(
   }))
 
   return results.sort((a, b) => b.totalEarnings - a.totalEarnings)
-}
-
-function toObjectIdSafe(id: string): ObjectId {
-  return new ObjectId(id)
-}
-function isValidObjectIdSafe(id: string): boolean {
-  return ObjectId.isValid(id)
 }

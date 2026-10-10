@@ -17,49 +17,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
       .catch((err) => { clearTimeout(timer); reject(err) })
   })
 }
-
-const MAX_CONCURRENT_DB = 8
-let activeDb = 0
-const dbQueue: Array<() => void> = []
-
-async function acquireDbSlot() {
-  if (activeDb < MAX_CONCURRENT_DB) { activeDb++; return }
-  await new Promise<void>((resolve) => dbQueue.push(resolve))
-}
-function releaseDbSlot() {
-  const next = dbQueue.shift()
-  if (next) next()      // slot seedha agle ko de do
-  else activeDb--
-}
-
-export async function getDb(mongoUri: string, dbName: string): Promise<Db> {
-  const t0 = Date.now()
-  const client = new MongoClient(mongoUri, {
-    connectTimeoutMS: 5000,
-    serverSelectionTimeoutMS: 5000,
-    socketTimeoutMS: 8000,
-    maxPoolSize: 5,
-    minPoolSize: 0,
-  })
-  try {
-    await withTimeout(client.connect(), 6000, 'getDb connect')
-    log(`getDb connected (${Date.now() - t0}ms)`)
-    return client.db(dbName)
-  } catch (err) {
-    logErr(`getDb connect FAILED (${Date.now() - t0}ms)`, err)
-    throw err
-  }
-}
-
 // ✅ Ek request ke andar helper jo: connect -> operation -> close (guaranteed)
-// 🆕 FIX: 'export' add kiya gaya — instagramWebhookRoutes.ts aur
-// instagramQueueService.ts dono is function ko directly import karte hain,
-// export missing hone ki wajah se wahan red/unresolved error aa raha tha.
-//
-// 🆕 UPDATE: opTimeoutMs optional param add kiya (default 8000ms). Lamba batch
-// chalane wale callers ab `withDb(..., 30000)` pass kar sakte hain.
-// socketTimeoutMS ko bhi 10000 -> 30000 kar diya taaki lamba batch beech me
-// na tute.
 export async function withDb<T>(
   mongoUri: string,
   dbName: string,
@@ -67,16 +25,12 @@ export async function withDb<T>(
   fn: (db: Db) => Promise<T>,
   opTimeoutMs = 8000
 ): Promise<T> {
-  // ✅ CONNECTION LIMITER: slot acquire karo (agar 8 already active hain to
-  // yahan await pe rukega jab tak koi release na kare)
-  await acquireDbSlot()
-
   const t0 = Date.now()
   const client = new MongoClient(mongoUri, {
     connectTimeoutMS: 5000,
     serverSelectionTimeoutMS: 5000,
-    socketTimeoutMS: 30000,   // 🆕 10000 -> 30000 (lamba batch ke liye)
-    maxPoolSize: 5,
+    socketTimeoutMS: 30000,
+    maxPoolSize: 1,   // 🔧 5 -> 1 (ek client se ek hi operation hota hai)
     minPoolSize: 0,
   })
 
@@ -92,16 +46,11 @@ export async function withDb<T>(
     logErr(`${label} FAILED (${Date.now() - t0}ms total)`, err)
     throw err
   } finally {
-    // ✅ close ka bhi apna chhota timeout, aur ye await kiya jaata hai isi request
-    // ke andar — koi orphaned promise doosre request me leak nahi hoti
     try {
       await withTimeout(client.close(true), 2000, `close[${label}]`)
     } catch (closeErr) {
       logErr(`close FAILED for ${label} (ignored, isolate will GC it)`, closeErr)
     }
-    // ✅ CONNECTION LIMITER: sabse aakhir me slot release karo — queue me
-    // wait kar raha next caller ab aage badhega
-    releaseDbSlot()
   }
 }
 

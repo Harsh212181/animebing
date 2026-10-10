@@ -1,4 +1,5 @@
-import { getDb } from './mongoService'
+// src/services/dailyStatsService.ts
+import { Db } from 'mongodb'
 
 export interface IDailyActivityStat {
   _id?: any
@@ -28,16 +29,18 @@ export function startOfUTCDay(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
 }
 
+// ============================================================================
+// ✅ MIGRATED: Saare exported functions ab `db: Db` accept karte hain (pehla arg).
+// Har caller `withDb` ke andar wrap karega — connection pooling via mongoService.
+// ============================================================================
+
 // ✅ Ek (UTC) din ka raw watchactivities data aggregate karke dailyActivityStats
-// mein upsert karta hai, phir wahi raw documents delete kar deta hai (jo abhi
-// bhi "active" hain — jinka heartbeat 2 ghante ke andar update hua hai — unhe
-// chhod dete hain, taaki kisi live watch-session ka ID achanak invalid na ho jaye).
+// mein upsert karta hai, phir wahi raw documents delete kar deta hai.
 // dateStr: 'YYYY-MM-DD'. Na diya jaye to 'kal' (yesterday, UTC) use hota hai.
 export async function aggregateAndPruneDay(
-  mongoUri: string, dbName: string, dateStr?: string
+  db: Db,
+  dateStr?: string
 ): Promise<{ date: string; aggregated: boolean }> {
-  const db = await getDb(mongoUri, dbName)
-
   const target = dateStr
     ? new Date(`${dateStr}T00:00:00.000Z`)
     : startOfUTCDay(new Date(Date.now() - 24 * 60 * 60 * 1000))
@@ -113,9 +116,11 @@ export async function aggregateAndPruneDay(
 // ✅ [fromDate, toDateExclusive) range ke saare dailyActivityStats docs ko
 // combine karta hai. animeScope diya ho to sirf un anime IDs ka data count hota hai.
 export async function getRollupStatsForRange(
-  mongoUri: string, dbName: string, fromDate: Date, toDateExclusive: Date, animeScope: string[] | null
+  db: Db,
+  fromDate: Date,
+  toDateExclusive: Date,
+  animeScope: string[] | null
 ) {
-  const db = await getDb(mongoUri, dbName)
   const docs = await db.collection('dailyActivityStats').find({
     dateObj: { $gte: startOfUTCDay(fromDate), $lt: toDateExclusive }
   }).toArray()
@@ -155,10 +160,9 @@ export async function getRollupStatsForRange(
 
 // ✅ Backfill ke liye — aggregateAndPruneDay jaisa hi, lekin raw docs delete NAHI karta
 export async function aggregateAndPruneDayNoDelete(
-  mongoUri: string, dbName: string, dateStr: string
+  db: Db,
+  dateStr: string
 ): Promise<{ date: string; aggregated: boolean }> {
-  const db = await getDb(mongoUri, dbName)
-
   const dayStart = startOfUTCDay(new Date(`${dateStr}T00:00:00.000Z`))
   const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000)
   const key = dayStart.toISOString().slice(0, 10)

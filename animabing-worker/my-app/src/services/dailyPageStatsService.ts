@@ -1,4 +1,5 @@
-import { getDb } from './mongoService'
+// src/services/dailyPageStatsService.ts
+import { Db } from 'mongodb'
 
 function getISTDateStr(d: Date = new Date()): string {
   const IST_OFFSET = 5.5 * 60 * 60 * 1000
@@ -42,13 +43,19 @@ export interface IDailyPageStat {
   updatedAt: Date
 }
 
+// ============================================================================
+// ✅ MIGRATED: Saare exported functions ab `db: Db` accept karte hain (pehla arg).
+// Har caller `withDb` ke andar wrap karega — connection pooling via mongoService.
+// ============================================================================
+
 // ✅ Ek (IST) din ka pageviews data aggregate karke dailyPageStats mein
 // upsert karta hai. Fir 7+ din purane (aur already-rolled-up) raw pageviews
 // delete kar deta hai — Funnel/Link Journey ke liye last 7 din ka raw zinda rehta hai.
 export async function aggregateAndPrunePageviewDay(
-  mongoUri: string, dbName: string, dateStr?: string, rawRetentionDays = 7
+  db: Db,
+  dateStr?: string,
+  rawRetentionDays = 7
 ): Promise<{ date: string; aggregated: boolean }> {
-  const db = await getDb(mongoUri, dbName)
   const target = dateStr || getISTDateStr(new Date(Date.now() - 24 * 60 * 60 * 1000))
   const match = { date: target }
 
@@ -135,7 +142,7 @@ export async function aggregateAndPrunePageviewDay(
   return { date: target, aggregated: true }
 }
 
-async function prunePageviewsOlderThan(db: any, days: number) {
+async function prunePageviewsOlderThan(db: Db, days: number) {
   const cutoff = getISTDateStr(new Date(Date.now() - days * 24 * 60 * 60 * 1000))
   // ✅ sirf wahi din delete karo jinka rollup ban chuka hai — kabhi bhi
   // un-aggregated data delete nahi hoga, chahe kitna bhi purana ho
@@ -145,8 +152,11 @@ async function prunePageviewsOlderThan(db: any, days: number) {
 }
 
 // ✅ [fromDateStr, toDateExclusiveStr) ke saare dailyPageStats docs combine karta hai
-export async function getPageRollupForRange(mongoUri: string, dbName: string, fromDateStr: string, toDateExclusiveStr: string) {
-  const db = await getDb(mongoUri, dbName)
+export async function getPageRollupForRange(
+  db: Db,
+  fromDateStr: string,
+  toDateExclusiveStr: string
+) {
   const docs = await db.collection('dailyPageStats').find({
     date: { $gte: fromDateStr, $lt: toDateExclusiveStr }
   }).toArray() as unknown as IDailyPageStat[]

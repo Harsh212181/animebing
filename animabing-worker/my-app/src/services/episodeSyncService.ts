@@ -1,39 +1,28 @@
+// src/services/episodeSyncService.ts
 import { Db } from 'mongodb'
 import { getContentGroup } from '../utils/contentGroup'
-import { getDb, toObjectId } from './mongoService'
+import { toObjectId } from './mongoService'
 
 // ============================================================================
-// ✅ FIX: har exported function ab EK OPTIONAL `existingDb` trailing param
-// leti hai. Agar caller ke paas already khula hua `db` object hai (jaise
-// `syncPageDerivedData` ke andar), wahi reuse hota hai — naya connection
-// nahi khulta. Agar `existingDb` nahi diya jaata (jaisa downloadPageRoutes.ts
-// abhi bhi `syncAnimeEpisodeCountFromAnime(...)` ko akela call karta hai),
-// to purana behavior (apna connection khud kholna) waisa hi rehta hai —
-// isliye ye change fully backward-compatible hai, kisi caller ko todta nahi.
+// ✅ MIGRATED: Saare exported functions ab `db: Db` accept karte hain (pehla arg).
+// Har caller `withDb` ke andar wrap karega — connection pooling via mongoService.
 // ============================================================================
 
 // ============ Download Page ke links se anime.currentEpisode sync (page ID se) ============
 export async function syncAnimeEpisodeCountFromPage(
-  downloadPageId: string,
-  mongoUri: string,
-  dbName: string,
-  existingDb?: Db
+  db: Db,
+  downloadPageId: string
 ) {
-  const db = existingDb || await getDb(mongoUri, dbName)
-
   const page = await db.collection('downloadpages').findOne({ _id: toObjectId(downloadPageId) })
   if (!page || !page.animeId) return null
 
-  return syncAnimeEpisodeCountFromAnime(page.animeId, mongoUri, dbName, db)
+  return syncAnimeEpisodeCountFromAnime(db, page.animeId)
 }
 
 export async function syncAnimeEpisodeCountFromAnime(
-  animeId: any,
-  mongoUri: string,
-  dbName: string,
-  existingDb?: Db
+  db: Db,
+  animeId: any
 ) {
-  const db = existingDb || await getDb(mongoUri, dbName)
   const animeObjectId = typeof animeId === 'string' ? toObjectId(animeId) : animeId
 
   // ✅ pehle current value nikaal lo taaki compare kar sakein
@@ -71,8 +60,7 @@ export async function syncAnimeEpisodeCountFromAnime(
 }
 
 // ✅ Ye function sirf actual links ke numbers (episode / episodeStart) se
-// range nikalta hai. "Starting Episode Number (reference only)" field ab
-// title calculation ko override NAHI karega.
+// range nikalta hai.
 function computeEpisodeRangeTitle(page: any, label: 'Episode' | 'Chapter'): string {
   const links = page?.links || []
   const nums: number[] = []
@@ -89,12 +77,9 @@ function computeEpisodeRangeTitle(page: any, label: 'Episode' | 'Chapter'): stri
 }
 
 export async function syncEpisodeTitleFromDownloadPage(
-  downloadPageId: string,
-  mongoUri: string,
-  dbName: string,
-  existingDb?: Db
+  db: Db,
+  downloadPageId: string
 ) {
-  const db = existingDb || await getDb(mongoUri, dbName)
   const page = await db.collection('downloadpages').findOne({ _id: toObjectId(downloadPageId) })
   if (!page || !page.animeId) return
   const anime = await db.collection('animes').findOne(
@@ -131,16 +116,12 @@ export async function syncEpisodeTitleFromDownloadPage(
   )
 }
 
-// ✅ FIX: ab EK connection khulti hai (poori chain — page lookup, anime
-// count sync, episode/chapter title sync — sab isi `db` se) instead of
-// pehle ke 3 alag connections.
+// ✅ FIX: ab sab kuch ek hi `db` se (caller ke withDb se) — no nested connections.
 export async function syncPageDerivedData(
-  downloadPageId: string,
-  mongoUri: string,
-  dbName: string
+  db: Db,
+  downloadPageId: string
 ) {
-  const db = await getDb(mongoUri, dbName)
-  const newCount = await syncAnimeEpisodeCountFromPage(downloadPageId, mongoUri, dbName, db)
-  await syncEpisodeTitleFromDownloadPage(downloadPageId, mongoUri, dbName, db)
+  const newCount = await syncAnimeEpisodeCountFromPage(db, downloadPageId)
+  await syncEpisodeTitleFromDownloadPage(db, downloadPageId)
   return newCount
 }
