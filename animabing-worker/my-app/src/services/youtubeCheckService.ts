@@ -3,7 +3,7 @@
 // ============================================================
 
 import { ITrackedChannel, ITrackedTitle, ITrackNotification, ICheckLog } from '../models/types'
-import { findOne, updateOne, insertOne, toObjectId } from './mongoService'
+import { findOne, updateOne, insertOne, toObjectId, withDb } from './mongoService'
 import { syncPageDerivedData } from './episodeSyncService'   // ✅ UPDATED: combined helper (currentEpisode + range-title dono ek saath)
 
 interface YouTubeVideoItem {
@@ -837,10 +837,13 @@ export async function processChannelUpdates(
       // dusre session/title ka check chalte hi ye page ka currentEpisode
       // dobara force-overwrite ho jata tha — chahe kuch naya na mila ho.
       if (trackedTitle.linkedDownloadPageId) {
+        const pageIdToSync = trackedTitle.linkedDownloadPageId
         try {
-          await syncPageDerivedData(trackedTitle.linkedDownloadPageId, mongoUri, dbName)
-        } catch {
-          // silent
+          await withDb(mongoUri, dbName, 'syncPageDerived', (db) =>
+            syncPageDerivedData(db, pageIdToSync)
+          )
+        } catch (e) {
+          console.error('[youtubeCheck] syncPageDerivedData failed:', e)
         }
       }
     }

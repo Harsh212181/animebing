@@ -1,4 +1,4 @@
- import { Hono } from 'hono'
+import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
 import { findOne, findMany, updateOne, deleteOne, insertOne } from '../services/mongoService'
@@ -392,8 +392,10 @@ uploadRoutes.post('/preview-url', adminAuth, async (c) => {
       return c.json({ url })
     }
 
+    // ✅ Sirf static bucket hostnames yahan tak pahunchte hain — un par DB use nahi hota
     const fullUrl = `https://${hostname}/${encodeURIComponent(key)}`
     const signed = await signDownloadUrl(
+      null as any, // static bucket hai, isliye DB use nahi hota
       fullUrl,
       {
         R2_ACCOUNT_ID: c.env.R2_ACCOUNT_ID,
@@ -401,9 +403,7 @@ uploadRoutes.post('/preview-url', adminAuth, async (c) => {
         R2_SECRET_ACCESS_KEY: c.env.R2_SECRET_ACCESS_KEY,
         ENCRYPTION_KEY: c.env.ENCRYPTION_KEY,
       },
-      mode === 'download' ? 'download' : 'watch',
-      c.env.MONGODB_URI,
-      c.env.MONGODB_DB
+      mode === 'download' ? 'download' : 'watch'
     )
     return c.json({ url: signed })
   } catch (err: any) {

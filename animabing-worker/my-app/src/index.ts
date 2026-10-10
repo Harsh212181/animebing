@@ -24,7 +24,7 @@ import animeLinkControlRoutes from './routes/animeLinkControlRoutes'
 import specialModeRoutes from './routes/specialModeRoutes'
 import notesRoutes from './routes/notesRoutes'
 import trackRoutes from './routes/trackRoutes'
-import { findMany, insertOne, updateOne } from './services/mongoService'
+import { findMany, insertOne, updateOne, withDb } from './services/mongoService'
 import { ITrackedChannel } from './models/types'
 import { processChannelUpdates, notifyOnce, processInBatches } from './services/youtubeCheckService'
 import linkGeneratorRoutes from './routes/linkGeneratorRoutes'
@@ -193,7 +193,11 @@ export default {
     // karke dailyStats me daalega aur purane raw logs prune karega.
     if (event.cron === '10 0 * * *') {
       try {
-        const result = await aggregateAndPruneDay(env.MONGODB_URI, env.MONGODB_DB)
+        const result = await withDb(
+          env.MONGODB_URI, env.MONGODB_DB, 'dailyActivityRollup',
+          (db) => aggregateAndPruneDay(db),
+          60000
+        )
         console.log('Daily activity rollup done:', result)
       } catch (err) {
         console.error('Daily activity aggregation failed:', err)
@@ -206,7 +210,11 @@ export default {
     // IST use kiya kyunki India-centric audience ke hisaab se din 00:00 IST pe khatam hota hai.
     if (event.cron === '40 18 * * *') {
       try {
-        const result = await aggregateAndPrunePageviewDay(env.MONGODB_URI, env.MONGODB_DB)
+        const result = await withDb(
+          env.MONGODB_URI, env.MONGODB_DB, 'dailyPageviewRollup',
+          (db) => aggregateAndPrunePageviewDay(db),
+          60000
+        )
         console.log('Daily pageview rollup done:', result)
       } catch (err) {
         console.error('Daily pageview aggregation failed:', err)

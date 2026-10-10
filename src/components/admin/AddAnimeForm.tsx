@@ -9,7 +9,7 @@ const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
 
 // Complete unique genre list (46 genres)
 const GENRE_OPTIONS = [
-  'Action', 'Adventure', 'Comedy', 'Drama', 'Fantasy', 'Romance', 'Sci-Fi', 'Horror',
+  'Action', 'Adventure', 'Comedy', 'Drama', 'Dark Fantasy','Fantasy','Football', 'Romance', 'Sci-Fi', 'Horror',
   'Mystery', 'Thriller', 'Psychological', 'Slice of Life', 'Supernatural', 'Magic',
   'Isekai', 'Mecha', 'Sports', 'Music', 'School', 'Historical', 'Military', 'Samurai',
   'Martial Arts', 'Detective', 'Crime', 'Survival', 'Apocalyptic', 'Cyberpunk',

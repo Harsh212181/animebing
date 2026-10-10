@@ -17,20 +17,22 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
       .catch((err) => { clearTimeout(timer); reject(err) })
   })
 }
+
 // ✅ Ek request ke andar helper jo: connect -> operation -> close (guaranteed)
 export async function withDb<T>(
   mongoUri: string,
   dbName: string,
   label: string,
   fn: (db: Db) => Promise<T>,
-  opTimeoutMs = 8000
+  opTimeoutMs = 8000,
+  maxPoolSize = 1          // 👈 naya (batch parallel ke liye badha sakte ho)
 ): Promise<T> {
   const t0 = Date.now()
   const client = new MongoClient(mongoUri, {
     connectTimeoutMS: 5000,
     serverSelectionTimeoutMS: 5000,
     socketTimeoutMS: 30000,
-    maxPoolSize: 1,   // 🔧 5 -> 1 (ek client se ek hi operation hota hai)
+    maxPoolSize,           // 👈 ab variable
     minPoolSize: 0,
   })
 

@@ -5,6 +5,7 @@
   "compatibility_flags": ["nodejs_compat", "no_handle_cross_request_promise_resolution"],
   "workers_dev": true,
   "preview_urls": true,
+  "placement": { "mode": "smart" },
   "vars": {
     "MONGODB_DB": "animabing",
     "ALLOWED_ORIGIN": "*",
@@ -18,8 +19,8 @@
     "consumers": [
       {
         "queue": "pageview-queue",
-        "max_batch_size": 25,
-        "max_batch_timeout": 5,
+        "max_batch_size": 50,
+        "max_batch_timeout": 20,
         "max_retries": 3
       }
     ]
