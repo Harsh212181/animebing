@@ -661,6 +661,46 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
     toast.success(message);
   };
 
+  // ── Title quick-fill presets ─────────────────────────────────────────
+  const TITLE_PRESETS = ['Episode', 'Chapter'] as const;
+
+  const applyTitlePreset = (isEdit: boolean, label: string) => {
+    if (isEdit) {
+      setEditForm(prev => ({ ...prev, title: label }));
+    } else {
+      setNewItem(prev => ({ ...prev, title: label }));
+    }
+  };
+
+  const renderTitlePresets = (isEdit: boolean, disabled: boolean) => {
+    const currentTitle = isEdit ? editForm.title : newItem.title;
+
+    return (
+      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+        <span className="text-[10px] text-gray-500">Quick fill:</span>
+        {TITLE_PRESETS.map(label => {
+          const active = currentTitle === label;
+          return (
+            <button
+              key={label}
+              type="button"
+              disabled={disabled}
+              onClick={() => applyTitlePreset(isEdit, label)}
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                active
+                  ? 'bg-purple-500/25 text-purple-200 border-purple-500/40'
+                  : 'bg-white/[0.04] text-gray-300 border-white/[0.08] hover:bg-purple-500/15 hover:text-purple-200 hover:border-purple-500/30'
+              }`}
+            >
+              {active && <SvgIcon d={ICONS.check} className="w-2.5 h-2.5" />}
+              {label}
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+
   // ── Shared input style classes ──────────────────────────────────────
   const inputCls = "w-full px-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-xs text-white placeholder-gray-500 outline-none transition-all focus:border-purple-500/50 focus:bg-white/[0.06] focus:ring-2 focus:ring-purple-500/20 disabled:opacity-60";
 
@@ -755,6 +795,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
         <div>
           <label className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1 block">Title</label>
           <input type="text" value={editForm.title} onChange={(e) => setEditForm({...editForm, title: e.target.value})} className={inputCls} disabled={updatingItem} />
+          {renderTitlePresets(true, updatingItem)}
         </div>
 
         <div className="flex gap-2">
@@ -1194,6 +1235,7 @@ const EpisodesManager: React.FC<EpisodesManagerProps> = ({ token: tokenProp, isM
               className={inputCls}
               disabled={addingItem}
             />
+            {renderTitlePresets(false, addingItem)}
           </div>
 
           <div>

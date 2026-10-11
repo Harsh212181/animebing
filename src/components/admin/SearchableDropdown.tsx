@@ -1,4 +1,4 @@
- // src/components/admin/SearchableDropdown.tsx – ✨ 100x Better UI
+// src/components/admin/SearchableDropdown.tsx
 import React, { useState, useRef, useEffect, useCallback, useMemo, KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
@@ -55,14 +55,14 @@ const DEFAULT_API_BASE = import.meta.env.VITE_API_BASE || '';
 const getToken = () => localStorage.getItem('adminToken') || '';
 
 const debounce = (fn: Function, delay: number) => {
-  let timer: NodeJS.Timeout;
+  let timer: ReturnType<typeof setTimeout>;
   return (...args: any[]) => {
     clearTimeout(timer);
     timer = setTimeout(() => fn(...args), delay);
   };
 };
 
-// 🔍 Highlight matched text in title
+// Highlight matched text in title
 const highlightMatch = (text: string, query: string) => {
   if (!query.trim()) return <>{text}</>;
   const idx = text.toLowerCase().indexOf(query.toLowerCase().trim());
@@ -79,7 +79,7 @@ const highlightMatch = (text: string, query: string) => {
   );
 };
 
-// 🎨 Status badge color helper
+// Status badge color helper
 const statusStyles = (status?: string) => {
   const s = (status || '').toLowerCase();
   if (s.includes('ongoing') || s.includes('airing')) return 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
@@ -89,15 +89,40 @@ const statusStyles = (status?: string) => {
   return 'bg-slate-500/15 text-slate-300 border-slate-500/30';
 };
 
+// 2-line title clamp (works without any tailwind plugin)
+const clampStyle: React.CSSProperties = {
+  display: '-webkit-box',
+  WebkitLineClamp: 2,
+  WebkitBoxOrient: 'vertical',
+  overflow: 'hidden',
+  wordBreak: 'break-word',
+};
+
+const VIEWPORT_MARGIN = 8;
+const MENU_MAX_HEIGHT = 380;
+const MIN_SPACE_BELOW = 220;
+
 function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps<T>) {
   const asyncMode = isAsyncMode(props as SearchableDropdownProps);
 
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  // true only when the user is actually typing -> otherwise show the full list
+  const [isTyping, setIsTyping] = useState(false);
+
   const dropdownRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const [coords, setCoords] = useState({ top: 0, left: 0, width: 0, openUpward: false });
+
+  const [coords, setCoords] = useState<{
+    top?: number;
+    bottom?: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+    openUpward: boolean;
+  }>({ top: 0, left: 0, width: 0, maxHeight: MENU_MAX_HEIGHT, openUpward: false });
   const [highlightedIndex, setHighlightedIndex] = useState(0);
 
   const localSelected = !asyncMode ? props.value : null;
@@ -109,35 +134,46 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
 
   const filteredOptions = useMemo(() => {
     if (asyncMode) return [];
-    return (props.options || []).filter(opt =>
-      opt.title.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }, [asyncMode, props, searchTerm]);
+    const all = props.options || [];
+    if (!isTyping || !searchTerm.trim()) return all;
+    const q = searchTerm.toLowerCase().trim();
+    return all.filter(opt => opt.title.toLowerCase().includes(q));
+  }, [asyncMode, props, searchTerm, isTyping]);
 
-  // ── Position calc ──
+  // ── Position calc (fixed positioning, never overlaps the input) ──
   const updatePosition = useCallback(() => {
     if (!dropdownRef.current) return;
     const rect = dropdownRef.current.getBoundingClientRect();
-    const maxListHeight = 340;
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const openUpward = spaceBelow < maxListHeight && rect.top > maxListHeight;
+    const vw = window.innerWidth;
+    const vh = window.visualViewport?.height ?? window.innerHeight;
+
+    const spaceBelow = vh - rect.bottom - VIEWPORT_MARGIN * 2;
+    const spaceAbove = rect.top - VIEWPORT_MARGIN * 2;
+    const openUpward = spaceBelow < MIN_SPACE_BELOW && spaceAbove > spaceBelow;
+
+    const available = openUpward ? spaceAbove : spaceBelow;
+    const maxHeight = Math.max(160, Math.min(MENU_MAX_HEIGHT, available));
+
+    const width = Math.min(rect.width, vw - VIEWPORT_MARGIN * 2);
+    const left = Math.min(Math.max(VIEWPORT_MARGIN, rect.left), vw - width - VIEWPORT_MARGIN);
 
     setCoords({
-      top: openUpward
-        ? rect.top + window.scrollY - maxListHeight - 8
-        : rect.bottom + window.scrollY + 8,
-      left: rect.left + window.scrollX,
-      width: rect.width,
+      left,
+      width,
+      maxHeight,
       openUpward,
+      ...(openUpward
+        ? { bottom: window.innerHeight - rect.top + VIEWPORT_MARGIN, top: undefined }
+        : { top: rect.bottom + VIEWPORT_MARGIN, bottom: undefined }),
     });
   }, []);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (
-        dropdownRef.current && !dropdownRef.current.contains(event.target as Node) &&
-        menuRef.current && !menuRef.current.contains(event.target as Node)
-      ) {
+      const target = event.target as Node;
+      const insideInput = dropdownRef.current?.contains(target);
+      const insideMenu = menuRef.current?.contains(target);
+      if (!insideInput && !insideMenu) {
         setIsOpen(false);
       }
     };
@@ -148,14 +184,26 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
   useEffect(() => {
     if (!isOpen) return;
     updatePosition();
-    const handle = () => updatePosition();
-    window.addEventListener('scroll', handle, true);
-    window.addEventListener('resize', handle);
+    const handleScroll = (e: Event) => {
+      // ignore scrolling inside the menu list itself
+      if (menuRef.current && e.target instanceof Node && menuRef.current.contains(e.target)) return;
+      updatePosition();
+    };
+    const handleResize = () => updatePosition();
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('resize', handleResize);
+    window.visualViewport?.addEventListener('resize', handleResize);
     return () => {
-      window.removeEventListener('scroll', handle, true);
-      window.removeEventListener('resize', handle);
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('resize', handleResize);
+      window.visualViewport?.removeEventListener('resize', handleResize);
     };
   }, [isOpen, updatePosition]);
+
+  // Re-position when result count changes (e.g. after filtering) so it stays correct
+  useEffect(() => {
+    if (isOpen) updatePosition();
+  }, [isOpen, searchTerm, asyncResults.length, updatePosition]);
 
   const fetchAsyncResults = useCallback(
     debounce(async (query: string) => {
@@ -200,6 +248,7 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(e.target.value);
+    setIsTyping(true);
     setIsOpen(true);
     setHighlightedIndex(0);
     if (!asyncMode && props.onChange) {
@@ -210,25 +259,25 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
   const handleSelect = (option: BaseOption) => {
     if (asyncMode) {
       setSelectedAsync(option);
-      setSearchTerm(option.title);
       (props as AsyncModeProps).onSelect(option);
-      setIsOpen(false);
     } else {
       (props as LocalModeProps<T>).onChange(option as T);
-      setSearchTerm(option.title);
-      setIsOpen(false);
     }
+    setSearchTerm(option.title);
+    setIsTyping(false);
+    setIsOpen(false);
+    inputRef.current?.blur();
   };
 
   const clearSelection = (e?: React.MouseEvent) => {
     e?.stopPropagation();
     if (asyncMode) {
       setSelectedAsync(null);
-      setSearchTerm('');
     } else {
       (props as LocalModeProps<T>).onChange(null);
-      setSearchTerm('');
     }
+    setSearchTerm('');
+    setIsTyping(false);
     setIsOpen(false);
     inputRef.current?.focus();
   };
@@ -244,9 +293,17 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
     return option.thumbnail || option.posterImage || option.coverImage;
   };
 
-  // ⌨️ Keyboard navigation
+  // Keep keyboard-highlighted item visible
+  useEffect(() => {
+    if (!isOpen || !listRef.current) return;
+    const el = listRef.current.querySelector<HTMLElement>(`[data-idx="${highlightedIndex}"]`);
+    el?.scrollIntoView({ block: 'nearest' });
+  }, [highlightedIndex, isOpen]);
+
+  // Keyboard navigation
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (!isOpen && (e.key === 'ArrowDown' || e.key === 'Enter')) {
+      e.preventDefault();
       setIsOpen(true);
       return;
     }
@@ -268,7 +325,7 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
   };
 
   return (
-    <div className="relative w-full max-w-md group" ref={dropdownRef}>
+    <div className="relative w-full max-w-xl group" ref={dropdownRef}>
       {/* ── Input container ── */}
       <div
         className={`relative rounded-xl transition-all duration-200 ${
@@ -277,9 +334,8 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
             : 'ring-1 ring-slate-700 hover:ring-slate-600'
         }`}
       >
-        {/* Search icon (left) */}
         <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500 group-focus-within:text-indigo-400 transition-colors">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="11" cy="11" r="8" />
             <path d="m21 21-4.3-4.3" />
           </svg>
@@ -290,20 +346,24 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
           type="text"
           value={searchTerm}
           onChange={handleInputChange}
-          onFocus={() => setIsOpen(true)}
+          onFocus={(e) => {
+            setIsOpen(true);
+            e.target.select();
+          }}
           onKeyDown={handleKeyDown}
           placeholder={placeholderText}
           disabled={disabled}
           autoFocus={props.autoFocus}
-          className="w-full bg-slate-900/60 backdrop-blur-sm text-white placeholder-slate-500 rounded-xl pl-10 pr-10 py-3 text-sm outline-none disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          autoComplete="off"
+          title={searchTerm}
+          className="w-full bg-slate-900/60 backdrop-blur-sm text-white placeholder-slate-500 rounded-xl pl-9 pr-9 py-2.5 text-sm outline-none disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         />
 
-        {/* Right side: loading / clear / chevron */}
         <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
           {isLoading && (
             <div className="w-4 h-4 border-2 border-slate-600 border-t-indigo-400 rounded-full animate-spin" />
           )}
-          {currentSelected && !isLoading && (
+          {(currentSelected || searchTerm) && !isLoading && (
             <button
               onClick={clearSelection}
               className="w-5 h-5 flex items-center justify-center rounded-full text-slate-400 hover:text-white hover:bg-slate-700 transition-all"
@@ -315,7 +375,7 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
               </svg>
             </button>
           )}
-          {!currentSelected && !isLoading && (
+          {!currentSelected && !searchTerm && !isLoading && (
             <svg
               className={`text-slate-500 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
               width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
@@ -331,13 +391,15 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
         <div
           ref={menuRef}
           style={{
-            position: 'absolute',
+            position: 'fixed',
             top: coords.top,
+            bottom: coords.bottom,
             left: coords.left,
             width: coords.width,
+            maxHeight: coords.maxHeight,
             zIndex: 9999,
           }}
-          className="animate-[dropdownIn_140ms_ease-out] origin-top"
+          className={`flex flex-col animate-[dropdownIn_140ms_ease-out] ${coords.openUpward ? 'origin-bottom' : 'origin-top'}`}
         >
           <style>{`
             @keyframes dropdownIn {
@@ -355,34 +417,36 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
             }
           `}</style>
 
-          <div className="bg-slate-900/95 backdrop-blur-xl border border-slate-700/80 rounded-xl shadow-2xl shadow-black/40 overflow-hidden">
-            {/* Header strip (subtle) */}
-            <div className="px-3 py-2 border-b border-slate-800 flex items-center justify-between text-[11px] uppercase tracking-wider text-slate-500 font-semibold">
+          <div className="flex flex-col min-h-0 bg-slate-900/95 backdrop-blur-xl border border-slate-700/80 rounded-xl shadow-2xl shadow-black/40 overflow-hidden">
+            {/* Header strip */}
+            <div className="shrink-0 px-3 py-1.5 border-b border-slate-800 flex items-center justify-between text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
               <span>
                 {isLoading
-                  ? 'Searching…'
+                  ? 'Searching...'
                   : asyncError
                   ? 'Error'
                   : optionsToShow.length > 0
                   ? `${optionsToShow.length} result${optionsToShow.length !== 1 ? 's' : ''}`
                   : 'No results'}
               </span>
-              <span className="flex items-center gap-1 text-slate-600">
+              <span className="hidden sm:flex items-center gap-1 text-slate-600">
                 <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-[10px]">↑↓</kbd>
                 <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-[10px]">↵</kbd>
+                <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-[10px]">Esc</kbd>
               </span>
             </div>
 
-            <div className="max-h-80 overflow-y-auto sd-scroll p-1.5">
+            {/* List */}
+            <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain sd-scroll p-1">
               {isLoading ? (
-                <div className="flex flex-col items-center justify-center py-8 gap-2">
-                  <div className="w-6 h-6 border-2 border-slate-700 border-t-indigo-400 rounded-full animate-spin" />
-                  <span className="text-xs text-slate-500">Loading results…</span>
+                <div className="flex flex-col items-center justify-center py-6 gap-2">
+                  <div className="w-5 h-5 border-2 border-slate-700 border-t-indigo-400 rounded-full animate-spin" />
+                  <span className="text-xs text-slate-500">Loading results...</span>
                 </div>
               ) : asyncError ? (
-                <div className="flex flex-col items-center justify-center py-8 gap-2">
-                  <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center text-red-400">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <div className="flex flex-col items-center justify-center py-6 gap-2">
+                  <div className="w-9 h-9 rounded-full bg-red-500/10 flex items-center justify-center text-red-400">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                       <circle cx="12" cy="12" r="10" />
                       <path d="M12 8v4M12 16h.01" />
                     </svg>
@@ -390,14 +454,14 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
                   <span className="text-xs text-red-400 text-center px-4">{asyncError}</span>
                 </div>
               ) : optionsToShow.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 gap-2">
-                  <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-slate-500">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <div className="flex flex-col items-center justify-center py-6 gap-2">
+                  <div className="w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center text-slate-500">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <circle cx="11" cy="11" r="8" />
                       <path d="m21 21-4.3-4.3" />
                     </svg>
                   </div>
-                  <span className="text-xs text-slate-500">
+                  <span className="text-xs text-slate-500 text-center px-3 break-words">
                     {searchTerm ? `No results for "${searchTerm}"` : 'Nothing to show'}
                   </span>
                 </div>
@@ -409,9 +473,10 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
                   return (
                     <button
                       key={option._id}
+                      data-idx={idx}
                       onClick={() => handleSelect(option)}
                       onMouseEnter={() => setHighlightedIndex(idx)}
-                      className={`w-full text-left px-2.5 py-2.5 rounded-lg flex items-center gap-3 transition-colors duration-100 group/item ${
+                      className={`w-full text-left px-2 py-1.5 rounded-lg flex items-center gap-2.5 transition-colors duration-100 ${
                         isSelected
                           ? 'bg-indigo-500/15 ring-1 ring-indigo-500/40'
                           : isHighlighted
@@ -420,19 +485,19 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
                       }`}
                       type="button"
                     >
-                      {/* Thumbnail */}
+                      {/* Thumbnail (compact) */}
                       <div className="relative flex-shrink-0">
                         {img ? (
                           <img
                             src={img}
-                            alt={option.title}
-                            className="w-11 h-15 object-cover rounded-md ring-1 ring-slate-700/60 shadow-sm"
-                            style={{ height: '60px' }}
+                            alt=""
+                            loading="lazy"
+                            className="w-9 h-12 sm:w-10 sm:h-14 object-cover rounded-md ring-1 ring-slate-700/60"
                             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                           />
                         ) : (
-                          <div className="w-11 h-[60px] rounded-md bg-slate-800 ring-1 ring-slate-700/60 flex items-center justify-center text-slate-600">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <div className="w-9 h-12 sm:w-10 sm:h-14 rounded-md bg-slate-800 ring-1 ring-slate-700/60 flex items-center justify-center text-slate-600">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                               <rect x="3" y="3" width="18" height="18" rx="2" />
                               <circle cx="9" cy="9" r="2" />
                               <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
@@ -448,55 +513,42 @@ function SearchableDropdown<T extends BaseOption>(props: SearchableDropdownProps
                         )}
                       </div>
 
-                      {/* Text */}
+                      {/* Text: full name (up to 2 lines) + badges */}
                       <div className="min-w-0 flex-1">
-                        <div className={`font-medium text-sm truncate ${isSelected ? 'text-indigo-200' : 'text-slate-100'}`}>
-                          {highlightMatch(option.title, searchTerm)}
+                        <div
+                          style={clampStyle}
+                          title={option.title}
+                          className={`font-medium text-[13px] leading-snug ${isSelected ? 'text-indigo-200' : 'text-slate-100'}`}
+                        >
+                          {highlightMatch(option.title, isTyping ? searchTerm : '')}
                         </div>
-                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                        <div className="flex items-center gap-1 mt-1 flex-wrap">
                           {option.status && (
-                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${statusStyles(option.status)}`}>
+                            <span className={`text-[9px] font-semibold px-1.5 py-px rounded border ${statusStyles(option.status)}`}>
                               {option.status}
                             </span>
                           )}
                           {option.contentType && (
-                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-slate-700/40 text-slate-300 border-slate-600/40">
+                            <span className="text-[9px] font-semibold px-1.5 py-px rounded border bg-slate-700/40 text-slate-300 border-slate-600/40">
                               {option.contentType}
                             </span>
                           )}
                           {option.createdByUsername && option.createdBy && option.createdBy !== 'admin' && (
-                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500/30 flex items-center gap-1">
-                              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                            <span className="text-[9px] font-semibold px-1.5 py-px rounded border bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500/30 flex items-center gap-1 max-w-[110px]">
+                              <svg className="shrink-0" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                                 <circle cx="12" cy="7" r="4" />
                               </svg>
-                              {option.createdByUsername}
+                              <span className="truncate">{option.createdByUsername}</span>
                             </span>
                           )}
                         </div>
-                      </div>
-
-                      {/* Chevron on hover */}
-                      <div className={`flex-shrink-0 transition-all duration-150 ${
-                        isHighlighted || isSelected ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-1'
-                      }`}>
-                        <svg className={isSelected ? 'text-indigo-400' : 'text-slate-500'} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="m9 18 6-6-6-6" />
-                        </svg>
                       </div>
                     </button>
                   );
                 })
               )}
             </div>
-
-            {/* Footer hint (only when results present) */}
-            {!isLoading && !asyncError && optionsToShow.length > 0 && (
-              <div className="px-3 py-1.5 border-t border-slate-800 bg-slate-900/60 text-[10px] text-slate-500 flex items-center justify-between">
-                <span>Use <kbd className="px-1 bg-slate-800 border border-slate-700 rounded">Esc</kbd> to close</span>
-                <span className="text-slate-600">AnimeBing</span>
-              </div>
-            )}
           </div>
         </div>,
         document.body

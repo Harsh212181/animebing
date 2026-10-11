@@ -254,7 +254,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
     thumbnail: '',
     releaseYear: new Date().getFullYear(),
     subDubStatus: 'Hindi Sub' as Anime['subDubStatus'],
-    genreList: [''],
+    genreList: [] as string[],
     status: 'Ongoing',
     contentType: 'Anime' as typeof CONTENT_TYPE_OPTIONS[number] | 'Movie',
     seoTitle: '',
@@ -262,6 +262,12 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
     seoKeywords: '',
     slug: '',
   });
+
+  // 🆕 Raw genre input (so commas + spaces can be typed freely)
+  const [genreInput, setGenreInput] = useState('');
+
+  const parseGenres = (raw: string): string[] =>
+    raw.split(',').map(g => g.trim()).filter(Boolean);
 
   const [hidingId, setHidingId] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
@@ -467,7 +473,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
         thumbnail: anime.thumbnail || '',
         releaseYear: anime.releaseYear || new Date().getFullYear(),
         subDubStatus: anime.subDubStatus,
-        genreList: anime.genreList || [''],
+        genreList: anime.genreList || [],
         status: anime.status || 'Ongoing',
         contentType: anime.contentType || 'Anime',
         seoTitle: anime.seoTitle || '',
@@ -475,6 +481,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
         seoKeywords: anime.seoKeywords || '',
         slug: anime.slug || '',
       });
+      setGenreInput((anime.genreList || []).join(', '));
     }
   };
 
@@ -487,9 +494,11 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
       const toastId = toast.loading('Saving changes...');
       try {
         const token = resolveToken();
-        await axios.put(`${API_BASE}/admin/protected/edit-anime/${editingAnimeId}`, editForm, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        await axios.put(
+          `${API_BASE}/admin/protected/edit-anime/${editingAnimeId}`,
+          { ...editForm, genreList: parseGenres(genreInput) },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
         toast.success('✅ Anime updated successfully!', { id: toastId });
         setEditingAnimeId(null);
         await fetchAnimeList();
@@ -597,8 +606,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
   };
 
   const handleGenreChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const genres = e.target.value.split(',').map(g => g.trim()).filter(g => g);
-    setEditForm({ ...editForm, genreList: genres.length ? genres : ['Action'] });
+    setGenreInput(e.target.value);
   };
 
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -632,8 +640,9 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
       `${editForm.title} anime`, `watch ${editForm.title} online`,
       `${editForm.title} ${editForm.subDubStatus.toLowerCase()}`, `${editForm.title} free download`,
     ];
-    if (editForm.genreList?.length > 0) {
-      editForm.genreList.forEach(genre => {
+    const genres = parseGenres(genreInput);
+    if (genres.length > 0) {
+      genres.forEach(genre => {
         keywords.push(`${genre.toLowerCase()} anime`, `${editForm.title} ${genre.toLowerCase()}`);
       });
     }
@@ -774,9 +783,9 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-300 mb-1">Genres (comma separated)</label>
-            <input type="text" value={editForm.genreList.join(', ')} onChange={handleGenreChange} disabled={isBusy}
+            <input type="text" value={genreInput} onChange={handleGenreChange} disabled={isBusy}
               className="w-full bg-gray-800/60 border border-gray-700 rounded-lg text-white px-3 py-2.5 text-sm focus:ring-1 focus:ring-blue-500 disabled:opacity-60"
-              placeholder="Action, Adventure, Fantasy" />
+              placeholder="Genres likho, comma se alag karo" />
           </div>
 
           <div className="pt-3 border-t border-white/10">
