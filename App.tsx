@@ -664,6 +664,9 @@ const MainApp: React.FC = () => {
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [isAppLoading, setIsAppLoading] = useState(true);
 
+  // ✅ Admin login/dashboard sirf home page ("/") par allowed
+  const isHomePage = location.pathname === '/';
+
   const [typedText, setTypedText] = useState('');
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
@@ -690,9 +693,13 @@ const MainApp: React.FC = () => {
 
       try {
         // ✅ FIX: Refresh par dashboard seedha khule agar session valid + dashboard open tha
+        //    ✅ ADMIN DASHBOARD SIRF HOME PAGE ("/") PAR
         if (isSuperAdminSession() && adminUsername) {
           setIsAdminAuthenticated(true);
-          if (localStorage.getItem('adminDashboardOpen') === '1') {
+          if (
+            localStorage.getItem('adminDashboardOpen') === '1' &&
+            window.location.pathname === '/'
+          ) {
             setAdminView('dashboard');   // refresh par seedha dashboard
           }
         }
@@ -732,6 +739,8 @@ const MainApp: React.FC = () => {
     };
 
     const handleKeyPress = (e: KeyboardEvent) => {
+      if (location.pathname !== '/') return;   // ✅ detail/download/other pages par kuch nahi hoga
+
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
 
@@ -763,7 +772,7 @@ const MainApp: React.FC = () => {
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     };
-  }, [typedText]);
+  }, [typedText, location.pathname]);
 
   const handleAdminLogin = (token: string, username: string) => {
     // ✅ Save via auth utils (single source of truth) + update local state
@@ -847,7 +856,8 @@ const MainApp: React.FC = () => {
     return location.pathname === '/' ? <LoadingScreen /> : <SimpleLoadingScreen />;
   }
 
-  if (adminView === 'login') {
+  // ✅ ADMIN LOGIN — sirf home page par
+  if (isHomePage && adminView === 'login') {
     return (
       <div className="print:hidden">
         <AdminLoginPage onLogin={handleAdminLogin} />
@@ -855,7 +865,8 @@ const MainApp: React.FC = () => {
     );
   }
 
-  if (adminView === 'dashboard' && isAdminAuthenticated) {
+  // ✅ ADMIN DASHBOARD — sirf home page par
+  if (isHomePage && adminView === 'dashboard' && isAdminAuthenticated) {
     return (
       <div className="print:hidden">
         <AdminDashboardPage onLogout={handleAdminLogout} />

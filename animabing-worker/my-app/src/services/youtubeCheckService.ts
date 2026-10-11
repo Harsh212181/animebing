@@ -418,6 +418,7 @@ export interface ProcessedUpdate {
   removedOldLink?: any
   reviewReason?: 'duration' | 'chronology' | 'description' | 'unparseable'
   matchScore?: number
+  displayPart?: number   // ✅ NEW
 }
 
 const CHRONOLOGY_TOLERANCE_MS = 2 * 24 * 60 * 60 * 1000
@@ -438,6 +439,16 @@ export async function processChannelUpdates(
   const logTitles: ICheckLog['titles'] = []
 
   for (const trackedTitle of channel.titles) {
+    // ✅ NEW: per-title auto OFF
+    if ((trackedTitle as any).autoPaused) {
+      updatedTitles.push(trackedTitle)
+      continue
+    }
+
+    const offset = Number((trackedTitle as any).episodeOffset) || 0
+    const toDisplay = (n: number) => Math.max(1, n - offset)
+    const toDisplayStart = (n?: number) => (n !== undefined ? toDisplay(n) : undefined)
+
     const logEntry: ICheckLog['titles'][number] = {
       keyword: trackedTitle.keyword,
       matchedVideoCount: 0,
@@ -676,15 +687,16 @@ export async function processChannelUpdates(
             matchedFormat: item.matchedFormat, action: 'already-known', matchScore: item.matchScore,
           })
         } else {
+          // ✅ CHANGED — reupload match with toDisplay()
           const reuploadMatch = !item.isRange
-            ? pageLinksLocal.find((l: any) => l.type === 'watch' && l.episode === item.part && l.episodeStart === undefined)
+            ? pageLinksLocal.find((l: any) => l.type === 'watch' && l.episode === toDisplay(item.part) && l.episodeStart === undefined)
             : undefined
 
           if (reuploadMatch) {
             removedOldLink = reuploadMatch
             pageLinksLocal = pageLinksLocal.filter((l: any) => l !== reuploadMatch)
             pageLinksLocal.push({
-              episode: item.part,
+              episode: toDisplay(item.part),      // 👈 changed
               episodeStart: undefined,
               url: newUrl,
               type: 'watch',
@@ -728,9 +740,10 @@ export async function processChannelUpdates(
               break
             }
 
+            // ✅ CHANGED — newLink with toDisplay() / toDisplayStart()
             const newLink = {
-              episode: item.part,
-              episodeStart: item.isRange ? item.rangeStart : undefined,
+              episode: toDisplay(item.part),                                   // 👈 changed
+              episodeStart: item.isRange ? toDisplayStart(item.rangeStart) : undefined, // 👈 changed
               url: newUrl,
               type: 'watch',
               quality: '',
@@ -770,6 +783,7 @@ export async function processChannelUpdates(
         newThumbnail: item.video.thumbnail, newPublishedAt: item.video.publishedAt,
         oldVideoId: prevVideoId, oldVideoTitle: prevVideoTitle, oldThumbnail: prevThumbnail, oldPart: prevPart || undefined,
         notifType: 'new_episode', autoAdded, replaced,
+        displayPart: toDisplay(item.part),   // ✅ NEW
         linkedDownloadPageId: trackedTitle.linkedDownloadPageId || undefined,
         linkedDownloadPageSlug: linkedSlug,
         removedOldLink: replaced ? removedOldLink : undefined,
@@ -884,6 +898,9 @@ export async function processChannelUpdates(
   }
 
   for (const r of results) {
+    // ✅ NEW — displayPart delta string
+    const dp = r.displayPart !== undefined && r.displayPart !== r.newPart ? ` → Ep ${r.displayPart}` : ''
+
     let message = ''
     if (r.notifType === 'manual_review') {
       if (r.reviewReason === 'chronology') {
@@ -900,9 +917,11 @@ export async function processChannelUpdates(
     } else if (r.notifType === 'limit_reached') {
       message = `${channel.channelName} — "${r.keyword}" ke linked page ki episode limit reach ho gayi hai! Limit badhao ya naya page banao.`
     } else if (r.replaced) {
-      message = `${channel.channelName} — "${r.keyword}" ka updated link (part ${r.newPart}) mil gaya, purana link replace ho gaya ✅`
+      // ✅ CHANGED
+      message = `${channel.channelName} — "${r.keyword}" ka updated link (part ${r.newPart}${dp}) mil gaya, purana link replace ho gaya ✅`
     } else {
-      message = `${channel.channelName} — "${r.keyword}" ka naya part (${r.newPart}) aa gaya hai!${r.autoAdded ? ' (Watch section me automatically add ho gaya ✅)' : ''}`
+      // ✅ CHANGED
+      message = `${channel.channelName} — "${r.keyword}" ka naya part (${r.newPart}${dp}) aa gaya hai!${r.autoAdded ? ' (Watch section me automatically add ho gaya ✅)' : ''}`
     }
 
     await notifyOnce({
@@ -915,6 +934,7 @@ export async function processChannelUpdates(
       newVideoUrl: `https://youtube.com/watch?v=${r.newVideoId}`,
       newThumbnail: r.newThumbnail,
       newPart: r.newPart,
+      newDisplayPart: r.displayPart,   // ✅ NEW
       oldVideoId: r.oldVideoId,
       oldVideoTitle: r.oldVideoTitle,
       oldThumbnail: r.oldThumbnail,

@@ -216,6 +216,33 @@ trackRoutes.post('/channel/:channelId/toggle-pause', async (c) => {
   })
 })
 
+// ============ TITLE AUTO ON/OFF ============
+trackRoutes.post('/channel/:channelId/title/:titleId/toggle-auto', async (c) => {
+  const channelId = c.req.param('channelId')
+  const titleId = c.req.param('titleId')
+  if (!isValidObjectId(channelId)) return c.json({ success: false, error: 'Invalid ID' }, 400)
+  const admin = c.get('admin')
+
+  return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'track/toggle-auto', async (db) => {
+    const channel = await db.collection('trackedChannels').findOne({ _id: toObjectId(channelId) }) as ITrackedChannel | null
+    if (!channel) return c.json({ success: false, error: 'Channel not found' }, 404)
+
+    const target = (channel.titles || []).find(t => t.id === titleId)
+    if (!target) return c.json({ success: false, error: 'Title not found' }, 404)
+    const allowedAnimeIds = await getAllowedAnimeIds(admin, db)
+    if (!canManageTitle(admin, target, allowedAnimeIds)) {
+      return c.json({ success: false, error: 'You do not have permission to manage this title.' }, 403)
+    }
+
+    const nowPaused = !target.autoPaused
+    const newTitles = (channel.titles || []).map(t => t.id === titleId ? { ...t, autoPaused: nowPaused } : t)
+    await db.collection('trackedChannels').updateOne(
+      { _id: toObjectId(channelId) }, { $set: { titles: newTitles, updatedAt: new Date() } }
+    )
+    return c.json({ success: true, autoPaused: nowPaused })
+  })
+})
+
 // ============ CHANNEL REMOVE ============
 trackRoutes.delete('/channel/:channelId', async (c) => {
   const channelId = c.req.param('channelId')
@@ -405,10 +432,10 @@ trackRoutes.post('/channel/:channelId/title/test-match-chunk', async (c) => {
 // ============ QUICK BULK ADD FROM PREVIEW ============
 trackRoutes.post('/channel/:channelId/quick-bulk-add', async (c) => {
   const channelId = c.req.param('channelId')
-  const { keyword, matchThreshold, excludeKeywords, downloadPageId, videoIds, episodeOverrides, scanDepth } = await c.req.json() as {
+  const { keyword, matchThreshold, excludeKeywords, downloadPageId, videoIds, episodeOverrides, scanDepth, episodeOffset } = await c.req.json() as {
     keyword: string; matchThreshold?: number; excludeKeywords?: string[];
     downloadPageId: string; videoIds: string[]; episodeOverrides?: Record<string, string | number>;
-    scanDepth?: number
+    scanDepth?: number; episodeOffset?: number
   }
   if (!isValidObjectId(channelId) || !isValidObjectId(downloadPageId)) return c.json({ success: false, error: 'Invalid ID' }, 400)
   if (!keyword || !String(keyword).trim()) return c.json({ success: false, error: 'Keyword is required' }, 400)
@@ -420,6 +447,8 @@ trackRoutes.post('/channel/:channelId/quick-bulk-add', async (c) => {
 
     const page = await db.collection('downloadpages').findOne({ _id: toObjectId(downloadPageId) })
     if (!page) return c.json({ success: false, error: 'Page not found' }, 404)
+
+    const offset = Math.max(0, Math.floor(Number(episodeOffset)) || 0)
 
     const kw = String(keyword).trim()
     const hasOverride = (id: string) => episodeOverrides?.[id] !== undefined
@@ -463,8 +492,10 @@ trackRoutes.post('/channel/:channelId/quick-bulk-add', async (c) => {
           ? parseEpisodeOverride(episodeOverrides![v.video.videoId])
           : null
         return {
-          episode: override ? override.episode : (v.part as number),
-          episodeStart: override ? override.episodeStart : (v.isRange ? v.rangeStart : undefined),
+          episode: override ? override.episode : (v.part as number) - offset,
+          episodeStart: override
+            ? override.episodeStart
+            : (v.isRange && v.rangeStart !== undefined ? Math.max(1, v.rangeStart - offset) : undefined),
           url: `https://youtube.com/watch?v=${v.video.videoId}`,
           type: 'watch',
           quality: '',
@@ -1056,7 +1087,8 @@ trackRoutes.put('/channel/:channelId/title/:titleId/link', async (c) => {
   const titleId = c.req.param('titleId')
   const {
     linkedAnimeId, linkedDownloadPageId, episodeLimit, resetSeason, mergeMode,
-    baselineEpisodeMinutes, strictChronology, chronologyFloorDate, chronologyGraceGap
+    baselineEpisodeMinutes, strictChronology, chronologyFloorDate, chronologyGraceGap,
+    episodeOffset                                   // 👈 new
   } = await c.req.json()
   if (!isValidObjectId(channelId)) return c.json({ success: false, error: 'Invalid ID' }, 400)
   const admin = c.get('admin')
@@ -1103,6 +1135,7 @@ trackRoutes.put('/channel/:channelId/title/:titleId/link', async (c) => {
         strictChronology: strictChronology !== undefined ? !!strictChronology : t.strictChronology,
         chronologyFloorDate: chronologyFloorDate !== undefined ? chronologyFloorDate : t.chronologyFloorDate,
         chronologyGraceGap: chronologyGraceGap !== undefined ? Number(chronologyGraceGap) : t.chronologyGraceGap,
+        episodeOffset: episodeOffset !== undefined ? Math.max(0, Math.floor(Number(episodeOffset)) || 0) : (t.episodeOffset ?? 0),
         ...(resetSeason ? { lastKnownSeason: null } : {}),
       }
     })
@@ -1123,6 +1156,71 @@ trackRoutes.put('/channel/:channelId/title/:titleId/link', async (c) => {
     }, c.env.MONGODB_URI, c.env.MONGODB_DB)
 
     return c.json({ success: true, warning })
+  })
+})
+
+// ============ CONVERT PAGE LINKS BY OFFSET ============
+trackRoutes.post('/channel/:channelId/title/:titleId/convert-page-offset', async (c) => {
+  const channelId = c.req.param('channelId')
+  const titleId = c.req.param('titleId')
+  if (!isValidObjectId(channelId)) return c.json({ success: false, error: 'Invalid ID' }, 400)
+  const admin = c.get('admin')
+
+  return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'track/convert-page-offset', async (db) => {
+    const channel = await db.collection('trackedChannels').findOne({ _id: toObjectId(channelId) }) as ITrackedChannel | null
+    if (!channel) return c.json({ success: false, error: 'Channel not found' }, 404)
+    const title = (channel.titles || []).find(t => t.id === titleId)
+    if (!title) return c.json({ success: false, error: 'Title not found' }, 404)
+
+    const allowedAnimeIds = await getAllowedAnimeIds(admin, db)
+    if (!canManageTitle(admin, title, allowedAnimeIds)) {
+      return c.json({ success: false, error: 'You do not have permission to manage this title.' }, 403)
+    }
+    if (!title.linkedDownloadPageId) return c.json({ success: false, error: 'Title is not linked to any page' }, 400)
+
+    const offset = Number(title.episodeOffset) || 0
+    if (offset <= 0) return c.json({ success: false, error: 'Offset set nahi hai' }, 400)
+
+    const page = await db.collection('downloadpages').findOne({ _id: toObjectId(title.linkedDownloadPageId) })
+    if (!page) return c.json({ success: false, error: 'Page not found' }, 404)
+
+    const links = (page as any).links || []
+    let converted = 0
+    let skipped = 0
+    const newLinks = links.map((l: any) => {
+      if (l.type !== 'watch' || typeof l.episode !== 'number' || l.episode <= offset) {
+        skipped++
+        return l
+      }
+      converted++
+      return {
+        ...l,
+        episode: l.episode - offset,
+        episodeStart: typeof l.episodeStart === 'number' ? Math.max(1, l.episodeStart - offset) : l.episodeStart,
+      }
+    })
+
+    if (converted === 0) {
+      return c.json({ success: false, error: 'Koi link convert nahi hua (shayad pehle hi 1-7 jaise numbers me hain)' }, 400)
+    }
+
+    await db.collection('downloadpages').updateOne(
+      { _id: page._id },
+      { $set: { links: newLinks, updatedAt: new Date() } }
+    )
+    await syncPageDerivedData(db, page._id.toString())
+
+    await logActivity({
+      actorId: admin?.id || 'unknown',
+      actorUsername: admin?.username || 'unknown',
+      actorRole: admin?.role === 'subadmin' ? 'subadmin' : 'admin',
+      action: `Page links converted by offset -${offset} (${converted} links)`,
+      targetType: 'downloadpage',
+      targetId: page._id.toString(),
+      targetTitle: (page as any).slug,
+    }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+    return c.json({ success: true, converted, skipped })
   })
 })
 
@@ -1209,11 +1307,14 @@ trackRoutes.post('/channel/:channelId/title/:titleId/bulk-add', async (c) => {
     const page = await db.collection('downloadpages').findOne({ _id: toObjectId(downloadPageId) })
     if (!page) return c.json({ success: false, error: 'Page not found' }, 404)
 
+    const offset = Number(title.episodeOffset) || 0
+
     const { fetchAllVideosForTitle } = await import('../services/youtubeCheckService')
     const allVideos = await fetchAllVideosForTitle(channel, title, c.env.YOUTUBE_API_KEY)
 
     const selected = allVideos.filter(v =>
-      videoIds.includes(v.video.videoId) && (v.part !== null || episodeOverrides?.[v.video.videoId] !== undefined)
+      videoIds.includes(v.video.videoId) &&
+      (episodeOverrides?.[v.video.videoId] !== undefined || (v.part !== null && v.part - offset >= 1))
     )
     if (selected.length === 0) return c.json({ success: false, error: 'No valid videos found' }, 400)
 
@@ -1229,8 +1330,10 @@ trackRoutes.post('/channel/:channelId/title/:titleId/bulk-add', async (c) => {
           ? parseEpisodeOverride(episodeOverrides[v.video.videoId])
           : null
         return {
-          episode: override ? override.episode : (v.part as number),
-          episodeStart: override ? override.episodeStart : (v.isRange ? v.rangeStart : undefined),
+          episode: override ? override.episode : (v.part as number) - offset,
+          episodeStart: override
+            ? override.episodeStart
+            : (v.isRange && v.rangeStart !== undefined ? Math.max(1, v.rangeStart - offset) : undefined),
           url: `https://youtube.com/watch?v=${v.video.videoId}`,
           type: 'watch',
           quality: '',
@@ -1281,6 +1384,8 @@ trackRoutes.post('/channel/:channelId/title/:titleId/finalize-initial', async (c
       return c.json({ success: false, error: 'You do not have permission to manage this title.' }, 403)
     }
 
+    const offset = Number(title.episodeOffset) || 0
+
     const { fetchAllVideosForTitle } = await import('../services/youtubeCheckService')
     const allVideos = await fetchAllVideosForTitle(channel, title, c.env.YOUTUBE_API_KEY)
 
@@ -1292,11 +1397,20 @@ trackRoutes.post('/channel/:channelId/title/:titleId/finalize-initial', async (c
       const watchLinks = ((page as any)?.links || []).filter((l: any) => l.type === 'watch')
       if (watchLinks.length > 0) {
         const maxLink = watchLinks.reduce((a: any, b: any) => (b.episode > a.episode ? b : a))
+        const ytPart = maxLink.episode + offset                       // 👈
         const vidMatch = String(maxLink.url || '').match(/[?&]v=([^&]+)/)
         const matchedScanned = vidMatch ? withPart.find(v => v.video.videoId === vidMatch[1]) : undefined
         if (matchedScanned) latest = matchedScanned
         else if (vidMatch) {
-          latest = { part: maxLink.episode, video: { videoId: vidMatch[1], title: '', publishedAt: '', thumbnail: '', description: '' }, isRange: !!maxLink.episodeStart, rangeStart: maxLink.episodeStart, season: null, matchScore: 0, fromDescription: false } as any
+          latest = {
+            part: ytPart,
+            video: { videoId: vidMatch[1], title: '', publishedAt: '', thumbnail: '', description: '' },
+            isRange: !!maxLink.episodeStart,
+            rangeStart: maxLink.episodeStart !== undefined ? maxLink.episodeStart + offset : undefined,
+            season: null,
+            matchScore: 0,
+            fromDescription: false
+          } as any
         }
       }
     }
@@ -1360,7 +1474,10 @@ trackRoutes.post('/channel/:channelId/title/:titleId/sync-with-page', async (c) 
     const watchLinks = ((page as any).links || []).filter((l: any) => l.type === 'watch')
     if (watchLinks.length === 0) return c.json({ success: false, error: 'No watch links on the page' }, 400)
 
+    const offset = Number(title.episodeOffset) || 0
+
     const maxLink = watchLinks.reduce((a: any, b: any) => (b.episode > a.episode ? b : a))
+    const ytPart = maxLink.episode + offset
     const vidMatch = String(maxLink.url || '').match(/[?&]v=([^&]+)/)
     const videoId = vidMatch ? vidMatch[1] : undefined
 
@@ -1368,7 +1485,7 @@ trackRoutes.post('/channel/:channelId/title/:titleId/sync-with-page', async (c) 
       t.id === titleId
         ? {
             ...t,
-            lastKnownPart: maxLink.episode,
+            lastKnownPart: ytPart,
             lastKnownVideoId: videoId,
             lastKnownIsRange: maxLink.episodeStart !== undefined,
             lastBlockedVideoId: undefined,
@@ -1379,7 +1496,7 @@ trackRoutes.post('/channel/:channelId/title/:titleId/sync-with-page', async (c) 
     await db.collection('trackedChannels').updateOne(
       { _id: toObjectId(channelId) }, { $set: { titles: newTitles, updatedAt: new Date() } }
     )
-    return c.json({ success: true, syncedToPart: maxLink.episode, videoId })
+    return c.json({ success: true, syncedToPart: ytPart, displayEpisode: maxLink.episode, videoId })
   })
 })
 

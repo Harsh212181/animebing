@@ -488,6 +488,10 @@ interface TrackChannelsPanelProps {
   linkChronologyGraceGap: string;
   setLinkChronologyGraceGap: (v: string) => void;
   isSubAdmin?: boolean;
+  linkStartFrom: string;
+  setLinkStartFrom: (v: string) => void;
+  toggleTitleAuto: (channelId: string, titleId: string) => void | Promise<void>;
+  convertPageOffset: (channelId: string, titleId: string) => void | Promise<void>;
 }
 
 const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
@@ -621,6 +625,10 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
   linkChronologyGraceGap,
   setLinkChronologyGraceGap,
   isSubAdmin,
+  linkStartFrom,
+  setLinkStartFrom,
+  toggleTitleAuto,
+  convertPageOffset,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [addedByFilter, setAddedByFilter] = useState<string>('main');
@@ -1663,11 +1671,20 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
                       {/* Badges */}
                       <div className="flex items-center gap-1.5 flex-wrap mt-2">
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-slate-300 border border-white/10 font-bold tabular-nums">
-                          Part {t.lastKnownPart}
+                          {anyT.episodeOffset > 0 ? `YT ${t.lastKnownPart}` : `Part ${t.lastKnownPart}`}
                         </span>
+                        {anyT.episodeOffset > 0 && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold tabular-nums">
+                            Ep {Math.max(0, t.lastKnownPart - anyT.episodeOffset)}
+                          </span>
+                        )}
                         {anyT.initialized === false ? (
                           <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 font-bold flex items-center gap-1">
                             {Icon.clock('w-2.5 h-2.5')} Pending
+                          </span>
+                        ) : anyT.autoPaused ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-500/20 text-slate-400 border border-slate-500/30 font-bold flex items-center gap-1">
+                            {Icon.pause('w-2.5 h-2.5')} Auto OFF
                           </span>
                         ) : (
                           <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30 font-bold flex items-center gap-1">
@@ -1758,6 +1775,21 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
                       {Icon.eye('w-3 h-3')} Episodes
                     </button>
 
+                    <button
+                      onClick={() => runAction(`toggle-auto-${t.id}`, () => toggleTitleAuto(ch._id, t.id))}
+                      disabled={isRemoving || isPending(`toggle-auto-${t.id}`)}
+                      className={`text-[10px] px-3 py-1.5 rounded-lg border transition flex items-center gap-1 disabled:opacity-50 font-semibold ${
+                        anyT.autoPaused
+                          ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/30'
+                          : 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border-amber-500/30'
+                      }`}
+                    >
+                      {isPending(`toggle-auto-${t.id}`)
+                        ? Icon.spinner('w-3 h-3')
+                        : anyT.autoPaused ? Icon.play('w-3 h-3') : Icon.pause('w-3 h-3')}
+                      {anyT.autoPaused ? 'Turn Auto ON' : 'Turn Auto OFF'}
+                    </button>
+
                     {!anyT.linkedDownloadPageId ? (
                       <button
                         onClick={() => openLinkForm(t)}
@@ -1815,6 +1847,16 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
                         >
                           {isSyncingEp && Icon.spinner('w-3 h-3')} {isSyncingEp ? 'Updating...' : 'Update Ep'}
                         </button>
+                        {anyT.episodeOffset > 0 && (
+                          <button
+                            onClick={() => runAction(`convert-offset-${t.id}`, () => convertPageOffset(ch._id, t.id))}
+                            disabled={isPending(`convert-offset-${t.id}`)}
+                            className="text-[10px] px-3 py-1.5 rounded-lg bg-fuchsia-500/15 hover:bg-fuchsia-500/25 text-fuchsia-300 border border-fuchsia-500/30 transition disabled:opacity-50 flex items-center gap-1 font-semibold"
+                            title="Page ke purane links ko offset ke hisaab se 1,2,3... me badlo"
+                          >
+                            {isPending(`convert-offset-${t.id}`) && Icon.spinner('w-3 h-3')} Fix Page Numbers
+                          </button>
+                        )}
                         <button
                           onClick={() => runAction(`unlink-${t.id}`, () => unlinkTitle(ch._id, t.id))}
                           disabled={isUnlinking}
@@ -1870,6 +1912,23 @@ const TrackChannelsPanel: React.FC<TrackChannelsPanelProps> = ({
                           If no number is found in title/description, it will guess from duration and give you a
                           review notification.
                         </p>
+
+                        <div>
+                          <input
+                            type="number"
+                            min="1"
+                            value={linkStartFrom}
+                            onChange={(e) => setLinkStartFrom(e.target.value)}
+                            placeholder="YouTube ka kaunsa Ep = Ep 1? (e.g. 73)"
+                            className="w-full bg-gray-800/60 border border-gray-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+                          />
+                          <p className="text-[10px] text-slate-500 mt-1.5 leading-relaxed">
+                            Khaali chhodo to YouTube wala number hi use hoga. 73 likhoge to 73 → Ep 1, 74 → Ep 2 ... users ko yahi number dikhega.
+                            {linkStartFrom && Number(linkStartFrom) > 1 && (
+                              <span className="text-emerald-300 font-semibold"> Example: YT 79 → Ep {79 - (Number(linkStartFrom) - 1)}</span>
+                            )}
+                          </p>
+                        </div>
 
                         <label className="flex items-start gap-2.5 text-xs text-slate-300 cursor-pointer bg-white/[0.03] hover:bg-white/[0.05] rounded-xl p-3 border border-white/5 transition">
                           <input

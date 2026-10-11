@@ -528,6 +528,11 @@ export interface ITrackedTitle {
   strictChronology?: boolean
   chronologyFloorDate?: string
   chronologyGraceGap?: number
+
+  // 🆕 EPISODE OFFSET: YouTube part - episodeOffset = user ko dikhne wala ep
+  episodeOffset?: number
+  // 🆕 AUTO PAUSE: true = is title ki auto-tracking band
+  autoPaused?: boolean
 }
 
 // ============ TRACKED CHANNEL (YouTube tracker) ============

@@ -73,6 +73,7 @@ const TrackListManager: React.FC = () => {
   const [linkLimit, setLinkLimit] = useState('0');
   const [linkMergeMode, setLinkMergeMode] = useState(true);
   const [linkBaselineMin, setLinkBaselineMin] = useState('');
+  const [linkStartFrom, setLinkStartFrom] = useState('');
   const [savingLink, setSavingLink] = useState(false);
 
   const [linkStrictChronology, setLinkStrictChronology] = useState(false);
@@ -132,6 +133,14 @@ const TrackListManager: React.FC = () => {
     title?: string;
   } | null>(null);
   const [deletingNotification, setDeletingNotification] = useState(false);
+
+  const [convertConfirm, setConvertConfirm] = useState<{
+    channelId: string;
+    titleId: string;
+    keyword: string;
+    offset: number;
+  } | null>(null);
+  const [converting, setConverting] = useState(false);
 
   const [showChannelFeed, setShowChannelFeed] = useState<Record<string, boolean>>({});
 
@@ -415,7 +424,7 @@ const TrackListManager: React.FC = () => {
 
       let token: string | undefined = continueScan ? previewCursorRef.current[channelId] || undefined : undefined;
       if (continueScan && !token) {
-        toast('Channel ke sabse purane video tak scan ho chuka hai');
+        toast('Channel has been scanned up to the oldest video');
         return;
       }
 
@@ -463,7 +472,7 @@ const TrackListManager: React.FC = () => {
         }
         if (map.size === 0) toast('No video matched this keyword — try changing the keyword');
       } catch (err: any) {
-        toast.error('Preview beech mein ruk gaya — ab tak ka result dikh raha hai, "Search Older" se aage badho');
+        toast.error('Preview stopped midway — showing results so far, use "Search Older" to continue');
       } finally {
         setPreviewLoading(false);
         setPreviewProgress(null);
@@ -562,7 +571,7 @@ const TrackListManager: React.FC = () => {
         setPreviewEpisodeOverrides({});
       } else {
         toast.error(
-          `${added} added, ${failedBatches} batch fail (${lastError}). Dobara "Add Selected" dabana safe hai, duplicates skip ho jaate hain.`
+          `${added} added, ${failedBatches} batch failed (${lastError}). It is safe to press "Add Selected" again; duplicates will be skipped.`
         );
       }
       setPreviewAdding(false);
@@ -662,6 +671,7 @@ const TrackListManager: React.FC = () => {
     setLinkLimit(String(anyT.episodeLimit || 0));
     setLinkMergeMode(anyT.mergeMode !== false);
     setLinkBaselineMin(anyT.baselineEpisodeDurationSec ? String(Math.round(anyT.baselineEpisodeDurationSec / 60)) : '');
+    setLinkStartFrom(anyT.episodeOffset ? String(anyT.episodeOffset + 1) : '');
     setLinkStrictChronology(anyT.strictChronology === true);
     setLinkChronologyFloorDate(anyT.chronologyFloorDate || '');
     setLinkChronologyGraceGap(String(anyT.chronologyGraceGap ?? 0));
@@ -674,6 +684,7 @@ const TrackListManager: React.FC = () => {
     setLinkPageId('');
     setLinkLimit('0');
     setLinkBaselineMin('');
+    setLinkStartFrom('');
     setPagesForAnime([]);
     setLinkMergeMode(true);
     setLinkStrictChronology(false);
@@ -694,6 +705,7 @@ const TrackListManager: React.FC = () => {
             episodeLimit: Number(linkLimit) || 0,
             mergeMode: linkMergeMode,
             baselineEpisodeMinutes: linkBaselineMin ? Number(linkBaselineMin) : undefined,
+            episodeOffset: linkStartFrom.trim() ? Math.max(0, (Math.floor(Number(linkStartFrom)) || 1) - 1) : 0,
             strictChronology: linkStrictChronology,
             chronologyFloorDate: linkChronologyFloorDate || null,
             chronologyGraceGap: Number(linkChronologyGraceGap) || 0,
@@ -727,6 +739,54 @@ const TrackListManager: React.FC = () => {
         loadData();
       } catch {
         toast.error('Unlink failed');
+      }
+    });
+  };
+
+  const toggleTitleAuto = async (channelId: string, titleId: string) => {
+    await guarded(`toggle-auto-${titleId}`, async () => {
+      try {
+        const { data } = await axios.post(
+          `${API_BASE}/track/channel/${channelId}/title/${titleId}/toggle-auto`, {}, authHeaders()
+        );
+        toast.success(data.autoPaused ? 'Auto-tracking OFF' : 'Auto-tracking ON');
+        loadData();
+      } catch (err: any) {
+        toast.error(err.response?.data?.error || 'Toggle failed');
+      }
+    });
+  };
+
+  const convertPageOffset = (channelId: string, titleId: string) => {
+    const ch = channels.find((c) => c._id === channelId);
+    const t = ch?.titles.find((tt: any) => tt.id === titleId) as any;
+    if (!t) return;
+    setConvertConfirm({
+      channelId,
+      titleId,
+      keyword: t.keyword,
+      offset: Number(t.episodeOffset) || 0,
+    });
+  };
+
+  const confirmConvertPageOffset = async () => {
+    if (!convertConfirm) return;
+    const { channelId, titleId } = convertConfirm;
+    await guarded(`convert-offset-${titleId}`, async () => {
+      setConverting(true);
+      try {
+        const { data } = await axios.post(
+          `${API_BASE}/track/channel/${channelId}/title/${titleId}/convert-page-offset`,
+          {},
+          authHeaders()
+        );
+        toast.success(`${data.converted} links converted`);
+        loadData();
+      } catch (err: any) {
+        toast.error(err.response?.data?.error || 'Convert failed');
+      } finally {
+        setConverting(false);
+        setConvertConfirm(null);
       }
     });
   };
@@ -1350,6 +1410,73 @@ const TrackListManager: React.FC = () => {
                 >
                   {deletingNotification && Icon.spinner('w-3.5 h-3.5')}
                   {notificationDeleteConfirm.notificationId.startsWith('undo-') ? 'Undo' : 'Remove'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Fix Page Numbers confirmation modal */}
+      {convertConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4"
+          onClick={converting ? undefined : () => setConvertConfirm(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative bg-gradient-to-br from-slate-900 to-slate-950 border border-fuchsia-500/30 rounded-3xl p-6 max-w-md w-full shadow-2xl shadow-fuchsia-950/40 overflow-hidden"
+          >
+            <div className="absolute -top-16 -right-16 w-44 h-44 rounded-full bg-fuchsia-500/10 blur-3xl pointer-events-none" />
+            <div className="relative">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-3 bg-gradient-to-br from-fuchsia-500/25 to-purple-600/10 rounded-2xl border border-fuchsia-500/30">
+                  {Icon.refresh('w-5 h-5 text-fuchsia-300')}
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-lg font-bold text-white">Fix Page Numbers</h3>
+                  <p className="text-[11px] text-slate-500 font-medium truncate">{convertConfirm.keyword}</p>
+                </div>
+              </div>
+
+              <p className="text-sm text-slate-400 mb-4 leading-relaxed">
+                Subtract <span className="text-white font-semibold">{convertConfirm.offset}</span> from the episode number of all watch links on the page.
+              </p>
+
+              <div className="flex items-center justify-center gap-3 bg-black/30 border border-white/10 rounded-2xl py-3 mb-4">
+                <span className="text-xs text-slate-400">
+                  Ep <span className="text-slate-200 font-bold tabular-nums">{convertConfirm.offset + 1}</span>
+                </span>
+                <span className="text-slate-600">→</span>
+                <span className="text-xs text-emerald-300 font-bold">Ep 1</span>
+                <span className="text-slate-700">|</span>
+                <span className="text-xs text-slate-400">
+                  Ep <span className="text-slate-200 font-bold tabular-nums">{convertConfirm.offset + 7}</span>
+                </span>
+                <span className="text-slate-600">→</span>
+                <span className="text-xs text-emerald-300 font-bold">Ep 7</span>
+              </div>
+
+              <div className="flex items-start gap-2 text-[11px] text-amber-300 bg-amber-500/[0.06] border border-amber-500/20 rounded-xl px-3 py-2.5 mb-6">
+                <span className="flex-shrink-0 mt-0.5">{Icon.warn('w-3.5 h-3.5')}</span>
+                <span>This only needs to be pressed once. Pressing again will not change the already reduced numbers.</span>
+              </div>
+
+              <div className="flex justify-end gap-2.5">
+                <button
+                  onClick={() => setConvertConfirm(null)}
+                  disabled={converting}
+                  className="px-4 py-2.5 bg-white/5 hover:bg-white/10 rounded-xl text-slate-300 font-semibold transition disabled:opacity-50 text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmConvertPageOffset}
+                  disabled={converting}
+                  className="px-4 py-2.5 bg-gradient-to-br from-fuchsia-500 to-purple-600 hover:from-fuchsia-400 hover:to-purple-500 disabled:opacity-50 rounded-xl text-white font-bold transition shadow-lg shadow-fuchsia-600/30 flex items-center gap-2 text-sm"
+                >
+                  {converting && Icon.spinner('w-3.5 h-3.5')}
+                  {converting ? 'Converting...' : 'Convert'}
                 </button>
               </div>
             </div>
@@ -2055,6 +2182,8 @@ const TrackListManager: React.FC = () => {
         setLinkMergeMode={setLinkMergeMode}
         linkBaselineMin={linkBaselineMin}
         setLinkBaselineMin={setLinkBaselineMin}
+        linkStartFrom={linkStartFrom}
+        setLinkStartFrom={setLinkStartFrom}
         savingLink={savingLink}
         quickApproveSequential={quickApproveSequential}
         isSequentialLowRisk={isSequentialLowRisk}
@@ -2064,6 +2193,8 @@ const TrackListManager: React.FC = () => {
         setLinkChronologyFloorDate={setLinkChronologyFloorDate}
         linkChronologyGraceGap={linkChronologyGraceGap}
         setLinkChronologyGraceGap={setLinkChronologyGraceGap}
+        toggleTitleAuto={toggleTitleAuto}
+        convertPageOffset={convertPageOffset}
         isSubAdmin={isSubAdminContext}
         previewProgress={previewProgress}
         cancelPreview={cancelPreview}
