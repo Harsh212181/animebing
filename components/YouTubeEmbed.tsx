@@ -49,7 +49,7 @@ const RESUME_SAVE_INTERVAL_MS = 4000;
 const RESUME_KEY_PREFIX = 'yt-resume:';
 const PREFS_KEY = 'ytx-prefs';
 const RING_LEN = 163.4; // 2 * PI * 26
-const MIN_ZOOM = 1;
+const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 3;
 
 const formatTime = (t: number) => {
@@ -116,6 +116,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
   const singleTapTimerRef = useRef<Timer | null>(null);
   const hudTimerRef = useRef<Timer | null>(null);
   const holdTimerRef = useRef<Timer | null>(null);
+  const unstartedTimerRef = useRef<Timer | null>(null);
 
   // ---------- UI state ----------
   const [controlsVisible, setControlsVisible] = useState(true);
@@ -267,6 +268,23 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
   // ---------- messages from YouTube ----------
   useEffect(() => {
     const handleState = (state: number) => {
+      // -1 = unstarted, 5 = cued: phone par autoplay block hota hai to video asal me chal hi nahi rahi.
+      // Thoda ruk kar (desktop autoplay ko time dene ke liye) 'paused' mark karo.
+      if (state === -1 || state === 5) {
+        if (!unstartedTimerRef.current) {
+          unstartedTimerRef.current = setTimeout(() => {
+            unstartedTimerRef.current = null;
+            setPlaying(false);
+            playingRef.current = false;
+            setBuffering(false);
+          }, 1500);
+        }
+        return;
+      }
+      if (unstartedTimerRef.current) {
+        clearTimeout(unstartedTimerRef.current);
+        unstartedTimerRef.current = null;
+      }
       if (state === 1) {
         setPlaying(true);
         playingRef.current = true;
@@ -475,7 +493,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
   useEffect(() => {
     showControlsTemporarily();
     return () => {
-      [hideTimeoutRef, singleTapTimerRef, hudTimerRef, holdTimerRef].forEach((r) => {
+      [hideTimeoutRef, singleTapTimerRef, hudTimerRef, holdTimerRef, unstartedTimerRef].forEach((r) => {
         if (r.current) clearTimeout(r.current);
       });
       if (listeningIntervalRef.current) clearInterval(listeningIntervalRef.current);
@@ -531,6 +549,11 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     if (endedRef.current) {
       replay();
       return;
+    }
+    if (unstartedTimerRef.current) {
+      clearTimeout(unstartedTimerRef.current);
+      unstartedTimerRef.current = null;
+      playingRef.current = false;
     }
     if (playingRef.current) postCommand('pauseVideo');
     else postCommand('playVideo');
