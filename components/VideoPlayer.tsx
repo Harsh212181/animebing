@@ -247,7 +247,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // spinner kabhi stuck na rahe
   useEffect(() => {
-    const fallback = setTimeout(() => setReady(true), 4000);
+    const fallback = setTimeout(() => setReady(true), 1200);
     return () => clearTimeout(fallback);
   }, [currentSrc]);
 
@@ -599,7 +599,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const selectQuality = (newSrc: string) => {
     if (newSrc === currentSrc) return;
     pendingSeekRef.current = currentTimeRef.current;
-    pendingPlayRef.current = playingRef.current;
+    pendingPlayRef.current = playingRef.current || currentTimeRef.current < 1;
     setReady(false);
     setCurrentSrc(newSrc);
   };
@@ -1210,6 +1210,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         poster={poster}
         loop={loop}
         autoPlay
+        preload="metadata"
         playsInline
         className="w-full h-full object-contain pointer-events-none"
         onTimeUpdate={handleTimeUpdate}
@@ -1308,7 +1309,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       )}
 
       {/* Center play / pause button */}
-      {ready && !ended && !buffering && (!playing || (isTouchRef.current && showUi)) && (
+      {ready && !ended && (!playing || (!buffering && isTouchRef.current && showUi)) && (
         <div className="absolute inset-0 flex items-center justify-center z-[25] pointer-events-none">
           <button
             key={playing ? 'pause' : 'play'}
@@ -1517,7 +1518,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5 min-w-0">
-            <div className={GLASS}>
+            <div className={`${GLASS} flex-shrink-0`}>
               <button
                 onClick={handlePreviousEpisode}
                 disabled={!hasPreviousEpisode}
@@ -1562,7 +1563,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             </div>
 
             {/* Volume: hover par slider smoothly expand hota hai */}
-            <div className={`group flex ${GLASS}`}>
+            <div className={`group hidden sm:flex ${GLASS}`}>
               <button onClick={toggleMute} className={BTN_CLASS} aria-label="Mute / Unmute" data-tip="Mute (m)">
                 <VolumeIcon size={ICON_SIZE} />
               </button>
@@ -1580,7 +1581,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
               </div>
             </div>
 
-            <span className="whitespace-nowrap flex-shrink-0 text-white/90 text-[11px] sm:text-xs font-medium px-2.5 py-1 ml-1 rounded-full bg-white/10 border border-white/10 tabular-nums">
+            <span className="whitespace-nowrap flex-shrink-0 text-white/90 text-[11px] sm:text-xs font-medium px-2 sm:px-2.5 py-1 ml-0.5 sm:ml-1 rounded-full bg-white/10 border border-white/10 tabular-nums">
               {formatTime(currentTime)} <span className="text-white/40">/</span> {formatTime(duration)}
             </span>
           </div>
@@ -1741,6 +1742,13 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 </span>
                 <span className="flex-1 text-left font-medium">Loop video</span>
                 <Switch on={loop} />
+              </button>
+              <button onClick={toggleMute} className={`${MENU_ROW} sm:hidden`}>
+                <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 text-white/80">
+                  <VolumeIcon size={16} />
+                </span>
+                <span className="flex-1 text-left font-medium">Mute</span>
+                <Switch on={muted || volume === 0} />
               </button>
               {pipSupported && (
                 <button
