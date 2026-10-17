@@ -18,6 +18,34 @@ const GENRE_OPTIONS = [
   'Racing', 'Workplace', 'Iyashikei', 'Murim', 'Reincarnation', 'Trap','Vr Game',
 ] as const;
 
+// ─── ✏️ Common typo auto-fixes applied ONLY to the title field.
+// These run on blur + submit so Google sees the corrected title.
+// Slug and SEO fields are intentionally NOT touched (per requirement).
+const TITLE_TYPO_FIXES: Array<[RegExp, string]> = [
+  [/\bexplation\b/gi, 'Explanation'],
+  [/\bexplantion\b/gi, 'Explanation'],
+  [/\bexplaination\b/gi, 'Explanation'],
+  [/\brecieve\b/gi, 'Receive'],
+  [/\bseperate\b/gi, 'Separate'],
+  [/\bdefinately\b/gi, 'Definitely'],
+  [/\boccured\b/gi, 'Occurred'],
+];
+
+const fixTitleTypos = (title: string): string =>
+  TITLE_TYPO_FIXES.reduce((acc, [pattern, replacement]) => acc.replace(pattern, replacement), title);
+
+// ─── 📝 SEO title builder: avoids duplicate "Hindi Dub" and keeps title ≤ 60 chars.
+// Falls back to "Title | AnimeBing" if the primary option is too long.
+const buildSeoTitle = (title: string, subDub: string): string => {
+  const t = title.trim();
+  const hasLang = t.toLowerCase().includes(subDub.toLowerCase());
+  const options = [
+    hasLang ? `Watch ${t} Online | AnimeBing` : `Watch ${t} Online in ${subDub} | AnimeBing`,
+    `${t} | AnimeBing`,
+  ];
+  return options.find(o => o.length <= 60) || options[1];
+};
+
 // ─── 📱🖥️ Auto-resize helper: grows a textarea to fit its content so text
 // is never hidden/clipped behind a fixed-height scroll box, on phone or PC.
 const useAutoResizeTextArea = (ref: React.RefObject<HTMLTextAreaElement | null>, value: string) => {
@@ -240,7 +268,7 @@ const getContentGroup = (contentType: string): 'single' | 'chapter' | 'episode' 
     case 'Manga':
     case 'Ai Manhwa':
       return 'chapter';
-    default: // Anime, Ai Anime, Web Series
+    default:
       return 'episode';
   }
 };
@@ -250,7 +278,7 @@ interface SelectOption {
   value: string;
   label: string;
   hint?: string;
-  color?: string; // tailwind gradient classes for the dot/badge
+  color?: string;
 }
 
 const CustomSelect: React.FC<{
@@ -333,11 +361,10 @@ const CustomSelect: React.FC<{
 };
 
 interface AddAnimeFormProps {
-  token?: string;   // ✅ ADD
+  token?: string;
 }
 
 const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
-  // Updated contentType type union
   type ContentType = 'Anime' | 'Ai Anime' | 'Movie' | 'Hollywood Movie' | 'Bollywood Movie' | 'Manga' | 'Ai Manhwa' | 'Web Series';
 
   const [form, setForm] = useState({
@@ -364,7 +391,6 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
   const [searchGenre, setSearchGenre] = useState('');
   const [focusedField, setFocusedField] = useState<string | null>(null);
 
-  // ✅ New touched states for SEO manual editing detection
   const [seoTitleTouched, setSeoTitleTouched] = useState(false);
   const [seoDescriptionTouched, setSeoDescriptionTouched] = useState(false);
   const [seoKeywordsTouched, setSeoKeywordsTouched] = useState(false);
@@ -373,20 +399,13 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
   const successTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const errorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 🆕 Double-click / slow-network guard — prevents duplicate submissions.
-  // `loading` state already disables the button, but on very slow connections
-  // a second click can still fire before React re-renders, so we use a ref
-  // that is checked *synchronously* at the top of the handler.
   const submittingRef = useRef(false);
 
-  // 📱🖥️ Refs for the fields that must auto-grow to show their FULL text
-  // (no more clipped 1-2 line boxes that need scrolling — on phone or PC)
   const seoDescriptionRef = useRef<HTMLTextAreaElement>(null);
   const seoKeywordsRef = useRef<HTMLTextAreaElement>(null);
   useAutoResizeTextArea(seoDescriptionRef, form.seoDescription);
   useAutoResizeTextArea(seoKeywordsRef, form.seoKeywords);
 
-  // Auto-dismiss messages
   useEffect(() => {
     if (success) {
       if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current);
@@ -416,7 +435,6 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // 🛡️ Synchronous guard — blocks a 2nd click that fires before React re-renders.
     if (submittingRef.current) return;
     submittingRef.current = true;
 
@@ -425,13 +443,17 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
     setError('');
 
     try {
-      const token = tokenProp || getAdminToken();   // ✅ updated
-      const formData = { ...form };
+      const token = tokenProp || getAdminToken();
+
+      // ✏️ Last-chance typo fix on submit (only touches title).
+      const fixedTitle = fixTitleTypos(form.title);
+      const formData = { ...form, title: fixedTitle };
+
       if (!formData.slug?.trim()) formData.slug = generateSlug(form.title);
-      // If autoGenerateSEO is ON and fields are empty, auto-generate them once more before submit
       if (autoGenerateSEO && form.title.trim()) {
         if (!formData.seoTitle?.trim()) {
-          formData.seoTitle = `Watch ${form.title} Online in ${form.subDubStatus} | AnimeBing`;
+          // ✅ NEW: buildSeoTitle helper (auto length-aware, no duplicate lang)
+          formData.seoTitle = buildSeoTitle(form.title, form.subDubStatus);
         }
         if (!formData.seoDescription?.trim()) {
           formData.seoDescription = generateSEODescription(form.title, form.subDubStatus, form.contentType);
@@ -446,7 +468,6 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
       });
 
       setSuccess(`Anime added successfully. Details will appear in Google Search within 24-48 hours.`);
-      // ✅ Reset touched flags on success
       setSeoTitleTouched(false);
       setSeoDescriptionTouched(false);
       setSeoKeywordsTouched(false);
@@ -470,14 +491,20 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
       setError(err.response?.data?.error || 'Failed to add anime. Please try again.');
     } finally {
       setLoading(false);
-      // 🛡️ Release the guard after a short delay so the UI can settle
       setTimeout(() => { submittingRef.current = false; }, 300);
     }
   };
 
+  // ✅ Fixed: trim() first, then strip leading/trailing hyphens.
   const generateSlug = (title: string): string => {
     if (!title.trim()) return '';
-    return title.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').trim();
+    return title
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-+|-+$/g, '');
   };
 
   const generateSEODescription = (title: string, subDubStatus: string, contentType: string): string => {
@@ -497,7 +524,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
     if (statuses.includes('hindi dub')) keywords.push('hindi dubbed anime', 'anime in hindi', 'hindi dub', `${title} hindi dubbed`, 'watch anime in hindi');
     if (statuses.includes('hindi sub')) keywords.push('hindi subbed anime', 'anime with hindi subtitles', 'hindi sub', `${title} hindi subbed`, 'hindi subtitles anime');
     if (statuses.includes('english sub')) keywords.push('english subbed anime', 'anime in english', 'english sub', `${title} english sub`, 'english subtitles anime');
-    
+
     const group = getContentGroup(contentType);
     if (group === 'single') {
       keywords.push(`${title} movie`, `watch ${title} movie online`, `${title} full movie`, 'movies online', 'full movie download');
@@ -506,12 +533,10 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
     } else {
       keywords.push(`${title} episodes`, `watch ${title} episodes`, `${title} all episodes`, 'anime episodes', 'hindi dubbed episodes');
     }
-    
+
     keywords.push('animebing', 'animebing.in', 'anime streaming site', 'free anime downloads');
     return [...new Set(keywords)].join(', ');
   };
-
-  // ===== HANDLERS WITH TOUCH FLAG LOGIC =====
 
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newTitle = e.target.value;
@@ -520,7 +545,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
       title: newTitle,
       slug: autoGenerateSEO ? generateSlug(newTitle) : prev.slug,
       seoTitle: (autoGenerateSEO && !seoTitleTouched)
-        ? `Watch ${newTitle} Online in ${prev.subDubStatus} | AnimeBing`
+        ? buildSeoTitle(newTitle, prev.subDubStatus)   // ✅ buildSeoTitle
         : prev.seoTitle,
       seoDescription: (autoGenerateSEO && !seoDescriptionTouched)
         ? generateSEODescription(newTitle, prev.subDubStatus, prev.contentType)
@@ -537,7 +562,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
       ...prev,
       subDubStatus: newStatus,
       seoTitle: (autoGenerateSEO && !seoTitleTouched && prev.title.trim())
-        ? `Watch ${prev.title} Online in ${newStatus} | AnimeBing`
+        ? buildSeoTitle(prev.title, newStatus)         // ✅ buildSeoTitle
         : prev.seoTitle,
       seoDescription: (autoGenerateSEO && !seoDescriptionTouched && prev.title.trim())
         ? generateSEODescription(prev.title, newStatus, prev.contentType)
@@ -554,7 +579,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
       ...prev,
       contentType: newContentType,
       seoTitle: (autoGenerateSEO && !seoTitleTouched && prev.title.trim())
-        ? `Watch ${prev.title} Online in ${prev.subDubStatus} | AnimeBing`
+        ? buildSeoTitle(prev.title, prev.subDubStatus) // ✅ buildSeoTitle
         : prev.seoTitle,
       seoDescription: (autoGenerateSEO && !seoDescriptionTouched && prev.title.trim())
         ? generateSEODescription(prev.title, prev.subDubStatus, newContentType)
@@ -611,17 +636,12 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
   };
 
   const filteredGenres = GENRE_OPTIONS.filter(g => g.toLowerCase().includes(searchGenre.toLowerCase()));
-
   const isFormValid = form.title.trim() && form.slug.trim() && form.genreList.length > 0 && form.thumbnail.trim();
-
-  // 🆕 Lock inputs during submit so the user cannot change values mid-flight
   const isLocked = loading;
 
   return (
     <div className="w-full h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4 md:p-6 lg:p-8 overflow-auto">
       <div className="max-w-7xl mx-auto">
-
-        {/* ===== HEADER ===== */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div>
             <div className="flex items-center gap-3 mb-1">
@@ -652,10 +672,7 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
           </div>
         </div>
 
-        {/* ===== FORM (FULL WIDTH) ===== */}
         <form onSubmit={handleSubmit} className="space-y-6">
-
-          {/* BASIC INFORMATION – Thumbnail Preview now inside */}
           <div className="bg-slate-800/40 backdrop-blur-sm rounded-2xl border border-slate-700/50 p-5 md:p-6 transition-all duration-300 hover:border-slate-600/50">
             <div className="flex items-center gap-2 mb-5 pb-3 border-b border-slate-700/50">
               <div className="w-1 h-6 rounded-full bg-gradient-to-b from-purple-500 to-pink-500"></div>
@@ -664,7 +681,6 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
             </div>
 
             <div className="space-y-4">
-              {/* Title — counter no longer overlaps the text (extra right padding) */}
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-1.5 flexl items-center gap-2">
                   <Icons.Title className="w-4 h-4 text-slate-400" />
@@ -676,7 +692,15 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                     value={form.title}
                     onChange={handleTitleChange}
                     onFocus={() => setFocusedField('title')}
-                    onBlur={() => setFocusedField(null)}
+                    onBlur={() => {
+                      setFocusedField(null);
+                      // ✏️ Auto-correct common typos in title on blur.
+                      // Only the title is updated; slug / SEO fields stay untouched.
+                      const fixed = fixTitleTypos(form.title);
+                      if (fixed !== form.title) {
+                        setForm(prev => ({ ...prev, title: fixed }));
+                      }
+                    }}
                     disabled={isLocked}
                     className="w-full bg-slate-900/80 border border-slate-700 text-white rounded-xl pl-4 pr-14 py-3 text-sm focus:outline-none transition-all placeholder:text-slate-500 disabled:opacity-60"
                     placeholder='e.g., "Naruto Shippuden"'
@@ -688,7 +712,6 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                 </div>
               </div>
 
-              {/* Content Type & Year & Status */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <CustomSelect
                   label="Type"
@@ -736,7 +759,6 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                 />
               </div>
 
-              {/* Sub/Dub */}
               <CustomSelect
                 label="Sub / Dub Status"
                 icon={<Icons.Info className="w-4 h-4 text-slate-400" />}
@@ -753,7 +775,6 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                 ]}
               />
 
-              {/* Thumbnail + Description — hamesha side by side, thumbnail apni content-width leta hai, description baaki jagah fill karta hai */}
               <div className="flex flex-row gap-3 sm:gap-4 items-stretch">
                 <div className="flex-shrink-0">
                   <label className="block text-sm font-medium text-slate-300 mb-1.5 flexl items-center gap-2">
@@ -772,7 +793,6 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                     <Icons.Description className="w-4 h-4 text-slate-400" />
                     Description <span className="text-slate-500 text-xs font-normal">(optional)</span>
                   </label>
-                  {/* ✅ Fixed-height scrollable box — mobile 220px, PC 215px (half), scrollbar hidden but scroll works */}
                   <textarea
                     value={form.description}
                     onChange={(e) => setForm({ ...form, description: e.target.value })}
@@ -785,7 +805,6 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
             </div>
           </div>
 
-          {/* GENRE SELECTOR */}
           <div className="bg-slate-800/40 backdrop-blur-sm rounded-2xl border border-slate-700/50 p-5 md:p-6 transition-all duration-300 hover:border-slate-600/50">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 pb-3 border-b border-slate-700/50">
               <div className="flex items-center gap-2">
@@ -811,7 +830,6 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
               </div>
             </div>
 
-            {/* Selected Genres Preview — wraps freely, every chip shows its full label */}
             {form.genreList.length > 0 && (
               <div className="mb-5 p-4 bg-slate-900/50 rounded-xl border border-slate-700/30">
                 <p className="text-slate-400 text-xs font-medium mb-2.5 flex items-center gap-2">
@@ -840,7 +858,6 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
               </div>
             )}
 
-            {/* Custom Genre Input */}
             <div className="mb-5">
               <label className="block text-xs font-medium text-slate-400 mb-1.5 flexl items-center gap-1">
                 <Icons.AddCircle className="w-3 h-3" />
@@ -868,7 +885,6 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
               </div>
             </div>
 
-            {/* Genre Search & Grid — 1 column on very small phones so long names never get cramped */}
             <div>
               <div className="relative mb-3">
                 <input
@@ -923,7 +939,6 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
             </div>
           </div>
 
-          {/* SEO SETTINGS */}
           <div className="bg-slate-800/40 backdrop-blur-sm rounded-2xl border border-slate-700/50 p-5 md:p-6 transition-all duration-300 hover:border-slate-600/50">
             <div className="flex items-center gap-2 mb-5 pb-3 border-b border-slate-700/50">
               <div className="w-1 h-6 rounded-full bg-gradient-to-b from-amber-400 to-orange-500"></div>
@@ -988,7 +1003,6 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                       {form.seoDescription.length}/160
                     </span>
                   </label>
-                  {/* Auto-resizing textarea — full description always visible, no scroll needed */}
                   <textarea
                     ref={seoDescriptionRef}
                     value={form.seoDescription}
@@ -1002,7 +1016,6 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                 </div>
               </div>
 
-              {/* SEO Keywords — auto-resizing textarea with Regenerate button */}
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1.5 flexl items-center gap-2">
                   <Icons.Keyword className="w-3 h-3" />
@@ -1037,7 +1050,6 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                 </div>
               </div>
 
-              {/* URL Slug */}
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1.5 flexl items-center gap-2">
                   <Icons.Slug className="w-3 h-3" />
@@ -1082,11 +1094,9 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
             </div>
           </div>
 
-          {/* FORM STATUS */}
           <div className="bg-slate-800/40 backdrop-blur-sm rounded-xl border border-slate-700/50 px-4 py-3 transition-all duration-300">
             <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
               <span className="text-slate-300 text-xs font-semibold uppercase tracking-wider">Status</span>
-
               <div className="flex items-center gap-1.5">
                 <span className={`w-1.5 h-1.5 rounded-full ${form.title.trim() ? 'bg-emerald-400' : 'bg-slate-600'}`} />
                 <span className={`text-xs ${form.title.trim() ? 'text-slate-300' : 'text-slate-500'}`}>Title</span>
@@ -1103,12 +1113,9 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                 <span className={`w-1.5 h-1.5 rounded-full ${form.thumbnail.trim() ? 'bg-emerald-400' : 'bg-slate-600'}`} />
                 <span className={`text-xs ${form.thumbnail.trim() ? 'text-slate-300' : 'text-slate-500'}`}>Thumbnail</span>
               </div>
-
               <span className="w-px h-4 bg-slate-700 hidden sm:block" />
-
               <span className="text-slate-500 text-xs">SEO: {autoGenerateSEO ? 'Auto' : 'Manual'}</span>
               <span className="text-slate-500 text-xs">Indexing: 24-48h</span>
-
               <span
                 className={`ml-auto text-xs font-medium px-2.5 py-1 rounded-md border ${
                   isFormValid
@@ -1121,7 +1128,6 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
             </div>
           </div>
 
-          {/* SUBMIT */}
           <div className="mt-2 pt-4 border-t border-slate-700/50">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 bg-gradient-to-r from-purple-900/20 via-pink-900/20 to-slate-900/20 rounded-2xl border border-purple-800/30">
               <div>
@@ -1156,24 +1162,17 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
           </div>
         </form>
 
-        {/* ===== TOASTS (COMPACT) ===== */}
         {success && (
           <div className="fixed z-[100] bottom-3 right-3 left-3 sm:left-auto sm:bottom-6 sm:right-6 sm:max-w-sm animate-toast-in">
             <div className="relative overflow-hidden rounded-2xl bg-slate-900/95 backdrop-blur-xl border border-emerald-500/30 shadow-2xl shadow-emerald-500/10">
-              {/* top accent glow */}
               <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-400/70 to-transparent" />
-
               <div className="flex items-start gap-3 p-3.5 pr-10">
                 <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-emerald-500/30">
                   <Icons.CheckCircle className="w-5 h-5 text-white" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-white text-sm font-semibold leading-tight">
-                    Anime Added!
-                  </p>
-                  <p className="text-slate-400 text-xs mt-0.5 leading-snug">
-                    Google indexing within 24–48h
-                  </p>
+                  <p className="text-white text-sm font-semibold leading-tight">Anime Added!</p>
+                  <p className="text-slate-400 text-xs mt-0.5 leading-snug">Google indexing within 24–48h</p>
                   {form.slug && (
                     <p className="text-emerald-400/90 text-[11px] font-mono mt-1.5 truncate">
                       /detail/{form.slug}
@@ -1181,7 +1180,6 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
                   )}
                 </div>
               </div>
-
               <button
                 onClick={() => setSuccess('')}
                 aria-label="Close"
@@ -1189,8 +1187,6 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
               >
                 <Icons.X className="w-3.5 h-3.5" />
               </button>
-
-              {/* auto-dismiss progress bar (4s) */}
               <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-slate-800">
                 <div className="h-full bg-gradient-to-r from-emerald-400 to-green-500 animate-toast-progress" />
               </div>
@@ -1201,23 +1197,16 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
         {error && (
           <div className="fixed z-[100] bottom-3 right-3 left-3 sm:left-auto sm:bottom-6 sm:right-6 sm:max-w-sm animate-toast-in">
             <div className="relative overflow-hidden rounded-2xl bg-slate-900/95 backdrop-blur-xl border border-rose-500/30 shadow-2xl shadow-rose-500/10">
-              {/* top accent glow */}
               <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-rose-400/70 to-transparent" />
-
               <div className="flex items-start gap-3 p-3.5 pr-10">
                 <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-rose-500 to-red-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-rose-500/30">
                   <Icons.AlertCircle className="w-5 h-5 text-white" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-white text-sm font-semibold leading-tight">
-                    Failed to add
-                  </p>
-                  <p className="text-slate-400 text-xs mt-0.5 leading-snug break-words">
-                    {error}
-                  </p>
+                  <p className="text-white text-sm font-semibold leading-tight">Failed to add</p>
+                  <p className="text-slate-400 text-xs mt-0.5 leading-snug break-words">{error}</p>
                 </div>
               </div>
-
               <button
                 onClick={() => setError('')}
                 aria-label="Close"
@@ -1225,7 +1214,6 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
               >
                 <Icons.X className="w-3.5 h-3.5" />
               </button>
-
               <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-slate-800">
                 <div className="h-full bg-gradient-to-r from-rose-400 to-red-500 animate-toast-progress" />
               </div>
@@ -1256,7 +1244,6 @@ const AddAnimeForm: React.FC<AddAnimeFormProps> = ({ token: tokenProp }) => {
         .line-clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
         .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
-        /* ✅ Hide scrollbar but keep scroll functionality (works on Chrome, Firefox, Safari, Edge) */
         .scrollbar-hide::-webkit-scrollbar { display: none; width: 0; height: 0; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>

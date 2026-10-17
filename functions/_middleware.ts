@@ -518,9 +518,11 @@ export async function onRequest(context: CFContext): Promise<Response> {
         else if (maxEp > 1)                     titleText += ` EP 1-${maxEp}`;
         const ogTitle = `${titleText} | ${SITE_NAME}`;
 
+        // ✅ FIX: seoDescription ko PRIORITY do (Google ke liye).
+        //    Fallback chain: seoDescription → description → synopsis → default template.
         const rawDesc = String(
-          anime.description ||
           (anime as any).seoDescription ||
+          anime.description ||
           (anime as any).synopsis ||
           `Watch ${anime.title} online in HD quality on ${SITE_NAME}.`
         ).trim();

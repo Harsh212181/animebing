@@ -9,6 +9,19 @@ import { getContentGroup, CONTENT_TYPE_OPTIONS } from '../../utils/contentGroup'
 
 const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
 
+// ─── 📝 SEO title builder: avoids duplicate "Hindi Dub" and keeps title ≤ 60 chars.
+// Falls back to "Title | AnimeBing" if the primary option is too long.
+// Same helper as AddAnimeForm.tsx so edit + add behave identically.
+const buildSeoTitle = (title: string, subDub: string): string => {
+  const t = title.trim();
+  const hasLang = t.toLowerCase().includes(subDub.toLowerCase());
+  const options = [
+    hasLang ? `Watch ${t} Online | AnimeBing` : `Watch ${t} Online in ${subDub} | AnimeBing`,
+    `${t} | AnimeBing`,
+  ];
+  return options.find(o => o.length <= 60) || options[1];
+};
+
 // ============ CUSTOM STYLED DROPDOWN ============
 interface SelectOption {
   value: string;
@@ -298,7 +311,7 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
     } catch {
       /* each action handles its own errors */
     } finally {
-      setTimeout(() => { pendingRef.current.delete(key); }, 250);
+      setTimeout(() => pendingRef.current.delete(key), 250);
     }
   };
 
@@ -615,22 +628,33 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
     if (!editForm.slug && newTitle.trim()) {
       const generatedSlug = generateSlug(newTitle);
       setEditForm(prev => ({
-        ...prev, slug: generatedSlug,
-        seoTitle: prev.seoTitle || `Watch ${newTitle} Online in ${prev.subDubStatus} | AnimeBing`,
+        ...prev,
+        slug: generatedSlug,
+        // ✅ buildSeoTitle — length-aware, no duplicate "Hindi Dub"
+        seoTitle: prev.seoTitle || buildSeoTitle(newTitle, prev.subDubStatus),
       }));
     }
   };
 
+  // ✅ Fixed: trim() first, then strip leading/trailing hyphens.
+  // Prevents slugs like "...-hindi-dub-" (trailing dash from title's trailing space).
   const generateSlug = (title: string): string => {
     if (!title.trim()) return '';
-    return title.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').trim();
+    return title
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-+|-+$/g, '');
   };
 
   const handleSubDubStatusChange = (newStatus: string) => {
     setEditForm(prev => ({
       ...prev,
       subDubStatus: newStatus as Anime['subDubStatus'],
-      seoTitle: prev.title.trim() ? `Watch ${prev.title} Online in ${newStatus} | AnimeBing` : prev.seoTitle,
+      // ✅ buildSeoTitle — length-aware, no duplicate "Hindi Dub"
+      seoTitle: prev.title.trim() ? buildSeoTitle(prev.title, newStatus) : prev.seoTitle,
     }));
   };
 
@@ -663,7 +687,8 @@ const AnimeListTable: React.FC<AnimeListTableProps> = ({
     const seoKeywords = generateFullSEO();
     setEditForm(prev => ({
       ...prev,
-      seoTitle: prev.seoTitle || `Watch ${prev.title} Online in ${prev.subDubStatus} | AnimeBing`,
+      // ✅ buildSeoTitle — length-aware, no duplicate "Hindi Dub"
+      seoTitle: prev.seoTitle || buildSeoTitle(prev.title, prev.subDubStatus),
       seoDescription: prev.seoDescription || `Watch ${prev.title} online in ${prev.subDubStatus}. HD quality streaming and downloads.`,
       seoKeywords: prev.seoKeywords || seoKeywords,
       slug: prev.slug || generateSlug(prev.title),
