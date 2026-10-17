@@ -1,6 +1,6 @@
 // components/AnimeDetailPage.tsx - BANNER HERO + LIKE COUNT FORMATTING + DESCRIPTION SHOW MORE
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import type { Anime, Episode, Chapter, DownloadPage } from '../src/types';
 import { DownloadIcon } from './icons/DownloadIcon';
 import ReportButton from './ReportButton';
@@ -149,6 +149,8 @@ const generateAnimeKeywords = (anime: Anime): string => {
 };
 
 const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoading = false }) => {
+  const navigate = useNavigate();
+
   const [episodesLoading, setEpisodesLoading] = useState(true);
   const [chaptersLoading, setChaptersLoading] = useState(true);
   const [selectedSession, setSelectedSession] = useState<number>(1);
@@ -179,6 +181,13 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
   const group = getContentGroup(anime?.contentType);
   const isManga = group === 'chapter';
   const isMovie = group === 'single';
+
+  // ✅ NEW: hidden anime → home page redirect (client-side fallback)
+  useEffect(() => {
+    if (fullAnime && (fullAnime as any).isHidden === true) {
+      navigate('/', { replace: true });
+    }
+  }, [fullAnime, navigate]);
 
   // ✅ Funnel: Capture token from URL on mount
   useEffect(() => {
@@ -396,9 +405,10 @@ const AnimeDetailPage: React.FC<Props> = ({ anime, onBack, onAnimeSelect, isLoad
         // ✅ FIX: currentEpisode field ko projection list mein add kiya —
         // pehle ye missing thi isliye backend se aaya fresh data bhi
         // currentEpisode kabhi nahi le kar aata tha
+        // ✅ NEW: isHidden field bhi add kiya — client-side redirect ke liye
         const fullAnimeData = await getAnimeByIdOrSlug(
           identifier,
-          'title,thumbnail,releaseYear,status,contentType,subDubStatus,description,genreList,seoTitle,seoDescription,seoKeywords,slug,likes,dislikes,createdAt,updatedAt,currentEpisode'
+          'title,thumbnail,releaseYear,status,contentType,subDubStatus,description,genreList,seoTitle,seoDescription,seoKeywords,slug,likes,dislikes,createdAt,updatedAt,currentEpisode,isHidden'
         );
         if (fullAnimeData) {
           setFullAnime(fullAnimeData);

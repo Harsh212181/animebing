@@ -40,6 +40,12 @@ sitemapRoutes.get('/sitemap-static.xml', (c) => {
 // NOTE: withEdgeCache JSON data cache karta hai (JSON.stringify karke),
 // isliye yahan hum XML string ko ek object me wrap karke cache karte hain,
 // phir handler ke bahar unwrap karke XML response bhejte hain.
+//
+// 🔒 UPDATE: Hidden / Blocked anime sitemap se hata diye gaye hain.
+//    - `isHidden: { $ne: true }`   → hidden nahi hone chahiye
+//    - `isBlocked: { $ne: true }`  → blocked nahi hone chahiye
+//    - `$ne: true` use kiya taaki agar kisi purane doc me field missing
+//      ho (undefined), to wo bhi include ho (backward compatible).
 // ============================================================================
 sitemapRoutes.get('/sitemap-anime.xml', async (c) => {
   try {
@@ -47,7 +53,8 @@ sitemapRoutes.get('/sitemap-anime.xml', async (c) => {
       const today = new Date().toISOString().split('T')[0]
 
       const animeList = await findMany<IAnime>(
-        'animes', {},
+        'animes',
+        { isHidden: { $ne: true }, isBlocked: { $ne: true } },
         { projection: { slug: 1, updatedAt: 1, title: 1, thumbnail: 1, createdAt: 1 } },
         c.env.MONGODB_URI, c.env.MONGODB_DB
       )

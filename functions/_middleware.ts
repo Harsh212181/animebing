@@ -1,4 +1,4 @@
- interface Env {
+interface Env {
   API_URL?: string;
 }
 
@@ -467,9 +467,20 @@ export async function onRequest(context: CFContext): Promise<Response> {
       ]);
 
       let html = await pageRes.text();
+
+      // ✅ NEW: deleted / blocked anime (404) → home page redirect
+      if (apiRes.status === 404) {
+        return Response.redirect(`${SITE_URL}/`, 302);
+      }
       if (!apiRes.ok) return new Response(html, { headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
 
       const data = await apiRes.json() as { success: boolean; data?: Record<string, unknown> };
+
+      // ✅ NEW: hidden anime → home page redirect
+      if (data.success && data.data && (data.data as any).isHidden === true) {
+        return Response.redirect(`${SITE_URL}/`, 302);
+      }
+
       if (data.success && data.data) {
         const anime = data.data;
 
