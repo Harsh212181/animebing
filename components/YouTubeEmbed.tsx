@@ -18,6 +18,7 @@ import {
   Gauge,
   Zap,
   X,
+  ZoomIn,
 } from 'lucide-react';
 import { getYouTubeId } from './utils/videoHelpers';
 
@@ -48,6 +49,8 @@ const RESUME_SAVE_INTERVAL_MS = 4000;
 const RESUME_KEY_PREFIX = 'yt-resume:';
 const PREFS_KEY = 'ytx-prefs';
 const RING_LEN = 163.4; // 2 * PI * 26
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 3;
 
 const formatTime = (t: number) => {
   if (!isFinite(t) || t < 0) return '0:00';
@@ -104,6 +107,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
   const isCustom = playerMode === 'custom';
 
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const gestureRef = useRef<HTMLDivElement>(null); // iframe + tap zones (zoom gestures yahin)
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
 
@@ -146,6 +150,14 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
   const [hud, setHud] = useState<{ node: React.ReactNode; text: string; key: number } | null>(null);
   const [holdBoost, setHoldBoost] = useState(false);
   const [resumeToast, setResumeToast] = useState<number | null>(null);
+
+  // zoom / pan
+  const [scale, setScale] = useState(1);
+  const [translate, setTranslate] = useState({ x: 0, y: 0 });
+  const scaleRef = useRef(1);
+  const targetScaleRef = useRef(1);
+  const translateRef = useRef({ x: 0, y: 0 });
+  const rafRef = useRef<number | null>(null);
 
   // ---------- refs mirroring state (no stale closures) ----------
   const playingRef = useRef(true);
@@ -246,6 +258,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
       currentTimeRef.current = 0;
       durationRef.current = 0;
       resumeAppliedRef.current = false;
+      resetZoom();
       startListening();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -416,6 +429,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
       const fsElement = document.fullscreenElement || (document as any).webkitFullscreenElement;
       const now = !!fsElement;
       setNativeFs(now);
+      if (!now) resetZoom();
       if (now) {
         if (screen.orientation && 'lock' in screen.orientation && isTouchRef.current) {
           try {
@@ -585,7 +599,10 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
   };
 
   const exitFullscreen = () => {
-    if (fakeFsRef.current) setFakeFs(false);
+    if (fakeFsRef.current) {
+      setFakeFs(false);
+      resetZoom();
+    }
     const d = document as any;
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
     else if (d.webkitFullscreenElement) d.webkitExitFullscreen?.();
@@ -612,6 +629,44 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
   const handleIframeLoad = () => {
     setReady(true);
     startListening();
+  };
+
+  // ---------- zoom helpers ----------
+  const resetZoom = () => {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    scaleRef.current = 1;
+    targetScaleRef.current = 1;
+    translateRef.current = { x: 0, y: 0 };
+    setScale(1);
+    setTranslate({ x: 0, y: 0 });
+  };
+
+  const clampTranslate = (x: number, y: number) => {
+    const el = wrapperRef.current;
+    const sc = scaleRef.current;
+    if (!el || sc <= 1) return { x: 0, y: 0 };
+    const maxX = (el.clientWidth * (sc - 1)) / 2;
+    const maxY = (el.clientHeight * (sc - 1)) / 2;
+    return { x: Math.min(maxX, Math.max(-maxX, x)), y: Math.min(maxY, Math.max(-maxY, y)) };
+  };
+
+  const animateScale = () => {
+    const diff = targetScaleRef.current - scaleRef.current;
+    if (Math.abs(diff) < 0.002) {
+      scaleRef.current = targetScaleRef.current;
+      setScale(scaleRef.current);
+      rafRef.current = null;
+    } else {
+      scaleRef.current += diff * 0.25;
+      setScale(scaleRef.current);
+      rafRef.current = requestAnimationFrame(animateScale);
+    }
+    const c = clampTranslate(translateRef.current.x, translateRef.current.y);
+    translateRef.current = c;
+    setTranslate(c);
   };
 
   // ---------- progress bar (pointer based) ----------
@@ -697,8 +752,12 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
         singleTapTimerRef.current = null;
       }
       lastTapRef.current = null;
-      if (side === 'center') toggleFullscreen();
-      else doSkip(side, now);
+      if (side === 'center') {
+        if (scaleRef.current !== 1) {
+          resetZoom();
+          flash('Zoom reset', <ZoomIn size={18} />);
+        } else toggleFullscreen();
+      } else doSkip(side, now);
       return;
     }
 
@@ -745,7 +804,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     onPointerLeave: endHold,
     onPointerCancel: endHold,
     onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
-    style: { WebkitTouchCallout: 'none', touchAction: 'manipulation' } as React.CSSProperties,
+    style: { WebkitTouchCallout: 'none', touchAction: 'none' } as React.CSSProperties,
   });
 
   // ---------- keyboard shortcuts ----------
@@ -859,6 +918,118 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [isCustom]);
 
+  // ---------- touch: pinch zoom + pan (sirf iframe + tap zones par, controls par nahi) ----------
+  useEffect(() => {
+    if (!isCustom || !youTubeId) return;
+    const el = gestureRef.current;
+    if (!el) return;
+    const g = {
+      pinched: false,
+      moved: false,
+      dragging: false,
+      startX: 0,
+      startY: 0,
+      dragX: 0,
+      dragY: 0,
+      pinchDist: 0,
+    };
+    const dist = (e: TouchEvent) =>
+      Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    const cancelTaps = () => {
+      if (singleTapTimerRef.current) {
+        clearTimeout(singleTapTimerRef.current);
+        singleTapTimerRef.current = null;
+      }
+      if (holdTimerRef.current) {
+        clearTimeout(holdTimerRef.current);
+        holdTimerRef.current = null;
+      }
+      lastTapRef.current = null;
+    };
+
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        g.pinched = false;
+        g.moved = false;
+      }
+      if (e.touches.length >= 2) {
+        g.pinched = true;
+        g.moved = true;
+        cancelTaps();
+        g.pinchDist = dist(e);
+        return;
+      }
+      const t = e.touches[0];
+      g.startX = t.clientX;
+      g.startY = t.clientY;
+      if (scaleRef.current > 1) {
+        g.dragging = true;
+        g.dragX = t.clientX - translateRef.current.x;
+        g.dragY = t.clientY - translateRef.current.y;
+      } else {
+        g.dragging = false;
+      }
+    };
+
+    const onMove = (e: TouchEvent) => {
+      if (e.touches.length >= 2) {
+        e.preventDefault();
+        const d = dist(e);
+        if (g.pinchDist) {
+          targetScaleRef.current = Math.min(
+            MAX_ZOOM,
+            Math.max(MIN_ZOOM, targetScaleRef.current * (d / g.pinchDist))
+          );
+          if (!rafRef.current) rafRef.current = requestAnimationFrame(animateScale);
+        }
+        g.pinchDist = d;
+        g.pinched = true;
+        g.moved = true;
+        return;
+      }
+      if (g.pinched || !g.dragging || scaleRef.current <= 1) return;
+      e.preventDefault();
+      const t = e.touches[0];
+      if (Math.hypot(t.clientX - g.startX, t.clientY - g.startY) > 10) {
+        g.moved = true;
+        cancelTaps();
+      }
+      const c = clampTranslate(t.clientX - g.dragX, t.clientY - g.dragY);
+      translateRef.current = c;
+      setTranslate(c);
+    };
+
+    const onEnd = (e: TouchEvent) => {
+      if (e.touches.length === 0) {
+        if (g.moved) {
+          suppressClickRef.current = true;
+          setTimeout(() => {
+            suppressClickRef.current = false;
+          }, 250);
+        }
+        g.pinched = false;
+        g.moved = false;
+        g.dragging = false;
+        g.pinchDist = 0;
+      } else if (g.pinched) {
+        g.pinchDist = 0;
+      }
+    };
+
+    el.addEventListener('touchstart', onStart, { passive: true });
+    el.addEventListener('touchmove', onMove, { passive: false });
+    el.addEventListener('touchend', onEnd);
+    el.addEventListener('touchcancel', onEnd);
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+      el.removeEventListener('touchcancel', onEnd);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCustom, !!youTubeId]);
+
   // ---------- derived ----------
   if (!youTubeId) return null;
 
@@ -884,6 +1055,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
   const bufferedPct = Math.min(100, buffered * 100);
   const hoverPct = hoverFrac === null ? 0 : Math.min(96, Math.max(4, hoverFrac * 100));
   const remaining = endedCountdown !== null && endedCountdown > 0 ? endedCountdown : null;
+  const isZoomed = Math.abs(scale - 1) > 0.01;
 
   return (
     <div
@@ -960,27 +1132,44 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
         }
       `}</style>
 
-      <iframe
-        ref={iframeRef}
-        className={`absolute top-0 left-0 w-full h-full ${isCustom ? 'pointer-events-none' : ''}`}
-        src={`https://www.youtube-nocookie.com/embed/${initialYouTubeIdRef.current}?${iframeParams}&origin=${encodeURIComponent(
-          typeof window !== 'undefined' ? window.location.origin : ''
-        )}`}
-        title={title || 'YouTube video player'}
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-        allowFullScreen={!isCustom}
-        onLoad={isCustom ? handleIframeLoad : undefined}
-      />
+      {/* Gesture layer: iframe (zoom/pan) + tap zones. touch-action: none sirf yahin, taaki settings menu scroll na ruke */}
+      <div
+        ref={gestureRef}
+        className={`absolute inset-0 ${isCustom ? 'z-10' : ''}`}
+        style={isCustom ? { touchAction: 'none' } : undefined}
+      >
+        <div
+          className="absolute inset-0"
+          style={{
+            transform: `translate(${translate.x}px, ${translate.y}px) scale(${scale})`,
+            transformOrigin: 'center',
+          }}
+        >
+          <iframe
+            ref={iframeRef}
+            className={`absolute top-0 left-0 w-full h-full ${isCustom ? 'pointer-events-none' : ''}`}
+            src={`https://www.youtube-nocookie.com/embed/${initialYouTubeIdRef.current}?${iframeParams}&origin=${encodeURIComponent(
+              typeof window !== 'undefined' ? window.location.origin : ''
+            )}`}
+            title={title || 'YouTube video player'}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+            allowFullScreen={!isCustom}
+            onLoad={isCustom ? handleIframeLoad : undefined}
+          />
+        </div>
 
-      {isCustom && (
-        <>
-          {/* Tap zones: left (double-tap -10s), center (play / double-tap fullscreen), right (+10s) */}
-          <div className="absolute inset-0 bottom-20 z-10 flex">
+        {isCustom && (
+          /* Tap zones: left (double-tap -10s), center (play / double-tap fullscreen or zoom reset), right (+10s) */
+          <div className="absolute inset-0 bottom-20 flex">
             <div className="w-2/5 h-full" aria-label="Double tap to rewind 10 seconds" {...zoneProps('left')} />
             <div className="w-1/5 h-full" {...zoneProps('center')} />
             <div className="w-2/5 h-full" aria-label="Double tap to forward 10 seconds" {...zoneProps('right')} />
           </div>
+        )}
+      </div>
 
+      {isCustom && (
+        <>
           {/* Title bar */}
           <div
             className={`absolute top-0 left-0 right-0 z-20 px-4 pt-3 pb-8 bg-gradient-to-b from-black/70 to-transparent pointer-events-none transition-opacity duration-300 ${
@@ -1034,6 +1223,20 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
               <Zap size={14} className="text-yellow-300" fill="currentColor" />
               2x speed
             </div>
+          )}
+
+          {/* Zoom reset badge */}
+          {isZoomed && (
+            <button
+              onClick={() => {
+                resetZoom();
+                showControlsTemporarily();
+              }}
+              className={`absolute top-14 right-3 z-30 flex items-center gap-1.5 rounded-full bg-black/65 backdrop-blur-sm border border-white/15 px-3 py-1.5 text-white text-xs font-semibold active:scale-95 transition-all ${FOCUS}`}
+              aria-label="Reset zoom"
+            >
+              <ZoomIn size={14} /> <span className="tabular-nums">{scale.toFixed(1)}x</span> · Reset
+            </button>
           )}
 
           {/* HUD (volume / speed / seek feedback) */}
