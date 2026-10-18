@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { Env, Variables } from '../index'
 import { adminAuth } from '../middleware/auth'
-import { findOne, findMany, updateOne, deleteOne, insertOne } from '../services/mongoService'
+import { findOne, findMany, updateOne, deleteOne, insertOne, toObjectId, isValidObjectId } from '../services/mongoService'
 import { IR2Provider } from '../models/types'
 import { decryptSecret, encryptSecret } from '../services/encryptionService'
 import { signDownloadUrl } from '../services/signedUrlService'
@@ -12,11 +12,11 @@ import {
   abortMultipartUpload,
   listBucketObjects,
   deleteObject,
-  deleteObjects, // ✅ NEW
+  deleteObjects,
   renameObject,
   generateSimplePutUrl,
-  listBuckets, // ✅ NEW
-  generateGetUrl, // ✅ NEW
+  listBuckets,
+  generateGetUrl,
 } from '../services/multipartUploadService'
 
 const uploadRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
@@ -37,6 +37,9 @@ const staticBucketHostMap: Record<string, string> = {
   'english.animebing.in': 'english-sub',
 }
 
+// Sub-admin kitne R2 buckets connect kar sakta hai
+const MAX_SUBADMIN_BUCKETS = 5
+
 async function checkHostnameAccess(hostname: string, admin: any, mongoUri: string, mongoDb: string): Promise<boolean> {
   if (hostname in staticBucketHostMap) {
     return admin?.role !== 'subadmin'
@@ -56,7 +59,7 @@ async function resolveUploadCreds(hostname: string, c: any) {
       accessKeyId: c.env.R2_ACCESS_KEY_ID,
       secretAccessKey: c.env.R2_SECRET_ACCESS_KEY,
       bucketName: staticBucketHostMap[hostname],
-      publicBaseUrl: `https://${hostname}`, // ✅ NEW
+      publicBaseUrl: `https://${hostname}`,
     }
   }
   const provider = await findOne<IR2Provider>(
@@ -66,16 +69,17 @@ async function resolveUploadCreds(hostname: string, c: any) {
   const secretAccessKey = await decryptSecret(
     (provider as any).encryptedSecretAccessKey, (provider as any).iv, c.env.ENCRYPTION_KEY
   )
+  // ✅ '.internal' hostname asli URL nahi hota — isse kabhi public URL mat banao
+  const fallbackBase = hostname.endsWith('.internal') ? '' : `https://${hostname}`
   return {
     accountId: (provider as any).accountId,
     accessKeyId: (provider as any).accessKeyId,
     secretAccessKey,
     bucketName: (provider as any).bucketName,
-    publicBaseUrl: ((provider as any).publicBaseUrl || `https://${hostname}`).replace(/\/+$/, ''), // ✅ NEW
+    publicBaseUrl: ((provider as any).publicBaseUrl || fallbackBase).replace(/\/+$/, ''),
   }
 }
 
-// ✅ NEW
 function buildUrl(creds: any, key: string): string {
   return creds.publicBaseUrl ? `${creds.publicBaseUrl}/${encodeURIComponent(key)}` : ''
 }
@@ -97,7 +101,6 @@ uploadRoutes.get('/buckets', adminAuth, async (c) => {
     }))
 
     if (admin?.role === 'subadmin') {
-      // ✅ Sub-admin ko sirf apne registered buckets dikhenge
       dynamicList = dynamicList.filter((p: any) => p.ownerUsername === admin.username)
       return c.json(dynamicList)
     }
@@ -108,11 +111,20 @@ uploadRoutes.get('/buckets', adminAuth, async (c) => {
   }
 })
 
-// LIST objects in a bucket (dedupe + no cap)
+// LIST objects in a bucket (dedupe + no cap) — ab har item ke saath ownerUsername bhi
 uploadRoutes.get('/list', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
     const hostnameParam = c.req.query('hostname')
+
+    // Providers ek baar fetch — owner map + dynamic list dono ke liye
+    const providers = await findMany<IR2Provider>(
+      'r2providers', { isActive: { $ne: false } }, {}, c.env.MONGODB_URI, c.env.MONGODB_DB
+    )
+    const ownerByHostname = new Map<string, string>()
+    providers.forEach((p: any) => {
+      if (p.ownerUsername) ownerByHostname.set(p.hostname, p.ownerUsername)
+    })
 
     let hostnamesToQuery: string[] = []
 
@@ -122,7 +134,6 @@ uploadRoutes.get('/list', adminAuth, async (c) => {
       hostnamesToQuery = [hostnameParam]
     } else {
       const staticList = Object.keys(staticBucketHostMap)
-      const providers = await findMany<IR2Provider>('r2providers', { isActive: { $ne: false } }, {}, c.env.MONGODB_URI, c.env.MONGODB_DB)
       let dynamicList = providers.map((p: any) => ({ hostname: p.hostname, ownerUsername: p.ownerUsername }))
 
       if (admin?.role === 'subadmin') {
@@ -133,7 +144,7 @@ uploadRoutes.get('/list', adminAuth, async (c) => {
       }
     }
 
-    // ✅ Dedupe — same physical bucket (accountId+bucketName) sirf ek baar query karo
+    // Dedupe — same physical bucket (accountId+bucketName) sirf ek baar query karo
     const seenBucketKeys = new Set<string>()
     const uniqueQueries: { hostname: string; creds: any }[] = []
 
@@ -150,11 +161,13 @@ uploadRoutes.get('/list', adminAuth, async (c) => {
       uniqueQueries.map(async ({ hostname, creds }) => {
         try {
           const objects = await listBucketObjects(creds)
+          const ownerUsername = ownerByHostname.get(hostname) || null
           return objects.map(o => ({
             key: o.key,
             size: o.size,
             lastModified: o.lastModified,
             hostname,
+            ownerUsername,
             url: buildUrl(creds, o.key),
           }))
         } catch {
@@ -258,9 +271,7 @@ uploadRoutes.delete('/object', adminAuth, async (c) => {
   }
 })
 
-// ✅ NEW: BULK DELETE OBJECTS — accepts { items: { hostname, key }[] }, groups by
-// hostname (bucket), checks access per hostname, and issues one batch-delete call
-// per bucket via the R2 multi-object delete API.
+// BULK DELETE OBJECTS — accepts { items: { hostname, key }[] }
 uploadRoutes.post('/bulk-delete', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
@@ -271,7 +282,6 @@ uploadRoutes.post('/bulk-delete', adminAuth, async (c) => {
       return c.json({ error: 'items array zaroori hai (kam se kam ek item)' }, 400)
     }
 
-    // Group requested keys by hostname so each bucket gets a single batch call
     const byHostname = new Map<string, string[]>()
     for (const { hostname, key } of items) {
       if (!hostname || !key) continue
@@ -384,18 +394,18 @@ uploadRoutes.post('/preview-url', adminAuth, async (c) => {
     const allowed = await checkHostnameAccess(hostname, admin, c.env.MONGODB_URI, c.env.MONGODB_DB)
     if (!allowed) return c.json({ error: 'Access denied' }, 403)
 
-    // ✅ NEW: sub-admin ke bucket ke liye presigned GET
     if (!(hostname in staticBucketHostMap)) {
       const creds = await resolveUploadCreds(hostname, c)
       if (!creds) return c.json({ error: 'Invalid hostname' }, 400)
-      const url = await generateGetUrl(creds, key, { expiresIn: 6 * 3600, download: mode === 'download' })
+      // ✅ Pehle 6 ghante tha — ab watch 1 ghanta, download 15 minute
+      const expiresIn = mode === 'download' ? 15 * 60 : 60 * 60
+      const url = await generateGetUrl(creds, key, { expiresIn, download: mode === 'download' })
       return c.json({ url })
     }
 
-    // ✅ Sirf static bucket hostnames yahan tak pahunchte hain — un par DB use nahi hota
     const fullUrl = `https://${hostname}/${encodeURIComponent(key)}`
     const signed = await signDownloadUrl(
-      null as any, // static bucket hai, isliye DB use nahi hota
+      null as any,
       fullUrl,
       {
         R2_ACCOUNT_ID: c.env.R2_ACCOUNT_ID,
@@ -411,9 +421,9 @@ uploadRoutes.post('/preview-url', adminAuth, async (c) => {
   }
 })
 
-// ✅ NEW: Simple image upload (for thumbnails) using existing animedata bucket and public domain
-const THUMBNAIL_FOLDER = 'image/'                    // ✅ animedata bucket ke andar folder
-const THUMBNAIL_HOSTNAME = 'files.animebing.in'       // ✅ existing public domain, naya kuch nahi
+// Simple image upload (for thumbnails) using existing animedata bucket and public domain
+const THUMBNAIL_FOLDER = 'image/'
+const THUMBNAIL_HOSTNAME = 'files.animebing.in'
 
 uploadRoutes.post('/image-presign', adminAuth, async (c) => {
   try {
@@ -435,70 +445,92 @@ uploadRoutes.post('/image-presign', adminAuth, async (c) => {
   }
 })
 
-// ============ SELF-SERVICE: Sub-admin apna khud ka R2 bucket connect kare ============
+// ============ SELF-SERVICE: Sub-admin multiple R2 buckets ============
 
-// STATUS — connected hai ya nahi (secret kabhi return nahi hota)
+function toSafeProvider(p: any) {
+  return {
+    id: String(p._id),
+    hostname: p.hostname,
+    bucketName: p.bucketName,
+    accountId: p.accountId,
+    isActive: p.isActive !== false,
+    publicBaseUrl: p.publicBaseUrl || '',
+  }
+}
+
+// STATUS — saare connected buckets (secret kabhi return nahi hota)
 uploadRoutes.get('/my-provider', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
-    if (admin?.role !== 'subadmin') {
-      return c.json({ error: 'Yeh feature sirf sub-admin ke liye hai' }, 403)
-    }
-    const provider = await findOne<IR2Provider>(
-      'r2providers', { ownerUsername: admin.username }, c.env.MONGODB_URI, c.env.MONGODB_DB
+    if (admin?.role !== 'subadmin') return c.json({ error: 'Yeh feature sirf sub-admin ke liye hai' }, 403)
+
+    const list = await findMany<IR2Provider>(
+      'r2providers', { ownerUsername: admin.username }, {}, c.env.MONGODB_URI, c.env.MONGODB_DB
     )
-    if (!provider) return c.json({ connected: false })
     return c.json({
-      connected: true,
-      hostname: (provider as any).hostname,
-      bucketName: (provider as any).bucketName,
-      accountId: (provider as any).accountId,
-      isActive: (provider as any).isActive !== false,
-      publicBaseUrl: (provider as any).publicBaseUrl || '', // ✅ NEW
+      connected: list.length > 0,
+      providers: list.map(toSafeProvider),
+      maxBuckets: MAX_SUBADMIN_BUCKETS,
     })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// CONNECT / UPDATE — sub-admin apne credentials submit karta hai
+// CONNECT — naya bucket add karo (same account+bucket dobara bheja to credentials update honge)
 uploadRoutes.post('/my-provider', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
-    if (admin?.role !== 'subadmin') {
-      return c.json({ error: 'Yeh feature sirf sub-admin ke liye hai' }, 403)
-    }
+    if (admin?.role !== 'subadmin') return c.json({ error: 'Yeh feature sirf sub-admin ke liye hai' }, 403)
+
     const { bucketName, accountId, accessKeyId, secretAccessKey } = await c.req.json()
     if (!bucketName || !accountId || !accessKeyId || !secretAccessKey) {
       return c.json({ error: 'Bucket Name, Account ID, Access Key aur Secret Key zaroori hain' }, 400)
     }
 
-    // 🔒 hostname khud backend generate karta hai — sub-admin isko choose ya spoof nahi kar sakta
-    const hostname = `${admin.username}-r2.internal`.toLowerCase() // ✅ NEW
-
-    const { ciphertext, iv } = await encryptSecret(secretAccessKey, c.env.ENCRYPTION_KEY) // ✅ FIXED
+    const { ciphertext, iv } = await encryptSecret(secretAccessKey, c.env.ENCRYPTION_KEY)
 
     const existing = await findOne<IR2Provider>(
-      'r2providers', { ownerUsername: admin.username }, c.env.MONGODB_URI, c.env.MONGODB_DB
+      'r2providers', { ownerUsername: admin.username, accountId, bucketName },
+      c.env.MONGODB_URI, c.env.MONGODB_DB
     )
 
-    const doc = {
+    if (existing) {
+      await updateOne(
+        'r2providers', { _id: (existing as any)._id },
+        { accessKeyId, encryptedSecretAccessKey: ciphertext, iv },
+        c.env.MONGODB_URI, c.env.MONGODB_DB
+      )
+      return c.json({ success: true, hostname: (existing as any).hostname, updated: true })
+    }
+
+    const owned = await findMany<IR2Provider>(
+      'r2providers', { ownerUsername: admin.username }, {}, c.env.MONGODB_URI, c.env.MONGODB_DB
+    )
+    if (owned.length >= MAX_SUBADMIN_BUCKETS) {
+      return c.json({ error: `Maximum ${MAX_SUBADMIN_BUCKETS} buckets connect kar sakte ho` }, 400)
+    }
+
+    // 🔒 hostname backend banata hai — unique per (user + account + bucket)
+    const safeBucket = String(bucketName).toLowerCase().replace(/[^a-z0-9-]/g, '')
+    const hostname = `${admin.username}-${String(accountId).slice(0, 6)}-${safeBucket}-r2.internal`.toLowerCase()
+
+    const clash = await findOne('r2providers', { hostname }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    if (clash) return c.json({ error: 'Yeh bucket pehle se connected hai' }, 400)
+
+    await insertOne('r2providers', {
       hostname,
       bucketName,
       accountId,
       accessKeyId,
-      encryptedSecretAccessKey: ciphertext, // ✅ FIXED: ciphertext ko sahi field naam se save karo
+      encryptedSecretAccessKey: ciphertext,
       iv,
-      ownerUsername: admin.username, // 🔒 hamesha JWT se — client body se KABHI mat lo
-      label: `${admin.username} ka storage`,
+      ownerUsername: admin.username, // 🔒 hamesha JWT se
+      label: `${bucketName} (${admin.username})`,
       isActive: true,
-    }
-
-    if (existing) {
-      await updateOne('r2providers', { _id: (existing as any)._id }, doc, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    } else {
-      await insertOne('r2providers', doc, c.env.MONGODB_URI, c.env.MONGODB_DB)
-    }
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as any, c.env.MONGODB_URI, c.env.MONGODB_DB)
 
     return c.json({ success: true, hostname })
   } catch (err: any) {
@@ -506,43 +538,42 @@ uploadRoutes.post('/my-provider', adminAuth, async (c) => {
   }
 })
 
-// DISCONNECT — apna bucket hata do
-uploadRoutes.delete('/my-provider', adminAuth, async (c) => {
+// DISCONNECT — ek specific bucket hatao
+uploadRoutes.delete('/my-provider/:id', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
-    if (admin?.role !== 'subadmin') {
-      return c.json({ error: 'Yeh feature sirf sub-admin ke liye hai' }, 403)
-    }
-    await deleteOne('r2providers', { ownerUsername: admin.username }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    if (admin?.role !== 'subadmin') return c.json({ error: 'Yeh feature sirf sub-admin ke liye hai' }, 403)
+
+    const id = c.req.param('id')
+    if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
+
+    const p = await findOne<IR2Provider>(
+      'r2providers', { _id: toObjectId(id), ownerUsername: admin.username },
+      c.env.MONGODB_URI, c.env.MONGODB_DB
+    )
+    if (!p) return c.json({ error: 'Bucket nahi mila' }, 404)
+
+    await deleteOne('r2providers', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
     return c.json({ success: true })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }
 })
 
-// ============ Account ke andar ke buckets fetch karo (dropdown ke liye) ============
-uploadRoutes.post('/list-buckets', adminAuth, async (c) => {
-  try {
-    const admin = c.get('admin')
-    if (admin?.role !== 'subadmin') {
-      return c.json({ error: 'Yeh feature sirf sub-admin ke liye hai' }, 403)
-    }
-    const { accountId, accessKeyId, secretAccessKey } = await c.req.json()
-    if (!accountId || !accessKeyId || !secretAccessKey) {
-      return c.json({ error: 'Account ID, Access Key aur Secret Key zaroori hain' }, 400)
-    }
-    const buckets = await listBuckets(accountId, accessKeyId, secretAccessKey)
-    return c.json({ buckets })
-  } catch (err: any) {
-    return c.json({ error: err.message }, 500)
-  }
-})
-
-// ✅ NEW: sub-admin apna public URL save kare
-uploadRoutes.patch('/my-provider/public-url', adminAuth, async (c) => {
+// PUBLIC URL — ek specific bucket ka
+uploadRoutes.patch('/my-provider/:id/public-url', adminAuth, async (c) => {
   try {
     const admin = c.get('admin')
     if (admin?.role !== 'subadmin') return c.json({ error: 'Yeh feature sirf sub-admin ke liye hai' }, 403)
+
+    const id = c.req.param('id')
+    if (!isValidObjectId(id)) return c.json({ error: 'Invalid ID' }, 400)
+
+    const p = await findOne<IR2Provider>(
+      'r2providers', { _id: toObjectId(id), ownerUsername: admin.username },
+      c.env.MONGODB_URI, c.env.MONGODB_DB
+    )
+    if (!p) return c.json({ error: 'Bucket nahi mila' }, 404)
 
     const { publicBaseUrl } = await c.req.json()
     let clean = ''
@@ -555,8 +586,26 @@ uploadRoutes.patch('/my-provider/public-url', adminAuth, async (c) => {
         return c.json({ error: 'Valid https URL daalo (e.g. https://pub-xxxx.r2.dev)' }, 400)
       }
     }
-    await updateOne('r2providers', { ownerUsername: admin.username }, { publicBaseUrl: clean }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    await updateOne('r2providers', { _id: toObjectId(id) }, { publicBaseUrl: clean }, c.env.MONGODB_URI, c.env.MONGODB_DB)
     return c.json({ success: true, publicBaseUrl: clean })
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500)
+  }
+})
+
+// Account ke andar ke buckets fetch karo (dropdown ke liye)
+uploadRoutes.post('/list-buckets', adminAuth, async (c) => {
+  try {
+    const admin = c.get('admin')
+    if (admin?.role !== 'subadmin') {
+      return c.json({ error: 'Yeh feature sirf sub-admin ke liye hai' }, 403)
+    }
+    const { accountId, accessKeyId, secretAccessKey } = await c.req.json()
+    if (!accountId || !accessKeyId || !secretAccessKey) {
+      return c.json({ error: 'Account ID, Access Key aur Secret Key zaroori hain' }, 400)
+    }
+    const buckets = await listBuckets(accountId, accessKeyId, secretAccessKey)
+    return c.json({ buckets })
   } catch (err: any) {
     return c.json({ error: err.message }, 500)
   }

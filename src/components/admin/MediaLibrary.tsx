@@ -5,7 +5,14 @@ import AddToPageModal from './AddToPageModal';
 const API_BASE = import.meta.env.VITE_API_BASE ||
   'https://animabing-backend.animabingwatch.workers.dev/api';
 
-interface MediaItem { key: string; size: number; lastModified: string; url: string; hostname: string; }
+interface MediaItem {
+  key: string;
+  size: number;
+  lastModified: string;
+  url: string;
+  hostname: string;
+  ownerUsername?: string | null;
+}
 interface BucketOption { hostname: string; label: string; }
 interface Props { token?: string; refreshTrigger?: number; subAdminMode?: boolean; }
 
@@ -46,6 +53,19 @@ const formatSize = (bytes: number) => {
 function itemId(item: MediaItem): string {
   return `${item.hostname}::${item.key}`;
 }
+
+// ── Owner Badge ─────────────────────────────────────────────────────
+const OwnerBadge: React.FC<{ owner?: string | null; className?: string }> = ({ owner, className = '' }) => (
+  owner ? (
+    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-pink-200 border border-pink-500/30 truncate ${className}`}>
+      sub admin{owner}
+    </span>
+  ) : (
+    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/25 ${className}`}>
+      admin
+    </span>
+  )
+);
 
 // ── Custom Checkbox ─────────────────────────────────────────────────
 const CustomCheckbox: React.FC<{
@@ -153,6 +173,7 @@ interface EpisodeRowProps {
   isAddingToPage: boolean;
   selectMode: boolean;
   isSelected: boolean;
+  showOwner?: boolean;
   onToggleSelect: () => void;
   onWatch: () => void;
   onDownload: () => void;
@@ -167,7 +188,7 @@ interface EpisodeRowProps {
 
 const EpisodeRow: React.FC<EpisodeRowProps> = ({
   item, episode, isRenaming, renameValue, setRenameValue, busyKey, isPlaying, isAddingToPage,
-  selectMode, isSelected, onToggleSelect,
+  selectMode, isSelected, showOwner = false, onToggleSelect,
   onWatch, onDownload, onCopy, onToggleAddToPage, onRenameStart, onRenameConfirm, onRenameCancel, onDelete,
   rowPending = false,
 }) => {
@@ -202,9 +223,12 @@ const EpisodeRow: React.FC<EpisodeRowProps> = ({
           <p className="text-[10px] text-gray-500 mt-1">
             {formatSize(item.size)} · {new Date(item.lastModified).toLocaleString()}
           </p>
-          <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-sky-500/15 text-sky-300 border border-sky-500/25">
-            {item.hostname}
-          </span>
+          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-sky-500/15 text-sky-300 border border-sky-500/25">
+              {item.hostname}
+            </span>
+            {showOwner && <OwnerBadge owner={item.ownerUsername} />}
+          </div>
         </div>
       </div>
 
@@ -279,6 +303,7 @@ interface ImageCardProps {
   busyKey: string | null;
   selectMode: boolean;
   isSelected: boolean;
+  showOwner?: boolean;
   onToggleSelect: () => void;
   onDownload: () => void;
   onCopy: () => void;
@@ -291,7 +316,7 @@ interface ImageCardProps {
 
 const ImageCard: React.FC<ImageCardProps> = ({
   item, isRenaming, renameValue, setRenameValue, busyKey,
-  selectMode, isSelected, onToggleSelect,
+  selectMode, isSelected, showOwner = false, onToggleSelect,
   onDownload, onCopy, onRenameStart, onRenameConfirm, onRenameCancel, onDelete,
   cardPending = false,
 }) => {
@@ -314,7 +339,13 @@ const ImageCard: React.FC<ImageCardProps> = ({
       )}
 
       <div className="aspect-square bg-black/30 overflow-hidden">
-        <img src={item.url} alt={item.key} className="w-full h-full object-cover" loading="lazy" />
+        {item.url ? (
+          <img src={item.url} alt={item.key} className="w-full h-full object-cover" loading="lazy" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-500 px-2 text-center">
+            Public URL set nahi hai
+          </div>
+        )}
       </div>
 
       <div className="p-2 space-y-1">
@@ -334,6 +365,7 @@ const ImageCard: React.FC<ImageCardProps> = ({
             {item.hostname}
           </span>
         </div>
+        {showOwner && <OwnerBadge owner={item.ownerUsername} className="max-w-full" />}
       </div>
 
       {!selectMode && (
@@ -380,6 +412,9 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
   const resolveToken = () =>
     tokenProp || localStorage.getItem('adminToken') || sessionStorage.getItem('subAdminToken') || '';
 
+  // Sub-admin ko sirf apna data dikhta hai, isliye owner badge sirf main admin ke liye
+  const showOwner = !subAdminMode;
+
   const [buckets, setBuckets] = useState<BucketOption[]>([]);
   const [selectedHostname, setSelectedHostname] = useState('all');
   const [items, setItems] = useState<MediaItem[]>([]);
@@ -396,7 +431,8 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
   const [playingItem, setPlayingItem] = useState<{ id: string; url: string } | null>(null);
   const [addToPageRowId, setAddToPageRowId] = useState<string | null>(null);
   const [bulkAddGroupKey, setBulkAddGroupKey] = useState<string | null>(null);
-  const [imagesExpanded, setImagesExpanded] = useState(true);
+  // ✅ Images default me band — click karne par hi saari images dikhengi
+  const [imagesExpanded, setImagesExpanded] = useState(false);
 
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -410,15 +446,9 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
     onConfirm: () => Promise<void> | void;
   } | null>(null);
 
-  // 🆕 Double-click / slow-network guard — synchronous Set of in-flight keys.
-  // Prevents duplicate API calls even if user clicks before React re-renders.
+  // Double-click / slow-network guard
   const pendingRef = useRef<Set<string>>(new Set());
 
-  /**
-   * Wrap any async action with this helper. If the same key is already in-flight,
-   * the second call becomes a silent no-op. Errors are swallowed here because
-   * every action already handles its own error state.
-   */
   const guarded = async (key: string, fn: () => Promise<void>) => {
     if (pendingRef.current.has(key)) return;
     pendingRef.current.add(key);
@@ -504,6 +534,29 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
   const imageItems = useMemo(() => filteredItems.filter(i => isImageFile(i.key)), [filteredItems]);
   const videoOnlyItems = useMemo(() => filteredItems.filter(i => !isImageFile(i.key)), [filteredItems]);
 
+  // ✅ Storage stats — `items` se (search se unaffected), so total hamesha poora dikhta hai
+  const storageStats = useMemo(() => {
+    let videoBytes = 0, imageBytes = 0, videoCount = 0, imageCount = 0;
+    const perBucket = new Map<string, number>();
+    const perOwner = new Map<string, number>();
+
+    items.forEach(i => {
+      if (isImageFile(i.key)) { imageBytes += i.size; imageCount++; }
+      else { videoBytes += i.size; videoCount++; }
+      perBucket.set(i.hostname, (perBucket.get(i.hostname) || 0) + i.size);
+      const o = i.ownerUsername || '__main__';
+      perOwner.set(o, (perOwner.get(o) || 0) + i.size);
+    });
+
+    const total = videoBytes + imageBytes;
+    return {
+      total, videoBytes, imageBytes, videoCount, imageCount,
+      videoPct: total ? (videoBytes / total) * 100 : 0,
+      perBucket: Array.from(perBucket.entries()).sort((a, b) => b[1] - a[1]),
+      perOwner: Array.from(perOwner.entries()).sort((a, b) => b[1] - a[1]),
+    };
+  }, [items]);
+
   const groupedSeries = useMemo(() => {
     const groups = new Map<string, { groupKey: string; displayBaseName: string; season: number | null; entries: { item: MediaItem; episode: number | null }[] }>();
 
@@ -555,8 +608,9 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
 
   const allVisibleItems = useMemo(() => {
     const fromGroups = filteredGroups.flatMap(g => g.episodes.map(e => e.item));
-    return [...imageItems, ...fromGroups];
-  }, [imageItems, filteredGroups]);
+    // Images tabhi "visible" hain jab section khula ho (select all me galti se band images delete na ho)
+    return imagesExpanded ? [...imageItems, ...fromGroups] : fromGroups;
+  }, [imageItems, filteredGroups, imagesExpanded]);
 
   const handleWatchOrDownload = async (item: MediaItem, mode: 'watch' | 'download') => {
     const rowId = `${item.hostname}-${item.key}`;
@@ -701,8 +755,9 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
   const doBulkDelete = async () => {
     if (selectedIds.size === 0) return;
 
-    const idToItem = new Map(allVisibleItems.map(i => [itemId(i), i]));
-    const targets = Array.from(selectedIds).map(id => idToItem.get(id)).filter((i): i is MediaItem => !!i);
+    // Images band ho tab bhi pehle se select ki hui images delete list me rahein
+    const lookup = new Map([...imageItems, ...videoOnlyItems].map(i => [itemId(i), i]));
+    const targets = Array.from(selectedIds).map(id => lookup.get(id)).filter((i): i is MediaItem => !!i);
 
     if (targets.length === 0) {
       setSelectedIds(new Set());
@@ -820,6 +875,66 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
         </div>
       </div>
 
+      {/* ─── Storage Summary Card ─────────────────────── */}
+      <div className="p-3.5 rounded-xl bg-gradient-to-br from-purple-500/10 to-sky-500/[0.06] border border-purple-500/20 space-y-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <SvgIcon d={ICONS.folder} className="w-4 h-4 text-purple-300" />
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+              {selectedHostname === 'all' ? 'Total Account Storage' : 'Bucket Storage'}
+            </p>
+          </div>
+          <p className="text-lg font-bold text-white">{formatSize(storageStats.total)}</p>
+        </div>
+
+        {/* Video vs Image bar */}
+        <div className="h-2 rounded-full bg-sky-500/30 overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all"
+            style={{ width: `${storageStats.videoPct}%` }}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div className="p-2.5 bg-white/[0.03] border border-white/[0.06] rounded-lg">
+            <p className="text-[10px] font-bold uppercase text-purple-300">Videos</p>
+            <p className="text-xs font-bold text-white mt-0.5">{formatSize(storageStats.videoBytes)}</p>
+            <p className="text-[10px] text-gray-500">{storageStats.videoCount} files</p>
+          </div>
+          <div className="p-2.5 bg-white/[0.03] border border-white/[0.06] rounded-lg">
+            <p className="text-[10px] font-bold uppercase text-sky-300">Images</p>
+            <p className="text-xs font-bold text-white mt-0.5">{formatSize(storageStats.imageBytes)}</p>
+            <p className="text-[10px] text-gray-500">{storageStats.imageCount} files</p>
+          </div>
+        </div>
+
+        {/* Owner-wise (main admin) */}
+        {showOwner && storageStats.perOwner.length > 0 && (
+          <div className="pt-2 border-t border-white/[0.06] space-y-1.5">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">By Owner</p>
+            {storageStats.perOwner.map(([owner, bytes]) => (
+              <div key={owner} className="flex items-center justify-between gap-2">
+                <OwnerBadge owner={owner === '__main__' ? null : owner} />
+                <span className="text-[10px] font-bold text-gray-200">{formatSize(bytes)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Bucket-wise (sub-admin, jab multiple buckets hon) */}
+        {!showOwner && selectedHostname === 'all' && storageStats.perBucket.length > 1 && (
+          <div className="pt-2 border-t border-white/[0.06] space-y-1">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">By Bucket</p>
+            {storageStats.perBucket.map(([host, bytes]) => (
+              <div key={host} className="flex items-center justify-between text-[10px]">
+                <span className="text-gray-400 truncate max-w-[60%]">{host}</span>
+                <span className="font-bold text-gray-200">{formatSize(bytes)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* ─── Bulk toolbar ─────────────────────────────── */}
       {selectMode && (
         <div className="flex items-center justify-between flex-wrap gap-2 p-3 bg-indigo-500/[0.06] border border-indigo-500/20 rounded-xl">
@@ -892,7 +1007,7 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
 
       <div className="space-y-3 max-h-[650px] overflow-y-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
 
-        {/* Images section */}
+        {/* Images section — default band, click par khulega */}
         {imageItems.length > 0 && (
           <div className="border border-white/[0.06] rounded-xl overflow-hidden">
             <button onClick={() => setImagesExpanded(v => !v)}
@@ -905,6 +1020,9 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
                 </span>
                 <span className="text-[10px] font-bold text-sky-300 bg-sky-500/15 border border-sky-500/25 px-1.5 py-0.5 rounded-md">
                   {imageItems.length}
+                </span>
+                <span className="text-[10px] text-gray-500">
+                  {formatSize(imageItems.reduce((sum, i) => sum + i.size, 0))}
                 </span>
               </span>
               <SvgIcon d={ICONS.chevron} className={`w-3.5 h-3.5 text-gray-500 transition-transform ${imagesExpanded ? 'rotate-180' : ''}`} />
@@ -924,6 +1042,7 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
                       busyKey={busyKey}
                       selectMode={selectMode}
                       isSelected={selectedIds.has(id)}
+                      showOwner={showOwner}
                       onToggleSelect={() => toggleSelectItem(id)}
                       onDownload={() => handleWatchOrDownload(item, 'download')}
                       onCopy={() => handleCopyLink(item)}
@@ -1112,6 +1231,7 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
                     isAddingToPage={isAddingToPage}
                     selectMode={selectMode}
                     isSelected={selectedIds.has(id)}
+                    showOwner={showOwner}
                     onToggleSelect={() => toggleSelectItem(id)}
                     onWatch={() => handleWatchOrDownload(item, 'watch')}
                     onDownload={() => handleWatchOrDownload(item, 'download')}
