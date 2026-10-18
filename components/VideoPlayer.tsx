@@ -736,6 +736,14 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       closeMenus();
       return;
     }
+
+    // Desktop: center click = seedha play/pause (fast click safe)
+    if (side === 'center' && !isTouchRef.current) {
+      lastTapRef.current = null;
+      togglePlay();
+      return;
+    }
+
     const now = Date.now();
     const last = lastTapRef.current;
     const streak = skipStreakRef.current;
@@ -749,17 +757,26 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         singleTapTimerRef.current = null;
       }
       lastTapRef.current = null;
+      // desktop par pehla click play/pause kar chuka hai, wo undo karo
+      if (isDouble && !isTouchRef.current) togglePlay();
       if (side === 'center') {
         if (scaleRef.current !== 1) {
           resetZoom();
           flash('Zoom reset', <Maximize size={18} />);
         } else toggleFullscreen();
-      }
-      else doSkip(side, now);
+      } else doSkip(side, now);
       return;
     }
 
     lastTapRef.current = { side, time: now };
+
+    // Instant: desktop, ya paused video par center tap
+    if (!isTouchRef.current || (side === 'center' && !playingRef.current)) {
+      singleTapAction();
+      return;
+    }
+
+    // Touch par double-tap ke liye thoda wait
     if (singleTapTimerRef.current) clearTimeout(singleTapTimerRef.current);
     singleTapTimerRef.current = setTimeout(() => {
       singleTapTimerRef.current = null;
@@ -1116,6 +1133,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     ? 'Auto'
     : qualities?.find((q) => q.src === currentSrc)?.label ?? 'Auto';
   const pipSupported = typeof document !== 'undefined' && 'pictureInPictureEnabled' in document;
+  const centerVisible = !playing || (!buffering && isTouchRef.current && showUi);
 
   return (
     <div
@@ -1125,7 +1143,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         fakeFs
           ? 'fixed inset-0 z-[9999] h-full rounded-none border-0'
           : isFullscreen
-          ? 'h-full'
+          ? 'h-full rounded-none border-0 shadow-none'
           : 'aspect-video rounded-none border-0 sm:rounded-xl sm:border sm:border-purple-500/30 sm:shadow-[0_8px_40px_-12px_rgba(168,85,247,0.45)]'
       } ${!showUi && playing ? 'cursor-none' : ''}`}
       style={{ touchAction: 'none' }}
@@ -1139,6 +1157,13 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       }}
     >
       <style>{`
+        .ytx-root:focus, .ytx-root:focus-visible { outline: none !important; }
+        .ytx-root:fullscreen, .ytx-root:-webkit-full-screen {
+          border: 0 !important; border-radius: 0 !important; box-shadow: none !important;
+          outline: none !important; width: 100% !important; height: 100% !important;
+        }
+        .ytx-root:fullscreen::backdrop { background: #000; }
+
         .ytx-bar { position: relative; height: 22px; display: flex; align-items: center; cursor: pointer; touch-action: none; }
         .ytx-track { position: relative; width: 100%; height: 4px; border-radius: 9999px; background: rgba(255,255,255,0.22); transition: height .15s ease; }
         .ytx-bar:hover .ytx-track, .ytx-bar.ytx-active .ytx-track { height: 7px; }
@@ -1262,8 +1287,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       />
       </div>
 
-      {/* Tap zones: left (double-tap -10s), center (play / double-tap fullscreen), right (+10s) */}
-      <div className="absolute inset-0 bottom-20 z-10 flex">
+      {/* Tap zones: left (double-tap -15s), center (play / double-tap fullscreen), right (+15s) */}
+      <div className="absolute inset-0 z-10 flex">
         <div className="w-2/5 h-full" aria-label="Double tap to rewind 15 seconds" {...zoneProps('left')} />
         <div className="w-1/5 h-full" {...zoneProps('center')} />
         <div className="w-2/5 h-full" aria-label="Double tap to forward 15 seconds" {...zoneProps('right')} />
@@ -1308,26 +1333,33 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* Center play / pause button */}
-      {ready && !ended && (!playing || (!buffering && isTouchRef.current && showUi)) && (
+      {/* Center play / pause button (hamesha mounted, sirf show/hide) */}
+      {ready && !ended && (
         <div className="absolute inset-0 flex items-center justify-center z-[25] pointer-events-none">
           <button
-            key={playing ? 'pause' : 'play'}
+            type="button"
+            data-ui
             onClick={(e) => {
               e.stopPropagation();
+              lastTapRef.current = null;
               togglePlay();
             }}
             onPointerDown={(e) => e.stopPropagation()}
             aria-label={playing ? 'Pause' : 'Play'}
-            className="ytx-playin pointer-events-auto relative flex items-center justify-center hover:scale-110 active:scale-90 transition-transform duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 rounded-full"
-            style={{ width: 72, height: 72 }}
+            tabIndex={centerVisible ? 0 : -1}
+            className={`relative flex items-center justify-center rounded-full transition-all duration-150 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${
+              centerVisible
+                ? 'opacity-100 scale-100 pointer-events-auto'
+                : 'opacity-0 scale-75 pointer-events-none'
+            }`}
+            style={{ width: 52, height: 52, touchAction: 'manipulation' }}
           >
             {!playing && <span className="ytx-pulse absolute inset-0 rounded-full bg-pink-400/40" />}
-            <span className="relative flex items-center justify-center w-full h-full rounded-full bg-gradient-to-br from-purple-500 to-pink-500 border border-white/30 shadow-[0_0_40px_rgba(236,72,153,0.55)]">
+            <span className="relative flex items-center justify-center w-full h-full rounded-full bg-gradient-to-br from-purple-500 to-pink-500 border border-white/30 shadow-[0_0_28px_rgba(236,72,153,0.5)]">
               {playing ? (
-                <Pause size={30} className="text-white" fill="white" />
+                <Pause size={22} className="text-white" fill="white" />
               ) : (
-                <Play size={30} className="text-white ml-1" fill="white" />
+                <Play size={22} className="text-white ml-0.5" fill="white" />
               )}
             </span>
           </button>

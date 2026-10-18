@@ -117,6 +117,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
   const hudTimerRef = useRef<Timer | null>(null);
   const holdTimerRef = useRef<Timer | null>(null);
   const unstartedTimerRef = useRef<Timer | null>(null);
+  const ignoreStateUntilRef = useRef(0);
 
   // ---------- UI state ----------
   const [controlsVisible, setControlsVisible] = useState(true);
@@ -280,6 +281,13 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
           }, 1500);
         }
         return;
+      }
+      if (
+        (state === 1 || state === 2) &&
+        Date.now() < ignoreStateUntilRef.current &&
+        (state === 1) !== playingRef.current
+      ) {
+        return; // click ke turant baad aaya purana state, ignore
       }
       if (unstartedTimerRef.current) {
         clearTimeout(unstartedTimerRef.current);
@@ -558,6 +566,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     if (playingRef.current) postCommand('pauseVideo');
     else postCommand('playVideo');
     playingRef.current = !playingRef.current;
+    ignoreStateUntilRef.current = Date.now() + 350;
     setPlaying(playingRef.current);
     showControlsTemporarily();
   };
@@ -762,6 +771,12 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
       closeMenus();
       return;
     }
+    // Desktop: center click = seedha play/pause, double-tap logic nahi (fast click safe)
+    if (side === 'center' && !isTouchRef.current) {
+      lastTapRef.current = null;
+      togglePlay();
+      return;
+    }
     const now = Date.now();
     const last = lastTapRef.current;
     const streak = skipStreakRef.current;
@@ -775,6 +790,8 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
         singleTapTimerRef.current = null;
       }
       lastTapRef.current = null;
+      // desktop par pehla click already play/pause kar chuka hai, wo undo karo
+      if (isDouble && !isTouchRef.current) togglePlay();
       if (side === 'center') {
         if (scaleRef.current !== 1) {
           resetZoom();
@@ -785,6 +802,14 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     }
 
     lastTapRef.current = { side, time: now };
+
+    // Instant response: desktop, ya paused video par center tap
+    if (!isTouchRef.current || (side === 'center' && !playingRef.current)) {
+      singleTapAction();
+      return;
+    }
+
+    // Touch par double-tap ke liye thoda wait
     if (singleTapTimerRef.current) clearTimeout(singleTapTimerRef.current);
     singleTapTimerRef.current = setTimeout(() => {
       singleTapTimerRef.current = null;
@@ -1079,6 +1104,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
   const hoverPct = hoverFrac === null ? 0 : Math.min(96, Math.max(4, hoverFrac * 100));
   const remaining = endedCountdown !== null && endedCountdown > 0 ? endedCountdown : null;
   const isZoomed = Math.abs(scale - 1) > 0.01;
+  const centerVisible = !buffering && (!playing || (isTouchRef.current && showUi));
 
   return (
     <div
@@ -1183,7 +1209,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
 
         {isCustom && (
           /* Tap zones: left (double-tap -10s), center (play / double-tap fullscreen or zoom reset), right (+10s) */
-          <div className="absolute inset-0 bottom-20 flex">
+          <div className="absolute inset-0 flex">
             <div className="w-2/5 h-full" aria-label="Double tap to rewind 10 seconds" {...zoneProps('left')} />
             <div className="w-1/5 h-full" {...zoneProps('center')} />
             <div className="w-2/5 h-full" aria-label="Double tap to forward 10 seconds" {...zoneProps('right')} />
@@ -1214,26 +1240,32 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
             </div>
           )}
 
-          {/* Center play / pause button (clickable) */}
-          {ready && !ended && !buffering && (!playing || (isTouchRef.current && showUi)) && (
+          {/* Center play / pause button (hamesha mounted, sirf show/hide hota hai) */}
+          {ready && !ended && (
             <div className="absolute inset-0 flex items-center justify-center z-[25] pointer-events-none">
               <button
-                key={playing ? 'pause' : 'play'}
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
+                  lastTapRef.current = null;
                   togglePlay();
                 }}
                 onPointerDown={(e) => e.stopPropagation()}
                 aria-label={playing ? 'Pause' : 'Play'}
-                className="ytx-playin pointer-events-auto relative flex items-center justify-center hover:scale-110 active:scale-90 transition-transform duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 rounded-full"
-                style={{ width: 72, height: 72 }}
+                tabIndex={centerVisible ? 0 : -1}
+                className={`relative flex items-center justify-center rounded-full transition-all duration-150 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 ${
+                  centerVisible
+                    ? 'opacity-100 scale-100 pointer-events-auto'
+                    : 'opacity-0 scale-75 pointer-events-none'
+                }`}
+                style={{ width: 52, height: 52, touchAction: 'manipulation' }}
               >
                 {!playing && <span className="ytx-pulse absolute inset-0 rounded-full bg-pink-400/40" />}
-                <span className="relative flex items-center justify-center w-full h-full rounded-full bg-gradient-to-br from-purple-500 to-pink-500 border border-white/30 shadow-[0_0_40px_rgba(236,72,153,0.55)]">
+                <span className="relative flex items-center justify-center w-full h-full rounded-full bg-gradient-to-br from-purple-500 to-pink-500 border border-white/30 shadow-[0_0_28px_rgba(236,72,153,0.5)]">
                   {playing ? (
-                    <Pause size={30} className="text-white" fill="white" />
+                    <Pause size={22} className="text-white" fill="white" />
                   ) : (
-                    <Play size={30} className="text-white ml-1" fill="white" />
+                    <Play size={22} className="text-white ml-0.5" fill="white" />
                   )}
                 </span>
               </button>
