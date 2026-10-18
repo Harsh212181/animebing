@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Play,
   Pause,
@@ -53,8 +54,8 @@ const HUD_MS = 900;
 const AUTO_NEXT_SECONDS = 5;
 const RESUME_SAVE_INTERVAL_MS = 4000;
 const PROGRESS_KEY_PREFIX = 'video-progress-';
-const PREFS_KEY = 'ytx-prefs'; // YouTube player ke saath same prefs (auto-next / loop)
-const RING_LEN = 163.4; // 2 * PI * 26
+const PREFS_KEY = 'ytx-prefs';
+const RING_LEN = 163.4;
 const USE_NATIVE_FS = false;
 
 const formatTime = (t: number) => {
@@ -124,14 +125,14 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [currentSrc, setCurrentSrc] = useState(src);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [nativeFs, setNativeFs] = useState(false);
-  const [fakeFs, setFakeFs] = useState(false); // iPhone / unsupported browsers
+  const [fakeFs, setFakeFs] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [ready, setReady] = useState(false);
   const [buffering, setBuffering] = useState(false);
 
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [buffered, setBuffered] = useState(0); // 0..1
+  const [buffered, setBuffered] = useState(0);
   const [volume, setVolume] = useState(100);
   const [muted, setMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
@@ -193,12 +194,10 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   fakeFsRef.current = fakeFs;
   const isFullscreen = nativeFs || fakeFs;
 
-  // base src (episode) ke hisaab se resume key, quality change par same rahe
   const progressKey = `${PROGRESS_KEY_PREFIX}${src}`;
   const progressKeyRef = useRef(progressKey);
   progressKeyRef.current = progressKey;
 
-  // ---------- low level helpers ----------
   const flash = (text: string, node?: React.ReactNode) => {
     setHud({ text, node, key: Date.now() });
     if (hudTimerRef.current) clearTimeout(hudTimerRef.current);
@@ -222,9 +221,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     } catch {}
   };
 
-  // ---------- src / episode change ----------
   useEffect(() => {
-    // naya episode: sab reset
     setCurrentSrc(src);
     pendingSeekRef.current = null;
     pendingPlayRef.current = null;
@@ -246,13 +243,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, buffering]);
 
-  // spinner kabhi stuck na rahe
   useEffect(() => {
     const fallback = setTimeout(() => setReady(true), 1200);
     return () => clearTimeout(fallback);
   }, [currentSrc]);
 
-  // ---------- video element events ----------
   const updateBuffered = () => {
     const v = videoRef.current;
     if (!v || !v.duration || !isFinite(v.duration)) return;
@@ -281,7 +276,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       setDuration(v.duration);
     }
 
-    // quality change ke baad same jagah se
     if (pendingSeekRef.current !== null) {
       v.currentTime = pendingSeekRef.current;
       pendingSeekRef.current = null;
@@ -290,7 +284,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       return;
     }
 
-    // resume
     try {
       const saved = Number(localStorage.getItem(progressKeyRef.current));
       if (saved > 5 && saved < v.duration - 10) {
@@ -311,7 +304,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     endedRef.current = true;
   };
 
-  // ---------- resume save ----------
   useEffect(() => {
     const save = () => {
       const t = currentTimeRef.current;
@@ -340,7 +332,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     return () => clearTimeout(t);
   }, [resumeToast]);
 
-  // ---------- auto next countdown ----------
   useEffect(() => {
     if (!ended) {
       setCountdownCancelled(false);
@@ -367,7 +358,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [endedCountdown]);
 
-  // ---------- fullscreen ----------
   useEffect(() => {
     const handleFullscreenChange = async () => {
       const d = document as any;
@@ -402,7 +392,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     return () => events.forEach((e) => document.removeEventListener(e, handleFullscreenChange));
   }, []);
 
-  // back button se fullscreen band
   useEffect(() => {
     const onPop = () => {
       if (document.fullscreenElement === wrapperRef.current) {
@@ -416,7 +405,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
-  // touch device detect
   useEffect(() => {
     isTouchRef.current = !!window.matchMedia?.('(pointer: coarse)').matches;
   }, []);
@@ -430,7 +418,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, [fakeFs]);
 
-  // ---------- init / cleanup ----------
   useEffect(() => {
     showControlsTemporarily();
     return () => {
@@ -450,7 +437,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     return () => clearTimeout(t);
   }, [skipIndicator]);
 
-  // ---------- actions ----------
   const seekTo = (time: number) => {
     const v = videoRef.current;
     const max = durationRef.current || Infinity;
@@ -589,7 +575,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     showControlsTemporarily();
   };
 
-  // ---------- quality ----------
   const selectQuality = (newSrc: string) => {
     if (newSrc === currentSrc) return;
     pendingSeekRef.current = currentTimeRef.current;
@@ -622,7 +607,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, [qualities, autoQuality, src]);
 
-  // ---------- progress bar (pointer based) ----------
   const fracFromX = (clientX: number) => {
     const r = barRef.current?.getBoundingClientRect();
     if (!r || r.width === 0) return 0;
@@ -658,7 +642,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     if (!seekingRef.current) setHoverFrac(null);
   };
 
-  // ---------- zoom helpers ----------
   const resetZoom = () => {
     if (rafRef.current) {
       cancelAnimationFrame(rafRef.current);
@@ -696,7 +679,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     setTranslate(c);
   };
 
-  // ---------- tap zones ----------
   const doSkip = (side: SkipSide, now: number) => {
     skipBy(side === 'left' ? -SKIP_SECONDS : SKIP_SECONDS);
     const streak = skipStreakRef.current;
@@ -708,21 +690,13 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     setSkipIndicator({ side, amount, key: now });
   };
 
+  // FIXED: single tap always toggles play/pause
   const singleTapAction = () => {
-    if (isTouchRef.current) {
-      if (!playingRef.current) {
-        togglePlay();
-      } else if (controlsVisible) {
-        setControlsVisible(false);
-        if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
-      } else {
-        showControlsTemporarily();
-      }
-    } else {
-      togglePlay();
-    }
+    togglePlay();
+    showControlsTemporarily();
   };
 
+  // FIXED: proper zone handling — left/right only on double-tap, center = play/pause
   const handleZoneTap = (side: Zone) => {
     if (suppressClickRef.current) return;
     wrapperRef.current?.focus({ preventScroll: true });
@@ -730,14 +704,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       closeMenus();
       return;
     }
-
-    // Desktop: center click = seedha play/pause (fast click safe)
-    if (side === 'center' && !isTouchRef.current) {
-      lastTapRef.current = null;
-      togglePlay();
-      return;
-    }
-
     const now = Date.now();
     const last = lastTapRef.current;
     const streak = skipStreakRef.current;
@@ -751,9 +717,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         singleTapTimerRef.current = null;
       }
       lastTapRef.current = null;
-      // desktop par pehla click play/pause kar chuka hai, wo undo karo
-      if (isDouble && !isTouchRef.current) togglePlay();
       if (side === 'center') {
+        if (isDouble && !isTouchRef.current) togglePlay();
         if (scaleRef.current !== 1) {
           resetZoom();
           flash('Zoom reset', <Maximize size={18} />);
@@ -764,13 +729,13 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
     lastTapRef.current = { side, time: now };
 
-    // Instant: desktop, ya paused video par center tap
-    if (!isTouchRef.current || (side === 'center' && !playingRef.current)) {
-      singleTapAction();
+    if (side !== 'center') return;
+
+    if (!isTouchRef.current) {
+      togglePlay();
       return;
     }
 
-    // Touch par double-tap ke liye thoda wait
     if (singleTapTimerRef.current) clearTimeout(singleTapTimerRef.current);
     singleTapTimerRef.current = setTimeout(() => {
       singleTapTimerRef.current = null;
@@ -778,7 +743,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }, DOUBLE_TAP_MS);
   };
 
-  // press & hold => 2x
   const startHold = (e: React.PointerEvent) => {
     if (e.button !== undefined && e.button !== 0) return;
     if (!playingRef.current) return;
@@ -816,7 +780,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     style: { WebkitTouchCallout: 'none', touchAction: 'none' } as React.CSSProperties,
   });
 
-  // ---------- keyboard shortcuts ----------
   const latest = useRef<any>({});
   latest.current = {
     togglePlay,
@@ -926,7 +889,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // ---------- touch gestures: pinch zoom, pan, brightness / volume swipe ----------
+  // FIXED: dependency array now includes fakeFs so listeners reattach after portal remount
   useEffect(() => {
     const el = wrapperRef.current;
     if (!el) return;
@@ -1009,7 +972,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       if (g.pinched) return;
       const t = e.touches[0];
 
-      // zoom ke baad drag (pan)
       if (g.dragging && scaleRef.current > 1) {
         e.preventDefault();
         if (Math.hypot(t.clientX - g.startX, t.clientY - g.startY) > 10) {
@@ -1082,9 +1044,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fakeFs]);
 
-  // ---------- title ----------
   const animeTitle = title || '';
   const hasEpisode = episode !== undefined && episode !== null && episode !== '';
   const episodeStr = hasEpisode ? ` Ep ${episode}` : '';
@@ -1101,7 +1062,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     titleTimeoutRef.current = setTimeout(() => setShowFullTitle(false), 3000);
   };
 
-  // ---------- derived ----------
   const ICON_SIZE = 18;
   const FOCUS = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/80';
   const BTN_CLASS = `ytx-btn ytx-tip flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-full text-white/85 hover:text-white hover:bg-white/15 hover:scale-110 active:scale-90 active:bg-white/25 transition-all duration-150 ${FOCUS}`;
@@ -1127,18 +1087,19 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     ? 'Auto'
     : qualities?.find((q) => q.src === currentSrc)?.label ?? 'Auto';
   const pipSupported = typeof document !== 'undefined' && 'pictureInPictureEnabled' in document;
-  const centerVisible = !buffering && (!playing || (isTouchRef.current && showUi));
+  // FIXED: center button only when paused (no duplicate with bottom bar)
+  const centerVisible = !playing;
 
-  return (
+  const player = (
     <div
       ref={wrapperRef}
       tabIndex={0}
-      className={`ytx-root relative w-full bg-black overflow-hidden select-none outline-none ${
+      className={`ytx-root bg-black overflow-hidden select-none outline-none ${
         fakeFs
-          ? 'fixed inset-0 z-[9999] h-full rounded-none border-0'
+          ? 'fixed inset-0 z-[2147483647] w-screen h-[100dvh] rounded-none border-0'
           : isFullscreen
-          ? 'h-full rounded-none border-0 shadow-none'
-          : 'aspect-video rounded-none border-0 sm:rounded-xl sm:border sm:border-purple-500/30 sm:shadow-[0_8px_40px_-12px_rgba(168,85,247,0.45)]'
+          ? 'relative w-full h-full rounded-none border-0 shadow-none'
+          : 'relative w-full aspect-video rounded-none border-0 sm:rounded-xl sm:border sm:border-purple-500/30 sm:shadow-[0_8px_40px_-12px_rgba(168,85,247,0.45)]'
       } ${!showUi && playing ? 'cursor-none' : ''}`}
       style={{ touchAction: 'none' }}
       onMouseMove={showControlsTemporarily}
@@ -1214,7 +1175,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         }
       `}</style>
 
-      {/* Video (zoom / pan / brightness) */}
       <div
         className="absolute inset-0"
         style={{
@@ -1281,14 +1241,12 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       />
       </div>
 
-      {/* Tap zones: left (double-tap -15s), center (play / double-tap fullscreen), right (+15s) */}
       <div className="absolute inset-0 z-10 flex">
         <div className="w-2/5 h-full" aria-label="Double tap to rewind 15 seconds" {...zoneProps('left')} />
         <div className="w-1/5 h-full" {...zoneProps('center')} />
         <div className="w-2/5 h-full" aria-label="Double tap to forward 15 seconds" {...zoneProps('right')} />
       </div>
 
-      {/* Title bar + watermark */}
       <div
         className={`absolute top-0 left-0 right-0 z-20 px-4 pt-3 pb-8 bg-gradient-to-b from-black/70 to-transparent pointer-events-none transition-opacity duration-300 flex items-start justify-between gap-3 ${
           showUi ? 'opacity-100' : 'opacity-0'
@@ -1317,7 +1275,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       </div>
 
-      {/* Loading / buffering */}
       {(!ready || buffering) && !ended && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/30 z-20 pointer-events-none ytx-fadein">
           <div className="relative w-12 h-12">
@@ -1327,7 +1284,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* Center play / pause button (bilkul center, hamesha mounted, sirf show/hide) */}
       {ready && !ended && (
         <div className="absolute inset-0 flex items-center justify-center z-[35] pointer-events-none">
           <button
@@ -1360,7 +1316,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* 2x hold badge */}
       {holdBoost && (
         <div className="ytx-boost absolute top-4 left-1/2 z-30 flex items-center gap-1.5 rounded-full bg-black/65 backdrop-blur-sm border border-white/15 px-3 py-1.5 text-white text-xs font-semibold pointer-events-none">
           <Zap size={14} className="text-yellow-300" fill="currentColor" />
@@ -1368,7 +1323,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* HUD (volume / speed / seek feedback) */}
       {hud && (
         <div
           key={hud.key}
@@ -1379,7 +1333,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* Double-tap skip indicator */}
       {skipIndicator && (
         <div
           key={skipIndicator.key}
@@ -1411,7 +1364,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* Resume toast */}
       {resumeToast !== null && !ended && (
         <div data-ui className="ytx-toast absolute left-3 bottom-24 z-40 flex items-center gap-3 rounded-xl bg-neutral-900/95 backdrop-blur border border-white/10 pl-4 pr-2 py-2 text-white text-xs sm:text-sm shadow-xl">
           <span>
@@ -1436,7 +1388,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* Ended overlay */}
       {ended && (
         <div data-ui className="ytx-fadein absolute inset-0 z-40 flex flex-col items-center justify-center gap-4 bg-black/75 backdrop-blur-sm px-4 text-center">
           {hasNextEpisode ? (
@@ -1500,14 +1451,12 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* Control bar */}
       <div
         data-ui
         className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-2 sm:px-3 pt-8 pb-2 text-white z-30 transition-all duration-300 pointer-events-none ${
           showUi ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
         }`}
       >
-        {/* Progress bar */}
         <div
           ref={barRef}
           className={`ytx-bar mx-1 ${seeking ? 'ytx-active' : ''} ${showUi ? 'pointer-events-auto' : 'pointer-events-none'}`}
@@ -1588,7 +1537,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
               </button>
             </div>
 
-            {/* Volume: hover par slider smoothly expand hota hai */}
             <div className={`group hidden sm:flex ${GLASS}`}>
               <button onClick={toggleMute} className={BTN_CLASS} aria-label="Mute / Unmute" data-tip="Mute (m)">
                 <VolumeIcon size={ICON_SIZE} />
@@ -1701,7 +1649,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       </div>
 
-      {/* Settings menu */}
       {showSettings && (
         <div
           data-ui
@@ -1866,6 +1813,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       )}
     </div>
   );
+
+  if (fakeFs && typeof document !== 'undefined') {
+    return createPortal(player, document.body);
+  }
+  return player;
 };
 
 export default VideoPlayer;

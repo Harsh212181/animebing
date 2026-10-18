@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Play,
   Pause,
@@ -48,7 +49,7 @@ const AUTO_NEXT_SECONDS = 5;
 const RESUME_SAVE_INTERVAL_MS = 4000;
 const RESUME_KEY_PREFIX = 'yt-resume:';
 const PREFS_KEY = 'ytx-prefs';
-const RING_LEN = 163.4; // 2 * PI * 26
+const RING_LEN = 163.4;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 3;
 const USE_NATIVE_FS = false;
@@ -108,7 +109,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
   const isCustom = playerMode === 'custom';
 
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const gestureRef = useRef<HTMLDivElement>(null); // iframe + tap zones (zoom gestures yahin)
+  const gestureRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
 
@@ -120,17 +121,16 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
   const unstartedTimerRef = useRef<Timer | null>(null);
   const ignoreStateUntilRef = useRef(0);
 
-  // ---------- UI state ----------
   const [controlsVisible, setControlsVisible] = useState(true);
   const [nativeFs, setNativeFs] = useState(false);
-  const [fakeFs, setFakeFs] = useState(false); // iPhone / unsupported browsers
+  const [fakeFs, setFakeFs] = useState(false);
   const [playing, setPlaying] = useState(true);
   const [ready, setReady] = useState(false);
   const [buffering, setBuffering] = useState(false);
 
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [buffered, setBuffered] = useState(0); // 0..1
+  const [buffered, setBuffered] = useState(0);
   const [volume, setVolume] = useState(100);
   const [muted, setMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
@@ -154,7 +154,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
   const [holdBoost, setHoldBoost] = useState(false);
   const [resumeToast, setResumeToast] = useState<number | null>(null);
 
-  // zoom / pan
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
   const scaleRef = useRef(1);
@@ -162,7 +161,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
   const translateRef = useRef({ x: 0, y: 0 });
   const rafRef = useRef<number | null>(null);
 
-  // ---------- refs mirroring state (no stale closures) ----------
   const playingRef = useRef(true);
   const endedRef = useRef(false);
   const durationRef = useRef(0);
@@ -189,10 +187,17 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
   const youTubeId = getYouTubeId(videoUrl);
   const initialYouTubeIdRef = useRef(youTubeId);
   const isFirstLoadRef = useRef(true);
+  const mountIdRef = useRef(youTubeId);
+  const prevFakeFsRef = useRef(false);
+  const iframeLoadCountRef = useRef(0);
 
   const isFullscreen = nativeFs || fakeFs;
 
-  // ---------- low level ----------
+  if (prevFakeFsRef.current !== fakeFs) {
+    prevFakeFsRef.current = fakeFs;
+    mountIdRef.current = youTubeId;
+  }
+
   const postCommand = (func: string, args: any[] = []) => {
     iframeRef.current?.contentWindow?.postMessage(
       JSON.stringify({ event: 'command', func, args }),
@@ -200,13 +205,12 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     );
   };
 
-  // YouTube ko batao ki hum listening mode me hain, tabhi wo infoDelivery bhejta hai
   const startListening = () => {
     if (listeningIntervalRef.current) clearInterval(listeningIntervalRef.current);
     let attempts = 0;
     listeningIntervalRef.current = setInterval(() => {
       iframeRef.current?.contentWindow?.postMessage(
-        JSON.stringify({ event: 'listening', id: initialYouTubeIdRef.current }),
+        JSON.stringify({ event: 'listening', id: mountIdRef.current }),
         '*'
       );
       attempts += 1;
@@ -239,7 +243,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     } catch {}
   };
 
-  // ---------- episode change ----------
   useEffect(() => {
     if (isFirstLoadRef.current) {
       isFirstLoadRef.current = false;
@@ -267,11 +270,8 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [youTubeId]);
 
-  // ---------- messages from YouTube ----------
   useEffect(() => {
     const handleState = (state: number) => {
-      // -1 = unstarted, 5 = cued: phone par autoplay block hota hai to video asal me chal hi nahi rahi.
-      // Thoda ruk kar (desktop autoplay ko time dene ke liye) 'paused' mark karo.
       if (state === -1 || state === 5) {
         if (!unstartedTimerRef.current) {
           unstartedTimerRef.current = setTimeout(() => {
@@ -288,7 +288,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
         Date.now() < ignoreStateUntilRef.current &&
         (state === 1) !== playingRef.current
       ) {
-        return; // click ke turant baad aaya purana state, ignore
+        return;
       }
       if (unstartedTimerRef.current) {
         clearTimeout(unstartedTimerRef.current);
@@ -373,16 +373,13 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
             setPlaybackRate(info.playbackRate);
           }
         }
-      } catch {
-        // ignore unrelated messages
-      }
+      } catch {}
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [youTubeId]);
 
-  // spinner kabhi stuck na rahe
   useEffect(() => {
     const fallback = setTimeout(() => setReady(true), 4000);
     return () => clearTimeout(fallback);
@@ -393,7 +390,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, ready]);
 
-  // ---------- resume save ----------
   useEffect(() => {
     if (!youTubeId) return;
     const save = () => {
@@ -423,7 +419,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     return () => clearTimeout(t);
   }, [resumeToast]);
 
-  // ---------- auto next countdown ----------
   useEffect(() => {
     if (!ended) {
       setCountdownCancelled(false);
@@ -450,7 +445,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [endedCountdown]);
 
-  // ---------- fullscreen ----------
   useEffect(() => {
     const handleFullscreenChange = async () => {
       const fsElement = document.fullscreenElement || (document as any).webkitFullscreenElement;
@@ -474,7 +468,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     return () => events.forEach((e) => document.removeEventListener(e, handleFullscreenChange));
   }, []);
 
-  // touch device detect
   useEffect(() => {
     isTouchRef.current = !!window.matchMedia?.('(pointer: coarse)').matches;
   }, []);
@@ -488,7 +481,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     };
   }, [fakeFs]);
 
-  // ---------- init / cleanup ----------
   useEffect(() => {
     showControlsTemporarily();
     return () => {
@@ -513,7 +505,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     return () => clearTimeout(t);
   }, [skipIndicator]);
 
-  // ---------- actions ----------
   const seekTo = (time: number) => {
     const max = durationRef.current || Infinity;
     const target = Math.min(Math.max(time, 0), max);
@@ -543,6 +534,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     setCurrentTime(0);
   };
 
+  // FIXED: force-reset bug removed, explicit state set
   const togglePlay = () => {
     if (!isCustom) return;
     if (endedRef.current) {
@@ -552,13 +544,17 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     if (unstartedTimerRef.current) {
       clearTimeout(unstartedTimerRef.current);
       unstartedTimerRef.current = null;
-      playingRef.current = false;
     }
-    if (playingRef.current) postCommand('pauseVideo');
-    else postCommand('playVideo');
-    playingRef.current = !playingRef.current;
+    if (playingRef.current) {
+      postCommand('pauseVideo');
+      playingRef.current = false;
+      setPlaying(false);
+    } else {
+      postCommand('playVideo');
+      playingRef.current = true;
+      setPlaying(true);
+    }
     ignoreStateUntilRef.current = Date.now() + 800;
-    setPlaying(playingRef.current);
     showControlsTemporarily();
   };
 
@@ -656,9 +652,17 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
   const handleIframeLoad = () => {
     setReady(true);
     startListening();
+    iframeLoadCountRef.current += 1;
+    if (iframeLoadCountRef.current > 1) {
+      const t = currentTimeRef.current;
+      const wasPlaying = playingRef.current;
+      setTimeout(() => {
+        if (t > 1) postCommand('seekTo', [t, true]);
+        postCommand(wasPlaying ? 'playVideo' : 'pauseVideo');
+      }, 900);
+    }
   };
 
-  // ---------- zoom helpers ----------
   const resetZoom = () => {
     if (rafRef.current) {
       cancelAnimationFrame(rafRef.current);
@@ -696,7 +700,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     setTranslate(c);
   };
 
-  // ---------- progress bar (pointer based) ----------
   const fracFromX = (clientX: number) => {
     const r = barRef.current?.getBoundingClientRect();
     if (!r || r.width === 0) return 0;
@@ -732,7 +735,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     if (!seekingRef.current) setHoverFrac(null);
   };
 
-  // ---------- tap zones ----------
   const doSkip = (side: SkipSide, now: number) => {
     skipBy(side === 'left' ? -SKIP_SECONDS : SKIP_SECONDS);
     const streak = skipStreakRef.current;
@@ -744,21 +746,13 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     setSkipIndicator({ side, amount, key: now });
   };
 
+  // FIXED: simplified — single tap always toggles play
   const singleTapAction = () => {
-    if (isTouchRef.current) {
-      if (!playingRef.current) {
-        togglePlay();
-      } else if (controlsVisible) {
-        setControlsVisible(false);
-        if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
-      } else {
-        showControlsTemporarily();
-      }
-    } else {
-      togglePlay();
-    }
+    togglePlay();
+    showControlsTemporarily();
   };
 
+  // FIXED: proper zone handling — left/right only on double-tap; center = play/pause
   const handleZoneTap = (side: Zone) => {
     if (suppressClickRef.current) return;
     wrapperRef.current?.focus({ preventScroll: true });
@@ -766,14 +760,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
       closeMenus();
       return;
     }
-
-    // Desktop: center click = seedha play/pause (fast click safe)
-    if (side === 'center' && !isTouchRef.current) {
-      lastTapRef.current = null;
-      togglePlay();
-      return;
-    }
-
     const now = Date.now();
     const last = lastTapRef.current;
     const streak = skipStreakRef.current;
@@ -787,9 +773,8 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
         singleTapTimerRef.current = null;
       }
       lastTapRef.current = null;
-      // desktop par pehla click play/pause kar chuka hai, wo undo karo
-      if (isDouble && !isTouchRef.current) togglePlay();
       if (side === 'center') {
+        if (isDouble && !isTouchRef.current) togglePlay();
         if (scaleRef.current !== 1) {
           resetZoom();
           flash('Zoom reset', <ZoomIn size={18} />);
@@ -800,13 +785,16 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
 
     lastTapRef.current = { side, time: now };
 
-    // Instant response: desktop, ya paused video par center tap
-    if (!isTouchRef.current || (side === 'center' && !playingRef.current)) {
-      singleTapAction();
+    // Left/right: single tap does nothing, wait for possible double
+    if (side !== 'center') return;
+
+    // Center — desktop: instant toggle
+    if (!isTouchRef.current) {
+      togglePlay();
       return;
     }
 
-    // Touch par double-tap ke liye thoda wait
+    // Center — touch: wait for possible double-tap
     if (singleTapTimerRef.current) clearTimeout(singleTapTimerRef.current);
     singleTapTimerRef.current = setTimeout(() => {
       singleTapTimerRef.current = null;
@@ -814,7 +802,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     }, DOUBLE_TAP_MS);
   };
 
-  // press & hold => 2x (YouTube Shorts style)
   const startHold = (e: React.PointerEvent) => {
     if (e.button !== undefined && e.button !== 0) return;
     if (!playingRef.current) return;
@@ -852,7 +839,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     style: { WebkitTouchCallout: 'none', touchAction: 'none' } as React.CSSProperties,
   });
 
-  // ---------- keyboard shortcuts ----------
   const latest = useRef<any>({});
   latest.current = {
     togglePlay,
@@ -963,7 +949,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [isCustom]);
 
-  // ---------- touch: pinch zoom + pan (sirf iframe + tap zones par, controls par nahi) ----------
   useEffect(() => {
     if (!isCustom || !youTubeId) return;
     const el = gestureRef.current;
@@ -1073,9 +1058,8 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isCustom, !!youTubeId]);
+  }, [isCustom, !!youTubeId, fakeFs]);
 
-  // ---------- derived ----------
   if (!youTubeId) return null;
 
   const ICON_SIZE = 18;
@@ -1101,18 +1085,18 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
   const hoverPct = hoverFrac === null ? 0 : Math.min(96, Math.max(4, hoverFrac * 100));
   const remaining = endedCountdown !== null && endedCountdown > 0 ? endedCountdown : null;
   const isZoomed = Math.abs(scale - 1) > 0.01;
-  const centerVisible = !buffering && (!playing || (isTouchRef.current && showUi));
+  const centerVisible = !playing;
 
-  return (
+  const player = (
     <div
       ref={wrapperRef}
       tabIndex={isCustom ? 0 : -1}
-      className={`ytx-root relative w-full bg-black overflow-hidden select-none outline-none ${
+      className={`ytx-root bg-black overflow-hidden select-none outline-none ${
         fakeFs
-          ? 'fixed inset-0 z-[9999] h-full rounded-none border-0'
+          ? 'fixed inset-0 z-[2147483647] w-screen h-[100dvh] rounded-none border-0'
           : isFullscreen
-          ? 'h-full rounded-none border-0 shadow-none'
-          : 'aspect-video rounded-none border-0 sm:rounded-xl sm:border sm:border-purple-500/30 sm:shadow-[0_8px_40px_-12px_rgba(168,85,247,0.45)]'
+          ? 'relative w-full h-full rounded-none border-0 shadow-none'
+          : 'relative w-full aspect-video rounded-none border-0 sm:rounded-xl sm:border sm:border-purple-500/30 sm:shadow-[0_8px_40px_-12px_rgba(168,85,247,0.45)]'
       } ${isCustom && !showUi && playing ? 'cursor-none' : ''}`}
       onMouseMove={isCustom ? showControlsTemporarily : undefined}
       onMouseEnter={() => {
@@ -1187,7 +1171,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
         }
       `}</style>
 
-      {/* Gesture layer: iframe (zoom/pan) + tap zones. touch-action: none sirf yahin, taaki settings menu scroll na ruke */}
       <div
         ref={gestureRef}
         className={`absolute inset-0 ${isCustom ? 'z-10' : ''}`}
@@ -1203,7 +1186,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
           <iframe
             ref={iframeRef}
             className={`absolute top-0 left-0 w-full h-full ${isCustom ? 'pointer-events-none' : ''}`}
-            src={`https://www.youtube-nocookie.com/embed/${initialYouTubeIdRef.current}?${iframeParams}&origin=${encodeURIComponent(
+            src={`https://www.youtube-nocookie.com/embed/${mountIdRef.current}?${iframeParams}&origin=${encodeURIComponent(
               typeof window !== 'undefined' ? window.location.origin : ''
             )}`}
             title={title || 'YouTube video player'}
@@ -1214,7 +1197,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
         </div>
 
         {isCustom && (
-          /* Tap zones: left (double-tap -10s), center (play / double-tap fullscreen or zoom reset), right (+10s) */
           <div className="absolute inset-0 flex">
             <div className="w-2/5 h-full" aria-label="Double tap to rewind 10 seconds" {...zoneProps('left')} />
             <div className="w-1/5 h-full" {...zoneProps('center')} />
@@ -1225,7 +1207,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
 
       {isCustom && (
         <>
-          {/* Title bar */}
           <div
             className={`absolute top-0 left-0 right-0 z-20 px-4 pt-3 pb-8 bg-gradient-to-b from-black/70 to-transparent pointer-events-none transition-opacity duration-300 ${
               showUi ? 'opacity-100' : 'opacity-0'
@@ -1234,21 +1215,17 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
             {title && <p className="text-white text-sm sm:text-base font-medium truncate drop-shadow">{title}</p>}
           </div>
 
-          {/* Loading / buffering */}
           {(!ready || buffering) && !ended && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/30 z-20 pointer-events-none ytx-fadein">
               <div className="relative w-12 h-12">
                 <div className="absolute inset-0 rounded-full border-2 border-white/15" />
-                <div
-                  className="absolute inset-0 rounded-full border-2 border-transparent border-t-purple-400 border-r-pink-400 animate-spin"
-                />
+                <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-purple-400 border-r-pink-400 animate-spin" />
               </div>
             </div>
           )}
 
-          {/* Center play / pause button (bilkul center, hamesha mounted, sirf show/hide) */}
           {ready && !ended && (
-            <div className="absolute inset-0 flex items-center justify-center pb-12 sm:pb-0 z-[35] pointer-events-none">
+            <div className="absolute inset-0 flex items-center justify-center z-[35] pointer-events-none">
               <button
                 type="button"
                 onClick={(e) => {
@@ -1278,7 +1255,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
             </div>
           )}
 
-          {/* 2x hold badge */}
           {holdBoost && (
             <div className="ytx-boost absolute top-4 left-1/2 z-30 flex items-center gap-1.5 rounded-full bg-black/65 backdrop-blur-sm border border-white/15 px-3 py-1.5 text-white text-xs font-semibold pointer-events-none">
               <Zap size={14} className="text-yellow-300" fill="currentColor" />
@@ -1286,7 +1262,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
             </div>
           )}
 
-          {/* Zoom reset badge */}
           {isZoomed && (
             <button
               onClick={() => {
@@ -1300,7 +1275,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
             </button>
           )}
 
-          {/* HUD (volume / speed / seek feedback) */}
           {hud && (
             <div
               key={hud.key}
@@ -1311,7 +1285,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
             </div>
           )}
 
-          {/* Double-tap skip indicator */}
           {skipIndicator && (
             <div
               key={skipIndicator.key}
@@ -1343,7 +1316,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
             </div>
           )}
 
-          {/* Resume toast */}
           {resumeToast !== null && !ended && (
             <div className="ytx-toast absolute left-3 bottom-24 z-40 flex items-center gap-3 rounded-xl bg-neutral-900/95 backdrop-blur border border-white/10 pl-4 pr-2 py-2 text-white text-xs sm:text-sm shadow-xl">
               <span>
@@ -1368,7 +1340,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
             </div>
           )}
 
-          {/* Ended overlay */}
           {ended && (
             <div className="ytx-fadein absolute inset-0 z-40 flex flex-col items-center justify-center gap-4 bg-black/75 backdrop-blur-sm px-4 text-center">
               {hasNextEpisode ? (
@@ -1407,17 +1378,11 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
                     <SkipForward size={22} className="text-white" fill="white" />
                   </button>
                   <div className="flex items-center gap-2">
-                    <button
-                      onClick={replay}
-                      className={PILL_BTN}
-                    >
+                    <button onClick={replay} className={PILL_BTN}>
                       <RotateCcw size={15} /> Replay
                     </button>
                     {remaining !== null && (
-                      <button
-                        onClick={() => setCountdownCancelled(true)}
-                        className={PILL_BTN}
-                      >
+                      <button onClick={() => setCountdownCancelled(true)} className={PILL_BTN}>
                         Cancel
                       </button>
                     )}
@@ -1438,13 +1403,11 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
             </div>
           )}
 
-          {/* Control bar */}
           <div
             className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-2 sm:px-3 pt-8 pb-2 text-white z-30 transition-all duration-300 pointer-events-none ${
               showUi ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
             }`}
           >
-            {/* Progress bar */}
             <div
               ref={barRef}
               className={`ytx-bar mx-1 ${seeking ? 'ytx-active' : ''} ${showUi ? 'pointer-events-auto' : 'pointer-events-none'}`}
@@ -1481,47 +1444,46 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
 
             <div className={`flex items-center justify-between ${showUi ? 'pointer-events-auto' : 'pointer-events-none'}`}>
               <div className="flex items-center gap-1.5 min-w-0">
-               <div className={GLASS}>
-                <button
-                  onClick={handlePreviousEpisode}
-                  disabled={!hasPreviousEpisode}
-                  className={hasPreviousEpisode ? `${BTN_CLASS} ytx-tip-start` : DISABLED_BTN_CLASS}
-                  aria-label="Previous episode"
-                  data-tip="Previous episode (Shift+P)"
-                >
-                  <SkipBack size={ICON_SIZE} fill="currentColor" />
-                </button>
+                <div className={GLASS}>
+                  <button
+                    onClick={handlePreviousEpisode}
+                    disabled={!hasPreviousEpisode}
+                    className={hasPreviousEpisode ? `${BTN_CLASS} ytx-tip-start` : DISABLED_BTN_CLASS}
+                    aria-label="Previous episode"
+                    data-tip="Previous episode (Shift+P)"
+                  >
+                    <SkipBack size={ICON_SIZE} fill="currentColor" />
+                  </button>
 
-                <button
-                  onClick={togglePlay}
-                  className={PLAY_BTN_CLASS}
-                  aria-label={playing ? 'Pause' : 'Play'}
-                  data-tip={playing ? 'Pause (k)' : 'Play (k)'}
-                >
-                  {playing ? <Pause size={ICON_SIZE} fill="currentColor" /> : <Play size={ICON_SIZE} fill="currentColor" className="ml-0.5" />}
-                </button>
+                  <button
+                    onClick={togglePlay}
+                    className={PLAY_BTN_CLASS}
+                    aria-label={playing ? 'Pause' : 'Play'}
+                    data-tip={playing ? 'Pause (k)' : 'Play (k)'}
+                  >
+                    {playing ? <Pause size={ICON_SIZE} fill="currentColor" /> : <Play size={ICON_SIZE} fill="currentColor" className="ml-0.5" />}
+                  </button>
 
-                <button
-                  onClick={handleNextEpisode}
-                  disabled={!hasNextEpisode}
-                  className={
-                    hasNextEpisode
-                      ? `ytx-btn ytx-tip group flex items-center gap-1.5 h-8 sm:h-9 pl-3 pr-3 sm:pr-4 rounded-full bg-white/15 hover:bg-white/25 border border-white/20 text-white text-xs font-semibold hover:scale-105 active:scale-95 transition-all duration-200 ${FOCUS}`
-                      : 'flex items-center gap-1.5 h-8 sm:h-9 pl-3 pr-3 sm:pr-4 rounded-full text-white/20 text-xs font-semibold cursor-not-allowed'
-                  }
-                  aria-label="Next episode"
-                  data-tip="Next episode (Shift+N)"
-                >
-                  <span className="hidden sm:inline">Next</span>
-                  <SkipForward
-                    size={ICON_SIZE - 2}
-                    fill="currentColor"
-                    className="transition-transform duration-200 group-hover:translate-x-0.5"
-                  />
-                </button>
-               </div>
+                  <button
+                    onClick={handleNextEpisode}
+                    disabled={!hasNextEpisode}
+                    className={
+                      hasNextEpisode
+                        ? `ytx-btn ytx-tip group flex items-center gap-1.5 h-8 sm:h-9 pl-3 pr-3 sm:pr-4 rounded-full bg-white/15 hover:bg-white/25 border border-white/20 text-white text-xs font-semibold hover:scale-105 active:scale-95 transition-all duration-200 ${FOCUS}`
+                        : 'flex items-center gap-1.5 h-8 sm:h-9 pl-3 pr-3 sm:pr-4 rounded-full text-white/20 text-xs font-semibold cursor-not-allowed'
+                    }
+                    aria-label="Next episode"
+                    data-tip="Next episode (Shift+N)"
+                  >
+                    <span className="hidden sm:inline">Next</span>
+                    <SkipForward
+                      size={ICON_SIZE - 2}
+                      fill="currentColor"
+                      className="transition-transform duration-200 group-hover:translate-x-0.5"
+                    />
+                  </button>
+                </div>
 
-                {/* Volume: hover par slider smoothly expand hota hai */}
                 <div className={`group hidden sm:flex ${GLASS}`}>
                   <button onClick={toggleMute} className={BTN_CLASS} aria-label="Mute / Unmute" data-tip="Mute (m)">
                     <VolumeIcon size={ICON_SIZE} />
@@ -1547,22 +1509,22 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
 
               <div className="flex items-center gap-1.5 flex-shrink-0">
                 <div className={`hidden sm:flex ${GLASS}`}>
-                <button
-                  onClick={() => skipBy(-SKIP_SECONDS)}
-                  className={BTN_CLASS}
-                  aria-label="Rewind 10 seconds"
-                  data-tip="Back 10s (j)"
-                >
-                  <SeekIcon dir="back" />
-                </button>
-                <button
-                  onClick={() => skipBy(SKIP_SECONDS)}
-                  className={BTN_CLASS}
-                  aria-label="Forward 10 seconds"
-                  data-tip="Forward 10s (l)"
-                >
-                  <SeekIcon dir="fwd" />
-                </button>
+                  <button
+                    onClick={() => skipBy(-SKIP_SECONDS)}
+                    className={BTN_CLASS}
+                    aria-label="Rewind 10 seconds"
+                    data-tip="Back 10s (j)"
+                  >
+                    <SeekIcon dir="back" />
+                  </button>
+                  <button
+                    onClick={() => skipBy(SKIP_SECONDS)}
+                    className={BTN_CLASS}
+                    aria-label="Forward 10 seconds"
+                    data-tip="Forward 10s (l)"
+                  >
+                    <SeekIcon dir="fwd" />
+                  </button>
                 </div>
 
                 {loop && (
@@ -1605,7 +1567,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
                       className={`transition-transform duration-500 ${showSettings ? 'rotate-90' : 'group-hover:rotate-45'}`}
                     />
                   </button>
-
                 </div>
 
                 <button
@@ -1624,7 +1585,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
             </div>
           </div>
 
-          {/* Settings menu: player root ke andar, taaki phone par bhi poora dikhe aur scroll ho */}
           {showSettings && (
             <div
               className="ytx-pop ytx-noscroll absolute right-2 sm:right-3 bottom-[4rem] z-50 w-60 max-w-[calc(100%-1rem)] max-h-[calc(100%-4.75rem)] overflow-y-auto overscroll-contain rounded-2xl bg-neutral-900/95 backdrop-blur-xl border border-white/10 shadow-2xl shadow-black/60 text-white"
@@ -1751,6 +1711,11 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
       )}
     </div>
   );
+
+  if (fakeFs && typeof document !== 'undefined') {
+    return createPortal(player, document.body);
+  }
+  return player;
 };
 
 export default YouTubeEmbed;
