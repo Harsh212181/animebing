@@ -56,6 +56,7 @@ const RESUME_SAVE_INTERVAL_MS = 4000;
 const PROGRESS_KEY_PREFIX = 'video-progress-';
 const PREFS_KEY = 'ytx-prefs';
 const RING_LEN = 163.4;
+const USE_NATIVE_FS = false;
 
 const formatTime = (t: number) => {
   if (!isFinite(t) || t < 0) return '0:00';
@@ -123,6 +124,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   // ---------- UI state ----------
   const [currentSrc, setCurrentSrc] = useState(src);
   const [controlsVisible, setControlsVisible] = useState(true);
+  const [nativeFs, setNativeFs] = useState(false);
   const [fakeFs, setFakeFs] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [ready, setReady] = useState(false);
@@ -180,6 +182,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const mutedRef = useRef(false);
   const pendingSeekRef = useRef<number | null>(null);
   const pendingPlayRef = useRef<boolean | null>(null);
+  const fullscreenStatePushed = useRef(false);
 
   const lastTapRef = useRef<{ side: Zone; time: number } | null>(null);
   const skipStreakRef = useRef<{ side: SkipSide; amount: number; time: number } | null>(null);
@@ -188,7 +191,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const prevRateRef = useRef(1);
   const titleTimeoutRef = useRef<Timer | null>(null);
 
-  // ---------- rotation state (portrait -> rotate video 90° via CSS) ----------
+  // ---------- rotation state (for iPhone / orientation-locked phones) ----------
   const [portrait, setPortrait] = useState(false);
   const rotatedRef = useRef(false);
 
@@ -201,7 +204,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   }, []);
 
   fakeFsRef.current = fakeFs;
-  const isFullscreen = fakeFs;
+  const isFullscreen = nativeFs || fakeFs;
   const rotateFake = fakeFs && isTouchRef.current && portrait;
   rotatedRef.current = rotateFake;
 
@@ -370,6 +373,53 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   }, [endedCountdown]);
 
   useEffect(() => {
+    const handleFullscreenChange = async () => {
+      const d = document as any;
+      const fsElement = document.fullscreenElement || d.webkitFullscreenElement;
+      const now = fsElement === wrapperRef.current;
+      setNativeFs(now);
+      if (now) {
+        if (!fullscreenStatePushed.current) {
+          window.history.pushState({ fullscreen: true }, '');
+          fullscreenStatePushed.current = true;
+        }
+        if (screen.orientation && 'lock' in screen.orientation && isTouchRef.current) {
+          try {
+            await (screen.orientation as any).lock('landscape');
+          } catch {}
+        }
+      } else {
+        if (fullscreenStatePushed.current) {
+          window.history.replaceState({}, '');
+          fullscreenStatePushed.current = false;
+        }
+        resetZoom();
+        if (screen.orientation && 'unlock' in screen.orientation) {
+          try {
+            (screen.orientation as any).unlock();
+          } catch {}
+        }
+      }
+    };
+    const events = ['fullscreenchange', 'webkitfullscreenchange'];
+    events.forEach((e) => document.addEventListener(e, handleFullscreenChange));
+    return () => events.forEach((e) => document.removeEventListener(e, handleFullscreenChange));
+  }, []);
+
+  useEffect(() => {
+    const onPop = () => {
+      if (document.fullscreenElement === wrapperRef.current) {
+        document.exitFullscreen?.().catch(() => {});
+        fullscreenStatePushed.current = false;
+      } else if (fakeFsRef.current) {
+        setFakeFs(false);
+      }
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  useEffect(() => {
     isTouchRef.current = !!window.matchMedia?.('(pointer: coarse)').matches;
   }, []);
 
@@ -379,24 +429,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     document.body.style.overflow = 'hidden';
     return () => {
       document.body.style.overflow = prev;
-    };
-  }, [fakeFs]);
-
-  // back button/gesture se fake fullscreen band karne ke liye history push
-  useEffect(() => {
-    if (!fakeFs) return;
-    window.history.pushState({ fakeFs: true }, '');
-    const onPop = () => {
-      if (fakeFsRef.current) setFakeFs(false);
-    };
-    window.addEventListener('popstate', onPop);
-    return () => {
-      window.removeEventListener('popstate', onPop);
-      if (window.history.state?.fakeFs) {
-        try {
-          window.history.back();
-        } catch {}
-      }
     };
   }, [fakeFs]);
 
@@ -504,13 +536,37 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     changeSpeed(next);
   };
 
-  // Fake fullscreen only — no requestFullscreen(), so no Chrome popup.
-  const enterFullscreen = () => {
+  // FIXED: try native fullscreen on touch phones (with landscape lock),
+  // fall back to fake fullscreen. On desktop stays on fake fullscreen unless USE_NATIVE_FS.
+  const enterFullscreen = async () => {
+    const el = wrapperRef.current as any;
+    if (!el) return;
+
+    const isTouch = isTouchRef.current;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+
+    if (req && (USE_NATIVE_FS || isTouch)) {
+      try {
+        await req.call(el);
+        if (isTouch && screen.orientation && 'lock' in screen.orientation) {
+          try {
+            await (screen.orientation as any).lock('landscape');
+          } catch {}
+        }
+        return;
+      } catch {
+        // native failed -> fall through to fake
+      }
+    }
+
     setFakeFs(true);
   };
 
   const exitFullscreen = () => {
     if (fakeFsRef.current) setFakeFs(false);
+    const d = document as any;
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    else if (d.webkitFullscreenElement) d.webkitExitFullscreen?.();
   };
 
   const toggleFullscreen = () => {
@@ -575,7 +631,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, [qualities, autoQuality, src]);
 
-  // rotated mode me bar visually vertical hai -> clientY use karo
+  // FIXED: frac from pointer now handles rotated mode (uses clientY when rotated)
   const fracFromPointer = (clientX: number, clientY: number) => {
     const r = barRef.current?.getBoundingClientRect();
     if (!r) return 0;
@@ -779,7 +835,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const w = wrapperRef.current;
-      const active = hoverRef.current || (w && w.contains(document.activeElement)) || fakeFsRef.current;
+      const active =
+        hoverRef.current ||
+        (w && w.contains(document.activeElement)) ||
+        !!document.fullscreenElement ||
+        fakeFsRef.current;
       if (!active) return;
 
       const L = latest.current;
@@ -857,7 +917,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // touch gestures (rotated mode me local coords se handle)
+  // FIXED: touch handlers now transform screen coords into player-local coords
+  // when the player is CSS-rotated (rotatedRef.current), so gestures are not inverted.
   useEffect(() => {
     const el = wrapperRef.current;
     if (!el) return;
@@ -890,7 +951,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       }
       lastTapRef.current = null;
     };
-    // screen touch -> player local coordinates
+    // screen touch -> player-local coordinates
     const local = (t: Touch) =>
       rotatedRef.current ? { x: t.clientY, y: -t.clientX } : { x: t.clientX, y: t.clientY };
 
@@ -1071,6 +1132,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
           ? 'fixed inset-0 z-[2147483647] w-screen h-[100dvh] rounded-none border-0'
           : rotateFake
           ? 'rounded-none border-0'
+          : isFullscreen
+          ? 'relative w-full h-full rounded-none border-0 shadow-none'
           : 'relative w-full aspect-video rounded-none border-0 sm:rounded-xl sm:border sm:border-purple-500/30 sm:shadow-[0_8px_40px_-12px_rgba(168,85,247,0.45)]'
       } ${!showUi && playing ? 'cursor-none' : ''}`}
       style={{

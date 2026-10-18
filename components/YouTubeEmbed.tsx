@@ -52,7 +52,6 @@ const PREFS_KEY = 'ytx-prefs';
 const RING_LEN = 163.4;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 3;
-const USE_NATIVE_FS = false;
 
 const formatTime = (t: number) => {
   if (!isFinite(t) || t < 0) return '0:00';
@@ -534,7 +533,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     setCurrentTime(0);
   };
 
-  // FIXED: force-reset bug removed, explicit state set
   const togglePlay = () => {
     if (!isCustom) return;
     if (endedRef.current) {
@@ -605,20 +603,28 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     changeSpeed(next);
   };
 
-  const enterFullscreen = () => {
-    if (!USE_NATIVE_FS) {
-      setFakeFs(true);
-      return;
-    }
+  const lockLandscape = async () => {
+    try {
+      await (screen.orientation as any)?.lock?.('landscape');
+    } catch {}
+  };
+
+  const enterFullscreen = async () => {
     const el = wrapperRef.current as any;
     if (!el) return;
+
     const req = el.requestFullscreen || el.webkitRequestFullscreen;
     if (req) {
-      const p = req.call(el);
-      if (p && typeof p.catch === 'function') p.catch(() => setFakeFs(true));
-    } else {
-      setFakeFs(true);
+      try {
+        await req.call(el);
+        // user gesture ke andar hi lock karna zaroori hai
+        if (isTouchRef.current) await lockLandscape();
+        return;
+      } catch {
+        // native fail hua to neeche fallback
+      }
     }
+    setFakeFs(true); // fallback (jaise iPhone Safari)
   };
 
   const exitFullscreen = () => {
@@ -746,13 +752,11 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
     setSkipIndicator({ side, amount, key: now });
   };
 
-  // FIXED: simplified — single tap always toggles play
   const singleTapAction = () => {
     togglePlay();
     showControlsTemporarily();
   };
 
-  // FIXED: proper zone handling — left/right only on double-tap; center = play/pause
   const handleZoneTap = (side: Zone) => {
     if (suppressClickRef.current) return;
     wrapperRef.current?.focus({ preventScroll: true });
@@ -785,16 +789,13 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
 
     lastTapRef.current = { side, time: now };
 
-    // Left/right: single tap does nothing, wait for possible double
     if (side !== 'center') return;
 
-    // Center — desktop: instant toggle
     if (!isTouchRef.current) {
       togglePlay();
       return;
     }
 
-    // Center — touch: wait for possible double-tap
     if (singleTapTimerRef.current) clearTimeout(singleTapTimerRef.current);
     singleTapTimerRef.current = setTimeout(() => {
       singleTapTimerRef.current = null;
