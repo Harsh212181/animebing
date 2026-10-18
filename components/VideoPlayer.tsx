@@ -91,7 +91,7 @@ const Switch: React.FC<{ on: boolean }> = ({ on }) => (
   </span>
 );
 
-const SeekIcon: React.FC<{ dir: 'back' | 'fwd'; size?: number }> = ({ dir, size = 22 }) => (
+const SeekIcon: React.FC<{ dir: 'back' | 'fwd'; size?: number }> = ({ dir, size = 20 }) => (
   <span className="relative flex items-center justify-center" style={{ width: size, height: size }}>
     {dir === 'back' ? <RotateCcw size={size} strokeWidth={1.8} /> : <RotateCw size={size} strokeWidth={1.8} />}
     <span className="absolute text-[7px] font-extrabold leading-none" style={{ marginTop: 1 }}>{SKIP_SECONDS}</span>
@@ -1097,15 +1097,15 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   };
 
   // ---------- derived ----------
-  const ICON_SIZE = 20;
+  const ICON_SIZE = 18;
   const FOCUS = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/80';
-  const BTN_CLASS = `ytx-btn ytx-tip flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full text-white/85 hover:text-white hover:bg-white/15 hover:scale-110 active:scale-90 active:bg-white/25 transition-all duration-150 ${FOCUS}`;
+  const BTN_CLASS = `ytx-btn ytx-tip flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-full text-white/85 hover:text-white hover:bg-white/15 hover:scale-110 active:scale-90 active:bg-white/25 transition-all duration-150 ${FOCUS}`;
   const DISABLED_BTN_CLASS =
-    'flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full text-white/20 cursor-not-allowed';
-  const PLAY_BTN_CLASS = `ytx-btn ytx-tip flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 mx-0.5 rounded-full text-white bg-gradient-to-br from-purple-500 to-pink-500 shadow-lg shadow-purple-600/40 hover:shadow-pink-500/60 hover:scale-110 active:scale-90 transition-all duration-150 ${FOCUS}`;
+    'flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-full text-white/20 cursor-not-allowed';
+  const PLAY_BTN_CLASS = `ytx-btn ytx-tip flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 mx-0.5 rounded-full text-white bg-gradient-to-br from-purple-500 to-pink-500 shadow-lg shadow-purple-600/40 hover:shadow-pink-500/60 hover:scale-110 active:scale-90 transition-all duration-150 ${FOCUS}`;
   const GLASS =
     'flex items-center gap-0.5 p-1 rounded-full bg-black/40 backdrop-blur-md border border-white/15 shadow-lg shadow-black/30';
-  const CIRCLE_BTN = `ytx-btn ytx-tip group flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 rounded-full border text-white/90 hover:text-white shadow-lg shadow-black/30 hover:scale-110 active:scale-90 transition-all duration-200 ${FOCUS}`;
+  const CIRCLE_BTN = `ytx-btn ytx-tip group flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full border text-white/90 hover:text-white shadow-lg shadow-black/30 hover:scale-110 active:scale-90 transition-all duration-200 ${FOCUS}`;
   const CIRCLE_IDLE = 'bg-black/40 backdrop-blur-md border-white/15 hover:bg-white/20 hover:border-white/30';
   const PILL_BTN = `inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/25 backdrop-blur text-white text-sm font-semibold active:scale-95 transition-all ${FOCUS}`;
   const MENU_ROW = `w-full flex items-center gap-3 px-2 py-2 rounded-xl text-sm hover:bg-white/10 active:scale-[.98] transition-all ${FOCUS}`;
@@ -1122,7 +1122,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     ? 'Auto'
     : qualities?.find((q) => q.src === currentSrc)?.label ?? 'Auto';
   const pipSupported = typeof document !== 'undefined' && 'pictureInPictureEnabled' in document;
-  const centerVisible = !playing || (!buffering && isTouchRef.current && showUi);
+  const centerVisible = !buffering && (!playing || (isTouchRef.current && showUi));
 
   return (
     <div
@@ -1322,9 +1322,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* Center play / pause button (hamesha mounted, sirf show/hide) */}
+      {/* Center play / pause button (bilkul center, hamesha mounted, sirf show/hide) */}
       {ready && !ended && (
-        <div className="absolute inset-0 flex items-center justify-center pb-12 sm:pb-0 z-[35] pointer-events-none">
+        <div className="absolute inset-0 flex items-center justify-center z-[35] pointer-events-none">
           <button
             type="button"
             data-ui
@@ -1341,14 +1341,14 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 ? 'opacity-100 scale-100 pointer-events-auto'
                 : 'opacity-0 scale-75 pointer-events-none'
             }`}
-            style={{ width: 52, height: 52, touchAction: 'manipulation' }}
+            style={{ width: 44, height: 44, touchAction: 'manipulation' }}
           >
             {!playing && <span className="ytx-pulse absolute inset-0 rounded-full bg-pink-400/40" />}
-            <span className="relative flex items-center justify-center w-full h-full rounded-full bg-gradient-to-br from-purple-500 to-pink-500 border border-white/30 shadow-[0_0_28px_rgba(236,72,153,0.5)]">
+            <span className="relative flex items-center justify-center w-full h-full rounded-full bg-gradient-to-br from-purple-500 to-pink-500 border border-white/30 shadow-[0_0_24px_rgba(236,72,153,0.5)]">
               {playing ? (
-                <Pause size={22} className="text-white" fill="white" />
+                <Pause size={18} className="text-white" fill="white" />
               ) : (
-                <Play size={22} className="text-white ml-0.5" fill="white" />
+                <Play size={18} className="text-white ml-0.5" fill="white" />
               )}
             </span>
           </button>
@@ -1441,7 +1441,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
               </p>
               <button
                 onClick={handleNextEpisode}
-                className={`group relative flex items-center justify-center w-[76px] h-[76px] rounded-full bg-gradient-to-br from-purple-600/60 to-pink-600/60 hover:from-purple-500 hover:to-pink-500 shadow-lg shadow-purple-600/30 hover:scale-105 active:scale-95 transition-all ${FOCUS}`}
+                className={`group relative flex items-center justify-center w-[64px] h-[64px] rounded-full bg-gradient-to-br from-purple-600/60 to-pink-600/60 hover:from-purple-500 hover:to-pink-500 shadow-lg shadow-purple-600/30 hover:scale-105 active:scale-95 transition-all ${FOCUS}`}
                 aria-label="Play next episode"
               >
                 <svg className="absolute inset-0 -rotate-90" viewBox="0 0 60 60">
@@ -1467,7 +1467,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     </linearGradient>
                   </defs>
                 </svg>
-                <SkipForward size={26} className="text-white" fill="white" />
+                <SkipForward size={22} className="text-white" fill="white" />
               </button>
               <div className="flex items-center gap-2">
                 <button onClick={replay} className={PILL_BTN}>
@@ -1486,8 +1486,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
               className="ytx-playin flex flex-col items-center gap-2 text-white"
               aria-label="Replay video"
             >
-              <span className="flex items-center justify-center w-[76px] h-[76px] rounded-full bg-gradient-to-br from-purple-500 to-pink-500 shadow-[0_0_36px_rgba(236,72,153,0.5)] border border-white/30 hover:scale-105 active:scale-95 transition-transform">
-                <RotateCcw size={28} />
+              <span className="flex items-center justify-center w-[64px] h-[64px] rounded-full bg-gradient-to-br from-purple-500 to-pink-500 shadow-[0_0_36px_rgba(236,72,153,0.5)] border border-white/30 hover:scale-105 active:scale-95 transition-transform">
+                <RotateCcw size={24} />
               </span>
               <span className="text-sm font-medium">Replay</span>
             </button>
@@ -1568,8 +1568,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 disabled={!hasNextEpisode}
                 className={
                   hasNextEpisode
-                    ? `ytx-btn ytx-tip group flex items-center gap-1.5 h-9 sm:h-10 pl-3 pr-3 sm:pr-4 rounded-full bg-white/15 hover:bg-white/25 border border-white/20 text-white text-xs font-semibold hover:scale-105 active:scale-95 transition-all duration-200 ${FOCUS}`
-                    : 'flex items-center gap-1.5 h-9 sm:h-10 pl-3 pr-3 sm:pr-4 rounded-full text-white/20 text-xs font-semibold cursor-not-allowed'
+                    ? `ytx-btn ytx-tip group flex items-center gap-1.5 h-8 sm:h-9 pl-3 pr-3 sm:pr-4 rounded-full bg-white/15 hover:bg-white/25 border border-white/20 text-white text-xs font-semibold hover:scale-105 active:scale-95 transition-all duration-200 ${FOCUS}`
+                    : 'flex items-center gap-1.5 h-8 sm:h-9 pl-3 pr-3 sm:pr-4 rounded-full text-white/20 text-xs font-semibold cursor-not-allowed'
                 }
                 aria-label="Next episode"
                 data-tip="Next episode (Shift+N)"

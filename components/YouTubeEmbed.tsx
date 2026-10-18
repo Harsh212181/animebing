@@ -87,7 +87,7 @@ const Switch: React.FC<{ on: boolean }> = ({ on }) => (
   </span>
 );
 
-const SeekIcon: React.FC<{ dir: 'back' | 'fwd'; size?: number }> = ({ dir, size = 22 }) => (
+const SeekIcon: React.FC<{ dir: 'back' | 'fwd'; size?: number }> = ({ dir, size = 20 }) => (
   <span className="relative flex items-center justify-center" style={{ width: size, height: size }}>
     {dir === 'back' ? <RotateCcw size={size} strokeWidth={1.8} /> : <RotateCw size={size} strokeWidth={1.8} />}
     <span className="absolute text-[7px] font-extrabold leading-none" style={{ marginTop: 1 }}>10</span>
@@ -761,12 +761,14 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
       closeMenus();
       return;
     }
-    // Desktop: center click = seedha play/pause, double-tap logic nahi (fast click safe)
+
+    // Desktop: center click = seedha play/pause (fast click safe)
     if (side === 'center' && !isTouchRef.current) {
       lastTapRef.current = null;
       togglePlay();
       return;
     }
+
     const now = Date.now();
     const last = lastTapRef.current;
     const streak = skipStreakRef.current;
@@ -780,7 +782,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
         singleTapTimerRef.current = null;
       }
       lastTapRef.current = null;
-      // desktop par pehla click already play/pause kar chuka hai, wo undo karo
+      // desktop par pehla click play/pause kar chuka hai, wo undo karo
       if (isDouble && !isTouchRef.current) togglePlay();
       if (side === 'center') {
         if (scaleRef.current !== 1) {
@@ -1071,15 +1073,15 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
   // ---------- derived ----------
   if (!youTubeId) return null;
 
-  const ICON_SIZE = 20;
+  const ICON_SIZE = 18;
   const FOCUS = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/80';
-  const BTN_CLASS = `ytx-btn ytx-tip flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full text-white/85 hover:text-white hover:bg-white/15 hover:scale-110 active:scale-90 active:bg-white/25 transition-all duration-150 ${FOCUS}`;
+  const BTN_CLASS = `ytx-btn ytx-tip flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-full text-white/85 hover:text-white hover:bg-white/15 hover:scale-110 active:scale-90 active:bg-white/25 transition-all duration-150 ${FOCUS}`;
   const DISABLED_BTN_CLASS =
-    'flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full text-white/20 cursor-not-allowed';
-  const PLAY_BTN_CLASS = `ytx-btn ytx-tip flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 mx-0.5 rounded-full text-white bg-gradient-to-br from-purple-500 to-pink-500 shadow-lg shadow-purple-600/40 hover:shadow-pink-500/60 hover:scale-110 active:scale-90 transition-all duration-150 ${FOCUS}`;
+    'flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-full text-white/20 cursor-not-allowed';
+  const PLAY_BTN_CLASS = `ytx-btn ytx-tip flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 mx-0.5 rounded-full text-white bg-gradient-to-br from-purple-500 to-pink-500 shadow-lg shadow-purple-600/40 hover:shadow-pink-500/60 hover:scale-110 active:scale-90 transition-all duration-150 ${FOCUS}`;
   const GLASS =
     'flex items-center gap-0.5 p-1 rounded-full bg-black/40 backdrop-blur-md border border-white/15 shadow-lg shadow-black/30';
-  const CIRCLE_BTN = `ytx-btn ytx-tip group flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 rounded-full border text-white/90 hover:text-white shadow-lg shadow-black/30 hover:scale-110 active:scale-90 transition-all duration-200 ${FOCUS}`;
+  const CIRCLE_BTN = `ytx-btn ytx-tip group flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full border text-white/90 hover:text-white shadow-lg shadow-black/30 hover:scale-110 active:scale-90 transition-all duration-200 ${FOCUS}`;
   const PILL_BTN = `inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/25 backdrop-blur text-white text-sm font-semibold active:scale-95 transition-all ${FOCUS}`;
 
   const iframeParams = isCustom
@@ -1103,6 +1105,8 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
       className={`ytx-root relative w-full bg-black overflow-hidden select-none outline-none ${
         fakeFs
           ? 'fixed inset-0 z-[9999] h-full rounded-none border-0'
+          : isFullscreen
+          ? 'h-full rounded-none border-0 shadow-none'
           : 'aspect-video rounded-none border-0 sm:rounded-xl sm:border sm:border-purple-500/30 sm:shadow-[0_8px_40px_-12px_rgba(168,85,247,0.45)]'
       } ${isCustom && !showUi && playing ? 'cursor-none' : ''}`}
       onMouseMove={isCustom ? showControlsTemporarily : undefined}
@@ -1115,6 +1119,13 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
       }}
     >
       <style>{`
+        .ytx-root:focus, .ytx-root:focus-visible { outline: none !important; }
+        .ytx-root:fullscreen, .ytx-root:-webkit-full-screen {
+          border: 0 !important; border-radius: 0 !important; box-shadow: none !important;
+          outline: none !important; width: 100% !important; height: 100% !important;
+        }
+        .ytx-root:fullscreen::backdrop { background: #000; }
+
         .ytx-bar { position: relative; height: 22px; display: flex; align-items: center; cursor: pointer; touch-action: none; }
         .ytx-track { position: relative; width: 100%; height: 4px; border-radius: 9999px; background: rgba(255,255,255,0.22); transition: height .15s ease; }
         .ytx-bar:hover .ytx-track, .ytx-bar.ytx-active .ytx-track { height: 7px; }
@@ -1230,9 +1241,9 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
             </div>
           )}
 
-          {/* Center play / pause button (hamesha mounted, sirf show/hide hota hai) */}
+          {/* Center play / pause button (bilkul center, hamesha mounted, sirf show/hide) */}
           {ready && !ended && (
-            <div className="absolute inset-0 flex items-center justify-center pb-12 sm:pb-0 z-[35] pointer-events-none">
+            <div className="absolute inset-0 flex items-center justify-center z-[35] pointer-events-none">
               <button
                 type="button"
                 onClick={(e) => {
@@ -1248,14 +1259,14 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
                     ? 'opacity-100 scale-100 pointer-events-auto'
                     : 'opacity-0 scale-75 pointer-events-none'
                 }`}
-                style={{ width: 52, height: 52, touchAction: 'manipulation' }}
+                style={{ width: 44, height: 44, touchAction: 'manipulation' }}
               >
                 {!playing && <span className="ytx-pulse absolute inset-0 rounded-full bg-pink-400/40" />}
-                <span className="relative flex items-center justify-center w-full h-full rounded-full bg-gradient-to-br from-purple-500 to-pink-500 border border-white/30 shadow-[0_0_28px_rgba(236,72,153,0.5)]">
+                <span className="relative flex items-center justify-center w-full h-full rounded-full bg-gradient-to-br from-purple-500 to-pink-500 border border-white/30 shadow-[0_0_24px_rgba(236,72,153,0.5)]">
                   {playing ? (
-                    <Pause size={22} className="text-white" fill="white" />
+                    <Pause size={18} className="text-white" fill="white" />
                   ) : (
-                    <Play size={22} className="text-white ml-0.5" fill="white" />
+                    <Play size={18} className="text-white ml-0.5" fill="white" />
                   )}
                 </span>
               </button>
@@ -1362,7 +1373,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
                   </p>
                   <button
                     onClick={handleNextEpisode}
-                    className={`group relative flex items-center justify-center w-[76px] h-[76px] rounded-full bg-gradient-to-br from-purple-600/60 to-pink-600/60 hover:from-purple-500 hover:to-pink-500 shadow-lg shadow-purple-600/30 hover:scale-105 active:scale-95 transition-all ${FOCUS}`}
+                    className={`group relative flex items-center justify-center w-[64px] h-[64px] rounded-full bg-gradient-to-br from-purple-600/60 to-pink-600/60 hover:from-purple-500 hover:to-pink-500 shadow-lg shadow-purple-600/30 hover:scale-105 active:scale-95 transition-all ${FOCUS}`}
                     aria-label="Play next episode"
                   >
                     <svg className="absolute inset-0 -rotate-90" viewBox="0 0 60 60">
@@ -1388,7 +1399,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
                         </linearGradient>
                       </defs>
                     </svg>
-                    <SkipForward size={26} className="text-white" fill="white" />
+                    <SkipForward size={22} className="text-white" fill="white" />
                   </button>
                   <div className="flex items-center gap-2">
                     <button
@@ -1413,8 +1424,8 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
                   className="ytx-playin flex flex-col items-center gap-2 text-white"
                   aria-label="Replay video"
                 >
-                  <span className="flex items-center justify-center w-[76px] h-[76px] rounded-full bg-gradient-to-br from-purple-500 to-pink-500 shadow-[0_0_36px_rgba(236,72,153,0.5)] border border-white/30 hover:scale-105 active:scale-95 transition-transform">
-                    <RotateCcw size={28} />
+                  <span className="flex items-center justify-center w-[64px] h-[64px] rounded-full bg-gradient-to-br from-purple-500 to-pink-500 shadow-[0_0_36px_rgba(236,72,153,0.5)] border border-white/30 hover:scale-105 active:scale-95 transition-transform">
+                    <RotateCcw size={24} />
                   </span>
                   <span className="text-sm font-medium">Replay</span>
                 </button>
@@ -1490,8 +1501,8 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
                   disabled={!hasNextEpisode}
                   className={
                     hasNextEpisode
-                      ? `ytx-btn ytx-tip group flex items-center gap-1.5 h-9 sm:h-10 pl-3 pr-3 sm:pr-4 rounded-full bg-white/15 hover:bg-white/25 border border-white/20 text-white text-xs font-semibold hover:scale-105 active:scale-95 transition-all duration-200 ${FOCUS}`
-                      : 'flex items-center gap-1.5 h-9 sm:h-10 pl-3 pr-3 sm:pr-4 rounded-full text-white/20 text-xs font-semibold cursor-not-allowed'
+                      ? `ytx-btn ytx-tip group flex items-center gap-1.5 h-8 sm:h-9 pl-3 pr-3 sm:pr-4 rounded-full bg-white/15 hover:bg-white/25 border border-white/20 text-white text-xs font-semibold hover:scale-105 active:scale-95 transition-all duration-200 ${FOCUS}`
+                      : 'flex items-center gap-1.5 h-8 sm:h-9 pl-3 pr-3 sm:pr-4 rounded-full text-white/20 text-xs font-semibold cursor-not-allowed'
                   }
                   aria-label="Next episode"
                   data-tip="Next episode (Shift+N)"
