@@ -415,20 +415,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
-  // sirf touch devices par rotate => auto fullscreen
+  // touch device detect
   useEffect(() => {
     isTouchRef.current = !!window.matchMedia?.('(pointer: coarse)').matches;
-    const onRotate = () => {
-      if (!isTouchRef.current || !playingRef.current) return;
-      const isLandscape = window.innerWidth > window.innerHeight;
-      const d = document as any;
-      const fsElement = document.fullscreenElement || d.webkitFullscreenElement;
-      if (isLandscape && !fsElement && wrapperRef.current) {
-        wrapperRef.current.requestFullscreen?.().catch(() => {});
-      }
-    };
-    window.addEventListener('orientationchange', onRotate);
-    return () => window.removeEventListener('orientationchange', onRotate);
   }, []);
 
   useEffect(() => {
@@ -1335,7 +1324,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
       {/* Center play / pause button (hamesha mounted, sirf show/hide) */}
       {ready && !ended && (
-        <div className="absolute inset-0 flex items-center justify-center z-[25] pointer-events-none">
+        <div className="absolute inset-0 flex items-center justify-center pb-12 sm:pb-0 z-[35] pointer-events-none">
           <button
             type="button"
             data-ui
@@ -1509,14 +1498,14 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       {/* Control bar */}
       <div
         data-ui
-        className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-2 sm:px-3 pt-8 pb-2 text-white z-30 transition-all duration-300 ${
-          showUi ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'
+        className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-2 sm:px-3 pt-8 pb-2 text-white z-30 transition-all duration-300 pointer-events-none ${
+          showUi ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
         }`}
       >
         {/* Progress bar */}
         <div
           ref={barRef}
-          className={`ytx-bar mx-1 ${seeking ? 'ytx-active' : ''}`}
+          className={`ytx-bar mx-1 ${seeking ? 'ytx-active' : ''} ${showUi ? 'pointer-events-auto' : 'pointer-events-none'}`}
           role="slider"
           aria-label="Seek"
           aria-valuemin={0}
@@ -1548,7 +1537,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center justify-between">
+        <div className={`flex items-center justify-between ${showUi ? 'pointer-events-auto' : 'pointer-events-none'}`}>
           <div className="flex items-center gap-1.5 min-w-0">
             <div className={`${GLASS} flex-shrink-0`}>
               <button
