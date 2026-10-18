@@ -191,8 +191,22 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const prevRateRef = useRef(1);
   const titleTimeoutRef = useRef<Timer | null>(null);
 
+  // ---------- rotation state (for iPhone / orientation-locked phones) ----------
+  const [portrait, setPortrait] = useState(false);
+  const rotatedRef = useRef(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(orientation: portrait)');
+    const update = () => setPortrait(mq.matches);
+    update();
+    mq.addEventListener?.('change', update);
+    return () => mq.removeEventListener?.('change', update);
+  }, []);
+
   fakeFsRef.current = fakeFs;
   const isFullscreen = nativeFs || fakeFs;
+  const rotateFake = fakeFs && isTouchRef.current && portrait;
+  rotatedRef.current = rotateFake;
 
   const progressKey = `${PROGRESS_KEY_PREFIX}${src}`;
   const progressKeyRef = useRef(progressKey);
@@ -522,20 +536,30 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     changeSpeed(next);
   };
 
-  const enterFullscreen = () => {
-    if (!USE_NATIVE_FS) {
-      setFakeFs(true);
-      return;
-    }
+  // FIXED: try native fullscreen on touch phones (with landscape lock),
+  // fall back to fake fullscreen. On desktop stays on fake fullscreen unless USE_NATIVE_FS.
+  const enterFullscreen = async () => {
     const el = wrapperRef.current as any;
     if (!el) return;
+
+    const isTouch = isTouchRef.current;
     const req = el.requestFullscreen || el.webkitRequestFullscreen;
-    if (req) {
-      const p = req.call(el);
-      if (p && typeof p.catch === 'function') p.catch(() => setFakeFs(true));
-    } else {
-      setFakeFs(true);
+
+    if (req && (USE_NATIVE_FS || isTouch)) {
+      try {
+        await req.call(el);
+        if (isTouch && screen.orientation && 'lock' in screen.orientation) {
+          try {
+            await (screen.orientation as any).lock('landscape');
+          } catch {}
+        }
+        return;
+      } catch {
+        // native failed -> fall through to fake
+      }
     }
+
+    setFakeFs(true);
   };
 
   const exitFullscreen = () => {
@@ -607,9 +631,15 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, [qualities, autoQuality, src]);
 
-  const fracFromX = (clientX: number) => {
+  // FIXED: frac from pointer now handles rotated mode (uses clientY when rotated)
+  const fracFromPointer = (clientX: number, clientY: number) => {
     const r = barRef.current?.getBoundingClientRect();
-    if (!r || r.width === 0) return 0;
+    if (!r) return 0;
+    if (rotatedRef.current) {
+      if (r.height === 0) return 0;
+      return Math.min(1, Math.max(0, (clientY - r.top) / r.height));
+    }
+    if (r.width === 0) return 0;
     return Math.min(1, Math.max(0, (clientX - r.left) / r.width));
   };
 
@@ -619,18 +649,18 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     e.currentTarget.setPointerCapture(e.pointerId);
     seekingRef.current = true;
     setSeeking(true);
-    const f = fracFromX(e.clientX);
+    const f = fracFromPointer(e.clientX, e.clientY);
     setHoverFrac(f);
     setCurrentTime(f * durationRef.current);
   };
   const onBarMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    const f = fracFromX(e.clientX);
+    const f = fracFromPointer(e.clientX, e.clientY);
     setHoverFrac(f);
     if (seekingRef.current) setCurrentTime(f * durationRef.current);
   };
   const onBarUp = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!seekingRef.current) return;
-    const f = fracFromX(e.clientX);
+    const f = fracFromPointer(e.clientX, e.clientY);
     seekTo(f * durationRef.current);
     seekingRef.current = false;
     setSeeking(false);
@@ -690,13 +720,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     setSkipIndicator({ side, amount, key: now });
   };
 
-  // FIXED: single tap always toggles play/pause
   const singleTapAction = () => {
     togglePlay();
     showControlsTemporarily();
   };
 
-  // FIXED: proper zone handling — left/right only on double-tap, center = play/pause
   const handleZoneTap = (side: Zone) => {
     if (suppressClickRef.current) return;
     wrapperRef.current?.focus({ preventScroll: true });
@@ -889,7 +917,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // FIXED: dependency array now includes fakeFs so listeners reattach after portal remount
+  // FIXED: touch handlers now transform screen coords into player-local coords
+  // when the player is CSS-rotated (rotatedRef.current), so gestures are not inverted.
   useEffect(() => {
     const el = wrapperRef.current;
     if (!el) return;
@@ -922,6 +951,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       }
       lastTapRef.current = null;
     };
+    // screen touch -> player-local coordinates
+    const local = (t: Touch) =>
+      rotatedRef.current ? { x: t.clientY, y: -t.clientX } : { x: t.clientX, y: t.clientY };
 
     const onStart = (e: TouchEvent) => {
       if (e.touches.length === 1) {
@@ -940,16 +972,18 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         return;
       }
       const t = e.touches[0];
+      const p = local(t);
       const r = el.getBoundingClientRect();
-      g.startX = t.clientX;
-      g.startY = t.clientY;
-      g.lastY = t.clientY;
-      g.side = t.clientX - r.left < r.width / 2 ? 'left' : 'right';
+      g.startX = p.x;
+      g.startY = p.y;
+      g.lastY = p.y;
+      const lx = rotatedRef.current ? t.clientY - r.top : t.clientX - r.left;
+      g.side = lx < el.offsetWidth / 2 ? 'left' : 'right';
       g.vol = volumeRef.current;
       if (scaleRef.current > 1) {
         g.dragging = true;
-        g.dragX = t.clientX - translateRef.current.x;
-        g.dragY = t.clientY - translateRef.current.y;
+        g.dragX = p.x - translateRef.current.x;
+        g.dragY = p.y - translateRef.current.y;
       } else {
         g.dragging = false;
       }
@@ -970,23 +1004,23 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         return;
       }
       if (g.pinched) return;
-      const t = e.touches[0];
+      const p = local(e.touches[0]);
 
       if (g.dragging && scaleRef.current > 1) {
         e.preventDefault();
-        if (Math.hypot(t.clientX - g.startX, t.clientY - g.startY) > 10) {
+        if (Math.hypot(p.x - g.startX, p.y - g.startY) > 10) {
           g.moved = true;
           cancelTaps();
         }
-        const c = clampTranslate(t.clientX - g.dragX, t.clientY - g.dragY);
+        const c = clampTranslate(p.x - g.dragX, p.y - g.dragY);
         translateRef.current = c;
         setTranslate(c);
         return;
       }
 
       if (!g.swipe) {
-        const dx = Math.abs(t.clientX - g.startX);
-        const dy = Math.abs(t.clientY - g.startY);
+        const dx = Math.abs(p.x - g.startX);
+        const dy = Math.abs(p.y - g.startY);
         if (dx > 10 || dy > 10) {
           g.swipe = true;
           g.moved = true;
@@ -997,8 +1031,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
       if (g.swipe && g.vertical) {
         e.preventDefault();
-        const deltaY = g.lastY - t.clientY;
-        g.lastY = t.clientY;
+        const deltaY = g.lastY - p.y;
+        g.lastY = p.y;
         const L = latest.current;
         if (g.side === 'left') {
           const b = Math.max(0.3, Math.min(2, brightnessRef.current + deltaY / 500));
@@ -1087,7 +1121,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     ? 'Auto'
     : qualities?.find((q) => q.src === currentSrc)?.label ?? 'Auto';
   const pipSupported = typeof document !== 'undefined' && 'pictureInPictureEnabled' in document;
-  // FIXED: center button only when paused (no duplicate with bottom bar)
   const centerVisible = !playing;
 
   const player = (
@@ -1095,13 +1128,29 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       ref={wrapperRef}
       tabIndex={0}
       className={`ytx-root bg-black overflow-hidden select-none outline-none ${
-        fakeFs
+        fakeFs && !rotateFake
           ? 'fixed inset-0 z-[2147483647] w-screen h-[100dvh] rounded-none border-0'
+          : rotateFake
+          ? 'rounded-none border-0'
           : isFullscreen
           ? 'relative w-full h-full rounded-none border-0 shadow-none'
           : 'relative w-full aspect-video rounded-none border-0 sm:rounded-xl sm:border sm:border-purple-500/30 sm:shadow-[0_8px_40px_-12px_rgba(168,85,247,0.45)]'
       } ${!showUi && playing ? 'cursor-none' : ''}`}
-      style={{ touchAction: 'none' }}
+      style={{
+        touchAction: 'none',
+        ...(rotateFake
+          ? {
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              zIndex: 2147483647,
+              width: '100dvh',
+              height: '100vw',
+              transformOrigin: 'top left',
+              transform: 'translateX(100vw) rotate(90deg)',
+            }
+          : {}),
+      }}
       onMouseMove={showControlsTemporarily}
       onMouseEnter={() => {
         hoverRef.current = true;
