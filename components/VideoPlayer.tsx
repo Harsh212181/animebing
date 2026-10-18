@@ -55,6 +55,7 @@ const RESUME_SAVE_INTERVAL_MS = 4000;
 const PROGRESS_KEY_PREFIX = 'video-progress-';
 const PREFS_KEY = 'ytx-prefs'; // YouTube player ke saath same prefs (auto-next / loop)
 const RING_LEN = 163.4; // 2 * PI * 26
+const USE_NATIVE_FS = false;
 
 const formatTime = (t: number) => {
   if (!isFinite(t) || t < 0) return '0:00';
@@ -536,6 +537,10 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   };
 
   const enterFullscreen = () => {
+    if (!USE_NATIVE_FS) {
+      setFakeFs(true);
+      return;
+    }
     const el = wrapperRef.current as any;
     if (!el) return;
     const req = el.requestFullscreen || el.webkitRequestFullscreen;

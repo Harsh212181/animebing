@@ -51,6 +51,7 @@ const PREFS_KEY = 'ytx-prefs';
 const RING_LEN = 163.4; // 2 * PI * 26
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 3;
+const USE_NATIVE_FS = false;
 
 const formatTime = (t: number) => {
   if (!isFinite(t) || t < 0) return '0:00';
@@ -609,6 +610,10 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
   };
 
   const enterFullscreen = () => {
+    if (!USE_NATIVE_FS) {
+      setFakeFs(true);
+      return;
+    }
     const el = wrapperRef.current as any;
     if (!el) return;
     const req = el.requestFullscreen || el.webkitRequestFullscreen;
@@ -1243,7 +1248,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
 
           {/* Center play / pause button (bilkul center, hamesha mounted, sirf show/hide) */}
           {ready && !ended && (
-            <div className="absolute inset-0 flex items-center justify-center z-[35] pointer-events-none">
+            <div className="absolute inset-0 flex items-center justify-center pb-12 sm:pb-0 z-[35] pointer-events-none">
               <button
                 type="button"
                 onClick={(e) => {
