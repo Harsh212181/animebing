@@ -1085,7 +1085,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
   const bufferedPct = Math.min(100, buffered * 100);
   const hoverPct = hoverFrac === null ? 0 : Math.min(96, Math.max(4, hoverFrac * 100));
   const remaining = endedCountdown !== null && endedCountdown > 0 ? endedCountdown : null;
-  const isZoomed = Math.abs(scale - 1) > 0.01;
   const centerVisible = !playing;
 
   const player = (
@@ -1261,19 +1260,6 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({
               <Zap size={14} className="text-yellow-300" fill="currentColor" />
               2x speed
             </div>
-          )}
-
-          {isZoomed && (
-            <button
-              onClick={() => {
-                resetZoom();
-                showControlsTemporarily();
-              }}
-              className={`absolute top-14 right-3 z-30 flex items-center gap-1.5 rounded-full bg-black/65 backdrop-blur-sm border border-white/15 px-3 py-1.5 text-white text-xs font-semibold active:scale-95 transition-all ${FOCUS}`}
-              aria-label="Reset zoom"
-            >
-              <ZoomIn size={14} /> <span className="tabular-nums">{scale.toFixed(1)}x</span> · Reset
-            </button>
           )}
 
           {hud && (
