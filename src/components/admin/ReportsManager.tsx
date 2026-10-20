@@ -1,4 +1,4 @@
- // src/components/admin/ReportsManager.tsx - REDESIGNED v2 (fully clickable cards, no popups, mobile-friendly)
+// src/components/admin/ReportsManager.tsx - REDESIGNED v2 (fully clickable cards, no popups, mobile-friendly, custom checkbox)
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Spinner from '../Spinner';
@@ -119,6 +119,35 @@ const TagIcon: React.FC<{ className?: string }> = ({ className = 'w-3.5 h-3.5' }
     <path d="M20.59 13.41L11 3.83A2 2 0 009.59 3.24L4 3a1 1 0 00-1 1l.24 5.59a2 2 0 00.58 1.41l9.59 9.59a2 2 0 002.83 0l4.35-4.35a2 2 0 000-2.83z" />
     <circle cx="7.5" cy="7.5" r="1.2" fill="currentColor" stroke="none" />
   </svg>
+);
+
+// ── custom checkbox (dark glass + purple accent) ─────────────────────────
+const CustomCheckbox: React.FC<{
+  checked: boolean;
+  onChange: () => void;
+  onClick?: (e: React.MouseEvent) => void;
+}> = ({ checked, onChange, onClick }) => (
+  <button
+    type="button"
+    role="checkbox"
+    aria-checked={checked}
+    onClick={(e) => {
+      if (onClick) onClick(e);
+      e.stopPropagation();
+      onChange();
+    }}
+    className={`relative flex-shrink-0 w-[18px] h-[18px] rounded-[6px] border transition-all duration-150 flex items-center justify-center outline-none focus-visible:ring-2 focus-visible:ring-purple-500/40 ${
+      checked
+        ? 'bg-gradient-to-br from-purple-500 to-purple-600 border-purple-400 shadow-[0_0_0_3px_rgba(168,85,247,0.15),0_2px_8px_rgba(147,51,234,0.35)]'
+        : 'bg-white/[0.04] border-white/[0.14] hover:border-purple-400/50 hover:bg-white/[0.07]'
+    }`}
+  >
+    <CheckIcon
+      className={`w-3 h-3 text-white transition-all duration-150 ${
+        checked ? 'opacity-100 scale-100' : 'opacity-0 scale-50'
+      }`}
+    />
+  </button>
 );
 
 // ── relative time ─────────────────────────────────────────────────────────
@@ -477,12 +506,9 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp, isMai
                     className={`flex flex-wrap items-center gap-x-3 gap-y-2 px-3 sm:px-4 py-3 sm:py-3.5 select-none ${bulkDeleteMode ? '' : 'cursor-pointer'}`}
                   >
                     {bulkDeleteMode && (
-                      <input
-                        type="checkbox"
+                      <CustomCheckbox
                         checked={isSelected}
-                        onClick={(e) => e.stopPropagation()}
                         onChange={() => toggleReportSelection(report._id)}
-                        className="w-4 h-4 flex-shrink-0 accent-purple-600 rounded cursor-pointer"
                       />
                     )}
 

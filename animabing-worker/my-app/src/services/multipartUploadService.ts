@@ -1,4 +1,4 @@
- import { AwsClient } from 'aws4fetch'
+import { AwsClient } from 'aws4fetch'
 
 interface Creds {
   accountId: string
@@ -11,8 +11,13 @@ function getClient(creds: Creds) {
   return new AwsClient({ accessKeyId: creds.accessKeyId, secretAccessKey: creds.secretAccessKey })
 }
 
+// ✅ Folder wali keys (rahul/video.mp4) ke liye: har segment alag encode, '/' as-is
+function encodeKeyPath(key: string): string {
+  return key.split('/').map(encodeURIComponent).join('/')
+}
+
 function objectEndpoint(creds: Creds, key: string) {
-  return `https://${creds.accountId}.r2.cloudflarestorage.com/${creds.bucketName}/${encodeURIComponent(key)}`
+  return `https://${creds.accountId}.r2.cloudflarestorage.com/${creds.bucketName}/${encodeKeyPath(key)}`
 }
 
 export async function initiateMultipartUpload(creds: Creds, key: string): Promise<string> {
@@ -81,7 +86,8 @@ function escapeXmlEntities(str: string): string {
     .replace(/'/g, '&apos;')
 }
 
-export async function listBucketObjects(creds: Creds): Promise<R2ObjectSummary[]> {
+// ✅ prefix optional — sirf ek folder (jaise "rahul/") ki files list karne ke liye
+export async function listBucketObjects(creds: Creds, prefix?: string): Promise<R2ObjectSummary[]> {
   const client = getClient(creds)
   const results: R2ObjectSummary[] = []
   let continuationToken: string | undefined = undefined
@@ -90,6 +96,7 @@ export async function listBucketObjects(creds: Creds): Promise<R2ObjectSummary[]
     const url = new URL(`https://${creds.accountId}.r2.cloudflarestorage.com/${creds.bucketName}`)
     url.searchParams.set('list-type', '2')
     url.searchParams.set('max-keys', '1000')
+    if (prefix) url.searchParams.set('prefix', prefix)
     if (continuationToken) url.searchParams.set('continuation-token', continuationToken)
 
     const res = await client.fetch(url.toString(), { method: 'GET' })
@@ -126,9 +133,7 @@ export async function deleteObject(creds: Creds, key: string): Promise<void> {
   if (!res.ok && res.status !== 404) throw new Error(`Delete failed: ${res.status} ${await res.text()}`)
 }
 
-// ✅ NEW: Batch delete using the S3-compatible multi-object delete API (POST ?delete).
-// R2 supports up to 1000 keys per request, so this deletes many objects in a single
-// round-trip instead of one DELETE call per key.
+// Batch delete using the S3-compatible multi-object delete API (POST ?delete).
 export interface BulkDeleteResult {
   deleted: string[]
   errors: { key: string; message: string }[]
@@ -140,7 +145,7 @@ export async function deleteObjects(creds: Creds, keys: string[]): Promise<BulkD
   if (!keys.length) return { deleted, errors }
 
   const client = getClient(creds)
-  const chunkSize = 1000 // S3/R2 limit per batch-delete request
+  const chunkSize = 1000
 
   for (let i = 0; i < keys.length; i += chunkSize) {
     const chunk = keys.slice(i, i + chunkSize)
@@ -181,8 +186,6 @@ export async function deleteObjects(creds: Creds, keys: string[]): Promise<BulkD
         }
       }
 
-      // Fallback: if the response had no <Deleted>/<Error> blocks at all but was 2xx,
-      // assume the whole chunk succeeded (some S3-compatible backends omit <Deleted> blocks).
       if (deletedBlocks.length === 0 && errorBlocks.length === 0) {
         chunk.forEach(k => deleted.push(k))
       }
@@ -196,7 +199,7 @@ export async function deleteObjects(creds: Creds, keys: string[]): Promise<BulkD
 
 export async function renameObject(creds: Creds, oldKey: string, newKey: string): Promise<void> {
   const client = getClient(creds)
-  const copySource = `/${creds.bucketName}/${encodeURIComponent(oldKey)}`
+  const copySource = `/${creds.bucketName}/${encodeKeyPath(oldKey)}`
   const newUrl = objectEndpoint(creds, newKey)
   const res = await client.fetch(newUrl, {
     method: 'PUT',
@@ -206,6 +209,16 @@ export async function renameObject(creds: Creds, oldKey: string, newKey: string)
   await deleteObject(creds, oldKey)
 }
 
+// ✅ Asli file size (HEAD request) — frontend ke bheje size par bharosa nahi
+export async function headObjectSize(creds: Creds, key: string): Promise<number> {
+  const client = getClient(creds)
+  const res = await client.fetch(objectEndpoint(creds, key), { method: 'HEAD' })
+  if (!res.ok) throw new Error(`Head failed: ${res.status}`)
+  const len = res.headers.get('content-length')
+  if (len === null) throw new Error('Content-Length missing')
+  return parseInt(len, 10)
+}
+
 export async function generateSimplePutUrl(creds: Creds, key: string): Promise<string> {
   const client = getClient(creds)
   const url = objectEndpoint(creds, key)
@@ -213,7 +226,7 @@ export async function generateSimplePutUrl(creds: Creds, key: string): Promise<s
   return signed.url
 }
 
-// ✅ NEW: List all buckets for a given R2 account
+// List all buckets for a given R2 account
 export async function listBuckets(accountId: string, accessKeyId: string, secretAccessKey: string): Promise<string[]> {
   const client = new AwsClient({ accessKeyId, secretAccessKey })
   const url = `https://${accountId}.r2.cloudflarestorage.com/`
@@ -224,7 +237,7 @@ export async function listBuckets(accountId: string, accessKeyId: string, secret
   return nameMatches.map(m => m[1])
 }
 
-// ✅ NEW: presigned GET url (public domain ke bina bhi Watch/Download chale)
+// presigned GET url (public domain ke bina bhi Watch/Download chale)
 export async function generateGetUrl(
   creds: Creds, key: string, opts: { expiresIn?: number; download?: boolean } = {}
 ): Promise<string> {
@@ -232,7 +245,8 @@ export async function generateGetUrl(
   const url = new URL(objectEndpoint(creds, key))
   url.searchParams.set('X-Amz-Expires', String(opts.expiresIn ?? 3600))
   if (opts.download) {
-    url.searchParams.set('response-content-disposition', `attachment; filename="${key.replace(/"/g, '')}"`)
+    const fileName = (key.split('/').pop() || key).replace(/"/g, '')
+    url.searchParams.set('response-content-disposition', `attachment; filename="${fileName}"`)
   }
   const signed = await client.sign(url.toString(), { method: 'GET', aws: { signQuery: true } })
   return signed.url

@@ -26,13 +26,19 @@ function slugify(input: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
-// ============ HELPER: sub-admin owned anime IDs ============
+// ============ HELPER: sub-admin owned anime IDs (created + assigned) ============
 async function getOwnedAnimeIds(admin: any, db: any): Promise<string[] | null> {
   if (admin.role !== 'subadmin' || admin.animeAccess !== 'own') return null
+
   const animes = await db.collection('animes')
     .find({ createdBy: admin.id }, { projection: { _id: 1 } })
     .toArray()
-  return animes.map((a: any) => a._id.toString())
+  const createdIds = animes.map((a: any) => a._id.toString())
+
+  const subAdminDoc = await db.collection('subadmins').findOne({ _id: toObjectId(admin.id) })
+  const assignedIds: string[] = subAdminDoc?.assignedAnimeIds || []
+
+  return Array.from(new Set([...createdIds, ...assignedIds]))
 }
 
 // ============ HELPER: cache invalidation ============
@@ -175,7 +181,7 @@ downloadPageRoutes.post('/', adminAuth, async (c) => {
         if (!link.type) link.type = 'download'
       }
 
-      // 🔒 Page number server decide karega, client ka value ignore
+      // 🔒 Page number is decided by the server; the client's value is ignored
       const existingPages = await db.collection('downloadpages')
         .find({ animeId: toObjectId(animeId) }, { projection: { episodeNumber: 1 } })
         .toArray()
@@ -410,8 +416,8 @@ downloadPageRoutes.post('/:id/unset-primary-episode-count', adminAuth, async (c)
 })
 
 // ============================================================================
-// CACHED VERSION — SABSE HIGH-TRAFFIC ROUTE
-// prefetchR2Providers ab withDb ke andar hai (db pehla arg leta hai)
+// CACHED VERSION — HIGHEST-TRAFFIC ROUTE
+// prefetchR2Providers is now inside withDb (it takes db as the first arg)
 // ============================================================================
 downloadPageRoutes.get('/:slug', async (c) => {
   try {

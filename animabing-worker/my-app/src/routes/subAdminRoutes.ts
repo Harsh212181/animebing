@@ -284,6 +284,9 @@ subAdminRoutes.delete('/:id', adminAuth, superAdminOnly, async (c) => {
 
       await db.collection('subadmins').deleteOne({ _id: toObjectId(id) })
 
+      // ✅ NEW: Sub-admin delete hone par uske saare bucket grants bhi hata do
+      await db.collection('bucketgrants').deleteMany({ username: subAdmin.username })
+
       await logActivity({
         actorId: admin.id, actorUsername: admin.username, actorRole: 'admin',
         action: 'delete-subadmin', targetType: 'subadmin', targetId: id, targetTitle: subAdmin.username

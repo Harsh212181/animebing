@@ -1,5 +1,6 @@
 // src/components/admin/R2ProviderManager.tsx — Admin view: manage sub-admin R2 buckets (Premium UI)
 import React, { useState, useEffect, useRef } from 'react';
+import SharedAccessManager from './SharedAccessManager';
 
 const API_BASE = import.meta.env.VITE_API_BASE ||
   'https://animabing-backend.animabingwatch.workers.dev/api';
@@ -57,56 +58,77 @@ const ICONS = {
   key:        'M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z',
   cloud:      'M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z',
   chevron:    'M19 9l-7 7-7-7',
+  arrowRight: 'M5 12h14M13 5l7 7-7 7',
 };
 
-// ── Confirm Modal ─────────────────────────────────────────────────────
-const ConfirmModal: React.FC<{
+// ── Confirm State ─────────────────────────────────────────────────────
+type ConfirmTone = 'danger' | 'warn' | 'ok';
+interface ConfirmState {
   open: boolean;
   title: string;
   message: string;
-  confirmLabel?: string;
-  cancelLabel?: string;
-  danger?: boolean;
-  onConfirm: () => void;
-  onCancel: () => void;
-}> = ({ open, title, message, confirmLabel = 'Delete', cancelLabel = 'Cancel', danger = true, onConfirm, onCancel }) => {
-  if (!open) return null;
+  confirmLabel: string;
+  tone: ConfirmTone;
+  loading: boolean;
+  onConfirm: () => Promise<void> | void;
+}
+
+const emptyConfirm: ConfirmState = {
+  open: false, title: '', message: '', confirmLabel: 'Confirm',
+  tone: 'danger', loading: false, onConfirm: () => {},
+};
+
+// ── Premium Confirm Modal ─────────────────────────────────────────────
+const ConfirmModal: React.FC<{ state: ConfirmState; onCancel: () => void }> = ({ state, onCancel }) => {
+  if (!state.open) return null;
+
+  const tone = state.tone;
+  const iconBg = tone === 'danger'
+    ? 'bg-rose-500/15 border-rose-500/30 text-rose-300'
+    : tone === 'warn'
+      ? 'bg-amber-500/15 border-amber-500/30 text-amber-300'
+      : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300';
+  const btnGrad = tone === 'danger'
+    ? 'from-rose-600 to-red-600 shadow-rose-500/30 hover:shadow-rose-500/50'
+    : tone === 'warn'
+      ? 'from-amber-500 to-orange-600 shadow-amber-500/30 hover:shadow-amber-500/50'
+      : 'from-emerald-500 to-teal-600 shadow-emerald-500/30 hover:shadow-emerald-500/50';
+  const Icon = tone === 'ok' ? ICONS.checkCircle : ICONS.warning;
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4 animate-[fadeIn_150ms_ease-out]"
-      onClick={onCancel}
+      className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/75 backdrop-blur-sm p-0 sm:p-4 animate-[fadeIn_150ms_ease-out]"
+      onClick={() => !state.loading && onCancel()}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl border border-white/10 bg-[#151422] p-6 pb-8 sm:pb-6 shadow-2xl shadow-black/40 animate-[slideUp_250ms_cubic-bezier(0.16,1,0.3,1)]"
+        className="w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl border border-white/10 bg-[#151422] p-6 pb-8 sm:pb-6 shadow-2xl shadow-black/60 animate-[slideUp_250ms_cubic-bezier(0.16,1,0.3,1)]"
       >
         <div className="flex items-start gap-3">
-          <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${danger ? 'bg-red-500/10 text-red-400' : 'bg-amber-500/10 text-amber-400'}`}>
-            <SvgIcon d={ICONS.warning} className="h-5 w-5" />
+          <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border ${iconBg}`}>
+            <SvgIcon d={Icon} className="h-5 w-5" />
           </span>
           <div className="min-w-0 flex-1 pt-1">
-            <h3 className="text-base font-semibold text-white">{title}</h3>
-            <p className="mt-1.5 text-xs leading-relaxed text-white/50">{message}</p>
+            <h3 className="text-base font-semibold text-white leading-tight">{state.title}</h3>
+            <p className="mt-1.5 text-xs leading-relaxed text-white/55">{state.message}</p>
           </div>
         </div>
 
         <div className="mt-6 flex flex-col-reverse sm:flex-row sm:justify-end gap-2.5">
           <button
             onClick={onCancel}
-            className="w-full sm:w-auto rounded-xl border border-white/10 bg-white/5 px-4 py-3 sm:py-2 text-sm sm:text-xs font-medium text-white/70 transition-all hover:bg-white/10 hover:text-white"
+            disabled={state.loading}
+            className="w-full sm:w-auto rounded-xl border border-white/10 bg-white/5 px-4 py-3 sm:py-2 text-sm sm:text-xs font-medium text-white/70 transition-all hover:bg-white/10 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {cancelLabel}
+            Cancel
           </button>
           <button
-            onClick={onConfirm}
-            className={`w-full sm:w-auto rounded-xl px-4 py-3 sm:py-2 text-sm sm:text-xs font-semibold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-95 ${
-              danger
-                ? 'bg-gradient-to-r from-red-600 to-red-700 shadow-red-500/25 hover:shadow-red-500/40'
-                : 'bg-gradient-to-r from-purple-600 to-pink-600 shadow-purple-500/25 hover:shadow-purple-500/40'
-            }`}
+            onClick={() => state.onConfirm()}
+            disabled={state.loading}
+            className={`w-full sm:w-auto rounded-xl px-4 py-3 sm:py-2 text-sm sm:text-xs font-bold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-95 bg-gradient-to-r ${btnGrad} disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100 inline-flex items-center justify-center gap-1.5`}
           >
-            {confirmLabel}
+            {state.loading && <span className="w-3 h-3 border-2 border-white/80 border-t-transparent rounded-full animate-spin" />}
+            {state.loading ? 'Working...' : state.confirmLabel}
           </button>
         </div>
       </div>
@@ -166,10 +188,9 @@ const R2ProviderManager: React.FC<Props> = ({ token: tokenProp }) => {
 
   const [showSecret, setShowSecret] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [togglingId, setTogglingId] = useState<string | null>(null);
-  const [changingOwnerId, setChangingOwnerId] = useState<string | null>(null);
+  const [confirmModal, setConfirmModal] = useState<ConfirmState>(emptyConfirm);
 
-  // Double-click guard
+  // Double-click guard (used for form submit only now)
   const pendingRef = useRef<Set<string>>(new Set());
   const guarded = async (key: string, fn: () => Promise<void>) => {
     if (pendingRef.current.has(key)) return;
@@ -178,11 +199,7 @@ const R2ProviderManager: React.FC<Props> = ({ token: tokenProp }) => {
     finally { setTimeout(() => { pendingRef.current.delete(key); }, 250); }
   };
 
-  const [confirmModal, setConfirmModal] = useState<{
-    open: boolean; title: string; message: string; confirmLabel?: string; onConfirm: () => void;
-  }>({ open: false, title: '', message: '', confirmLabel: 'Delete', onConfirm: () => {} });
-
-  const closeConfirmModal = () => setConfirmModal(prev => ({ ...prev, open: false }));
+  const closeConfirmModal = () => setConfirmModal(prev => ({ ...prev, open: false, loading: false }));
 
   const [form, setForm] = useState({ ...emptyForm });
 
@@ -210,7 +227,6 @@ const R2ProviderManager: React.FC<Props> = ({ token: tokenProp }) => {
     });
   };
 
-  // ✅ FIXED: Surface errors instead of silently swallowing them
   const fetchSubAdmins = async () => {
     try {
       const res = await fetch(`${API_BASE}/r2-providers/sub-admins`, { headers: authHeaders() });
@@ -274,66 +290,101 @@ const R2ProviderManager: React.FC<Props> = ({ token: tokenProp }) => {
     });
   };
 
-  const handleToggle = async (p: R2Provider) => {
-    await guarded(`toggle-${p._id}`, async () => {
-      setTogglingId(p._id);
-      try {
-        await fetch(`${API_BASE}/r2-providers/${p._id}/toggle`, {
-          method: 'PATCH',
-          headers: authHeaders(),
-        });
-        showToast('success', `${p.label || p.hostname} ${p.isActive !== false ? 'deactivated' : 'activated'}`);
-        setTimeout(fetchProviders, 300);
-      } catch {
-        showToast('error', 'Toggle failed');
-      } finally {
-        setTogglingId(null);
-      }
+  // ─── Toggle with confirmation ─────────────────────────────────
+  const handleToggle = (p: R2Provider) => {
+    const isActive = p.isActive !== false;
+    setConfirmModal({
+      open: true,
+      title: isActive ? 'Disable provider?' : 'Enable provider?',
+      message: isActive
+        ? `"${p.label || p.hostname}" disable karne se sub-admin is bucket me upload nahi kar payega jab tak dobara enable nahi karo.`
+        : `"${p.label || p.hostname}" ab enable ho jayega — sub-admin phir se iska use kar sakta hai.`,
+      confirmLabel: isActive ? 'Disable' : 'Enable',
+      tone: 'warn',
+      loading: false,
+      onConfirm: async () => {
+        setConfirmModal(prev => ({ ...prev, loading: true }));
+        try {
+          const res = await fetch(`${API_BASE}/r2-providers/${p._id}/toggle`, {
+            method: 'PATCH',
+            headers: authHeaders(),
+          });
+          if (!res.ok) throw new Error('Toggle failed');
+          showToast('success', `${p.label || p.hostname} ${isActive ? 'deactivated' : 'activated'}`);
+          setConfirmModal(emptyConfirm);
+          setTimeout(fetchProviders, 300);
+        } catch {
+          showToast('error', 'Toggle failed');
+          setConfirmModal(prev => ({ ...prev, loading: false }));
+        }
+      },
     });
   };
 
-  const handleChangeOwner = async (p: R2Provider, newOwner: string) => {
+  // ─── Change owner with confirmation ───────────────────────────
+  const handleChangeOwner = (p: R2Provider, newOwner: string) => {
     if ((p.ownerUsername || '') === newOwner) return;
-    await guarded(`owner-${p._id}`, async () => {
-      setChangingOwnerId(p._id);
-      try {
-        const res = await fetch(`${API_BASE}/r2-providers/${p._id}/owner`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', ...authHeaders() },
-          body: JSON.stringify({ ownerUsername: newOwner }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || 'Could not change owner');
-        showToast('success', newOwner ? `Access diya: ${newOwner}` : 'Owner hata diya');
-        setTimeout(fetchProviders, 300);
-      } catch (e: any) {
-        showToast('error', e.message || 'Failed');
-      } finally {
-        setChangingOwnerId(null);
-      }
+
+    const isRemoving = !newOwner;
+    const oldOwnerLabel = p.ownerUsername || '(none)';
+    const newOwnerLabel = newOwner
+      ? (subAdmins.find(s => s.username === newOwner)?.name || newOwner)
+      : '(none)';
+
+    setConfirmModal({
+      open: true,
+      title: isRemoving ? 'Remove owner?' : 'Change owner?',
+      message: isRemoving
+        ? `"${p.label || p.hostname}" se owner hata dein? Yeh bucket kisi sub-admin ko nahi dikhega.`
+        : `"${p.label || p.hostname}" ka owner "${oldOwnerLabel}" se "${newOwnerLabel}" ho jayega. ${oldOwnerLabel} ab ise nahi dekh payega.`,
+      confirmLabel: isRemoving ? 'Remove owner' : 'Change owner',
+      tone: 'warn',
+      loading: false,
+      onConfirm: async () => {
+        setConfirmModal(prev => ({ ...prev, loading: true }));
+        try {
+          const res = await fetch(`${API_BASE}/r2-providers/${p._id}/owner`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', ...authHeaders() },
+            body: JSON.stringify({ ownerUsername: newOwner }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || 'Could not change owner');
+          showToast('success', newOwner ? `Access diya: ${newOwner}` : 'Owner hata diya');
+          setConfirmModal(emptyConfirm);
+          setTimeout(fetchProviders, 300);
+        } catch (e: any) {
+          showToast('error', e.message || 'Failed');
+          setConfirmModal(prev => ({ ...prev, loading: false }));
+        }
+      },
     });
   };
 
+  // ─── Delete with confirmation ─────────────────────────────────
   const handleDelete = (p: R2Provider) => {
     setConfirmModal({
       open: true,
       title: `Delete "${p.label || p.hostname}"?`,
       message: 'This R2 provider will be removed and all its links will stop working. This action cannot be undone.',
       confirmLabel: 'Delete',
+      tone: 'danger',
+      loading: false,
       onConfirm: async () => {
-        closeConfirmModal();
-        await guarded(`delete-${p._id}`, async () => {
-          try {
-            await fetch(`${API_BASE}/r2-providers/${p._id}`, {
-              method: 'DELETE',
-              headers: authHeaders(),
-            });
-            showToast('success', 'Provider deleted');
-            setTimeout(fetchProviders, 300);
-          } catch {
-            showToast('error', 'Delete failed');
-          }
-        });
+        setConfirmModal(prev => ({ ...prev, loading: true }));
+        try {
+          const res = await fetch(`${API_BASE}/r2-providers/${p._id}`, {
+            method: 'DELETE',
+            headers: authHeaders(),
+          });
+          if (!res.ok) throw new Error('Delete failed');
+          showToast('success', 'Provider deleted');
+          setConfirmModal(emptyConfirm);
+          setTimeout(fetchProviders, 300);
+        } catch {
+          showToast('error', 'Delete failed');
+          setConfirmModal(prev => ({ ...prev, loading: false }));
+        }
       },
     });
   };
@@ -480,9 +531,7 @@ const R2ProviderManager: React.FC<Props> = ({ token: tokenProp }) => {
                       key={p._id}
                       p={p}
                       copiedId={copiedId}
-                      togglingId={togglingId}
                       subAdmins={subAdmins}
-                      changingOwnerId={changingOwnerId}
                       onCopyUrl={copyUrlPrefix}
                       onToggle={handleToggle}
                       onDelete={handleDelete}
@@ -541,19 +590,15 @@ const R2ProviderManager: React.FC<Props> = ({ token: tokenProp }) => {
               />
             </div>
           )}
+
+          {/* ─── Shared Access Manager ─────────────────── */}
+          <SharedAccessManager token={tokenProp} />
         </div>
       </div>
 
       {toast && <Toast type={toast.type} message={toast.message} onClose={() => setToast(null)} />}
 
-      <ConfirmModal
-        open={confirmModal.open}
-        title={confirmModal.title}
-        message={confirmModal.message}
-        confirmLabel={confirmModal.confirmLabel}
-        onConfirm={confirmModal.onConfirm}
-        onCancel={closeConfirmModal}
-      />
+      <ConfirmModal state={confirmModal} onCancel={closeConfirmModal} />
     </>
   );
 };
@@ -562,14 +607,12 @@ const R2ProviderManager: React.FC<Props> = ({ token: tokenProp }) => {
 const ProviderCard: React.FC<{
   p: R2Provider;
   copiedId: string | null;
-  togglingId: string | null;
   subAdmins: SubAdminOption[];
-  changingOwnerId: string | null;
   onCopyUrl: (p: R2Provider) => void;
   onToggle: (p: R2Provider) => void;
   onDelete: (p: R2Provider) => void;
   onChangeOwner: (p: R2Provider, newOwner: string) => void;
-}> = ({ p, copiedId, togglingId, subAdmins, changingOwnerId, onCopyUrl, onToggle, onDelete, onChangeOwner }) => {
+}> = ({ p, copiedId, subAdmins, onCopyUrl, onToggle, onDelete, onChangeOwner }) => {
   const isActive = p.isActive !== false;
   const urlPrefix = p.publicBaseUrl ? `${p.publicBaseUrl.replace(/\/+$/, '')}/` : `https://${p.hostname}/`;
 
@@ -593,7 +636,7 @@ const ProviderCard: React.FC<{
         </span>
       </div>
 
-      {/* Owner — dropdown se badlo */}
+      {/* Owner — dropdown se badlo (confirm modal ke saath) */}
       <div className="mx-4 mb-3 flex items-center gap-2 px-3 py-2 rounded-xl bg-gradient-to-r from-pink-500/[0.08] to-purple-500/[0.06] border border-pink-500/20">
         <SvgIcon d={ICONS.user} className="w-3.5 h-3.5 text-pink-300 flex-shrink-0" />
         <span className="text-[10px] font-bold uppercase tracking-wider text-white/40">Owner</span>
@@ -601,8 +644,7 @@ const ProviderCard: React.FC<{
           <select
             value={p.ownerUsername || ''}
             onChange={e => onChangeOwner(p, e.target.value)}
-            disabled={changingOwnerId === p._id}
-            className="w-full appearance-none truncate pl-2 pr-6 py-1 bg-white/[0.06] border border-white/[0.1] rounded-lg text-xs font-bold text-pink-200 outline-none focus:border-pink-500/50 disabled:opacity-50"
+            className="w-full appearance-none truncate pl-2 pr-6 py-1 bg-white/[0.06] border border-white/[0.1] rounded-lg text-xs font-bold text-pink-200 outline-none focus:border-pink-500/50 transition-colors"
           >
             <option value="" className="bg-slate-900">— No owner —</option>
             {p.ownerUsername && !subAdmins.some(s => s.username === p.ownerUsername) && (
@@ -662,18 +704,13 @@ const ProviderCard: React.FC<{
       <div className="px-4 pb-4 grid grid-cols-2 gap-2">
         <button
           onClick={() => onToggle(p)}
-          disabled={togglingId === p._id}
-          className={`inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-bold rounded-xl transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed ${
+          className={`inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-bold rounded-xl transition-all active:scale-[0.98] ${
             isActive
               ? 'bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 hover:border-amber-500/40 text-amber-300'
               : 'bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 hover:border-emerald-500/40 text-emerald-300'
           }`}
         >
-          {togglingId === p._id ? (
-            <span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />
-          ) : (
-            <SvgIcon d={ICONS.power} className="w-3.5 h-3.5" />
-          )}
+          <SvgIcon d={ICONS.power} className="w-3.5 h-3.5" />
           {isActive ? 'Disable' : 'Enable'}
         </button>
         <button
@@ -766,7 +803,6 @@ const ProviderForm: React.FC<{
               </select>
               <SvgIcon d={ICONS.chevron} className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" />
             </div>
-            {/* ✅ Surface fetch error / empty / success hint clearly */}
             {subAdminsError ? (
               <p className="mt-1 text-[10px] text-rose-300">⚠ {subAdminsError}</p>
             ) : subAdmins.length === 0 ? (

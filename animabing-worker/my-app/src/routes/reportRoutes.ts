@@ -41,6 +41,19 @@ reportRoutes.post('/', async (c) => {
     }
 
     return await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'reports/create', async (db) => {
+      // 🔒 If the same user/IP submits the same issue for the same episode within 2 minutes, ignore it
+      const recent = await db.collection('reports').findOne({
+        episodeId: report.episodeId,
+        issueType: report.issueType,
+        userIP: report.userIP,
+        description: report.description,
+        createdAt: { $gt: new Date(Date.now() - 2 * 60 * 1000) },
+      })
+      if (recent) {
+        // Return success even for duplicates so the user doesn't see an error
+        return c.json({ success: true, message: 'Report submitted! We will fix the issue soon.' })
+      }
+
       await db.collection('reports').insertOne(report)
       return c.json({ success: true, message: 'Report submitted! We will fix the issue soon.' })
     })
@@ -49,7 +62,7 @@ reportRoutes.post('/', async (c) => {
   }
 })
 
-// ============ PENDING REPORTS COUNT (red dot ke liye) ============
+// ============ PENDING REPORTS COUNT (for the red dot) ============
 // ✅ FIX: getDb → withDb
 reportRoutes.get('/pending-count', adminAuth, async (c) => {
   try {
@@ -161,7 +174,7 @@ reportRoutes.get('/', adminAuth, async (c) => {
 })
 
 // ============ GET BY USER EMAIL (public) ============
-// already uses findMany helper → single withDb internally — no change
+// already uses the findMany helper → withDb internally — no change
 reportRoutes.get('/user/:email', async (c) => {
   try {
     const email = c.req.param('email')
@@ -178,7 +191,7 @@ reportRoutes.get('/user/:email', async (c) => {
 })
 
 // ============ UPDATE REPORT STATUS (admin) ============
-// already uses updateOne helper → single withDb internally — no change
+// already uses the updateOne helper → withDb internally — no change
 reportRoutes.put('/:id', adminAuth, async (c) => {
   try {
     const id = c.req.param('id')
@@ -207,7 +220,7 @@ reportRoutes.put('/:id', adminAuth, async (c) => {
 })
 
 // ============ BULK DELETE ============
-// already uses deleteMany helper → single withDb internally — no change
+// already uses the deleteMany helper → withDb internally — no change
 reportRoutes.post('/bulk-delete', adminAuth, async (c) => {
   try {
     const { reportIds } = await c.req.json()

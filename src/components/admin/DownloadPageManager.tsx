@@ -233,7 +233,6 @@ interface ConfirmModalProps {
   message: string;
   onConfirm: () => void;
   onCancel: () => void;
-  /** 🆕 Shows spinner on the Delete button when a delete is in-flight */
   loading?: boolean;
 }
 
@@ -303,16 +302,9 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
   const [pageLinksMap, setPageLinksMap] = useState<Record<string, { episodeLimit: number; keyword: string; channelName: string }>>({});
 
   // 🆕 Double-click / slow-network guard — synchronous Set of in-flight keys.
-  // Prevents duplicate API calls even if user clicks again before React re-renders
-  // and disables buttons via state.
   const pendingRef = useRef<Set<string>>(new Set());
   const [pendingAction, setPendingAction] = useState<string | null>(null);
 
-  /**
-   * Wrap any async action with this helper. If the same key is already in-flight,
-   * the second call becomes a silent no-op. Errors are swallowed here because
-   * every action already shows its own toast/error UI.
-   */
   const guarded = async (key: string, fn: () => Promise<void>) => {
     if (pendingRef.current.has(key)) return;
     pendingRef.current.add(key);
@@ -322,7 +314,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
     } catch {
       /* each action handles its own errors */
     } finally {
-      // short grace period so fast networks still show the visual feedback
       setTimeout(() => {
         pendingRef.current.delete(key);
         setPendingAction((prev) => (prev === key ? null : prev));
@@ -394,9 +385,11 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
     await guarded('fetch-anime', async () => {
       try {
         const token = resolveToken();
-        const url = `${API_BASE}/admin/protected/anime-list`;
+        // 🆕 cache-buster — sub-admin ke liye assigned-anime list stale na ho
+        const url = `${API_BASE}/admin/protected/anime-list?_t=${Date.now()}`;
         const res = await fetch(url, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {}
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          cache: 'no-store'
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
@@ -451,7 +444,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
     }
   };
 
-  // 🆕 Is anime ka agla PAGE number (1, 2, 3...) nikalta hai
   const getNextPageNumber = async (animeId: string): Promise<number> => {
     if (!animeId) return 1;
     try {
@@ -463,8 +455,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
       const animePages = await res.json();
       if (!Array.isArray(animePages)) return 1;
 
-      // Safe logic: agar beech ka koi page delete hua ho (1,3 bacha),
-      // to count (2) se duplicate "3" ban sakta tha. Isliye max bhi dekhte hain.
       const maxPageNo = animePages.reduce(
         (m: number, p: any) => Math.max(m, Number(p.episodeNumber) || 0),
         0
@@ -537,13 +527,13 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
     }
     await guarded(`new-anime-${animeId}`, async () => {
       setCalculatingNext(true);
-      const nextPageNo = await getNextPageNumber(animeId); // 🆕 page number
+      const nextPageNo = await getNextPageNumber(animeId);
       setEditingPage(prev => {
         if (!prev) return null;
         return {
           ...prev,
           animeId,
-          episodeNumber: nextPageNo,                       // 🆕
+          episodeNumber: nextPageNo,
           slug: generateSlugFromTitle(option!.title),
         };
       });
@@ -563,8 +553,6 @@ const DownloadPageManager: React.FC<DownloadPageManagerProps> = ({
       showToast('Please enter a valid episode number', 'error'); return;
     }
 
-    // 🛡️ Guard key includes page id — but only ONE save at a time is allowed
-    // across the whole component because the form closes on success.
     await guarded('save-page', async () => {
       const method = pageToSave._id ? 'PUT' : 'POST';
       const url = pageToSave._id
@@ -1430,7 +1418,6 @@ const PageForm: React.FC<{
   removeLink: (index: number) => void;
   watchCount: number;
   downloadCount: number;
-  /** 🆕 disables the Save button + shows spinner while saving */
   saving?: boolean;
 }> = ({
   editingPage,

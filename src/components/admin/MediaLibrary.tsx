@@ -58,7 +58,7 @@ function itemId(item: MediaItem): string {
 const OwnerBadge: React.FC<{ owner?: string | null; className?: string }> = ({ owner, className = '' }) => (
   owner ? (
     <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-pink-200 border border-pink-500/30 truncate ${className}`}>
-      sub admin{owner}
+      sub-admin · {owner}
     </span>
   ) : (
     <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/25 ${className}`}>
@@ -89,6 +89,102 @@ const CustomCheckbox: React.FC<{
     >
       {checked && <SvgIcon d={ICONS.check} className="w-3 h-3 text-white" />}
     </button>
+  );
+};
+
+// ── Custom Bucket Dropdown ──────────────────────────────────────────
+// Backend label me " (shared)" suffix aata hai, aur static buckets me "bucket (host)"
+// format hota hai — dono ko parse karke primary + secondary clean dikhate hain.
+function parseBucketLabel(raw: string): { label: string; sub: string } {
+  const cleaned = (raw || '').replace(/\s*\(shared\)\s*$/i, '').trim();
+  const m = /^(.+?)\s*\(([^)]+)\)$/.exec(cleaned);
+  if (m) return { label: m[1].trim(), sub: m[2].trim() };
+  return { label: cleaned, sub: '' };
+}
+
+const BucketDropdown: React.FC<{
+  buckets: BucketOption[];
+  value: string;
+  onChange: (v: string) => void;
+}> = ({ buckets, value, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const opts = useMemo(() => {
+    const all = { hostname: 'all', label: 'All Buckets', sub: '' };
+    return [
+      all,
+      ...buckets.map(b => {
+        const parsed = parseBucketLabel(b.label);
+        const sub = parsed.sub || (b.hostname && b.hostname !== parsed.label ? b.hostname : '');
+        return { hostname: b.hostname, label: parsed.label || b.hostname, sub };
+      }),
+    ];
+  }, [buckets]);
+
+  const current = opts.find(o => o.hostname === value) || opts[0];
+
+  return (
+    <div ref={ref} className="relative w-full sm:w-56 max-w-full">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className={`w-full flex items-center gap-2 pl-8 pr-8 py-2 bg-white/[0.04] hover:bg-white/[0.06] border rounded-lg text-xs text-white transition-all text-left ${
+          open ? 'border-purple-500/50 ring-2 ring-purple-500/20' : 'border-white/[0.08]'
+        }`}
+      >
+        <SvgIcon d={ICONS.folder} className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" />
+        <span className="truncate flex-1">{current.label}</span>
+        <SvgIcon
+          d={ICONS.chevron}
+          className={`absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 transition-transform pointer-events-none ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      {open && (
+        <div className="absolute z-30 mt-1 left-0 right-0 rounded-xl border border-white/10 bg-[#151422] shadow-2xl shadow-black/50 overflow-hidden max-h-64 overflow-y-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
+          {opts.map(o => {
+            const selected = o.hostname === value;
+            return (
+              <button
+                key={o.hostname}
+                type="button"
+                onClick={() => { onChange(o.hostname); setOpen(false); }}
+                className={`w-full text-left px-3 py-2 transition-colors flex items-center gap-2 ${
+                  selected
+                    ? 'bg-purple-500/15 text-purple-200'
+                    : 'text-gray-300 hover:bg-white/[0.06] hover:text-white'
+                }`}
+              >
+                <SvgIcon
+                  d={ICONS.folder}
+                  className={`w-3 h-3 shrink-0 ${selected ? 'text-purple-300' : 'text-gray-500'}`}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs truncate font-medium">{o.label}</p>
+                  {o.sub && <p className="text-[9px] text-gray-500 truncate mt-0.5">{o.sub}</p>}
+                </div>
+                {selected && <SvgIcon d={ICONS.check} className="w-3 h-3 text-purple-300 shrink-0" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -561,7 +657,8 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
     const groups = new Map<string, { groupKey: string; displayBaseName: string; season: number | null; entries: { item: MediaItem; episode: number | null }[] }>();
 
     videoOnlyItems.forEach(item => {
-      const { baseName, season, episode } = parseEpisodeInfo(item.key);
+      // ✅ Sub-admin files "rahul/video.mp4" jaisi aati hain — grouping ke liye folder hatao
+      const { baseName, season, episode } = parseEpisodeInfo(item.key.split('/').pop() || item.key);
       const normalizedBase = resolveAlias(normalizeKey(baseName));
       const groupKey = `${normalizedBase}::${season ?? 'x'}`;
 
@@ -910,27 +1007,31 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
 
         {/* Owner-wise (main admin) */}
         {showOwner && storageStats.perOwner.length > 0 && (
-          <div className="pt-2 border-t border-white/[0.06] space-y-1.5">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">By Owner</p>
-            {storageStats.perOwner.map(([owner, bytes]) => (
-              <div key={owner} className="flex items-center justify-between gap-2">
-                <OwnerBadge owner={owner === '__main__' ? null : owner} />
-                <span className="text-[10px] font-bold text-gray-200">{formatSize(bytes)}</span>
-              </div>
-            ))}
+          <div className="pt-2 border-t border-white/[0.06]">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">By Owner</p>
+            <div className="space-y-1.5 max-h-32 overflow-y-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
+              {storageStats.perOwner.map(([owner, bytes]) => (
+                <div key={owner} className="flex items-center justify-between gap-2">
+                  <OwnerBadge owner={owner === '__main__' ? null : owner} />
+                  <span className="text-[10px] font-bold text-gray-200">{formatSize(bytes)}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
         {/* Bucket-wise (sub-admin, jab multiple buckets hon) */}
         {!showOwner && selectedHostname === 'all' && storageStats.perBucket.length > 1 && (
-          <div className="pt-2 border-t border-white/[0.06] space-y-1">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">By Bucket</p>
-            {storageStats.perBucket.map(([host, bytes]) => (
-              <div key={host} className="flex items-center justify-between text-[10px]">
-                <span className="text-gray-400 truncate max-w-[60%]">{host}</span>
-                <span className="font-bold text-gray-200">{formatSize(bytes)}</span>
-              </div>
-            ))}
+          <div className="pt-2 border-t border-white/[0.06]">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">By Bucket</p>
+            <div className="space-y-1 max-h-32 overflow-y-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none] [-ms-overflow-style:none]">
+              {storageStats.perBucket.map(([host, bytes]) => (
+                <div key={host} className="flex items-center justify-between text-[10px]">
+                  <span className="text-gray-400 truncate max-w-[60%]">{host}</span>
+                  <span className="font-bold text-gray-200">{formatSize(bytes)}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -974,18 +1075,11 @@ const MediaLibrary: React.FC<Props> = ({ token: tokenProp, refreshTrigger, subAd
 
       {/* ─── Bucket + Search ──────────────────────────── */}
       <div className="flex flex-col sm:flex-row gap-2 min-w-0">
-        <div className="relative w-full sm:w-56 max-w-full">
-          <select
-            value={selectedHostname}
-            onChange={e => setSelectedHostname(e.target.value)}
-            className="w-full appearance-none truncate pl-8 pr-7 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-xs text-white outline-none transition-all focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20"
-          >
-            <option value="all" className="bg-slate-900">All Buckets</option>
-            {buckets.map(b => <option key={b.hostname} value={b.hostname} className="bg-slate-900">{b.label}</option>)}
-          </select>
-          <SvgIcon d={ICONS.folder} className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" />
-          <SvgIcon d={ICONS.chevron} className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" />
-        </div>
+        <BucketDropdown
+          buckets={buckets}
+          value={selectedHostname}
+          onChange={(v) => setSelectedHostname(v)}
+        />
         <div className="relative flex-1">
           <input
             type="text"

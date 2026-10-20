@@ -128,7 +128,7 @@ const CustomSelect: React.FC<{
 
   return (
     <div ref={triggerRef} className="relative">
-      <label className="block text-xs font-medium text-slate-300 mb-1.5 flexl items-center gap-1.5">
+      <label className="block text-xs font-medium text-slate-300 mb-1.5 flex items-center gap-1.5">
         {icon}
         {label} {required && <span className="text-red-400">*</span>}
       </label>
@@ -406,6 +406,13 @@ const VideoUploader: React.FC<Props> = ({ token: tokenProp, onUploadComplete }) 
   const [globalError, setGlobalError] = useState('');
   const [corsExpanded, setCorsExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [plans, setPlans] = useState<any[]>([]);
+
+  const loadPlans = () => {
+    const token = resolveToken();
+    fetch(`${API_BASE}/uploads/my-grants`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then(r => r.json()).then(d => Array.isArray(d) && setPlans(d)).catch(() => {});
+  };
 
   const itemsRef = useRef<UploadItem[]>([]);
   const activeRef = useRef<Set<string>>(new Set());
@@ -420,6 +427,7 @@ const VideoUploader: React.FC<Props> = ({ token: tokenProp, onUploadComplete }) 
       .then(res => res.json())
       .then(data => Array.isArray(data) && setBuckets(data))
       .catch(() => {});
+    loadPlans();
   }, []);
 
   // ✅ On mount: recover any interrupted uploads from a previous session so they
@@ -435,7 +443,8 @@ const VideoUploader: React.FC<Props> = ({ token: tokenProp, onUploadComplete }) 
         if (!raw) continue;
         const s: PersistedState = JSON.parse(raw);
         if (!s.fileName || !s.fileSize) continue;
-        const completedBytes = (s.completedParts?.length || 0) * CHUNK_SIZE;
+        // ✅ FIX: clamp to fileSize so the last (smaller) part doesn't overshoot
+        const completedBytes = Math.min(s.fileSize, (s.completedParts?.length || 0) * CHUNK_SIZE);
         const progress = Math.min(99, Math.round((completedBytes / s.fileSize) * 100));
         recovered.push({
           id: k,
@@ -488,7 +497,8 @@ const VideoUploader: React.FC<Props> = ({ token: tokenProp, onUploadComplete }) 
     updateItem(id, { status: 'uploading', error: undefined });
 
     const file = item.file;
-    let lastTick = { time: Date.now(), bytes: item.completedParts.length * CHUNK_SIZE };
+    // ✅ FIX: clamp initial byte count to fileSize
+    let lastTick = { time: Date.now(), bytes: Math.min(file.size, item.completedParts.length * CHUNK_SIZE) };
 
     try {
       // Resolve into one guaranteed, explicitly-typed object up front. Doing it
@@ -502,7 +512,7 @@ const VideoUploader: React.FC<Props> = ({ token: tokenProp, onUploadComplete }) 
       if (item.uploadId && item.key && item.totalParts) {
         session = { uploadId: item.uploadId, key: item.key, totalParts: item.totalParts };
       } else {
-        const res = await apiCall('/initiate', { hostname: item.hostname, filename: file.name });
+        const res = await apiCall('/initiate', { hostname: item.hostname, filename: file.name, size: file.size });
         session = { uploadId: res.uploadId, key: res.key, totalParts: Math.ceil(file.size / CHUNK_SIZE) };
         completedParts = [];
         persistState({ hostname: item.hostname, ...session, fileSize: file.size, fileName: file.name, completedParts });
@@ -534,7 +544,8 @@ const VideoUploader: React.FC<Props> = ({ token: tokenProp, onUploadComplete }) 
         completedParts = [...completedParts, { partNumber, eTag }];
         persistState({ hostname: item.hostname, ...session, fileSize: file.size, fileName: file.name, completedParts });
 
-        const completedBytes = completedParts.length * CHUNK_SIZE;
+        // ✅ FIX: clamp to fileSize so the last (smaller) part doesn't overshoot
+        const completedBytes = Math.min(file.size, completedParts.length * CHUNK_SIZE);
         const now = Date.now();
         const dt = (now - lastTick.time) / 1000;
         const speed = dt > 0 ? Math.max(0, (completedBytes - lastTick.bytes) / dt) : 0;
@@ -551,6 +562,7 @@ const VideoUploader: React.FC<Props> = ({ token: tokenProp, onUploadComplete }) 
       clearPersistedState(file.name, file.size);
       updateItem(id, { status: 'done', progress: 100, finalUrl: completedUrl });
       onUploadComplete?.(completedUrl);
+      loadPlans();
     } catch (err: any) {
       updateItem(id, { status: 'error', error: err.message || 'Upload failed' });
     } finally {
@@ -728,6 +740,71 @@ const VideoUploader: React.FC<Props> = ({ token: tokenProp, onUploadComplete }) 
           </svg>
         }
       />
+
+      {/* Plan info for selected bucket */}
+      {(() => {
+        const plan = plans.find(p => p.hostname === selectedHostname);
+        if (!plan) return null;
+
+        const limitBytes = plan.limitGb * 1024 ** 3;
+        const left = plan.usedBytes === null ? null : Math.max(0, limitBytes - plan.usedBytes);
+        const pct: number = plan.pct ?? 0;
+        const level: 'ok' | 'near' | 'full' = plan.level || 'ok';
+
+        // Payment pending: sabse upar priority
+        if (!plan.canUpload) {
+          return (
+            <div className="p-3 rounded-xl text-xs border bg-rose-500/10 border-rose-500/25 text-rose-200">
+              Is mahine ki fee ₹{plan.planFee.toFixed(2)} pending hai, upload band hai. Admin ko pay karo.
+            </div>
+          );
+        }
+
+        const styles = {
+          ok:   { box: 'bg-emerald-500/10 border-emerald-500/25 text-emerald-200', bar: 'from-purple-500 to-pink-500' },
+          near: { box: 'bg-amber-500/10 border-amber-500/30 text-amber-200',       bar: 'from-amber-400 to-orange-500' },
+          full: { box: 'bg-rose-500/10 border-rose-500/30 text-rose-200',          bar: 'from-rose-500 to-red-500' },
+        }[level];
+
+        return (
+          <div className={`p-3 rounded-xl text-xs border space-y-2 ${styles.box}`}>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="font-semibold">
+                Plan: {plan.limitGb} GB
+                {left !== null && level !== 'full' && ` · ${formatSize(left)} bacha hai`}
+              </span>
+              {plan.usedBytes !== null && (
+                <span className="opacity-80">{formatSize(plan.usedBytes)} used ({pct}%)</span>
+              )}
+            </div>
+
+            {plan.usedBytes !== null && (
+              <div className="h-1.5 rounded-full bg-black/30 overflow-hidden">
+                <div
+                  className={`h-full bg-gradient-to-r ${styles.bar} transition-all`}
+                  style={{ width: `${Math.min(100, pct)}%` }}
+                />
+              </div>
+            )}
+
+            {level === 'near' && (
+              <p className="font-medium">
+                ⚠️ Storage {pct}% bhar chuka hai. Jaldi limit poori ho sakti hai, admin se limit badhwa lo.
+              </p>
+            )}
+            {level === 'full' && (
+              <p className="font-semibold">
+                🚫 Limit poori ho gayi, admin se limit badhwao.
+              </p>
+            )}
+            {plan.dueAmount > 0 && (
+              <p className="opacity-90">
+                Limit badhne ka top-up ₹{plan.dueAmount.toFixed(2)} baaki hai.
+              </p>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Multi-file Dropzone */}
       <MultiFileDropzone onFilesSelected={handleFilesSelected} />
