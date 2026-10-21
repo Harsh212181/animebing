@@ -107,6 +107,7 @@ export interface IReport {
   responseDate?: Date
   createdAt?: Date
   updatedAt?: Date
+  repliedByEmail?: string
 }
 
 // ============ POLL ============
@@ -791,4 +792,32 @@ export interface IFeaturedAutoRotate {
   hourly: boolean      // har ghante order badle
   daily: boolean       // har 24 ghante (IST midnight) order badle
   perVisitor: boolean  // har visitor ko alag order (same anime)
+}
+
+// ============ MAIL (Gmail API accounts) ============
+export interface IMailAccount {
+  _id?: ObjectId
+  email: string
+  label: string
+  encryptedRefreshToken: string
+  iv: string
+  isActive: boolean
+  lastError?: string | null
+  connectedBy?: string
+  createdAt?: Date
+  updatedAt?: Date
+}
+
+export interface IMailLog {
+  _id?: ObjectId
+  accountId: string
+  accountEmail: string
+  to: string
+  subject: string
+  status: 'sent' | 'failed'
+  error?: string | null
+  gmailId?: string | null
+  reportId?: string | null
+  sentBy?: string
+  createdAt: Date
 }

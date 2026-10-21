@@ -36,9 +36,10 @@ import { runQueueChain } from './services/instagramQueueService'
 import formRoutes from './routes/formRoutes' // ✅ NEW
 import r2ProviderRoutes from './routes/r2ProviderRoutes' // ✅ NEW
 import uploadRoutes from './routes/uploadRoutes' // ✅ NEW
+import mailRoutes from './routes/mailRoutes' // ✅ NEW
 import { aggregateAndPruneDay } from './services/dailyStatsService' // ✅ NEW — daily stats rollup
 import { aggregateAndPrunePageviewDay } from './services/dailyPageStatsService' // ✅ NEW — daily pageview rollup
-import { handlePageviewBatch } from './services/pageviewQueue'  
+import { handlePageviewBatch } from './services/pageviewQueue'
 
 export type Env = {
   MONGODB_URI: string
@@ -66,6 +67,10 @@ export type Env = {
   IG_ACCESS_TOKEN: string
   ENCRYPTION_KEY: string   // ✅ NEW
   PAGEVIEW_QUEUE: Queue<any> // ✅ NEW — pageview queue producer binding
+  GMAIL_CLIENT_ID: string       // ✅ NEW
+  GMAIL_CLIENT_SECRET: string   // ✅ NEW
+  GMAIL_REFRESH_TOKEN: string   // ✅ NEW
+  GMAIL_SENDER_EMAIL: string    // ✅ NEW
 }
 
 export type Variables = {
@@ -142,6 +147,7 @@ app.route('/api/watch-activity', watchActivityRoutes)
 app.route('/api/forms', formRoutes) // ✅ NEW
 app.route('/api/r2-providers', r2ProviderRoutes) // ✅ NEW
 app.route('/api/uploads', uploadRoutes) // ✅ NEW
+app.route('/api/mail', mailRoutes) // ✅ NEW
 
 // ============ INSTAGRAM WEBHOOK (comment → DM automation) ============
 app.route('/', instagramWebhookRoutes)

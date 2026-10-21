@@ -1,4 +1,4 @@
-// src/components/admin/ReportsManager.tsx - REDESIGNED v2 (fully clickable cards, no popups, mobile-friendly, custom checkbox)
+// src/components/admin/ReportsManager.tsx - REDESIGNED v2 (fully clickable cards, no popups, mobile-friendly, custom checkbox, reply-by-email panel)
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Spinner from '../Spinner';
@@ -235,6 +235,9 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp, isMai
   const [adminResponses, setAdminResponses] = useState<{ [key: string]: string }>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  // ✅ NEW — per-report email draft (subject/message/markFixed)
+  const [mailDrafts, setMailDrafts] = useState<{ [key: string]: { subject?: string; message?: string; markFixed?: boolean } }>({});
+  const [mailBusyId, setMailBusyId] = useState<string | null>(null);
 
   useEffect(() => { fetchReports(); }, []);
 
@@ -361,6 +364,43 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp, isMai
     }
   };
 
+  // ✅ NEW — simple email format validator
+  const isValidEmail = (e?: string) => !!e && /^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/.test(e);
+
+  // ✅ NEW — default subject based on report type
+  const defaultSubject = (r: Report) =>
+    r.type === 'contact'
+      ? `Re: ${r.subject || 'Your message to AnimaBing'}`
+      : `Re: Your report${r.animeId?.title ? ` about ${r.animeId.title}` : ''}`;
+
+  // ✅ NEW — update draft field for a specific report
+  const updateMailDraft = (id: string, patch: { subject?: string; message?: string; markFixed?: boolean }) =>
+    setMailDrafts(prev => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+
+  // ✅ NEW — send admin reply as email via backend
+  const sendEmailReply = async (report: Report) => {
+    const draft = mailDrafts[report._id] || {};
+    const message = (draft.message || '').trim();
+    const subject = (draft.subject ?? defaultSubject(report)).trim();
+    if (!message) { alert('Pehle message likho.'); return; }
+    setMailBusyId(report._id);
+    try {
+      await axios.post(`${API_BASE}/mail/send`, {
+        to: report.email,
+        subject,
+        message,
+        reportId: report._id,
+        markFixed: draft.markFixed !== false,
+      }, { headers: { Authorization: `Bearer ${getToken()}` } });
+      setMailDrafts(prev => { const n = { ...prev }; delete n[report._id]; return n; });
+      fetchReports();
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Failed to send email');
+    } finally {
+      setMailBusyId(null);
+    }
+  };
+
   const accessibleReports = isMainAdmin ? reports : reports.filter(r => r.type !== 'contact');
 
   const filteredReports = accessibleReports.filter(report =>
@@ -484,6 +524,7 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp, isMai
             const isOpen = expandedReports.includes(report._id);
             const isBusy = busyId === report._id;
             const isSelected = selectedReports.includes(report._id);
+            const draft = mailDrafts[report._id] || {}; // ✅ NEW
 
             return (
               <div
@@ -632,6 +673,45 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp, isMai
                                   className="w-full bg-white/[0.03] border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 focus:border-purple-500 h-24 placeholder:text-gray-600 transition"
                                   placeholder="Add a note — it's saved when you mark this report as Fixed."
                                 />
+                              </Panel>
+                            )}
+
+                            {/* ✅ NEW — Reply by email panel (subject + message + markFixed checkbox) */}
+                            {isMainAdmin && isValidEmail(report.email) && (
+                              <Panel title="Reply by email" icon={<MailIcon className="w-3.5 h-3.5" />}>
+                                <p className="text-[11px] text-gray-500 mb-2">
+                                  To: <span className="text-sky-400">{report.email}</span>
+                                </p>
+                                <input
+                                  value={draft.subject ?? defaultSubject(report)}
+                                  onChange={(e) => updateMailDraft(report._id, { subject: e.target.value })}
+                                  maxLength={200}
+                                  className="w-full bg-white/[0.03] border border-white/10 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 focus:border-purple-500 mb-2 transition"
+                                  placeholder="Subject"
+                                />
+                                <textarea
+                                  value={draft.message || ''}
+                                  onChange={(e) => updateMailDraft(report._id, { message: e.target.value })}
+                                  className="w-full bg-white/[0.03] border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 focus:border-purple-500 h-28 placeholder:text-gray-600 transition"
+                                  placeholder="User ko kya reply bhejna hai..."
+                                />
+                                <div className="flex flex-wrap items-center justify-between gap-3 mt-2.5">
+                                  <div className="flex items-center gap-2 text-xs text-gray-400">
+                                    <CustomCheckbox
+                                      checked={draft.markFixed !== false}
+                                      onChange={() => updateMailDraft(report._id, { markFixed: draft.markFixed === false })}
+                                    />
+                                    <span>Mark as Fixed after sending</span>
+                                  </div>
+                                  <button
+                                    onClick={() => sendEmailReply(report)}
+                                    disabled={mailBusyId === report._id || !(draft.message || '').trim()}
+                                    className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white transition disabled:opacity-40"
+                                  >
+                                    <MailIcon className="w-3.5 h-3.5" />
+                                    {mailBusyId === report._id ? 'Sending…' : 'Send email'}
+                                  </button>
+                                </div>
                               </Panel>
                             )}
                           </div>

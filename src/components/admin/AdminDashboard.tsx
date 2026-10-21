@@ -25,6 +25,7 @@ import FormBuilderManager from './FormBuilderManager';
 import R2ProviderManager from './R2ProviderManager';
 import VideoManager from './VideoManager';
 import SubAdminEarningsManager from './SubAdminEarningsManager';
+import MailManager from './MailManager'; // ✅ NEW
 import Spinner from '../Spinner';
 import axios from 'axios';
 
@@ -120,6 +121,7 @@ const ICONS: Record<string, string> = {
   r2providers:     'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4',
   videoUpload:     'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12',
   earnings:        'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 10v2m0-14a9 9 0 100 18 9 9 0 000-18z',
+  mail:            'M3 8l9 6 9-6M5 5h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z', // ✅ NEW
   menu:            'M4 6h16M4 12h16M4 18h16',
   close:           'M6 18L18 6M6 6l12 12',
 };
@@ -149,6 +151,7 @@ const TAB_LABELS: Record<string, string> = {
   r2providers:     'R2 Providers',
   videoUpload:     'Video Upload',
   earnings:        'Sub-Admin Earnings',
+  mail:            'Gmail & Mail', // ✅ NEW
 };
 
 // ── Per-tab color identity ─────────────────────────────────────────
@@ -180,6 +183,7 @@ const TAB_COLORS: Record<string, {
   r2providers:     { text: 'text-slate-200',   bg: 'bg-slate-500/15',   ring: 'bg-slate-400',   dot: 'bg-slate-400',   from: 'from-slate-500/25',   to: 'to-slate-500/5',   glow: 'shadow-slate-500/20' },
   videoUpload:     { text: 'text-sky-200',     bg: 'bg-sky-500/15',     ring: 'bg-sky-400',     dot: 'bg-sky-400',     from: 'from-sky-500/25',     to: 'to-sky-500/5',     glow: 'shadow-sky-500/20' },
   earnings:        { text: 'text-green-200',   bg: 'bg-green-500/15',   ring: 'bg-green-400',   dot: 'bg-green-400',   from: 'from-green-500/25',   to: 'to-green-500/5',   glow: 'shadow-green-500/20' },
+  mail:            { text: 'text-sky-200',     bg: 'bg-sky-500/15',     ring: 'bg-sky-400',     dot: 'bg-sky-400',     from: 'from-sky-500/25',     to: 'to-sky-500/5',     glow: 'shadow-sky-500/20' }, // ✅ NEW
 };
 
 const getTabColor = (tabId: string) =>
@@ -199,7 +203,7 @@ function renderTab(tabId: string, token: string) {
     case 'add':            return <AddAnimeForm />;
     case 'episodes':       return <EpisodesManager token={token || ''} isMainAdmin={true} />;
     case 'featured':       return <FeaturedAnimeManager />;
-    case 'reports':        return <ReportsManager />;
+    case 'reports':        return <ReportsManager token={token} isMainAdmin={true} />; // ✅ FIXED
     case 'social':         return <SocialMediaManager />;
     case 'polls':          return <PollManager token={token} apiBase={API_BASE} />;
     case 'episode-status': return <EpisodeStatusManager token={token || ''} isMainAdmin={true} />;
@@ -219,6 +223,7 @@ function renderTab(tabId: string, token: string) {
     case 'r2providers':    return <R2ProviderManager token={token} />;
     case 'videoUpload':    return <VideoManager token={token} />;
     case 'earnings':       return <SubAdminEarningsManager token={token} />;
+    case 'mail':           return <MailManager token={token} />; // ✅ NEW
     default:               return <AnimeListTable token={token} isMainAdmin={true} />;
   }
 }
@@ -983,6 +988,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           </SidebarSection>
           <SidebarSection label="Tools">
             <NavItem tabId="instagram"       activeTab={activeTab} collapsed={false} onClick={handleTabChange} itemRef={el => { expandedNavBtnRefs.current['instagram'] = el; }} />
+            <NavItem tabId="mail"            activeTab={activeTab} collapsed={false} onClick={handleTabChange} itemRef={el => { expandedNavBtnRefs.current['mail'] = el; }} /> {/* ✅ NEW */}
           </SidebarSection>
           <SidebarSection label="Analytics">
             <NavItem tabId="pageviews"       activeTab={activeTab} collapsed={false} onClick={handleTabChange} itemRef={el => { expandedNavBtnRefs.current['pageviews'] = el; }} />
@@ -1073,6 +1079,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           </SidebarSection>
           <SidebarSection label="Tools">
             <NavItem tabId="instagram"       activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} itemRef={el => { mobileNavBtnRefs.current['instagram'] = el; }} />
+            <NavItem tabId="mail"            activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} itemRef={el => { mobileNavBtnRefs.current['mail'] = el; }} /> {/* ✅ NEW */}
           </SidebarSection>
           <SidebarSection label="Analytics">
             <NavItem tabId="pageviews"       activeTab={activeTab} collapsed={false} onClick={handleMobileNavClick} itemRef={el => { mobileNavBtnRefs.current['pageviews'] = el; }} />
