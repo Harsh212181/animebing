@@ -1,5 +1,5 @@
-// src/components/admin/ReportsManager.tsx - REDESIGNED v2 (fully clickable cards, no popups, mobile-friendly, custom checkbox, reply-by-email panel)
-import React, { useState, useEffect } from 'react';
+// src/components/admin/ReportsManager.tsx - REDESIGNED v2 (fully clickable cards, no popups, mobile-friendly, custom checkbox, reply-by-email panel with custom Gmail dropdown, auto-grow textareas, custom toast system)
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import Spinner from '../Spinner';
 
@@ -121,6 +121,24 @@ const TagIcon: React.FC<{ className?: string }> = ({ className = 'w-3.5 h-3.5' }
   </svg>
 );
 
+const AlertIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' }) => (
+  <svg className={className} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10" /><path d="M12 8v4M12 16h.01" />
+  </svg>
+);
+
+const InfoIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' }) => (
+  <svg className={className} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" />
+  </svg>
+);
+
+const CloseIcon: React.FC<{ className?: string }> = ({ className = 'w-3.5 h-3.5' }) => (
+  <svg className={className} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M6 18L18 6M6 6l12 12" />
+  </svg>
+);
+
 // ── custom checkbox (dark glass + purple accent) ─────────────────────────
 const CustomCheckbox: React.FC<{
   checked: boolean;
@@ -149,6 +167,81 @@ const CustomCheckbox: React.FC<{
     />
   </button>
 );
+
+// ── Auto-growing textarea (grows to fit content, no internal scroll) ─────
+const AutoGrowTextarea: React.FC<{
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  placeholder?: string;
+  minRows?: number;
+  className?: string;
+}> = ({ value, onChange, placeholder, minRows = 3, className = '' }) => {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      rows={minRows}
+      className={className}
+      style={{ overflow: 'hidden', resize: 'none' }}
+    />
+  );
+};
+
+// ── ✅ NEW — Custom toast system (replaces alert()) ──────────────────────
+type ToastType = 'success' | 'error' | 'warning' | 'info';
+interface ToastData { id: string; type: ToastType; message: string; }
+
+const ToastContainer: React.FC<{ toasts: ToastData[]; onDismiss: (id: string) => void }> = ({ toasts, onDismiss }) => {
+  if (toasts.length === 0) return null;
+  return (
+    <div className="fixed top-4 right-4 z-[200] flex flex-col gap-2 w-full max-w-sm pointer-events-none">
+      <style>{`
+        @keyframes toastSlideIn {
+          from { opacity: 0; transform: translateX(20px) scale(0.97); }
+          to   { opacity: 1; transform: translateX(0)    scale(1);    }
+        }
+      `}</style>
+      {toasts.map(t => {
+        const cfg = {
+          success: { styles: 'bg-emerald-500/15 border-emerald-500/40 text-emerald-100', icon: <CheckIcon className="w-4 h-4" /> },
+          error:   { styles: 'bg-rose-500/15    border-rose-500/40    text-rose-100',    icon: <AlertIcon /> },
+          warning: { styles: 'bg-amber-500/15   border-amber-500/40   text-amber-100',   icon: <AlertIcon /> },
+          info:    { styles: 'bg-sky-500/15     border-sky-500/40     text-sky-100',     icon: <InfoIcon /> },
+        }[t.type];
+
+        return (
+          <div
+            key={t.id}
+            role="alert"
+            className={`pointer-events-auto flex items-start gap-2.5 px-4 py-3 rounded-xl border backdrop-blur-xl shadow-2xl shadow-black/50 ${cfg.styles}`}
+            style={{ animation: 'toastSlideIn 0.28s cubic-bezier(0.16,1,0.3,1) both' }}
+          >
+            <span className="flex-shrink-0 mt-0.5">{cfg.icon}</span>
+            <p className="text-sm flex-1 break-words leading-relaxed">{t.message}</p>
+            <button
+              onClick={() => onDismiss(t.id)}
+              className="flex-shrink-0 mt-0.5 text-current opacity-60 hover:opacity-100 transition"
+              aria-label="Dismiss notification"
+            >
+              <CloseIcon />
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
 
 // ── relative time ─────────────────────────────────────────────────────────
 const timeAgo = (dateString: string) => {
@@ -220,6 +313,118 @@ const SegmentedControl = <T extends string>({ options, value, onChange, labels }
   </div>
 );
 
+// ── Custom premium Gmail picker dropdown ─────────────────────────
+const MailAccountSelect: React.FC<{
+  value: string;
+  accounts: { _id: string; email: string; label: string }[];
+  onChange: (id: string) => void;
+}> = ({ value, accounts, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const current = accounts.find(a => a._id === value);
+  const label = current ? (current.label || current.email) : 'Auto (least used)';
+
+  return (
+    <div ref={ref} className="relative mb-2">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className={`w-full flex items-center gap-2 bg-white/[0.03] border rounded-lg px-3 py-2 text-sm transition text-left ${
+          open
+            ? 'border-purple-500/70 ring-1 ring-purple-500/40'
+            : 'border-white/10 hover:border-white/20 hover:bg-white/[0.05]'
+        }`}
+      >
+        <span className={`flex-shrink-0 w-5 h-5 rounded-md flex items-center justify-center ${
+          current ? 'bg-purple-500/15 text-purple-300' : 'bg-white/[0.05] text-gray-500'
+        }`}>
+          <MailIcon className="w-3 h-3" />
+        </span>
+        <span className="flex-1 min-w-0">
+          <span className="block text-[10px] text-gray-500 leading-tight">Send from</span>
+          <span className={`block truncate leading-tight ${current ? 'text-white' : 'text-gray-300'}`}>
+            {label}
+          </span>
+        </span>
+        <ChevronIcon open={open} />
+      </button>
+
+      {open && (
+        <div
+          className="absolute z-30 left-0 right-0 mt-1 rounded-xl bg-[#1a1825] border border-white/10 shadow-2xl shadow-black/70 overflow-hidden"
+          style={{ animation: 'mailSelectIn 0.16s cubic-bezier(0.16,1,0.3,1) both' }}
+        >
+          <style>{`
+            @keyframes mailSelectIn {
+              from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+              to   { opacity: 1; transform: translateY(0)   scale(1);    }
+            }
+          `}</style>
+
+          <button
+            type="button"
+            onClick={() => { onChange(''); setOpen(false); }}
+            className={`w-full flex items-center gap-2 px-3 py-2 text-left transition ${
+              value === '' ? 'bg-purple-500/15 text-purple-200' : 'text-gray-300 hover:bg-white/[0.05]'
+            }`}
+          >
+            <span className="w-3.5 h-3.5 flex items-center justify-center flex-shrink-0">
+              {value === '' && <CheckIcon className="w-3 h-3 text-purple-300" />}
+            </span>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium leading-tight">Auto</p>
+              <p className="text-[10px] text-gray-500 leading-tight mt-0.5">Least used account</p>
+            </div>
+          </button>
+
+          {accounts.length > 0 && (
+            <div className="max-h-48 overflow-y-auto border-t border-white/[0.06]">
+              {accounts.map(a => {
+                const active = value === a._id;
+                return (
+                  <button
+                    key={a._id}
+                    type="button"
+                    onClick={() => { onChange(a._id); setOpen(false); }}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-left transition border-t border-white/[0.04] first:border-t-0 ${
+                      active ? 'bg-purple-500/15 text-purple-200' : 'text-gray-300 hover:bg-white/[0.05]'
+                    }`}
+                  >
+                    <span className="w-3.5 h-3.5 flex items-center justify-center flex-shrink-0">
+                      {active && <CheckIcon className="w-3 h-3 text-purple-300" />}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium leading-tight truncate">{a.label || a.email}</p>
+                      {a.label && a.email && a.label !== a.email && (
+                        <p className="text-[10px] text-gray-500 leading-tight mt-0.5 truncate">{a.email}</p>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp, isMainAdmin = false }) => {
   const getToken = () => tokenProp || localStorage.getItem('adminToken') || '';
 
@@ -235,11 +440,34 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp, isMai
   const [adminResponses, setAdminResponses] = useState<{ [key: string]: string }>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
-  // ✅ NEW — per-report email draft (subject/message/markFixed)
-  const [mailDrafts, setMailDrafts] = useState<{ [key: string]: { subject?: string; message?: string; markFixed?: boolean } }>({});
+  const [mailDrafts, setMailDrafts] = useState<{ [key: string]: { subject?: string; message?: string; markFixed?: boolean; accountId?: string } }>({});
+  const [mailAccounts, setMailAccounts] = useState<{ _id: string; email: string; label: string }[]>([]);
   const [mailBusyId, setMailBusyId] = useState<string | null>(null);
 
+  // ✅ NEW — toast state (replaces alert())
+  const [toasts, setToasts] = useState<ToastData[]>([]);
+
+  const showToast = (message: string, type: ToastType = 'error') => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    setToasts(prev => [...prev, { id, type, message }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 4500);
+  };
+
+  const dismissToast = (id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
+
   useEffect(() => { fetchReports(); }, []);
+
+  useEffect(() => {
+    if (!isMainAdmin) return;
+    axios.get(`${API_BASE}/mail/accounts`, { headers: { Authorization: `Bearer ${getToken()}` } })
+      .then(({ data }) => setMailAccounts((data.accounts || []).filter((a: any) => a.isActive)))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMainAdmin]);
 
   useEffect(() => {
     if (!isMainAdmin && typeFilter === 'contact') {
@@ -279,8 +507,9 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp, isMai
       });
       setDeleteArmed(null);
       setReports(prev => prev.filter(r => r._id !== reportId));
+      showToast('Report deleted', 'success');
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Failed to delete report');
+      showToast(err.response?.data?.error || 'Failed to delete report', 'error');
     } finally {
       setBusyId(null);
     }
@@ -297,8 +526,9 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp, isMai
       setBulkDeleteMode(false);
       setSelectedReports([]);
       fetchReports();
+      showToast('Reports deleted', 'success');
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Failed to delete reports');
+      showToast(err.response?.data?.error || 'Failed to delete reports', 'error');
     }
   };
 
@@ -343,7 +573,7 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp, isMai
       });
       fetchReports();
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Failed to update report');
+      showToast(err.response?.data?.error || 'Failed to update report', 'error');
     } finally {
       setBusyId(null);
     }
@@ -358,34 +588,31 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp, isMai
       });
       fetchReports();
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Failed to update report');
+      showToast(err.response?.data?.error || 'Failed to update report', 'error');
     } finally {
       setBusyId(null);
     }
   };
 
-  // ✅ NEW — simple email format validator
   const isValidEmail = (e?: string) => !!e && /^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/.test(e);
 
-  // ✅ NEW — default subject based on report type
   const defaultSubject = (r: Report) =>
     r.type === 'contact'
       ? `Re: ${r.subject || 'Your message to AnimaBing'}`
       : `Re: Your report${r.animeId?.title ? ` about ${r.animeId.title}` : ''}`;
 
-  // ✅ NEW — update draft field for a specific report
-  const updateMailDraft = (id: string, patch: { subject?: string; message?: string; markFixed?: boolean }) =>
+  const updateMailDraft = (id: string, patch: { subject?: string; message?: string; markFixed?: boolean; accountId?: string }) =>
     setMailDrafts(prev => ({ ...prev, [id]: { ...prev[id], ...patch } }));
 
-  // ✅ NEW — send admin reply as email via backend
   const sendEmailReply = async (report: Report) => {
     const draft = mailDrafts[report._id] || {};
     const message = (draft.message || '').trim();
     const subject = (draft.subject ?? defaultSubject(report)).trim();
-    if (!message) { alert('Pehle message likho.'); return; }
+    if (!message) { showToast('Pehle message likho.', 'warning'); return; }
     setMailBusyId(report._id);
     try {
       await axios.post(`${API_BASE}/mail/send`, {
+        accountId: draft.accountId || undefined,
         to: report.email,
         subject,
         message,
@@ -394,8 +621,9 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp, isMai
       }, { headers: { Authorization: `Bearer ${getToken()}` } });
       setMailDrafts(prev => { const n = { ...prev }; delete n[report._id]; return n; });
       fetchReports();
+      showToast('Email sent', 'success');
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Failed to send email');
+      showToast(err.response?.data?.error || 'Failed to send email', 'error');
     } finally {
       setMailBusyId(null);
     }
@@ -437,6 +665,9 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp, isMai
 
   return (
     <div className="space-y-5">
+      {/* ✅ Custom toast container (replaces all browser alert() calls) */}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+
       {/* Header / toolbar */}
       <div className="flex flex-col gap-3">
         <div>
@@ -524,7 +755,7 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp, isMai
             const isOpen = expandedReports.includes(report._id);
             const isBusy = busyId === report._id;
             const isSelected = selectedReports.includes(report._id);
-            const draft = mailDrafts[report._id] || {}; // ✅ NEW
+            const draft = mailDrafts[report._id] || {};
 
             return (
               <div
@@ -642,8 +873,11 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp, isMai
                                   <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium border ${ISSUE_TOKENS[report.issueType || ''] || 'text-gray-300 bg-white/5 border-white/10'}`}>
                                     {report.issueType || 'N/A'}
                                   </span>
-                                  {report.episodeId && (
-                                    <span className="text-[11px] font-mono text-gray-600 break-all">ID {report.episodeId}</span>
+                                  {(report.animeId?.title || report.episodeNumber) && (
+                                    <span className="text-[11px] text-gray-400 break-all">
+                                      {report.animeId?.title || 'Unknown Anime'}
+                                      {report.episodeNumber ? ` · Episode ${report.episodeNumber}` : ''}
+                                    </span>
                                   )}
                                 </div>
                                 <p className="whitespace-pre-wrap text-gray-300 text-sm leading-relaxed">
@@ -652,7 +886,7 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp, isMai
                               </Panel>
                             ) : (
                               <Panel title="Message" icon={<MailIcon className="w-3.5 h-3.5" />}>
-                                <p className="whitespace-pre-wrap text-gray-300 text-sm leading-relaxed">
+                                <p className="whitespace-pre-wrap text-gray-300 text-sm leading-relaxed break-words">
                                   {report.message || 'No message provided.'}
                                 </p>
                               </Panel>
@@ -660,28 +894,33 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp, isMai
 
                             {report.adminResponse ? (
                               <Panel title="Admin response" icon={<CheckIcon className="w-3.5 h-3.5" />} className="!bg-emerald-500/[0.05] !border-emerald-500/20">
-                                <p className="text-sm text-emerald-200 whitespace-pre-wrap leading-relaxed">{report.adminResponse}</p>
+                                <p className="text-sm text-emerald-200 whitespace-pre-wrap leading-relaxed break-words">{report.adminResponse}</p>
                                 {report.responseDate && (
                                   <p className="text-[11px] text-emerald-500/60 mt-2">Sent {formatDate(report.responseDate)}</p>
                                 )}
                               </Panel>
                             ) : (
                               <Panel title="Write a response" icon={<svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-5M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4z" /></svg>}>
-                                <textarea
+                                <AutoGrowTextarea
                                   value={adminResponses[report._id] || ''}
                                   onChange={(e) => handleResponseChange(report._id, e.target.value)}
-                                  className="w-full bg-white/[0.03] border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 focus:border-purple-500 h-24 placeholder:text-gray-600 transition"
+                                  className="w-full bg-white/[0.03] border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 focus:border-purple-500 placeholder:text-gray-600 transition block"
                                   placeholder="Add a note — it's saved when you mark this report as Fixed."
+                                  minRows={3}
                                 />
                               </Panel>
                             )}
 
-                            {/* ✅ NEW — Reply by email panel (subject + message + markFixed checkbox) */}
                             {isMainAdmin && isValidEmail(report.email) && (
                               <Panel title="Reply by email" icon={<MailIcon className="w-3.5 h-3.5" />}>
                                 <p className="text-[11px] text-gray-500 mb-2">
                                   To: <span className="text-sky-400">{report.email}</span>
                                 </p>
+                                <MailAccountSelect
+                                  value={draft.accountId || ''}
+                                  accounts={mailAccounts}
+                                  onChange={(id) => updateMailDraft(report._id, { accountId: id })}
+                                />
                                 <input
                                   value={draft.subject ?? defaultSubject(report)}
                                   onChange={(e) => updateMailDraft(report._id, { subject: e.target.value })}
@@ -689,11 +928,12 @@ const ReportsManager: React.FC<ReportsManagerProps> = ({ token: tokenProp, isMai
                                   className="w-full bg-white/[0.03] border border-white/10 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 focus:border-purple-500 mb-2 transition"
                                   placeholder="Subject"
                                 />
-                                <textarea
+                                <AutoGrowTextarea
                                   value={draft.message || ''}
                                   onChange={(e) => updateMailDraft(report._id, { message: e.target.value })}
-                                  className="w-full bg-white/[0.03] border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 focus:border-purple-500 h-28 placeholder:text-gray-600 transition"
+                                  className="w-full bg-white/[0.03] border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 focus:border-purple-500 placeholder:text-gray-600 transition block"
                                   placeholder="User ko kya reply bhejna hai..."
+                                  minRows={4}
                                 />
                                 <div className="flex flex-wrap items-center justify-between gap-3 mt-2.5">
                                   <div className="flex items-center gap-2 text-xs text-gray-400">
