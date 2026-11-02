@@ -1,9 +1,9 @@
-// load-test.js  (v4 - reduced load + 429 auto-abort)
+// load-test.js  (v5 - limit-finder stages + timeout auto-abort)
 //
-// QUICK TEST (60 sec, 8 VUs) - pehle isse chalao:
+// QUICK TEST (60 sec, 8 VUs):
 //   k6 run -e MODE=quick load-test.js
 //
-// FULL TEST (~4.5 min, max 12 VUs):
+// FULL LIMIT-FINDER TEST (~3.5 min, 4→16 VUs):
 //   k6 run load-test.js
 
 import http from 'k6/http'
@@ -46,13 +46,15 @@ function countStatus(code) {
 
 // ---------- Stages ----------
 const fullStages = [
+  { duration: '20s', target: 4 },
   { duration: '30s', target: 4 },
-  { duration: '1m',  target: 4 },
+  { duration: '20s', target: 8 },
   { duration: '30s', target: 8 },
-  { duration: '1m',  target: 8 },
+  { duration: '20s', target: 12 },
   { duration: '30s', target: 12 },
-  { duration: '1m',  target: 12 },
-  { duration: '30s', target: 0 },
+  { duration: '20s', target: 16 },
+  { duration: '30s', target: 16 },
+  { duration: '20s', target: 0 },
 ]
 
 const quickStages = [
@@ -67,6 +69,7 @@ export const options = {
     http_req_duration: ['p(95)<2000'],
     errors: ['rate<0.05'],
     status_429: [{ threshold: 'count<5', abortOnFail: true }],
+    status_0_timeout: [{ threshold: 'count<5', abortOnFail: true }],
   },
 }
 

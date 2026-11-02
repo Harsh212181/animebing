@@ -95,29 +95,19 @@ const CHANNEL_BATCH_DELAY_MS = 3000
 
 const app = new Hono<{ Bindings: Env, Variables: Variables }>()
 
-// OPTIONS preflight
-app.options('*', (c) => {
-  return new Response(null, {
-    status: 204,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Cache-Control',
-      'Access-Control-Max-Age': '86400',
-    }
-  })
-})
-
-// CORS
-app.use('*', async (c, next) => {
-  const corsMiddleware = cors({
-    origin: '*',
-    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization', 'Cache-Control'],
-    credentials: false,
-  })
-  return corsMiddleware(c, next)
-})
+// ✅ CORS — single source of truth.
+// Manual app.options('*') handler hata diya gaya hai kyunki Hono me pehle register hua
+// handler pehle chalta tha, jisse cors() middleware tak OPTIONS request pahunchti hi nahi
+// thi aur maxAge cache effectively bekaar ho raha tha.
+// Ab cors() middleware hi preflight (OPTIONS) aur normal requests dono handle karta hai —
+// aur maxAge: 86400 ki wajah se browser preflight ko 24 ghante tak cache karega.
+app.use('*', cors({
+  origin: '*',
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization', 'Cache-Control'],
+  credentials: false,
+  maxAge: 86400,
+}))
 
 // ============ API ROUTES ============
 app.route('/api/admin', adminRoutes)
