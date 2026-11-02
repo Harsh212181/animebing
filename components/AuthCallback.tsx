@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { saveSubAdminSession, clearSubAdminSession } from '../utils/authToken'
 
-const BACKEND = 'https://animabing-backend.animabingwatch.workers.dev/api/auth'
+const BACKEND = '/api/auth'
 
 const AuthCallback: React.FC = () => {
   const navigate = useNavigate()

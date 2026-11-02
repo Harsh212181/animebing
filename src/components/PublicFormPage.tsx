@@ -5,7 +5,7 @@ import { useParams } from 'react-router-dom';
 import axios from 'axios';
 
 const API_BASE = import.meta.env.VITE_API_BASE ||
-  'https://animabing-backend.animabingwatch.workers.dev/api';
+  '/api';
 
 type FieldType = 'text' | 'textarea' | 'email' | 'number' | 'date' | 'radio' | 'checkbox' | 'dropdown';
 

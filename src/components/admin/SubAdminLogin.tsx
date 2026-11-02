@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import { saveSubAdminSession } from '../../../utils/authToken';
 
-const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
+const API_BASE = '/api';
 
 interface SubAdminLoginProps {
   onLogin: (token: string, username: string) => void;
@@ -38,7 +38,7 @@ const SubAdminLogin: React.FC<SubAdminLoginProps> = ({ onLogin }) => {
     try {
       sessionStorage.setItem('oauthIntent', 'subadmin');
       const { data } = await axios.get(
-        `https://animabing-backend.animabingwatch.workers.dev/api/auth/google/url?intent=subadmin`
+        `/api/auth/google/url?intent=subadmin`
       );
       window.location.href = data.url;
     } catch {

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 
-const API_BASE_URL = 'https://animabing-backend.animabingwatch.workers.dev/api';
+const API_BASE_URL = '/api';
 
 interface PollOption {
   _id: string;

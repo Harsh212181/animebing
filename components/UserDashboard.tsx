@@ -8,7 +8,7 @@ import CreateLinkTab from './dashboard/CreateLinkTab';
 import GettingStartedTab from './dashboard/GettingStartedTab';
 import ReferralTab from './dashboard/ReferralTab';
 
-const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api/short-users';
+const API_BASE = '/api/short-users';
 
 interface DashboardData {
   user: {
@@ -207,7 +207,7 @@ const LoginForm: React.FC<{
   const handleGoogleOAuth = async () => {
     try {
       const res = await fetch(
-        'https://animabing-backend.animabingwatch.workers.dev/api/auth/google/url'
+        '/api/auth/google/url'
       )
       const { url } = await res.json()
       window.location.href = url

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
-const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
+const API_BASE = '/api';
 
 interface SubAdmin {
   _id: string;

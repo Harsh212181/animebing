@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api/short-users';
+const API_BASE = '/api/short-users';
 
 interface ReferralInfo {
   referralCode: string;

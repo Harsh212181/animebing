@@ -23,7 +23,7 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, LineCont
 
 const API_BASE =
   import.meta.env.VITE_API_BASE ||
-  'https://animabing-backend.animabingwatch.workers.dev/api';
+  '/api';
 
 const GEO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
 

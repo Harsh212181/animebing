@@ -2,8 +2,8 @@
 import type { Anime, Episode, Chapter } from '../src/types';
 
 const API_BASE = window.location.hostname === 'localhost'
-  ? 'https://animabing-backend.animabingwatch.workers.dev/api'
-  : 'https://animabing-backend.animabingwatch.workers.dev/api';
+  ? '/api'
+  : '/api';
 const cache = new Map();
 const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
 

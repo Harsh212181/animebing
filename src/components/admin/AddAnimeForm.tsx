@@ -5,7 +5,7 @@ import Spinner from '../Spinner';
 import { getAdminToken } from '../../../utils/authToken'; // ✅ fresh token per submit
 import ImageUploadField from './ImageUploadField'; // ✅ new import
 
-const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
+const API_BASE = '/api';
 
 // Complete unique genre list (46 genres)
 const GENRE_OPTIONS = [

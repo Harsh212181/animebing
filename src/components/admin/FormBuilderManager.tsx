@@ -5,7 +5,7 @@ import { toast } from 'react-hot-toast';
 import FormSubmissionsViewer from './FormSubmissionsViewer';
 
 const API_BASE = import.meta.env.VITE_API_BASE ||
-  'https://animabing-backend.animabingwatch.workers.dev/api';
+  '/api';
 
 type FieldType = 'text' | 'textarea' | 'email' | 'number' | 'date' | 'radio' | 'checkbox' | 'dropdown';
 

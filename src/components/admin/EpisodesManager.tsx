@@ -23,7 +23,7 @@ const DEFAULT_LINK_NAMES = [
 ];
 
 const API_BASE = import.meta.env.VITE_API_BASE || 
-  'https://animabing-backend.animabingwatch.workers.dev/api';
+  '/api';
 
 // ── Frontend base helper (for public / preview links) ────────────────
 const getFrontendBase = () =>

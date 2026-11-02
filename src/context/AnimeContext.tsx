@@ -40,7 +40,7 @@ export const useAnimeContext = () => {
 const ANIME_FIELDS = 'title,thumbnail,releaseYear,status,contentType,subDubStatus,description,genreList,lastContentAdded';
 
 // ✅ Backend base URL (bina /api ke) — featured sections fetch ke liye
-const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev';
+const API_BASE = '';
 
 // ✅ Per-visitor rotation ke liye fixed bucket (0-9), browser me save rehta hai
 const getVisitorBucket = (): string => {

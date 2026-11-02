@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE || 'https://animabing-backend.animabingwatch.workers.dev/api';
+const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
 interface StartActivityParams {
   animeId: string;

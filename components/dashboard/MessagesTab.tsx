@@ -1,6 +1,6 @@
  import React, { useState, useEffect, useRef } from 'react';
 
-const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api/short-users';
+const API_BASE = '/api/short-users';
 
 const AVATARS = [
   { id: 1,  emoji: '🦊', bg: 'linear-gradient(135deg,#f97316,#ef4444)' },

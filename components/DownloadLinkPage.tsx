@@ -12,7 +12,7 @@ import { startActivity, sendHeartbeat, endActivity } from '../utils/watchActivit
 import SpecialModeBanner from '../src/components/SpecialModeBanner'; // ✅ NEW import
 import PollCard from './PollCard'; // ✅ NEW import
 
-const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
+const API_BASE = '/api';
 
 type TabType = 'download' | 'watch';
 

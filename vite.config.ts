@@ -11,15 +11,11 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       host: true,
       proxy: {
+        // ✅ Local dev me /api calls live backend pe jayengi (animebing.in/api/*)
         '/api': {
-          target: 'http://127.0.0.1:8787',
+          target: 'https://animebing.in',
           changeOrigin: true,
-          secure: false,
-        },
-        '/anime': {
-          target: 'http://127.0.0.1:8787',
-          changeOrigin: true,
-          secure: false,
+          secure: true,
         },
       },
     },

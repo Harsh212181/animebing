@@ -3,7 +3,7 @@ import VideoPlayer from '../../../components/VideoPlayer';
 import AddToPageModal from './AddToPageModal';
 
 const API_BASE = import.meta.env.VITE_API_BASE ||
-  'https://animabing-backend.animabingwatch.workers.dev/api';
+  '/api';
 
 interface MediaItem {
   key: string;

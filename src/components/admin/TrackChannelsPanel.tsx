@@ -16,7 +16,7 @@ import { getAdminToken } from '../../../utils/authToken';
 
 const API_BASE =
   import.meta.env.VITE_API_BASE ||
-  'https://animabing-backend.animabingwatch.workers.dev/api';
+  '/api';
 
 /* ---------- Hide scrollbar utility class ---------- */
 const HIDE_SCROLLBAR = 'scrollbar-hide [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]';

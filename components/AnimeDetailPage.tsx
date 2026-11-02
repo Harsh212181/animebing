@@ -72,7 +72,7 @@ interface Props {
 }
 
 // API base
-const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
+const API_BASE = '/api';
 
 // Shuffle array
 const shuffleArray = <T,>(array: T[]): T[] => {

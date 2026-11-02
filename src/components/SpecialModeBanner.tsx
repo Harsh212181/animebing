@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { linkifyText } from './SpecialModeLinkify'; // 🆕 Import linkifyText
 
-const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev';
+const API_BASE = '';
 
 interface ActiveMode {
   name: string;

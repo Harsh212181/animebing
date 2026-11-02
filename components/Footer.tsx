@@ -39,7 +39,7 @@ const Footer: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const SOCIAL_API_URL = 'https://animabing-backend.animabingwatch.workers.dev/api/social';
+  const SOCIAL_API_URL = '/api/social';
 
   useEffect(() => {
     fetchSocialLinks();

@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import { createPortal } from "react-dom";
 
-const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
+const API_BASE = '/api';
 
 interface ReportButtonProps {
   animeId: string;

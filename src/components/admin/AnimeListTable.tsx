@@ -7,7 +7,7 @@ import { clearAnimeCache } from '../../../services/animeService';
 import { getAdminToken } from '../../../utils/authToken';
 import { getContentGroup, CONTENT_TYPE_OPTIONS } from '../../utils/contentGroup';
 
-const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
+const API_BASE = '/api';
 
 // ─── 📝 SEO title builder: avoids duplicate "Hindi Dub" and keeps title ≤ 60 chars.
 // Falls back to "Title | AnimeBing" if the primary option is too long.

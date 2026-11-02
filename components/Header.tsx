@@ -77,7 +77,7 @@ const Header: React.FC<HeaderProps> = ({
   // ✅ Categories dropdown ref for click outside
   const categoryRef = useRef<HTMLDivElement>(null);
 
-  const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev';
+  const API_BASE = '';
 
   // Scroll effect
   useEffect(() => {

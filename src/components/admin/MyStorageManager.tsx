@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import MyPlansCard from './MyPlansCard';
 
 const API_BASE = import.meta.env.VITE_API_BASE ||
-  'https://animabing-backend.animabingwatch.workers.dev/api';
+  '/api';
 
 interface Props {
   token?: string;

@@ -10,7 +10,7 @@ declare global {
 
 const API_BASE =
   import.meta.env.VITE_API_BASE ||
-  'https://animabing-backend.animabingwatch.workers.dev/api';
+  '/api';
 
 // ─── Page type detect ────────────────────────────────────────────────────
 function getPageMeta(pathname: string): { pageType: string; slug?: string } {

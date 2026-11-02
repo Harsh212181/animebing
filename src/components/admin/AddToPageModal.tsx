@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import SearchableDropdown from './SearchableDropdown';
 
 const API_BASE = import.meta.env.VITE_API_BASE ||
-  'https://animabing-backend.animabingwatch.workers.dev/api';
+  '/api';
 
 interface AnimeOption { _id: string; title: string; thumbnail?: string; }
 interface ExistingPage { _id: string; slug: string; title: string; links: any[]; }

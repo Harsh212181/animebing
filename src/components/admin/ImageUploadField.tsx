@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { getAdminToken } from '../../../utils/authToken'; // ✅ NEW (path check kar lena)
 
 const API_BASE = import.meta.env.VITE_API_BASE ||
-  'https://animabing-backend.animabingwatch.workers.dev/api';
+  '/api';
 
 interface Props {
   value: string;

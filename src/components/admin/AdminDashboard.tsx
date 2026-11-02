@@ -30,7 +30,7 @@ import Spinner from '../Spinner';
 import axios from 'axios';
 
 const API_BASE = import.meta.env.VITE_API_BASE ||
-  'https://animabing-backend.animabingwatch.workers.dev/api';
+  '/api';
 
 interface AdminDashboardProps {
   onLogout?: () => void;

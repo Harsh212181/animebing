@@ -26,7 +26,7 @@ import axios from 'axios';
 import { getSubAdminToken, getSubAdminPermissions, clearSubAdminSession } from '../../../utils/authToken';
 
 const API_BASE = import.meta.env.VITE_API_BASE ||
-  'https://animabing-backend.animabingwatch.workers.dev/api';
+  '/api';
 
 interface SubAdminDashboardProps {
   onLogout?: () => void;

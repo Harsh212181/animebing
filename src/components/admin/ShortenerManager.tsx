@@ -6,7 +6,7 @@ import Spinner from '../Spinner';
 import ClickVerificationSettings from './ClickVerificationSettings';
 
 const SHORTENER_BASE = 'https://go.animebing.in';
-const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
+const API_BASE = '/api';
 
 // ── Avatar list (same as UserDashboard) ──────────────────────
 const AVATARS = [

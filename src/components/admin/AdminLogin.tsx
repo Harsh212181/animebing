@@ -3,7 +3,7 @@ import axios from 'axios';
 import { saveAdminSession } from '../../../utils/authToken';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 
-  'https://animabing-backend.animabingwatch.workers.dev/api';
+  '/api';
 
 interface AdminLoginProps {
   onLogin: (token: string, username: string) => void;

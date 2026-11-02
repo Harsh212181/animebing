@@ -12,7 +12,7 @@ import {
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, LineController, Filler, ChartTooltip);
 
-const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api/short-users';
+const API_BASE = '/api/short-users';
 
 interface DashboardData {
   user: {

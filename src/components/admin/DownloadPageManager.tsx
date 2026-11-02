@@ -8,7 +8,7 @@ import { isYouTubeUrl } from '@components/utils/videoHelpers';
 import { getAdminToken } from '../../../utils/authToken';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 
-  'https://animabing-backend.animabingwatch.workers.dev/api';
+  '/api';
 
 const getFrontendBase = () => {
   if (typeof window === 'undefined') return 'https://animebing.in';

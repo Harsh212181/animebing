@@ -33,7 +33,7 @@ interface Report {
   subAdminUsername?: string;
 }
 
-const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
+const API_BASE = '/api';
 
 interface ReportsManagerProps {
   token?: string;

@@ -5,7 +5,7 @@ import axios from 'axios';
 import Spinner from './Spinner';
 import SEO from '../src/components/SEO';
 
-const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api';
+const API_BASE = '/api';
 
 const Contact: React.FC = () => {
   const [formData, setFormData] = useState({

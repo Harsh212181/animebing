@@ -1,6 +1,6 @@
  import React, { useState } from 'react';
 
-const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev/api/short-users';
+const API_BASE = '/api/short-users';
 
 interface DashboardData {
   user: { totalClicks: number; unpaidEarnings: number };

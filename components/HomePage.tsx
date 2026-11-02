@@ -41,7 +41,7 @@ const GLOW_COLORS = [
   ['#059669', '#047857', '#059669'],
 ];
 
-const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev';
+const API_BASE = '';
 
 const POLL_API_URL = `${API_BASE}/api/polls`;
 

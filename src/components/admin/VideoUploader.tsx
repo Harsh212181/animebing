@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 
 const API_BASE = import.meta.env.VITE_API_BASE ||
-  'https://animabing-backend.animabingwatch.workers.dev/api';
+  '/api';
 
 const CHUNK_SIZE = 8 * 1024 * 1024; // 8 MB per part
 const MAX_CONCURRENT_UPLOADS = 2;   // how many files upload at the same time (like Cyberduck's queue)

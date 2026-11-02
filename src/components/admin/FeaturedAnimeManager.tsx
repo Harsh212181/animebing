@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Anime } from '../../types';
 import { getAdminToken } from '../../../utils/authToken';
 
-const API_BASE = 'https://animabing-backend.animabingwatch.workers.dev';
+const API_BASE = '';
 
 type SectionType = 'banner' | 'anime' | 'manga' | 'movie';
 
