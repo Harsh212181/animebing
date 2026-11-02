@@ -223,65 +223,6 @@ export async function onRequest(context: CFContext): Promise<Response> {
   const url  = new URL(request.url);
   const path = url.pathname;
 
-  // ========== TEST ==========
-  if (path === '/function-test') {
-    return new Response('✅ Function is working!', {
-      headers: { 'Content-Type': 'text/plain' }
-    });
-  }
-
-  // ========== DEBUG ==========
-  if (path === '/api-debug') {
-    const API_BASE   = getApiBase(env);
-    const testSlug   = 'the-beginning-after-the-end-season-2-hindi-sub';
-    const testDlSlug = 'My%20Gift%20Lvl.9999%20Unlimited%20Gacha%20wekjbjwefcfwa3';
-    let animeResult = '', animeStatus = 0;
-    let dlResult = '', dlStatus = 0;
-
-    try {
-      const r1 = await fetch(`${API_BASE}/api/anime/${testSlug}`);
-      animeStatus = r1.status;
-      animeResult = (await r1.text()).substring(0, 300);
-    } catch (e: unknown) {
-      animeResult = 'ERROR: ' + (e instanceof Error ? e.message : String(e));
-    }
-    try {
-      const r2 = await fetch(`${API_BASE}/api/download-pages/${testDlSlug}`);
-      dlStatus = r2.status;
-      dlResult = (await r2.text()).substring(0, 300);
-    } catch (e: unknown) {
-      dlResult = 'ERROR: ' + (e instanceof Error ? e.message : String(e));
-    }
-
-    return new Response(JSON.stringify({
-      API_URL_ENV:   env.API_URL || '❌ NOT SET',
-      API_BASE_USED: API_BASE,
-      anime_test:    { status: animeStatus, preview: animeResult },
-      download_test: { status: dlStatus,    preview: dlResult }
-    }, null, 2), { headers: { 'Content-Type': 'application/json' } });
-  }
-
-  // ========== META DEBUG ==========
-  if (path === '/meta-debug') {
-    const testSlug = url.searchParams.get('slug') || 'naruto';
-    const API_BASE = getApiBase(env);
-    try {
-      const r = await fetch(`${API_BASE}/api/anime/${testSlug}`, { headers: { Accept: 'application/json' } });
-      const data = await r.json() as any;
-      return new Response(JSON.stringify({
-        status: r.status,
-        success: data.success,
-        title: data.data?.title,
-        description: data.data?.description,
-        seoDescription: data.data?.seoDescription,
-        thumbnail: data.data?.thumbnail,
-        slug: data.data?.slug,
-      }, null, 2), { headers: { 'Content-Type': 'application/json' } });
-    } catch (e: any) {
-      return new Response(JSON.stringify({ error: e.message }), { headers: { 'Content-Type': 'application/json' } });
-    }
-  }
-
   // ========== SITEMAP PROXY ==========
   const SITEMAP_PATHS = ['/sitemap.xml', '/sitemap-static.xml', '/sitemap-anime.xml', '/sitemap-episodes.xml'];
   if (SITEMAP_PATHS.includes(path)) {
@@ -317,7 +258,7 @@ export async function onRequest(context: CFContext): Promise<Response> {
     }
   }
 
-  // ========== DASHBOARD REFERRAL META — /dashboard?ref=CODE ✅ NEW ==========
+  // ========== DASHBOARD REFERRAL META — /dashboard?ref=CODE ✅ ==========
   if (path === '/dashboard' && url.searchParams.has('ref')) {
     const ref = (url.searchParams.get('ref') || '').toUpperCase().trim()
 
@@ -437,7 +378,7 @@ export async function onRequest(context: CFContext): Promise<Response> {
         structuredData: structuredData || undefined,
       });
 
-      // ✅ NAYA: Static pages mein body fallback content (homepage, anime list, etc.)
+      // ✅ Static pages mein body fallback content (homepage, anime list, etc.)
       html = injectBodyContent(html, {
         h1: page.title.split('|')[0].trim(),
         description: page.description,
@@ -459,6 +400,11 @@ export async function onRequest(context: CFContext): Promise<Response> {
     const slug = path.split('/detail/')[1]?.split('?')[0]?.split('#')[0];
     if (!slug) return next();
 
+    const cache = (caches as any).default as Cache;
+    const cacheKey = new Request(`${url.origin}${path}`, { method: 'GET' });
+    const cachedRes = await cache.match(cacheKey);
+    if (cachedRes) return cachedRes;
+
     const API_BASE = getApiBase(env);
     try {
       const [pageRes, apiRes] = await Promise.all([
@@ -468,7 +414,7 @@ export async function onRequest(context: CFContext): Promise<Response> {
 
       let html = await pageRes.text();
 
-      // ✅ NEW: deleted / blocked anime (404) → home page redirect
+      // ✅ deleted / blocked anime (404) → home page redirect
       if (apiRes.status === 404) {
         return Response.redirect(`${SITE_URL}/`, 302);
       }
@@ -476,7 +422,7 @@ export async function onRequest(context: CFContext): Promise<Response> {
 
       const data = await apiRes.json() as { success: boolean; data?: Record<string, unknown> };
 
-      // ✅ NEW: hidden anime → home page redirect
+      // ✅ hidden anime → home page redirect
       if (data.success && data.data && (data.data as any).isHidden === true) {
         return Response.redirect(`${SITE_URL}/`, 302);
       }
@@ -536,7 +482,7 @@ export async function onRequest(context: CFContext): Promise<Response> {
           structuredData: buildStructuredData(anime, `${SITE_URL}/detail/${String(anime.slug || slug)}`, maxEp)
         });
 
-        // ✅ NAYA: body mein real content bhi daalo
+        // ✅ body mein real content bhi daalo
         const genreLine = Array.isArray((anime as any).genreList) && (anime as any).genreList.length > 0
           ? `Genres: ${(anime as any).genreList.join(', ')}`
           : '';
@@ -554,13 +500,15 @@ export async function onRequest(context: CFContext): Promise<Response> {
         });
       }
 
-      return new Response(html, {
+      const finalRes = new Response(html, {
         headers: {
           'Content-Type': 'text/html;charset=UTF-8',
           'X-Robots-Tag': 'index',
-          'Cache-Control': 'public, max-age=60, s-maxage=120',
+          'Cache-Control': 'public, max-age=60, s-maxage=300',
         }
       });
+      context.waitUntil(cache.put(cacheKey, finalRes.clone()));
+      return finalRes;
     } catch (e) {
       console.error('Detail middleware error:', e);
       return next();
@@ -620,7 +568,7 @@ export async function onRequest(context: CFContext): Promise<Response> {
           type:        'website'
         });
 
-        // ✅ NAYA: download page body fallback content
+        // ✅ download page body fallback content
         html = injectBodyContent(html, {
           h1: `${animeName}${suffix}`,
           description: description,

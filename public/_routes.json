@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "include": [
+    "/",
+    "/anime",
+    "/top-100",
+    "/contact",
+    "/dmca",
+    "/privacy",
+    "/terms",
+    "/earn",
+    "/dashboard",
+    "/detail/*",
+    "/download/*",
+    "/sitemap.xml",
+    "/sitemap-static.xml",
+    "/sitemap-anime.xml",
+    "/sitemap-episodes.xml",
+    "/robots.txt"
+  ],
+  "exclude": []
+}

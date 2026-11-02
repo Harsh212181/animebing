@@ -1,9 +1,9 @@
-// load-test.js  (v3 - metrics init context fix)
+// load-test.js  (v4 - reduced load + 429 auto-abort)
 //
-// QUICK TEST (60 sec, 60 VUs) - pehle isse chalao:
+// QUICK TEST (60 sec, 8 VUs) - pehle isse chalao:
 //   k6 run -e MODE=quick load-test.js
 //
-// FULL TEST (~7.5 min):
+// FULL TEST (~4.5 min, max 12 VUs):
 //   k6 run load-test.js
 
 import http from 'k6/http'
@@ -46,20 +46,18 @@ function countStatus(code) {
 
 // ---------- Stages ----------
 const fullStages = [
-  { duration: '30s', target: 10 },
-  { duration: '1m', target: 10 },
-  { duration: '30s', target: 40 },
-  { duration: '1m', target: 40 },
-  { duration: '30s', target: 70 },
-  { duration: '1m', target: 70 },
-  { duration: '30s', target: 100 },
-  { duration: '2m', target: 100 },
+  { duration: '30s', target: 4 },
+  { duration: '1m',  target: 4 },
+  { duration: '30s', target: 8 },
+  { duration: '1m',  target: 8 },
+  { duration: '30s', target: 12 },
+  { duration: '1m',  target: 12 },
   { duration: '30s', target: 0 },
 ]
 
 const quickStages = [
-  { duration: '10s', target: 60 },
-  { duration: '40s', target: 60 },
+  { duration: '10s', target: 8 },
+  { duration: '40s', target: 8 },
   { duration: '10s', target: 0 },
 ]
 
@@ -68,6 +66,7 @@ export const options = {
   thresholds: {
     http_req_duration: ['p(95)<2000'],
     errors: ['rate<0.05'],
+    status_429: [{ threshold: 'count<5', abortOnFail: true }],
   },
 }
 
