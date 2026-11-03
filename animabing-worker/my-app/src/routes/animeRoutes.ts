@@ -16,6 +16,20 @@ const SECTION_FIELDS: Record<string, { flag: string; order: string }> = {
   movie: { flag: 'featuredMovieSection', order: 'featuredMovieOrder' },
 }
 
+// ============ HOME (combined: visibility + 5 featured sections + list) ============
+const HOME_FEATURED_PROJECTION = {
+  title: 1, thumbnail: 1, releaseYear: 1, subDubStatus: 1, contentType: 1,
+  updatedAt: 1, createdAt: 1, bannerImage: 1, rating: 1, slug: 1, seoTitle: 1,
+  likes: 1, dislikes: 1, monthlyLikes: 1, weeklyLikes: 1, currentEpisode: 1,
+  genreList: 1, description: 1, status: 1,
+}
+
+const HOME_LIST_PROJECTION = {
+  title: 1, thumbnail: 1, releaseYear: 1, subDubStatus: 1, contentType: 1,
+  updatedAt: 1, createdAt: 1, slug: 1, likes: 1, dislikes: 1, rating: 1,
+  monthlyLikes: 1, weeklyLikes: 1, totalVotes: 1, currentEpisode: 1, lastContentAdded: 1,
+}
+
 // ============ AUTO-ROTATE HELPERS ============
 const ROTATE_SECTIONS = ['banner', 'anime', 'manga', 'movie']
 
@@ -48,6 +62,29 @@ function seededShuffle<T>(arr: T[], seedStr: string): T[] {
 }
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000
+
+// ============ HOME: FEATURED LOADER ============
+async function loadFeaturedSection(db: any, section: string, rotate: any, bucket: number) {
+  const cfg = SECTION_FIELDS[section] || SECTION_FIELDS.content
+  const animes = await db.collection('animes')
+    .find(
+      { [cfg.flag]: true, isHidden: { $ne: true }, isBlocked: { $ne: true } },
+      { projection: HOME_FEATURED_PROJECTION }
+    )
+    .sort({ [cfg.order]: -1, createdAt: -1 })
+    .limit(24)
+    .toArray()
+
+  if (rotate && (rotate.hourly || rotate.daily || rotate.perVisitor)) {
+    const now = Date.now()
+    const parts: string[] = [section]
+    if (rotate.daily)      parts.push('d' + Math.floor((now + IST_OFFSET_MS) / 86400000))
+    if (rotate.hourly)     parts.push('h' + Math.floor(now / 3600000))
+    if (rotate.perVisitor) parts.push('v' + bucket)
+    return seededShuffle(animes, parts.join('|'))
+  }
+  return animes
+}
 
 async function invalidateAnimeCache(c: any, id: string, slug?: string | null) {
   try {
@@ -127,6 +164,50 @@ animeRoutes.get('/featured', async (c) => {
 
     if (raw) return c.json(await build())
     return await withEdgeCache(c, 120, build)
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 500)
+  }
+})
+
+// ============ HOME (combined: visibility + 5 featured sections + list) ============
+animeRoutes.get('/home', async (c) => {
+  try {
+    const bucket = Math.min(Math.max(parseInt(c.req.query('v') || '0') || 0, 0), 9)
+    const LIMIT = 36
+
+    return await withEdgeCache(c, 120, () =>
+      withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'home', async (db) => {
+        const baseFilter = { isHidden: { $ne: true }, isBlocked: { $ne: true } }
+
+        const [visDoc, rotDoc] = await Promise.all([
+          db.collection('settings').findOne({ type: 'sectionVisibility' }),
+          db.collection('settings').findOne({ type: 'featuredAutoRotate' }),
+        ])
+        const rot = (s: string) => rotDoc?.sections?.[s] || null
+
+        const [content, banner, anime, manga, movie, list, total] = await Promise.all([
+          loadFeaturedSection(db, 'content', null, bucket),
+          loadFeaturedSection(db, 'banner', rot('banner'), bucket),
+          loadFeaturedSection(db, 'anime', rot('anime'), bucket),
+          loadFeaturedSection(db, 'manga', rot('manga'), bucket),
+          loadFeaturedSection(db, 'movie', rot('movie'), bucket),
+          db.collection('animes')
+            .find(baseFilter, { projection: HOME_LIST_PROJECTION })
+            .sort({ lastContentAdded: -1 })
+            .limit(LIMIT)
+            .toArray(),
+          db.collection('animes').countDocuments(baseFilter),
+        ])
+
+        return {
+          success: true,
+          visibility: visDoc?.sections || {},
+          sections: { content, banner, anime, manga, movie },
+          list,
+          pagination: { current: 1, totalPages: Math.ceil(total / LIMIT), hasMore: LIMIT < total, totalItems: total },
+        }
+      })
+    )
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 500)
   }

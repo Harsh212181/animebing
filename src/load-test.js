@@ -1,10 +1,13 @@
-// load-test.js  (v5 - limit-finder stages + timeout auto-abort)
+// load-test.js  (v7 - higher load limit-finder, real homepage flow, no DB writes)
 //
 // QUICK TEST (60 sec, 8 VUs):
 //   k6 run -e MODE=quick load-test.js
 //
-// FULL LIMIT-FINDER TEST (~3.5 min, 4→16 VUs):
+// HIGH LOAD LIMIT-FINDER (~5 min, 20 -> 60 VUs):
 //   k6 run load-test.js
+//
+// Doosre URL pe test karna ho:
+//   k6 run -e BASE_URL=https://animebing.in load-test.js
 
 import http from 'k6/http'
 import { check, sleep } from 'k6'
@@ -13,13 +16,11 @@ import { Rate, Trend, Counter } from 'k6/metrics'
 const BASE_URL = __ENV.BASE_URL || 'https://animabing-backend.animabingwatch.workers.dev'
 const MODE = __ENV.MODE || 'full'
 
-// ---------- Custom metrics (sab init context me) ----------
+// ---------- Custom metrics ----------
 const errorRate = new Rate('errors')
 const homepageLatency = new Trend('homepage_latency')
 const featuredLatency = new Trend('featured_latency')
 const animeDetailLatency = new Trend('anime_detail_latency')
-const downloadPageLatency = new Trend('download_page_latency')
-const pageviewLatency = new Trend('pageview_latency')
 
 // Status code counters (status_0 = timeout / connection fail)
 const status200 = new Counter('status_200')
@@ -46,15 +47,13 @@ function countStatus(code) {
 
 // ---------- Stages ----------
 const fullStages = [
-  { duration: '20s', target: 4 },
-  { duration: '30s', target: 4 },
-  { duration: '20s', target: 8 },
-  { duration: '30s', target: 8 },
-  { duration: '20s', target: 12 },
-  { duration: '30s', target: 12 },
-  { duration: '20s', target: 16 },
-  { duration: '30s', target: 16 },
-  { duration: '20s', target: 0 },
+  { duration: '30s', target: 20 },
+  { duration: '60s', target: 20 },
+  { duration: '30s', target: 40 },
+  { duration: '60s', target: 40 },
+  { duration: '30s', target: 60 },
+  { duration: '60s', target: 60 },
+  { duration: '30s', target: 0 },
 ]
 
 const quickStages = [
@@ -73,16 +72,10 @@ export const options = {
   },
 }
 
-// ---------- Real slugs ----------
+// ---------- Real slugs (tail se liye gaye) ----------
 const SAMPLE_ANIME_SLUGS = [
-  'the-extras-academy-survival-guide-manhwa-explation',
-  'the-necromancer-familys-young-heir',
-]
-
-const SAMPLE_DOWNLOAD_SLUGS = [
-  'takopis-original-sin-jhfiurt83y4u3',
-  'mob-psycho-100-season-2-hindi-dub-bsdhfbw',
-  'welcome-to-demon-school-iruma-kun-season-2-hindi-dub-bkhsbkcv',
+  'overlord-session-3-hindi-dub',
+  'i-was-reincarnation-as-the-7th-prince-session-2',
 ]
 
 function randomFrom(arr) {
@@ -108,40 +101,29 @@ function track(name, res, okStatuses, latencyTrend) {
 }
 
 export default function () {
-  // 1) Homepage
-  let res = http.get(`${BASE_URL}/api/anime?page=1&limit=24`)
-  track('homepage', res, [200], homepageLatency)
-  sleep(0.5)
+  // 1) Homepage: asli site jaisi 6 calls ek saath (parallel)
+  const homeResponses = http.batch([
+    ['GET', `${BASE_URL}/api/anime/settings/section-visibility`],
+    ['GET', `${BASE_URL}/api/anime/featured?section=banner&v=1`],
+    ['GET', `${BASE_URL}/api/anime/featured?section=anime&v=1`],
+    ['GET', `${BASE_URL}/api/anime/featured?section=movie&v=1`],
+    ['GET', `${BASE_URL}/api/anime/featured?section=manga&v=1`],
+    ['GET', `${BASE_URL}/api/anime?page=1&limit=36`],
+  ])
 
-  // 2) Featured
-  res = http.get(`${BASE_URL}/api/anime/featured`)
-  track('featured', res, [200], featuredLatency)
-  sleep(0.3)
+  track('section_visibility', homeResponses[0], [200], homepageLatency)
+  track('featured_banner', homeResponses[1], [200], featuredLatency)
+  track('featured_anime', homeResponses[2], [200], featuredLatency)
+  track('featured_movie', homeResponses[3], [200], featuredLatency)
+  track('featured_manga', homeResponses[4], [200], featuredLatency)
+  track('anime_list', homeResponses[5], [200], homepageLatency)
 
-  // 3) Anime detail
+  sleep(3) // user homepage dekhta hai
+
+  // 2) Anime detail page
   const slug = randomFrom(SAMPLE_ANIME_SLUGS)
-  res = http.get(`${BASE_URL}/api/anime/slug/${slug}`)
-  track('anime_detail', res, [200, 404], animeDetailLatency)
-  sleep(1)
+  const res = http.get(`${BASE_URL}/api/anime/${slug}`)
+  track('anime_detail', res, [200], animeDetailLatency)
 
-  // 4) Pageview
-  res = http.post(
-    `${BASE_URL}/api/analytics/pageview`,
-    JSON.stringify({
-      path: `/detail/${slug}`,
-      slug,
-      pageType: 'anime-detail',
-      sessionId: `loadtest-${__VU}-${__ITER}`,
-      visitorId: `loadtest-visitor-${__VU}`,
-    }),
-    { headers: { 'Content-Type': 'application/json' } }
-  )
-  track('pageview', res, [200], pageviewLatency)
-  sleep(0.3)
-
-  // 5) Download page
-  const dlSlug = randomFrom(SAMPLE_DOWNLOAD_SLUGS)
-  res = http.get(`${BASE_URL}/api/download-pages/${dlSlug}`)
-  track('download_page', res, [200, 404], downloadPageLatency)
-  sleep(1)
+  sleep(3) // user detail page padhta hai
 }

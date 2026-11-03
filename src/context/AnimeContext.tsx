@@ -1,7 +1,7 @@
 // src/context/AnimeContext.tsx
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import type { Anime, FilterType, ContentTypeFilter } from '../types';
-import { getAnimePaginated, searchAnime, getFeaturedAnime } from '../../services/animeService';
+import { getAnimePaginated, searchAnime } from '../../services/animeService';
 
 interface AnimeContextType {
   animeList: Anime[];
@@ -35,14 +35,12 @@ export const useAnimeContext = () => {
   return ctx;
 };
 
-// ✅ FIX: lastContentAdded add kiya — isi field se AnimeCard ka "NEW" badge
-// aur HomePage ka "naya content top par" sorting kaam karta hai.
 const ANIME_FIELDS = 'title,thumbnail,releaseYear,status,contentType,subDubStatus,description,genreList,lastContentAdded';
 
-// ✅ Backend base URL (bina /api ke) — featured sections fetch ke liye
+// Backend base URL (bina /api ke) — same-origin
 const API_BASE = '';
 
-// ✅ Per-visitor rotation ke liye fixed bucket (0-9), browser me save rehta hai
+// Per-visitor rotation ke liye fixed bucket (0-9), browser me save rehta hai
 const getVisitorBucket = (): string => {
   try {
     let v = localStorage.getItem('featBucket');
@@ -56,8 +54,16 @@ const getVisitorBucket = (): string => {
   }
 };
 
-// ✅ MODULE-LEVEL CACHE — component re-mount par bhi survive karta hai
-// Jab React component unmount/remount hoti hai, yeh variables reset NAHI hote
+// home endpoint ke raw items ko wahi shape do jo getAnimePaginated deta tha
+const normalizeAnime = (a: any): Anime => ({
+  ...a,
+  id: a._id || a.id,
+  lastUpdated: a.updatedAt ? new Date(a.updatedAt).getTime() : Date.now(),
+  likes: a.likes || 0,
+  dislikes: a.dislikes || 0,
+});
+
+// MODULE-LEVEL CACHE — component re-mount par bhi survive karta hai
 let _animeListCache: Anime[] = [];
 let _featuredCache: Anime[] = [];
 let _pageCache = 1;
@@ -65,7 +71,6 @@ let _hasMoreCache = true;
 let _isSearchingCache = false;
 
 export const AnimeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // ✅ useState ka initial value cache se — isliye back aane par blank screen nahi
   const [animeList, setAnimeListRaw] = useState<Anime[]>(_animeListCache);
   const [featuredAnimes, setFeaturedAnimes] = useState<Anime[]>(_featuredCache);
   const [isLoading, setIsLoading] = useState(false);
@@ -78,8 +83,6 @@ export const AnimeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [contentType, setContentType] = useState<ContentTypeFilter>('All');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // ✅ NEW — featured carousel ka data ab yahan fetch hota hai, taaki HomePage
-  // ko pata rahe ki ye kab ready hai (grid ke saath sync karne ke liye)
   const [featuredSections, setFeaturedSections] = useState({
     banner: [] as Anime[], anime: [] as Anime[], manga: [] as Anime[], movie: [] as Anime[]
   });
@@ -88,13 +91,12 @@ export const AnimeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const lastSearchQuery = useRef('');
 
-  // 🆕 Auto-rotate silent refresh ke liye — last successful fetch time
+  // /home ka last successful fetch time
   const lastSectionsFetchRef = useRef(0);
 
-  // 🆕 Silent refresh (list) throttle ke liye — last refresh time
+  // Silent refresh (list) throttle ke liye — last refresh time
   const lastListFetchRef = useRef(Date.now());
 
-  // ✅ Cache sync wrappers — state aur module cache dono ek saath update hote hain
   const setAnimeList = useCallback((list: Anime[]) => {
     _animeListCache = list;
     setAnimeListRaw(list);
@@ -115,57 +117,8 @@ export const AnimeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setIsSearching(val);
   }, []);
 
-  // Featured — always fresh
-  const fetchFeatured = useCallback(async () => {
-    try {
-      const data = await getFeaturedAnime();
-      if (data?.length) {
-        const sliced = data.slice(0, 24);
-        _featuredCache = sliced;
-        setFeaturedAnimes(sliced);
-      }
-    } catch (err) {
-      console.error('Featured fetch failed', err);
-    }
-  }, []);
-
-  // ✅ NEW — featured sections (banner / anime / manga / movie) + section visibility
-  // 🆕 `v=` visitor bucket add kiya — per-visitor rotation ke liye
-  // 🆕 `silent` mode — background refresh me loading spinner na dikhe
-  const fetchFeaturedSections = useCallback(async (silent: boolean = false) => {
-    if (!silent) setFeaturedSectionsLoading(true);
-    lastSectionsFetchRef.current = Date.now();
-    try {
-      const bucket = getVisitorBucket();
-      const fetchSection = async (section: string) => {
-        try {
-          const res = await fetch(`${API_BASE}/api/anime/featured?section=${section}&v=${bucket}`);
-          const result = await res.json();
-          return result.data || [];
-        } catch { return null; }   // null = fail, purana data na hatao
-      };
-      const [visRes, banner, animeSec, mangaSec, movieSec] = await Promise.all([
-        fetch(`${API_BASE}/api/anime/settings/section-visibility`).then(r => r.json()).catch(() => null),
-        fetchSection('banner'),
-        fetchSection('anime'),
-        fetchSection('manga'),
-        fetchSection('movie'),
-      ]);
-      if (visRes?.success) setSectionVisibility(visRes.data);
-      setFeaturedSections(prev => ({
-        banner: banner ?? prev.banner,
-        anime: animeSec ?? prev.anime,
-        manga: mangaSec ?? prev.manga,
-        movie: movieSec ?? prev.movie,
-      }));
-    } finally {
-      if (!silent) setFeaturedSectionsLoading(false);
-    }
-  }, []);
-
   // Initial load / search
   const loadInitialAnime = useCallback(async (isSearch: boolean = false) => {
-    // ✅ Sirf tab loading dikho jab cache bilkul empty ho
     if (_animeListCache.length === 0) setIsLoading(true);
     setError(null);
     const currentSearch = searchQuery;
@@ -200,20 +153,71 @@ export const AnimeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [searchQuery, setAnimeList, setHasMoreCached, setCurrentPageCached, setIsSearchingCached]);
 
-  // 🆕 Page 1 fresh laao, upar rakho, purani loaded items niche rehne do.
-  // Ye "silent refresh" hai — loading spinner nahi dikhega, purani list
-  // screen se gayab nahi hogi.
-  const refreshLatest = useCallback(async () => {
-    if (_isSearchingCache || lastSearchQuery.current) return;
-    if (Date.now() - lastListFetchRef.current < 60_000) return; // 60s throttle
-    lastListFetchRef.current = Date.now();
+  // ✅ NEW — ek hi call: visibility + content/banner/anime/manga/movie + page-1 list
+  const fetchHome = useCallback(async (silent: boolean = false) => {
+    if (silent && Date.now() - lastSectionsFetchRef.current < 60_000) return; // 60s throttle
+    if (!silent) setFeaturedSectionsLoading(true);
+    lastSectionsFetchRef.current = Date.now();
     try {
-      const fresh = await getAnimePaginated(1, 36, ANIME_FIELDS);
-      const freshIds = new Set(fresh.map((a: Anime) => a.id || a._id));
-      const rest = _animeListCache.filter(a => !freshIds.has(a.id || a._id));
-      setAnimeList([...fresh, ...rest]);
-    } catch { /* purani list rehne do */ }
-  }, [setAnimeList]);
+      const res = await fetch(`${API_BASE}/api/anime/home?v=${getVisitorBucket()}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const result = await res.json();
+      if (!result?.success) throw new Error('Bad /home response');
+
+      if (result.visibility) setSectionVisibility(result.visibility);
+
+      const s = result.sections || {};
+      setFeaturedSections(prev => ({
+        banner: s.banner ?? prev.banner,
+        anime: s.anime ?? prev.anime,
+        manga: s.manga ?? prev.manga,
+        movie: s.movie ?? prev.movie,
+      }));
+
+      // "Latest Content" carousel
+      if (Array.isArray(s.content) && s.content.length) {
+        const sliced = s.content.slice(0, 24).map(normalizeAnime);
+        _featuredCache = sliced;
+        setFeaturedAnimes(sliced);
+      }
+
+      // Page-1 list (search mode me list ko mat chhedo)
+      const fresh: Anime[] = Array.isArray(result.list) ? result.list.map(normalizeAnime) : [];
+      if (fresh.length && !_isSearchingCache && !lastSearchQuery.current) {
+        lastListFetchRef.current = Date.now();
+        if (_animeListCache.length === 0) {
+          const uniqueData = Array.from(
+            new Map(fresh.map((item: Anime) => [item.id || item._id, item])).values()
+          );
+          setAnimeList(uniqueData);
+          setHasMoreCached(uniqueData.length === 36);
+          setCurrentPageCached(1);
+          setIsSearchingCached(false);
+        } else {
+          // silent refresh: naya upar, purana niche
+          const freshIds = new Set(fresh.map((a: Anime) => a.id || a._id));
+          const rest = _animeListCache.filter(a => !freshIds.has(a.id || a._id));
+          setAnimeList([...fresh, ...rest]);
+        }
+      }
+    } catch (err) {
+      console.error('Home fetch failed', err);
+      // Fallback: purana tareeka, taaki page khali na rahe
+      if (_animeListCache.length === 0) loadInitialAnime(false);
+    } finally {
+      if (!silent) setFeaturedSectionsLoading(false);
+    }
+  }, [loadInitialAnime, setAnimeList, setHasMoreCached, setCurrentPageCached, setIsSearchingCached]);
+
+  // Ab fetchFeatured bhi /home hi use karta hai (focus pe bar-bar alag call nahi)
+  const fetchFeatured = useCallback(() => { fetchHome(true); }, [fetchHome]);
+
+  // Silent refresh — page 1 fresh laao, upar rakho. /home hi list bhi deta hai.
+  const refreshLatest = useCallback(() => {
+    if (_isSearchingCache || lastSearchQuery.current) return;
+    if (Date.now() - lastListFetchRef.current < 60_000) return;
+    fetchHome(true);
+  }, [fetchHome]);
 
   // Load more
   const loadMoreAnime = useCallback(async () => {
@@ -239,15 +243,9 @@ export const AnimeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [currentPage, hasMore, isLoadingMore, isSearching, animeList, setAnimeList, setCurrentPageCached, setHasMoreCached]);
 
-  // ✅ Initial fetch — sirf tab API call karo jab cache bilkul empty ho
+  // ✅ Initial fetch — ab sirf ek call (/home), list + featured sab usi se
   useEffect(() => {
-    if (_animeListCache.length === 0) {
-      loadInitialAnime(false);
-    }
-    if (_featuredCache.length === 0) {
-      fetchFeatured();
-    }
-    fetchFeaturedSections(); // ✅ NEW
+    fetchHome(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -259,17 +257,13 @@ export const AnimeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter, contentType]);
 
-  // ✅ Auto-rotate ke liye: tab dobara visible ho ya page khula rahe to
-  // featured sections silently refresh ho (max 5 min me ek baar)
-  // 🆕 Saath hi anime list bhi silently refresh hoti hai — naya content
-  // upar aa jaata hai, purani scroll position aur cards gayab nahi hote.
+  // Auto-refresh: tab visible ho ya page khula rahe to 5 min me ek baar
   useEffect(() => {
     const REFRESH_MS = 5 * 60 * 1000;
     const maybeRefresh = () => {
       if (document.visibilityState !== 'visible') return;
       if (Date.now() - lastSectionsFetchRef.current < REFRESH_MS) return;
-      fetchFeaturedSections(true);
-      refreshLatest();
+      fetchHome(true);
     };
     document.addEventListener('visibilitychange', maybeRefresh);
     const interval = setInterval(maybeRefresh, REFRESH_MS);
@@ -277,7 +271,7 @@ export const AnimeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       document.removeEventListener('visibilitychange', maybeRefresh);
       clearInterval(interval);
     };
-  }, [fetchFeaturedSections, refreshLatest]);
+  }, [fetchHome]);
 
   // Search debounce
   useEffect(() => {
