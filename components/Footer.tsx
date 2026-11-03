@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { fetchSocialOnce } from './utils/socialCache';
 
 interface SocialMedia {
   _id?: string;
@@ -39,20 +40,15 @@ const Footer: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const SOCIAL_API_URL = '/api/social';
-
   useEffect(() => {
     fetchSocialLinks();
   }, []);
 
   const fetchSocialLinks = async () => {
     try {
-      const response = await fetch(`${SOCIAL_API_URL}?t=${Date.now()}`);
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const data = await response.json();
-      console.log('✅ Social links API response:', data);
-      
-      if (data && Array.isArray(data) && data.length > 0) {
+      const data = await fetchSocialOnce();
+
+      if (data.length > 0) {
         const merged = FALLBACK_LINKS.map(fallback => {
           const fetched = data.find((item: any) => item.platform === fallback.platform);
           if (fetched) {
@@ -64,15 +60,12 @@ const Footer: React.FC = () => {
           }
           return fallback;
         });
-        
         setSocialLinks(merged);
-        console.log('Merged social links:', merged);
       } else {
-        console.warn('API empty, using fallback');
         setSocialLinks(FALLBACK_LINKS);
       }
     } catch (error: any) {
-      console.error('❌ Social links fetch failed:', error);
+      // fallback links hi rahenge
     }
   };
 

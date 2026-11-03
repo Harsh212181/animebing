@@ -1,11 +1,11 @@
- // components/Header.tsx - HOME RESET + SAFE CONTEXT + MUTUAL FILTER RESET (FIXED: no full reload, URL is single source of truth)
+// components/Header.tsx - HOME RESET + SAFE CONTEXT + MUTUAL FILTER RESET (FIXED: no full reload, URL is single source of truth)
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { FilterType, ContentTypeFilter } from '../src/types';
 import { SearchIcon } from './icons/SearchIcon';
 import { MenuIcon } from './icons/MenuIcon';
 import { CloseIcon } from './icons/CloseIcon';
-import axios from 'axios';
+import { fetchSocialOnce } from './utils/socialCache';
 
 interface HeaderProps {
   onSearchChange: (query: string) => void;
@@ -77,8 +77,6 @@ const Header: React.FC<HeaderProps> = ({
   // ✅ Categories dropdown ref for click outside
   const categoryRef = useRef<HTMLDivElement>(null);
 
-  const API_BASE = '';
-
   // Scroll effect
   useEffect(() => {
     const handleScroll = () => {
@@ -127,10 +125,10 @@ const Header: React.FC<HeaderProps> = ({
   useEffect(() => {
     const fetchSocialLinks = async () => {
       try {
-        const response = await axios.get(`${API_BASE}/api/social`, { timeout: 5000 });
-        if (response.data && Array.isArray(response.data) && response.data.length > 0) {
+        const data = await fetchSocialOnce();
+        if (data.length > 0) {
           const merged = FALLBACK_SOCIAL_LINKS.map(fallback => {
-            const apiLink = response.data.find((item: SocialMedia) => item.platform === fallback.platform && item.isActive);
+            const apiLink = data.find((item: SocialMedia) => item.platform === fallback.platform && item.isActive);
             return apiLink ? { ...fallback, url: apiLink.url, isActive: true } : fallback;
           });
           setSocialLinks(merged);
