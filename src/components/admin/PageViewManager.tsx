@@ -701,7 +701,7 @@ const PageDetailModal: React.FC<{ page: TopPage; token: string; onClose: () => v
 
   const fullUrl = page.path.startsWith('http')
     ? page.path
-    : `https://animabingwatch.workers.dev${page.path}`;
+    : `https://animebing.in${page.path}`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
