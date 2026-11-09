@@ -131,7 +131,18 @@ instagramAuthRoutes.get('/api/auth/instagram/callback', async (c) => {
       await updateOne(
         'instagramAccounts',
         { igUserId: resolvedIgUserId },
-        { accessToken: longLivedToken, igUsername, profilePictureUrl, tokenExpiresAt, isActive: true },
+        {
+          accessToken: longLivedToken,
+          igUsername,
+          profilePictureUrl,
+          tokenExpiresAt,
+          isActive: true,
+          // 👇 Reconnecting clears any previous "expired" / "error" status
+          tokenStatus: 'ok',
+          tokenError: null,
+          tokenLastCheckedAt: new Date(),
+          tokenRefreshedAt: new Date(),
+        },
         c.env.MONGODB_URI, c.env.MONGODB_DB
       )
     } else {

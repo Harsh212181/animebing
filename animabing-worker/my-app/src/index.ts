@@ -40,6 +40,7 @@ import mailRoutes from './routes/mailRoutes' // ✅ NEW
 import { aggregateAndPruneDay } from './services/dailyStatsService' // ✅ NEW — daily stats rollup
 import { aggregateAndPrunePageviewDay } from './services/dailyPageStatsService' // ✅ NEW — daily pageview rollup
 import { handlePageviewBatch } from './services/pageviewQueue'
+import { refreshExpiringTokens } from './services/tokenRefreshService' // ✅ NEW
 
 export type Env = {
   MONGODB_URI: string
@@ -174,6 +175,11 @@ export default {
   },
 
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    // ✅ 🆕 Instagram token refresh — roz 03:00 UTC pe expiring tokens ko refresh karega
+    if (event.cron === '0 3 * * *') {
+      ctx.waitUntil(refreshExpiringTokens(env))
+    }
+
     // ✅ 🆕 Naya 5-minute cron sirf Instagram DM queue check karega — 
     // YouTube tracking wale bhaari cron se poori tarah alag rakha hai
     if (event.cron === '*/5 * * * *') {

@@ -1,7 +1,8 @@
 import { Hono } from 'hono'
 import type { Env, Variables } from '../index'
-import { findMany, insertOne, updateOne, deleteOne, deleteMany, toObjectId, isValidObjectId } from '../services/mongoService'
+import { findMany, insertOne, updateOne, deleteOne, deleteMany, toObjectId, isValidObjectId, withDb } from '../services/mongoService'
 import { adminAuth } from '../middleware/auth'
+import { refreshOneAccountToken } from '../services/tokenRefreshService'
 
 const instagramAutomationRoutes = new Hono<{ Bindings: Env, Variables: Variables }>()
 
@@ -76,6 +77,9 @@ instagramAutomationRoutes.get('/accounts', async (c) => {
     profilePictureUrl: a.profilePictureUrl || null,
     createdBy: a.createdBy || null,
     createdByUsername: a.createdByUsername || 'Admin',   // for badge
+    tokenExpiresAt: a.tokenExpiresAt || null,
+    tokenStatus: a.tokenStatus || null,
+    tokenError: a.tokenError || null,
   }))
   return c.json({ success: true, accounts: safeAccounts })
 })
@@ -147,6 +151,53 @@ instagramAutomationRoutes.delete('/accounts/:id', async (c) => {
   }
 
   return c.json({ success: true })
+})
+
+// Manual "Refresh token" button
+instagramAutomationRoutes.post('/accounts/:id/refresh-token', async (c) => {
+  const admin = c.get('admin')
+  const id = c.req.param('id')
+  if (!isValidObjectId(id)) return c.json({ success: false, error: 'Invalid account id' }, 400)
+
+  const accounts = await findMany<any>(
+    'instagramAccounts', { _id: toObjectId(id) }, { limit: 1 },
+    c.env.MONGODB_URI, c.env.MONGODB_DB
+  )
+  const account = accounts[0]
+  if (!account) return c.json({ success: false, error: 'Account not found' }, 404)
+  if (admin?.role === 'subadmin' && account.createdBy !== admin.id) {
+    return c.json({ success: false, error: 'This account is not yours' }, 403)
+  }
+  if (!account.accessToken) {
+    return c.json({ success: false, error: 'No access token saved. Reconnect the account.' }, 400)
+  }
+
+  const result = await refreshOneAccountToken(account.accessToken)
+
+  if (!result.ok) {
+    await updateOne('instagramAccounts', { _id: toObjectId(id) }, {
+      tokenStatus: result.expired ? 'expired' : 'error',
+      tokenError: result.error,
+      tokenLastCheckedAt: new Date(),
+    }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+    return c.json({
+      success: false,
+      error: result.expired
+        ? 'Token has expired. Click "Connect Instagram" to reconnect this account.'
+        : result.error,
+    }, 502)
+  }
+
+  await updateOne('instagramAccounts', { _id: toObjectId(id) }, {
+    accessToken: result.accessToken,
+    tokenExpiresAt: result.expiresAt,
+    tokenStatus: 'ok',
+    tokenError: null,
+    tokenLastCheckedAt: new Date(),
+    tokenRefreshedAt: new Date(),
+  }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+  return c.json({ success: true, tokenExpiresAt: result.expiresAt })
 })
 
 // ---------------- ACCOUNT'S POSTS (live fetch from Instagram) ----------------
@@ -301,6 +352,279 @@ instagramAutomationRoutes.get('/logs', async (c) => {
     c.env.MONGODB_URI, c.env.MONGODB_DB
   )
   return c.json({ success: true, logs })
+})
+
+// ============================================================
+// ---------------- POST CODES (auto-generated 6-digit caption codes) ----------------
+// ============================================================
+
+// main admin = always allowed, sub-admin = only their own IG accounts
+async function ownsIgAccount(admin: any, igUserId: string, env: Env): Promise<boolean> {
+  if (!admin || admin.role !== 'subadmin') return true
+  const owned = (await getOwnedIgUserIds(admin, env.MONGODB_URI, env.MONGODB_DB)) || []
+  return owned.includes(igUserId)
+}
+
+function randomSixDigit(): string {
+  const arr = new Uint32Array(1)
+  crypto.getRandomValues(arr)
+  return String(100000 + (arr[0] % 900000)) // always 6 digits
+}
+
+// LIST
+instagramAutomationRoutes.get('/post-codes', async (c) => {
+  const admin = c.get('admin')
+  const accountId = c.req.query('accountId')
+  if (!accountId) return c.json({ success: false, error: 'accountId is required' }, 400)
+  if (!(await ownsIgAccount(admin, accountId, c.env))) {
+    return c.json({ success: false, error: 'This account is not yours' }, 403)
+  }
+
+  const codes = await findMany<any>(
+    'postCodes', { accountId }, { limit: 100, sort: { createdAt: -1 } },
+    c.env.MONGODB_URI, c.env.MONGODB_DB
+  )
+  return c.json({ success: true, codes })
+})
+
+// AUTO-GENERATE (single click)
+instagramAutomationRoutes.post('/post-codes/generate', async (c) => {
+  const admin = c.get('admin')
+  const body = await c.req.json()
+  const accountId: string = body.accountId
+  const link: string = (body.link || '').trim()
+  const label: string = (body.label || '').trim().slice(0, 80)
+  const dmMessage: string = String(body.dmMessage || '').trim().slice(0, 1000)
+  const triggerMode: string = ['exact', 'contains'].includes(body.triggerMode) ? body.triggerMode : 'any'
+  const keyword: string = String(body.keyword || '').trim().slice(0, 100)
+  if (triggerMode !== 'any' && !keyword) {
+    return c.json({ success: false, error: 'Keyword is required' }, 400)
+  }
+
+  if (!accountId) return c.json({ success: false, error: 'accountId is required' }, 400)
+  if (!(await ownsIgAccount(admin, accountId, c.env))) {
+    return c.json({ success: false, error: 'This account is not yours' }, 403)
+  }
+  if (link && !/^https?:\/\//i.test(link)) {
+    return c.json({ success: false, error: 'Link must start with http:// or https://' }, 400)
+  }
+
+  // find a code that is not used yet on this account
+  let code = ''
+  for (let i = 0; i < 20; i++) {
+    const candidate = randomSixDigit()
+    const exists = await findMany<any>(
+      'postCodes', { accountId, code: candidate }, { limit: 1 },
+      c.env.MONGODB_URI, c.env.MONGODB_DB
+    )
+    if (exists.length === 0) { code = candidate; break }
+  }
+  if (!code) return c.json({ success: false, error: 'Could not generate a unique code, try again' }, 500)
+
+  await insertOne('postCodes', {
+    accountId,
+    code,
+    link,
+    dmMessage,
+    triggerMode,
+    keyword: triggerMode === 'any' ? '' : keyword,
+    label,
+    isActive: true,
+    postId: null,      // filled automatically on the first comment after the post goes live
+    hits: 0,
+    createdAt: new Date(),
+    createdBy: admin?.role === 'subadmin' ? admin.id : null,
+    createdByUsername: admin?.role === 'subadmin' ? admin.username : 'Admin',
+  }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+
+  return c.json({ success: true, code, captionText: `ID:${code}` })
+})
+
+// UPDATE (change link / label / pause)
+instagramAutomationRoutes.put('/post-codes/:id', async (c) => {
+  const admin = c.get('admin')
+  const id = c.req.param('id')
+  if (!isValidObjectId(id)) return c.json({ success: false, error: 'Invalid id' }, 400)
+
+  const found = await findMany<any>(
+    'postCodes', { _id: toObjectId(id) }, { limit: 1 }, c.env.MONGODB_URI, c.env.MONGODB_DB
+  )
+  const doc = found[0]
+  if (!doc) return c.json({ success: false, error: 'Code not found' }, 404)
+  if (!(await ownsIgAccount(admin, doc.accountId, c.env))) {
+    return c.json({ success: false, error: 'This code is not yours' }, 403)
+  }
+
+  const body = await c.req.json()
+  const update: any = {}
+  if (body.link !== undefined) {
+    const link = String(body.link).trim()
+    if (link && !/^https?:\/\//i.test(link)) {
+      return c.json({ success: false, error: 'Link must start with http:// or https://' }, 400)
+    }
+    update.link = link
+  }
+  if (body.dmMessage !== undefined) update.dmMessage = String(body.dmMessage).trim().slice(0, 1000)
+  if (body.triggerMode !== undefined) {
+    const mode = ['exact', 'contains'].includes(body.triggerMode) ? body.triggerMode : 'any'
+    const kw = String(body.keyword || '').trim().slice(0, 100)
+    if (mode !== 'any' && !kw) {
+      return c.json({ success: false, error: 'Keyword is required' }, 400)
+    }
+    update.triggerMode = mode
+    update.keyword = mode === 'any' ? '' : kw
+  }
+  if (body.label !== undefined) update.label = String(body.label).trim().slice(0, 80)
+  if (body.isActive !== undefined) update.isActive = !!body.isActive
+
+  await updateOne('postCodes', { _id: toObjectId(id) }, update, c.env.MONGODB_URI, c.env.MONGODB_DB)
+  return c.json({ success: true })
+})
+
+// CHECK — find the post that has this code, link it now, report if DM is ready
+instagramAutomationRoutes.post('/post-codes/:id/check', async (c) => {
+  const admin = c.get('admin')
+  const id = c.req.param('id')
+  if (!isValidObjectId(id)) return c.json({ success: false, error: 'Invalid id' }, 400)
+
+  const found = await findMany<any>(
+    'postCodes', { _id: toObjectId(id) }, { limit: 1 }, c.env.MONGODB_URI, c.env.MONGODB_DB
+  )
+  const doc = found[0]
+  if (!doc) return c.json({ success: false, error: 'Code not found' }, 404)
+  if (!(await ownsIgAccount(admin, doc.accountId, c.env))) {
+    return c.json({ success: false, error: 'This code is not yours' }, 403)
+  }
+
+  const accounts = await findMany<any>(
+    'instagramAccounts', { igUserId: doc.accountId }, { limit: 1 }, c.env.MONGODB_URI, c.env.MONGODB_DB
+  )
+  const account = accounts[0]
+  if (!account) return c.json({ success: false, error: 'Instagram account not found' }, 404)
+
+  const checks: { key: string; ok: boolean | null; text: string }[] = []
+
+  checks.push({
+    key: 'account', ok: !!account.isActive,
+    text: account.isActive ? 'Account is active' : 'Account is paused. Resume it.',
+  })
+  const tokenOk = account.tokenStatus !== 'expired' && account.tokenStatus !== 'error'
+  checks.push({
+    key: 'token', ok: tokenOk,
+    text: tokenOk ? 'Access token looks fine' : 'Token problem. Refresh it or reconnect the account.',
+  })
+  checks.push({
+    key: 'code', ok: !!doc.isActive,
+    text: doc.isActive ? 'Code is active' : 'Code is paused. Resume it.',
+  })
+
+  // find the post whose caption has this code
+  let post: any = null
+  let fetchError = ''
+  try {
+    const res = await fetch(
+      `https://graph.instagram.com/me/media?fields=id,caption,permalink,timestamp&limit=50&access_token=${account.accessToken}`
+    )
+    const data: any = await res.json()
+    if (!res.ok) {
+      fetchError = data?.error?.message || 'Instagram returned an error'
+    } else {
+      const re = new RegExp(`\\bID:\\s?${doc.code}\\b`, 'i')
+      post = (data.data || []).find((p: any) => re.test(p.caption || '')) || null
+    }
+  } catch {
+    fetchError = 'Could not reach Instagram'
+  }
+
+  if (fetchError) {
+    checks.push({ key: 'post', ok: false, text: `Could not read your posts: ${fetchError}` })
+  } else if (post) {
+    checks.push({ key: 'post', ok: true, text: 'Post found and linked to this code. Trigger is on' })
+  } else {
+    checks.push({
+      key: 'post', ok: false,
+      text: `No post has ID:${doc.code} in its caption (checked latest 50 posts). Add it to the caption and save.`,
+    })
+  }
+
+  let logs: any[] = []
+  await withDb(c.env.MONGODB_URI, c.env.MONGODB_DB, 'checkPostCode', async (db) => {
+    if (post) {
+      await db.collection('postCodeCache').updateOne(
+        { accountId: doc.accountId, postId: post.id },
+        { $set: { accountId: doc.accountId, postId: post.id, code: doc.code, createdAt: new Date() } },
+        { upsert: true }
+      )
+      await db.collection('postCodes').updateOne(
+        { _id: toObjectId(id) },
+        { $set: { postId: post.id, usedAt: new Date() } }
+      )
+    }
+
+    const rules = await db.collection('automationRules')
+      .find({ accountId: doc.accountId, isActive: true }).toArray()
+    const usable = rules.filter((r: any) => !r.postId || (post && r.postId === post.id))
+
+    const hasOwnMessage = !!(doc.dmMessage || '').trim()
+    const mode = doc.triggerMode || 'any'
+
+    if (hasOwnMessage) {
+      checks.push({
+        key: 'rule', ok: true,
+        text: mode === 'any'
+          ? 'No rule needed. Every comment on this post gets this code\'s message'
+          : `No rule needed. A comment ${mode === 'exact' ? 'exactly' : 'containing'} "${doc.keyword}" gets this code's message`,
+      })
+    } else {
+      checks.push(
+        usable.length > 0
+          ? { key: 'rule', ok: true, text: `${usable.length} active rule(s) will respond. Keywords: ${usable.map((r: any) => r.keyword).slice(0, 5).join(', ')}` }
+          : { key: 'rule', ok: false, text: 'This code has no DM message and no rule matches. Add a message to the code or add a rule.' }
+      )
+    }
+
+    if (post) {
+      logs = await db.collection('automationLogs')
+        .find({ accountId: doc.accountId, postId: post.id })
+        .sort({ createdAt: -1 }).limit(5).toArray()
+    }
+  })
+
+  checks.push(
+    logs.length > 0
+      ? { key: 'activity', ok: true, text: `${logs.length} recent comment(s) were handled on this post` }
+      : { key: 'activity', ok: null, text: 'No comments handled on this post yet' }
+  )
+
+  return c.json({
+    success: true,
+    found: !!post,
+    post: post ? { id: post.id, permalink: post.permalink } : null,
+    checks,
+    logs: logs.map((l: any) => ({
+      status: l.status, matchedText: l.matchedText, createdAt: l.createdAt, error: l.error,
+    })),
+  })
+})
+
+// DELETE
+instagramAutomationRoutes.delete('/post-codes/:id', async (c) => {
+  const admin = c.get('admin')
+  const id = c.req.param('id')
+  if (!isValidObjectId(id)) return c.json({ success: false, error: 'Invalid id' }, 400)
+
+  const found = await findMany<any>(
+    'postCodes', { _id: toObjectId(id) }, { limit: 1 }, c.env.MONGODB_URI, c.env.MONGODB_DB
+  )
+  const doc = found[0]
+  if (!doc) return c.json({ success: false, error: 'Code not found' }, 404)
+  if (!(await ownsIgAccount(admin, doc.accountId, c.env))) {
+    return c.json({ success: false, error: 'This code is not yours' }, 403)
+  }
+
+  await deleteOne('postCodes', { _id: toObjectId(id) }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+  await deleteMany('postCodeCache', { accountId: doc.accountId, code: doc.code }, c.env.MONGODB_URI, c.env.MONGODB_DB)
+  return c.json({ success: true })
 })
 
 export default instagramAutomationRoutes
