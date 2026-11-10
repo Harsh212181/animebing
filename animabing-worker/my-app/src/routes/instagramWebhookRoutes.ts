@@ -126,6 +126,66 @@ function getHourBucket(date: Date = new Date()): string {
 }
 
 // ============================================================
+// ⏰ Post code SCHEDULE (India time / IST)
+//
+// pc.schedule = {
+//   enabled: boolean,
+//   days:    number[]            // 0 = Sun ... 6 = Sat
+//   slots:   { startTime, endTime }[]   // 24h "HH:mm" (IST), e.g. 21:30
+// }
+// - schedule missing / disabled  -> code is ALWAYS on
+// - old format (startTime/endTime directly on schedule) still works
+// - overnight slot (22:00 -> 02:00) works; the after-midnight part
+//   belongs to the PREVIOUS day's window.
+// ============================================================
+type Slot = { startTime: string; endTime: string }
+
+function toMinutes(t: string): number {
+  const [h, m] = String(t || '').split(':').map(Number)
+  return (h || 0) * 60 + (m || 0)
+}
+
+// new format: slots[]; old format: startTime/endTime (one slot)
+function getSlots(schedule: any): Slot[] {
+  if (Array.isArray(schedule.slots) && schedule.slots.length > 0) return schedule.slots
+  return [{ startTime: schedule.startTime || '00:00', endTime: schedule.endTime || '23:59' }]
+}
+
+/** true = the code is ON right now. */
+export function isCodeScheduleOpen(schedule: any, now: Date = new Date()): boolean {
+  if (!schedule || !schedule.enabled) return true
+  const days: number[] = Array.isArray(schedule.days) ? schedule.days : []
+  const ist = new Date(now.getTime() + 5.5 * 60 * 60 * 1000)
+  const day = ist.getUTCDay() // 0 = Sun
+  const minutes = ist.getUTCHours() * 60 + ist.getUTCMinutes()
+
+  return getSlots(schedule).some((slot) => {
+    const start = toMinutes(slot.startTime)
+    const end = toMinutes(slot.endTime)
+    if (start <= end) return days.includes(day) && minutes >= start && minutes <= end
+    // overnight slot (22:00 -> 02:00)
+    if (minutes >= start) return days.includes(day)
+    if (minutes <= end) return days.includes((day + 6) % 7)
+    return false
+  })
+}
+
+/**
+ * Which schedule applies to this code?
+ *   pc.scheduleMode = 'global' -> the account's GLOBAL schedule (account.postCodeSchedule)
+ *                     'custom' -> the code's own schedule (pc.schedule)
+ *                     'always' -> no schedule, always on
+ * Old codes (no scheduleMode): own schedule enabled -> 'custom', otherwise -> 'global'.
+ * Returns null = no schedule = always on.
+ */
+export function effectiveSchedule(pc: any, account: any): any | null {
+  const mode = pc?.scheduleMode || (pc?.schedule?.enabled ? 'custom' : 'global')
+  if (mode === 'always') return null
+  if (mode === 'custom') return pc.schedule || null
+  return account?.postCodeSchedule || null
+}
+
+// ============================================================
 // 🔒 Duplicate protection
 // Needs a UNIQUE index on automationLogs (commentId, sourceType).
 // The first worker to insert the "processing" log owns the event;
@@ -173,6 +233,7 @@ const NO_CODE_RECHECK_MS = 10 * 60 * 1000
  *   pc.dmMessage   — this code's own DM message
  *   pc.triggerMode — 'any' | 'exact' | 'contains' (defaults to 'any')
  *   pc.keyword     — keyword used when triggerMode is 'exact' / 'contains'
+ *   pc.schedule    — days + time slots (IST) when the code is ON
  */
 async function resolvePostCode(
   db: any,
@@ -264,6 +325,7 @@ function buildDmMessage(template: string, link: string): string {
 //    DM message exists and whose trigger matches the comment
 //    (every comment / exact keyword / contains keyword), send ONLY that message.
 //    No rule is needed for this.
+//    ⏰ If the code has a schedule and we are outside it -> NO DM at all.
 // 2) Otherwise RULES — normal keyword rule matching (post rules, then account-wide).
 //
 // A comment gets one DM: either the code's message or the rule's message, never merged.
@@ -296,6 +358,12 @@ async function handleCommentEvent(value: any, igAccountId: string, env: Env) {
     // ---- 1) post code ----
     const pc = await resolvePostCode(db, account, postId)
     console.log(`⏱ post code resolved at +${Date.now() - t0}ms`)
+
+    // ⏰ Code's schedule is OFF right now -> no DM for this post (neither code nor rule)
+    if (pc && !isCodeScheduleOpen(effectiveSchedule(pc, account))) {
+      console.log(`Code ID:${pc.code} is outside its schedule — skipping comment ${commentId}`)
+      return
+    }
 
     const codeMessage: string =
       pc && (pc.dmMessage || '').trim() && codeTriggerMatches(pc, commentText) ? pc.dmMessage.trim() : ''
